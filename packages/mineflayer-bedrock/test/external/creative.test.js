@@ -118,7 +118,10 @@ describe('creative', function () {
   it('startFlying / stopFlying / flyTo (flight: U5 physics hook)', async function () {
     const { bot } = ctx
     if (!implemented(bot._bedrock.physics.flyTo)) this.skip() // bot._bedrock.physics.flyTo lands with U5
+    const gravity = bot.physics.gravity
     bot.creative.startFlying()
+    // W3-FIX-A: the Bedrock engine flies by itself; upstream's gravity = 0 would outlive a flight ended by the server
+    assert.strictEqual(bot.physics.gravity, gravity)
     const target = bot.entity.position.offset(0, 3, 0)
     await bot.creative.flyTo(target)
     assert.ok(bot.entity.position.distanceTo(target) < 0.5, `flew to ${bot.entity.position}`)

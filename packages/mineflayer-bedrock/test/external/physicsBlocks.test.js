@@ -199,7 +199,9 @@ describe('physics: liquids, climbables, special blocks, falls, knockback, effect
   it('knockback from /damage (set_entity_motion) while standing and walking', async () => {
     const { bot, server } = env
     const x = 140
-    await area(x, ['difficulty normal', `summon pig ${x + 3} -60 0.5`])
+    // the pig must not wander off: the knockback points away from it (W3-FIX-A: a wandering pig knocked the bot sideways
+    // in ~1 of 4 runs)
+    await area(x, ['difficulty normal', `summon pig ${x + 3} -60 0.5`, 'effect @e[type=pig] slowness 60 255 true'])
     await settle(new Vec3(x + 0.5, -60, 0.5))
     try {
       for (let i = 0; i < 2; i++) {

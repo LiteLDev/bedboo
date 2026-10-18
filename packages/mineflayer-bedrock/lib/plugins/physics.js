@@ -24,7 +24,11 @@
 // Hooks (bot._bedrock.physics): setPosition(pos, { forced, handledTeleport = forced }), setFlying(on), isFlying(),
 //   flyTo(destination) → Promise (speed-limited flight path, used by bot.creative.flyTo), moveVehicle(left, forward),
 //   history() (recorded ticks, tests/debugging), simulate(state) (one engine step with this bot's world),
-//   onCorrection(fn) / stats() (server corrections, tests and diagnostics).
+//   onCorrection(fn) / stats() (server corrections, tests and diagnostics),
+//   controlsPending() / controlsSent() → Promise / afterControlsSent(fn) (W3-FIX-A: a sneak / sprint change reaches
+//   the server only with the next player_auth_input; clicks that depend on it wait for that packet).
+// Flight state: bot.abilities (abilities.js, the only parser of update_abilities) is the server's view; this plugin
+//   follows its 'abilities' event and reads flyingSpeed / mayFly from it.
 'use strict'
 const assert = require('assert')
 const { Vec3 } = require('vec3')
@@ -33,6 +37,10 @@ const { Physics, PlayerState } = require('../physics')
 const { getEffectLevel: effectLevel } = require('../physics/engine')
 const { moveVector, rawMoveVector, buildFlags } = require('../physics/input')
 const conv = require('../bedrock/conversions')
+const { toBigInt } = require('./abilities')
+const { resetGliding } = require('../bedrock/entity_data')
+const { EYE_HEIGHT } = require('../bedrock/constants')
+const { POSITION_OFFSETS } = require('./entities')
 const { createDoneTask, createTask } = require('mineflayer/lib/promise_utils')
 
 const CONTROLS = ['forward', 'back', 'left', 'right', 'jump', 'sprint', 'sneak']
@@ -51,12 +59,6 @@ const GLIDE_CONFIRM_TICKS = 20
 const FLIGHT_CONFIRM_TICKS = 20
 
 module.exports = inject
-
-/** li64 fields arrive as BigInt-like objects or plain [high, low] arrays */
-function int64 (v) {
-  if (Array.isArray(v)) return BigInt.asIntN(64, (BigInt(v[0]) << 32n) | BigInt(v[1] >>> 0))
-  return v === undefined || v === null ? v : BigInt(v)
-}
 
 function inject (bot, { physicsEnabled }) {
   const world = { getBlock: (pos) => bot.blockAt(pos, false) }
@@ -85,17 +87,31 @@ function inject (bot, { physicsEnabled }) {
   let vehicleInput = { left: 0, forward: 0 }
   let pendingFlightRequest = null // request_ability flying value to send with the next input
   let flightRequestTick = null // tick of the input after the last request_ability, until update_abilities answers
-  let serverMayFly = null // update_abilities may_fly
+  let abilitiesKnown = false // abilities.js reported the server's abilities at least once
   let skipNext = false // the next input is the first one after a teleport: not simulated (BDS does the same)
   const history = [] // [{ tick, input, state, simulated }] oldest first
   const correctionListeners = new Set()
   const stats = { corrections: 0, last: null }
+  // sneak / sprint reach the server with the next player_auth_input: generation of the control change, of the input
+  // being built and of the last input sent, the sent key states and the clicks waiting for them (afterControlsSent)
+  let controlGen = 0
+  let builtControlGen = 0
+  let sentControlGen = 0
+  let builtControls = null
+  let sentControls = { sneak: false, sprint: false }
+  let controlWaiters = [] // [{ gen, fn, reject? }]
+  let built = null // { position, yaw, pitch } written into the packet being built (look/lookAt resolution, 'move')
+  let fireworkSeen = 0 // bot.fireworkRocketDuration as physics last left it: another value = set from outside (a rocket)
+  let rocketStarted = false // 'usedFirework' since the last tick (a rocket may set the very value the countdown had)
+  let clickAirUse = false // a click_air was queued since the bot last stopped using an item (server item use)
+  const listenerErrors = [] // errors thrown by physicsTick listeners, reported once the input is sent
 
   bot.setControlState = (control, state) => {
     assert.ok(control in controlState, `invalid control: ${control}`)
     assert.ok(typeof state === 'boolean', `invalid state: ${state}`)
     if (controlState[control] === state) return
     controlState[control] = state
+    if (control === 'sneak' || control === 'sprint') controlGen++
     if (control === 'jump' && state) bot.jumpQueued = true
   }
 
@@ -160,20 +176,50 @@ function inject (bot, { physicsEnabled }) {
     return torso?.name === 'elytra' || rawChestName === 'elytra'
   }
 
+  // ---- item use as the server sees it ------------------------------------------------------------------
+  // The server only enters item use (eating, drawing a bow, …: ±0.1225 impulse clamp, no sprint) on a click_air
+  // transaction. bot.usingHeldItem is also true while a shield is raised, which Bedrock does by sneaking without any
+  // click_air (inventory.js, docs/differences/U8.md#item-use): BDS then simulates a plain sneak (measured, W3-FIX-A).
+  // The outgoing click_air / item_release transactions are observed here, whoever queues them.
+  const rawQueue = bot._client.queue
+  if (typeof rawQueue === 'function') {
+    bot._client.queue = function queue (name, params) {
+      if (name === 'inventory_transaction') noteTransaction(params)
+      return rawQueue.apply(this, arguments)
+    }
+  }
+  function noteTransaction (params) {
+    const tx = params?.transaction
+    if (tx?.transaction_type === 'item_use' && tx.transaction_data?.action_type === 'click_air') clickAirUse = true
+    else if (tx?.transaction_type === 'item_release') clickAirUse = false
+  }
+  bot._client.on('completed_using_item', () => { clickAirUse = false })
+  // inventory.js ends a use on a held-stack change (its listener runs after this one)
+  bot.on('heldItemChanged', () => process.nextTick(() => { if (!bot.usingHeldItem) clickAirUse = false }))
+
+  function itemInUse () {
+    if (!bot.usingHeldItem) {
+      clickAirUse = false
+      return false
+    }
+    return clickAirUse
+  }
+
   /**
    * effective control states of this tick (Bedrock sprint: only forward, not sneaking, not flying, not while using an
    * item — BDS drops the sprint modifier as soon as an item is in use; measured)
    */
-  function effectiveControls () {
+  function effectiveControls (usingItem = itemInUse()) {
     const c = { ...controlState }
-    c.sprint = c.sprint && c.forward && !c.back && !c.sneak && !bot.usingHeldItem
+    c.sprint = c.sprint && c.forward && !c.back && !c.sneak && !usingItem
     if (bot.jumpQueued) c.jump = true
     return c
   }
 
   /** snapshot of everything one engine step reads (for replay) */
   function captureInput () {
-    let control = effectiveControls()
+    const usingItem = itemInUse()
+    let control = effectiveControls(usingItem)
     let rawControl = { ...controlState, jump: controlState.jump || bot.jumpQueued }
     if (flyTarget && flying) {
       const plan = flyToPlan()
@@ -193,9 +239,10 @@ function inject (bot, { physicsEnabled }) {
       swimming: false,
       moveVector: moveVector(control, { flying }),
       knockback: pendingKnockback,
+      fireworkStart: pendingRocket() ?? undefined,
       flySpeed: flySpeed(),
       elytraEquipped: elytraEquipped(),
-      usingItem: !!bot.usingHeldItem, // the move vector is clamped to ±0.1225 while using an item (eating, bow, …)
+      usingItem, // the move vector is clamped to ±0.1225 while using an item (eating, bow, …)
       ...statusInputs()
     }
   }
@@ -217,9 +264,8 @@ function inject (bot, { physicsEnabled }) {
     }
   }
 
-  let serverFlySpeed = null
   function flySpeed () {
-    return bot.abilities?.flyingSpeed ?? serverFlySpeed ?? 0.05
+    return bot.abilities?.flyingSpeed ?? 0.05
   }
 
   /** engine state from the bot (prismarine-physics PlayerState shape + Bedrock extras) */
@@ -243,6 +289,7 @@ function inject (bot, { physicsEnabled }) {
     if (input.effects) Object.assign(state, input.effects)
     if (input.speedAttribute) state.attributes = { [bot.physics.movementSpeedAttribute]: input.speedAttribute }
     if (input.knockback) state.vel = input.knockback.clone()
+    if (input.fireworkStart !== undefined) state.fireworkRocketDuration = input.fireworkStart
   }
 
   /** the mutable part of a state (what history stores) */
@@ -282,9 +329,42 @@ function inject (bot, { physicsEnabled }) {
     return bot.physics.simulatePlayer(state, world)
   }
 
+  /** the provider's step: the state of this tick becomes the bot's; the queued jump was consumed */
   function applyState (state) {
     state.apply(bot)
     bot.jumpQueued = false
+  }
+
+  // ---- firework boosts (W3-FIX-A) -------------------------------------------------------------------------------
+  // entities.js starts a boost between ticks by setting bot.fireworkRocketDuration (+ 'usedFirework'); a new rocket may
+  // also shorten it. The start is recorded in the next tick's input (fireworkStart) so that replays from an earlier
+  // tick boost from that tick on, and a replay before that input keeps it.
+  bot.on('usedFirework', () => { rocketStarted = true })
+
+  /** bot.fireworkRocketDuration when it was set from outside since physics last left it, else null */
+  function pendingRocket () {
+    const duration = bot.fireworkRocketDuration ?? 0
+    return rocketStarted || duration !== fireworkSeen ? duration : null
+  }
+
+  /** the tick consumed the pending rocket (if any) */
+  function settleRocket () {
+    fireworkSeen = bot.fireworkRocketDuration ?? 0
+    rocketStarted = false
+  }
+
+  /**
+   * the result of a replay (correction, knockback / effect / glide resimulation, teleport) becomes the bot's state.
+   * It keeps what happened after the last recorded input: a jump queued for the next tick (setControlState('jump')
+   * pressed and released between ticks) and a firework rocket that started since the last tick.
+   */
+  function applyReplayedState (state) {
+    const jumpQueued = bot.jumpQueued
+    const rocket = pendingRocket()
+    state.apply(bot)
+    bot.jumpQueued = jumpQueued
+    fireworkSeen = bot.fireworkRocketDuration ?? 0
+    if (rocket !== null) bot.fireworkRocketDuration = rocket // still pending (rocketStarted kept)
   }
 
   function rewindSize () {
@@ -293,7 +373,10 @@ function inject (bot, { physicsEnabled }) {
   }
 
   function record (tick, input, state, simulated) {
-    history.push({ tick: BigInt(tick), input, state: snapshot(state), simulated })
+    const entry = { tick: BigInt(tick), input, state: snapshot(state), simulated }
+    // never two entries for one tick (a corrections' findIndex would pick a stale one)
+    if (history.length && history[history.length - 1].tick === entry.tick) history[history.length - 1] = entry
+    else history.push(entry)
     const max = rewindSize()
     if (history.length > max) history.splice(0, history.length - max)
   }
@@ -311,8 +394,13 @@ function inject (bot, { physicsEnabled }) {
       flightRequestTick = null
       setFlying(!flying, { request: false })
     }
-    if (riding()) updateVehicleInput()
+    if (riding()) {
+      updateVehicleInput()
+      followSeat()
+    }
     const input = captureInput()
+    builtControlGen = controlGen
+    builtControls = { sneak: controlState.sneak, sprint: controlState.sprint }
     pendingKnockback = null
     // BDS does not simulate the first input it processes after applying a teleport (it just takes the teleport
     // state): neither do we (see move_player below)
@@ -333,6 +421,7 @@ function inject (bot, { physicsEnabled }) {
       entity.velocity = input.knockback.clone()
     }
     if (!simulated) restoreFromBot(state)
+    settleRocket()
     gliding = !!entity.elytraFlying && gliding
     if (input.gliding && !prevInput?.gliding) glideRequestTick = BigInt(tick)
     record(tick, input, state, simulated)
@@ -341,11 +430,21 @@ function inject (bot, { physicsEnabled }) {
     const fields = movementFields(input, state, simulated)
     prevInput = { ...input, jumped: simulated && !!state.jumped }
     if (active) {
-      bot.emit('physicsTick')
-      bot.emit('physicTick') // Deprecated, only exists to support old plugins. May be removed in the future
+      // a throwing listener must not abort the tick (the input is recorded and must be sent): its error is reported
+      // once the packet is queued (onSent)
+      emitTickEvent('physicsTick')
+      emitTickEvent('physicTick') // Deprecated, only exists to support old plugins. May be removed in the future
     }
     if (flyTarget) checkFlyTo()
     return fields
+  }
+
+  function emitTickEvent (name) {
+    try {
+      bot.emit(name)
+    } catch (err) {
+      listenerErrors.push(err)
+    }
   }
 
   /** a state that mirrors the bot (no step this tick) */
@@ -359,6 +458,7 @@ function inject (bot, { physicsEnabled }) {
 
   function movementFields (input, state, simulated) {
     const entity = bot.entity
+    built = { position: entity.position.clone(), yaw: entity.yaw, pitch: entity.pitch }
     const yaw = Math.fround(conv.toNotchianYaw(entity.yaw))
     const pitch = Math.fround(conv.toNotchianPitch(entity.pitch))
     const vel = entity.velocity
@@ -394,14 +494,86 @@ function inject (bot, { physicsEnabled }) {
 
   function onSent () {
     const entity = bot.entity
-    if (!entity) return
-    const position = entity.position
-    const changed = !lastSent || !lastSent.position.equals(position) || lastSent.yaw !== entity.yaw || lastSent.pitch !== entity.pitch
-    const oldPos = lastSent ? lastSent.position : position.clone()
-    lastSent = { position: position.clone(), yaw: entity.yaw, pitch: entity.pitch }
-    if (changed) bot.emit('move', oldPos)
-    if (!lookingTask.done) lookingTask.finish()
+    const sent = built
+    built = null
+    if (sent && builtControls) {
+      sentControlGen = builtControlGen
+      sentControls = builtControls
+    }
+    if (entity) {
+      // what the packet carried (a physicsTick listener may have turned the bot after the fields were built: that
+      // rotation goes out with the next input, and its look() resolves then — upstream resolves once the sent
+      // rotation matches the entity's)
+      const position = sent?.position ?? entity.position.clone()
+      const yaw = sent?.yaw ?? entity.yaw
+      const pitch = sent?.pitch ?? entity.pitch
+      const changed = !lastSent || !lastSent.position.equals(position) || lastSent.yaw !== yaw || lastSent.pitch !== pitch
+      const oldPos = lastSent ? lastSent.position : position.clone()
+      lastSent = { position, yaw, pitch }
+      if (changed) bot.emit('move', oldPos)
+      if (!lookingTask.done && yaw === entity.yaw && pitch === entity.pitch) lookingTask.finish()
+    }
+    runControlWaiters()
+    for (const err of listenerErrors.splice(0)) {
+      try {
+        bot.emit('error', err)
+      } catch (unhandled) {
+        // no 'error' listener: uncaught, like upstream's throwing listener in its physics interval — once the tick is
+        // complete
+        process.nextTick(() => { throw unhandled })
+      }
+    }
   }
+
+  // ---- control changes before a click (W3-FIX-A) ------------------------------------------------------------
+  // Upstream sends sneak / sprint changes (entity_action / player_input) inside setControlState, so a click right
+  // after `setControlState('sneak', true)` is handled while sneaking (placing against a chest, sprint knockback).
+  // On Bedrock they travel in the next player_auth_input: clicks that depend on them wait until it was queued.
+
+  /** a sneak / sprint change is not in a sent player_auth_input yet (and one will be sent) */
+  function controlsPending () {
+    if (controlGen === sentControlGen) return false
+    if (controlState.sneak === sentControls.sneak && controlState.sprint === sentControls.sprint) return false
+    const input = bot._bedrock?.input
+    if (!input || input.isSuspended?.() || input.isRunning?.() === false) return false
+    return !!bot.entity
+  }
+
+  /**
+   * run `fn` now when no sneak / sprint change is pending, else right after the next player_auth_input is queued (at
+   * once if the input gets suspended first — loading screen, dimension change —; never once the bot ended)
+   */
+  function afterControlsSent (fn) {
+    if (!controlsPending()) return fn()
+    controlWaiters.push({ gen: controlGen, fn })
+  }
+
+  /** resolves once the current sneak / sprint state was sent (at once when nothing is pending); rejects on 'end' */
+  function controlsSent () {
+    return new Promise((resolve, reject) => {
+      if (!controlsPending()) return resolve()
+      controlWaiters.push({ gen: controlGen, fn: resolve, reject })
+    })
+  }
+
+  function runControlWaiters (all = false) {
+    if (controlWaiters.length === 0) return
+    const ready = all ? controlWaiters : controlWaiters.filter((w) => w.gen <= sentControlGen)
+    if (ready.length === 0) return
+    controlWaiters = all ? [] : controlWaiters.filter((w) => w.gen > sentControlGen)
+    for (const { fn } of ready) {
+      try {
+        fn()
+      } catch (err) {
+        bot.emit('error', err)
+      }
+    }
+  }
+
+  // the input clock stops (loading screen, dimension change): the change cannot be sent before the click any more
+  bot._bedrock?.lifecycle?.events?.on?.('state', () => {
+    if (bot._bedrock.input?.isSuspended?.() && bot._bedrock.lifecycle.state !== 'ended') runControlWaiters(true)
+  })
 
   if (bot._bedrock?.input) {
     bot._bedrock.input.setProvider(provider)
@@ -451,20 +623,29 @@ function inject (bot, { physicsEnabled }) {
     }
   }
 
-  // the server's view of our flight (gamemode changes, /ability, confirmations of our requests)
-  bot._client.on('update_abilities', (packet) => {
-    if (!bot._bedrock?.ids?.isSelfUnique?.(int64(packet.entity_unique_id))) return
-    const base = (packet.abilities ?? []).find((layer) => layer.type === 'base')
-    if (!base?.enabled) return
-    serverFlySpeed = typeof base.fly_speed === 'number' ? base.fly_speed : serverFlySpeed
-    if (typeof base.enabled.may_fly === 'boolean') serverMayFly = base.enabled.may_fly
-    flightRequestTick = null
-    const serverFlying = !!base.enabled.flying && base.enabled.may_fly !== false
+  // the server's view of our flight: bot.abilities (abilities.js parses update_abilities — gamemode changes, /ability,
+  // answers to our requests — and derives a game mode's abilities). Followed without a request_ability: the server
+  // already decided (BDS would answer a request with more update_abilities).
+  function followAbilities ({ answered = false } = {}) {
+    const abilities = bot.abilities
+    if (!abilities) return
+    abilitiesKnown = true
+    if (answered) flightRequestTick = null // the server answered a pending request_ability
+    // the layered value: a spectator flies with may_fly cleared
+    const serverFlying = !!abilities.flying
     if (serverFlying !== flying) setFlying(serverFlying, { request: false })
+  }
+  bot.on('abilities', () => followAbilities())
+  // an update_abilities that changes nothing emits no 'abilities' (abilities.js) but still answers a pending flight
+  // request (e.g. refused in survival): follow bot.abilities once abilities.js handled the packet (same self check)
+  bot._client.on('update_abilities', (packet) => {
+    const ids = bot._bedrock?.ids
+    if (packet.entity_unique_id !== undefined && ids?.isSelfUnique && !ids.isSelfUnique(toBigInt(packet.entity_unique_id))) return
+    queueMicrotask(() => followAbilities({ answered: true }))
   })
 
   function mayFly () {
-    if (serverMayFly !== null) return serverMayFly
+    if (abilitiesKnown) return !!(bot.abilities?.mayFly || bot.abilities?.flying)
     const mode = bot.game?.gameMode
     return mode === undefined || mode === 'creative' || mode === 'spectator'
   }
@@ -612,10 +793,44 @@ function inject (bot, { physicsEnabled }) {
     }
     bot._bedrock.physics.stats = () => ({ ...stats })
     bot._bedrock.physics.simulate = (state) => bot.physics.simulatePlayer(state, world)
+    bot._bedrock.physics.controlsPending = controlsPending
+    bot._bedrock.physics.controlsSent = controlsSent
+    bot._bedrock.physics.afterControlsSent = afterControlsSent
   }
   if (!bot.moveVehicle || isStub(bot.moveVehicle)) bot.moveVehicle = moveVehicle
   bot.on('mount', updateVehicleInput)
+  // ---- the rider's position (W3-FIX-A) ----------------------------------------------------------------------
+  // BDS keeps a rider at its vehicle's seat: vehicle wire position + the rider_seat_position actor data (rotated by
+  // the vehicle's yaw), at eye level (measured: boat seat (0, 1.02, 0) → feet 0.225 below the boat's feet, horse
+  // (0, 2.32, -0.2) → feet 0.7 above, 0.2 behind). The client does not predict vehicle physics: the vehicle position is
+  // the latest of its move_entity (bot.vehicle.position) and BDS's vehicle corrections (every 6 ticks). Every input
+  // reports that seat and bot.entity.position follows it, so a dismount without a server teleport (boats) leaves the
+  // rider next to the vehicle, not where it mounted.
+  let vehicleBase = null // { vehicle, entityPos: vehicle.position it was taken from, pos: vehicle wire position }
+
+  function followSeat () {
+    const vehicle = bot.vehicle
+    const seat = bot.entity?.metadata?.rider_seat_position
+    if (!vehicle?.position || !seat || typeof seat.y !== 'number') return
+    if (!vehicleBase || vehicleBase.vehicle !== vehicle || !vehicle.position.equals(vehicleBase.entityPos)) {
+      vehicleBase = { vehicle, entityPos: vehicle.position.clone(), pos: vehicle.position.offset(0, POSITION_OFFSETS[vehicle.name] ?? 0, 0) }
+    }
+    // local frame: +z forward, +x left (mineflayer yaw: 0 = north)
+    const yaw = vehicle.yaw ?? 0
+    const x = seat.x ?? 0
+    const z = seat.z ?? 0
+    const dx = -Math.sin(yaw) * z - Math.cos(yaw) * x
+    const dz = -Math.cos(yaw) * z + Math.sin(yaw) * x
+    const entity = bot.entity
+    const base = vehicleBase.pos
+    entity.position.set(base.x + dx, base.y + seat.y - EYE_HEIGHT, base.z + dz)
+    entity.velocity.set(0, 0, 0)
+  }
+
   bot.on('dismount', () => {
+    vehicleBase = null
+    // the next vehicle's seat comes with its own set_entity_data (sent before the link)
+    if (bot.entity?.metadata) delete bot.entity.metadata.rider_seat_position
     vehicleInput = { left: 0, forward: 0 }
     bot._bedrock?.input?.setVehicle(null)
   })
@@ -651,6 +866,8 @@ function inject (bot, { physicsEnabled }) {
     const inFlight = at > 0n && last !== null && last !== undefined && last - at <= BigInt(rewindSize())
       ? history.filter((h) => h.tick > at)
       : []
+    // the firework boost left at the server's tick (the in-flight inputs are replayed from there)
+    const base = inFlight.length ? history.findLast((h) => h.tick <= at) : null
     history.length = 0
     if (inFlight.length === 0) {
       skipNext = true
@@ -663,6 +880,7 @@ function inject (bot, { physicsEnabled }) {
     state.isCollidedHorizontally = false
     state.isCollidedVertically = false
     state.jumpTicks = 0
+    if (base) state.fireworkRocketDuration = first.input.fireworkStart ?? base.state.fireworkRocketDuration
     first.input = { ...first.input, skip: true }
     record(first.tick, first.input, state, false)
     for (const h of rest) {
@@ -674,11 +892,18 @@ function inject (bot, { physicsEnabled }) {
       }
       record(h.tick, h.input, state, simulated)
     }
-    applyState(state)
+    applyReplayedState(state)
   }
 
   // ---- corrections: rewind to the corrected tick, then replay the recorded inputs ---------------------
   bot._client.on('correct_player_move_prediction', (packet) => {
+    if (packet.prediction_type === 'vehicle') {
+      // the server's state of the ridden vehicle (wire position): the seat follows it until the next move_entity
+      if (bot.vehicle?.position && packet.position) {
+        vehicleBase = { vehicle: bot.vehicle, entityPos: bot.vehicle.position.clone(), pos: new Vec3(packet.position.x, packet.position.y, packet.position.z) }
+      }
+      return
+    }
     if (packet.prediction_type !== undefined && packet.prediction_type !== 'player') return
     const entity = bot.entity
     if (!entity) return
@@ -742,7 +967,7 @@ function inject (bot, { physicsEnabled }) {
       }
       h.state = snapshot(state)
     }
-    applyState(state)
+    applyReplayedState(state)
   }
 
   // knockback / server velocity for the local player. `set_entity_motion.tick` is the last input the server had
@@ -873,6 +1098,11 @@ function inject (bot, { physicsEnabled }) {
     return effectLevel(bot.registry, effectName, effects)
   }
 
+  // a glide does not survive a death / dimension change: the server's next gliding flag starts a new one
+  // (entityElytraFlew), even without a gliding = false in between
+  bot.on('death', () => resetGliding(bot.entity))
+  bot.on('respawn', () => resetGliding(bot.entity))
+
   bot.elytraFly = async () => {
     if (bot.entity.elytraFlying) {
       throw new Error('Already elytra flying')
@@ -900,5 +1130,9 @@ function inject (bot, { physicsEnabled }) {
 
   bot.on('end', () => {
     if (flyTarget) cancelFlyTo(new Error('bot ended'))
+    // nothing will be sent any more: waiting clicks are dropped (controlsSent() rejects)
+    const waiters = controlWaiters
+    controlWaiters = []
+    for (const { reject } of waiters) reject?.(new Error('bot ended before the sneak / sprint change was sent'))
   })
 }

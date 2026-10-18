@@ -41,6 +41,14 @@ const { feetFromWire } = require('./conversions')
  *                      loading_screen_id) → markSpawned('dimension') ('spawn' fires again, as in mineflayer
  *                      where a dimension change toggles isAlive)
  *
+ * Spawn search height (W3-FIX-A, observed live): the End exit's change_dimension carries y 32767 (BDS answers our
+ *   ack at once; the real eye-level position follows ~50 ms later in respawn state 0 → state 1), and a respawn into
+ *   another dimension can get a respawn state 1 — or a move_player / correction — at the search height (the real
+ *   position follows). change_dimension / respawn search heights are not applied (no move / forcedMove there), and
+ *   markSpawned('respawn' | 'dimension') waits while the bot's last server position is the search height, until the
+ *   real one (the next forcedMove below it) — 'spawn' follows the position like upstream, where it comes after the
+ *   position packet — at most SPAWN_POSITION_TIMEOUT_MS.
+ *
  * States: 'connecting' → 'loading' (start_game received) → 'spawned' ⇄ 'dead' / 'respawning' /
  *         'changing_dimension' → 'ended'. The input clock (bot._bedrock.input) is suspended with reason
  *         'lifecycle' in 'connecting', 'loading', 'changing_dimension' and 'ended'.
@@ -64,6 +72,10 @@ const { feetFromWire } = require('./conversions')
  */
 
 const STATES = ['connecting', 'loading', 'spawned', 'dead', 'respawning', 'changing_dimension', 'ended']
+/** feet y at or above this: the server's spawn search height (32767; the join's 32768), not a position */
+const SPAWN_SEARCH_Y = 32766
+/** longest wait for the real position after a search-height one before 'spawn' fires anyway */
+const SPAWN_POSITION_TIMEOUT_MS = 2000
 const SUSPENDED_STATES = new Set(['connecting', 'loading', 'changing_dimension', 'ended'])
 const SPAWN_REASONS = ['join', 'respawn', 'dimension']
 
@@ -74,6 +86,8 @@ function createLifecycle (bot) {
   let joined = false
   let dimensionLoadingScreenId
   let resumeState = null // U9: lifecycle state to return to after a dimension change during a respawn
+  let positionPending = false // the server sent the spawn search height: the real position has not arrived yet
+  let deferredSpawn = null // { reason, timer }: markSpawned waiting for that position
 
   const input = () => bot._bedrock?.input
   const physics = () => bot._bedrock?.physics
@@ -103,7 +117,19 @@ function createLifecycle (bot) {
       if (reason === 'join') {
         if (joined) return
         joined = true
+      } else if (positionPending) {
+        // the bot is still at the search height: 'spawn' once the real position arrived (the state, and with it the
+        // input clock, stays as it is meanwhile)
+        if (!deferredSpawn) {
+          const timer = setTimeout(() => finishDeferredSpawn(), SPAWN_POSITION_TIMEOUT_MS)
+          timer.unref?.()
+          deferredSpawn = { reason, timer }
+          // after every forcedMove listener registered so far (upstream: forcedMove, then 'spawn')
+          bot.on('forcedMove', onDeferredPosition)
+        }
+        return
       }
+      cancelDeferredSpawn()
       lifecycle.setState('spawned')
       input()?.start()
       events.emit('spawned', reason)
@@ -158,9 +184,12 @@ function createLifecycle (bot) {
       if (lifecycle.state === 'dead' || lifecycle.state === 'respawning') resumeState = lifecycle.state
       else if (lifecycle.state !== 'changing_dimension') resumeState = null
       lifecycle.setState('changing_dimension')
+      cancelDeferredSpawn()
       const position = { x: packet.position.x, y: packet.position.y, z: packet.position.z } // FEET level (unlike move_player)
       events.emit('dimensionChange', { dimension: packet.dimension, position, packet })
-      setPosition(position)
+      // the End exit sends the spawn search height: the real position follows (respawn state 1)
+      positionPending = position.y >= SPAWN_SEARCH_Y
+      if (!positionPending) setPosition(position)
       bot._client.queue('player_action', {
         runtime_entity_id: selfRuntimeId(),
         action: 'dimension_change_ack',
@@ -175,6 +204,13 @@ function createLifecycle (bot) {
      * resumes 'dead'; otherwise the state becomes 'dead' at once.
      */
     markDead () {
+      // a spawn waiting for its position (W3-FIX-A) does not happen any more
+      if (deferredSpawn) {
+        cancelDeferredSpawn()
+        positionPending = false
+        lifecycle.setState('dead')
+        return
+      }
       if (lifecycle.state === 'changing_dimension') resumeState = 'dead'
       else if (lifecycle.state === 'spawned' || lifecycle.state === 'respawning') lifecycle.setState('dead')
     },
@@ -196,6 +232,31 @@ function createLifecycle (bot) {
       }
       lifecycle.markSpawned('dimension')
     }
+  }
+
+  function finishDeferredSpawn () {
+    const deferred = deferredSpawn
+    if (!deferred) return
+    cancelDeferredSpawn()
+    positionPending = false
+    // still waiting in the state markSpawned was called in (not ended, no new dimension change since)
+    if (lifecycle.state !== 'ended') lifecycle.markSpawned(deferred.reason)
+  }
+
+  function cancelDeferredSpawn () {
+    if (!deferredSpawn) return
+    clearTimeout(deferredSpawn.timer)
+    bot.removeListener('forcedMove', onDeferredPosition)
+    deferredSpawn = null
+  }
+
+  // the server moved the bot (respawn state 1 here, the physics plugin's move_player / correction): to the real
+  // position, or still to the search height (a move_player / correction can carry it too)
+  bot.on('forcedMove', () => {
+    if (bot.entity) positionPending = bot.entity.position.y >= SPAWN_SEARCH_Y
+  })
+  function onDeferredPosition () {
+    if (!positionPending) finishDeferredSpawn()
   }
 
   function setPosition (feet) {
@@ -223,8 +284,11 @@ function createLifecycle (bot) {
 
   client.on('respawn', (packet) => {
     if (packet.state !== 1 || lifecycle.state === 'connecting' || lifecycle.state === 'ended') return
-    // state 1 (ready_to_spawn) carries the real eye-level spawn position, at join and after a death
-    setPosition(feetFromWire(packet.position))
+    // state 1 (ready_to_spawn) carries the real eye-level spawn position, at join, after a death and after the End
+    // exit — except a respawn into another dimension may still carry the search height (the position follows)
+    const feet = feetFromWire(packet.position)
+    if (feet.y >= SPAWN_SEARCH_Y && lifecycle.state !== 'loading') positionPending = true
+    else setPosition(feet)
     // join: answer like the vanilla client (client_ready). After a death the respawn handshake is U9's
     // (bot.respawn: client state 2 first, then player_action respawn after this state 1).
     if (lifecycle.state === 'loading') client.queue('respawn', { position: packet.position, state: 2, runtime_entity_id: selfRuntimeId() })
@@ -253,9 +317,12 @@ function createLifecycle (bot) {
     lifecycle.completeDimensionChange()
   })
 
-  bot.on('end', () => lifecycle.setState('ended'))
+  bot.on('end', () => {
+    cancelDeferredSpawn()
+    lifecycle.setState('ended')
+  })
 
   return lifecycle
 }
 
-module.exports = { createLifecycle, STATES, SPAWN_REASONS }
+module.exports = { createLifecycle, STATES, SPAWN_REASONS, SPAWN_SEARCH_Y, SPAWN_POSITION_TIMEOUT_MS }

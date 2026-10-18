@@ -9,7 +9,7 @@
 //   creative_output 50 into the slot; clearing = destroy. Only items of the server's creative inventory
 //   (creative_content: base items and the listed NBT variants such as enchanted books) can be created; the
 //   creative index is exposed as `bot._bedrock.creativeItems` ({ entryFor(item), entries, ready }).
-//   Flight: bot._bedrock.physics.setFlying(on) / .flyTo(destination) (U5) when implemented.
+//   Flight: bot._bedrock.physics.setFlying(on) / .flyTo(destination) (U5) when implemented (gravity untouched then).
 'use strict'
 const assert = require('assert')
 const { Vec3 } = require('vec3')
@@ -28,6 +28,17 @@ function nbtKey (item) {
   return JSON.stringify(keys.map(k => [k, value[k]]))
 }
 
+/** number of tags in an NBT value (the structural size: an empty list counts 1, each element adds its own) */
+function nbtSize (tag) {
+  if (!tag || typeof tag !== 'object') return 0
+  if (tag.type === 'compound') return 1 + Object.values(tag.value ?? {}).reduce((n, t) => n + nbtSize(t), 0)
+  if (tag.type === 'list') {
+    const list = tag.value?.value ?? []
+    return 1 + list.reduce((n, v) => n + nbtSize({ type: tag.value.type, value: v }), 0)
+  }
+  return 1
+}
+
 /** creative_content → `entryFor(item)` (`{ id: entry_id, item }`) */
 function createCreativeIndex (bot) {
   let entries = []
@@ -35,13 +46,21 @@ function createCreativeIndex (bot) {
   const index = {
     ready: false,
     get entries () { return entries },
-    /** the creative entry that creates `item` (same type, metadata and NBT), or null */
+    /**
+     * the creative entry that creates `item` (same type, metadata and NBT), or null. An item without NBT that the
+     * catalogue only lists with NBT (firework rockets: Fireworks {Flight 1}, banners: Type 0, firework stars) gets
+     * the plain default: the variant with the fewest NBT tags when exactly one has the fewest (W3-FIX-A); enchanted
+     * books, whose variants are all alike, stay refused.
+     */
     entryFor (item) {
       if (!item) return null
-      const candidates = byType.get(item.type) ?? []
       const metadata = item.metadata ?? 0
+      const candidates = (byType.get(item.type) ?? []).filter(e => (e.item.metadata ?? 0) === metadata)
       const key = nbtKey(item)
-      return candidates.find(e => (e.item.metadata ?? 0) === metadata && nbtKey(e.item) === key) ?? null
+      const exact = candidates.find(e => nbtKey(e.item) === key)
+      if (exact || key !== '' || candidates.length === 0) return exact ?? null
+      const sized = candidates.map(e => ({ e, size: nbtSize(e.item.nbt) })).sort((a, b) => a.size - b.size)
+      return sized.length === 1 || sized[0].size < sized[1].size ? sized[0].e : null
     }
   }
   bot._client.on('creative_content', (packet) => {
@@ -130,7 +149,7 @@ function inject (bot) {
   async function flyTo (destination) {
     const hook = physicsHook('flyTo')
     if (hook) {
-      startFlying()
+      physicsHook('setFlying')?.(true)
       return hook(destination)
     }
     // upstream fallback: move the position in small steps without gravity
@@ -158,10 +177,17 @@ function inject (bot) {
     await once(bot, 'move', /* no timeout */ 0)
   }
 
+  // With the physics flight hook (U5) the Bedrock engine simulates creative flight itself and uses bot.physics.gravity
+  // for every other movement: upstream's gravity = 0 is only the fallback without the hook (W3-FIX-A — it used to
+  // stay 0 when the flight ended any other way: refused request, game mode change, death).
   function startFlying () {
+    const setFlying = physicsHook('setFlying')
+    if (setFlying) {
+      setFlying(true)
+      return
+    }
     if (normalGravity == null) normalGravity = bot.physics.gravity
     bot.physics.gravity = 0
-    physicsHook('setFlying')?.(true)
   }
 
   function stopFlying () {
@@ -177,3 +203,4 @@ function vecMagnitude (vec) {
 
 module.exports.createCreativeIndex = createCreativeIndex
 module.exports.nbtKey = nbtKey
+module.exports.nbtSize = nbtSize

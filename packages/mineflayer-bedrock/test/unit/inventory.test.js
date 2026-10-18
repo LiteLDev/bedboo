@@ -309,7 +309,7 @@ describe('inventory: creative and item use (U8)', function () {
     await assert.rejects(bot.creative.setInventorySlot(46, null))
   })
 
-  it('creative flight: startFlying / stopFlying → bot._bedrock.physics.setFlying (gravity like upstream); flyTo → physics.flyTo (U5)', async () => {
+  it('creative flight: startFlying / stopFlying → bot._bedrock.physics.setFlying (gravity untouched with the hook); flyTo → physics.flyTo (U5)', async () => {
     const { bot } = await joined()
     const calls = []
     const physics = bot._bedrock.physics
@@ -317,7 +317,9 @@ describe('inventory: creative and item use (U8)', function () {
     physics.setFlying = function (on) { calls.push(['setFlying', on, this === physics]); return setFlying.call(this, on) }
     const gravity = bot.physics.gravity
     bot.creative.startFlying()
-    assert.strictEqual(bot.physics.gravity, 0)
+    // W3-FIX-A: the Bedrock engine flies without upstream's gravity = 0 (it would stay 0 after a flight that ends
+    // without stopFlying)
+    assert.strictEqual(bot.physics.gravity, gravity)
     bot.creative.stopFlying()
     assert.strictEqual(bot.physics.gravity, gravity)
     physics.flyTo = async function (destination) { calls.push(['flyTo', destination.toString(), this === physics]) }
