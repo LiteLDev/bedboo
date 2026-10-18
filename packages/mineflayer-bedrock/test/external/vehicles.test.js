@@ -7,7 +7,7 @@
  */
 const assert = require('assert')
 const { Vec3 } = require('vec3')
-const { useBot, implemented } = require('./common')
+const { useBot } = require('./common')
 
 const GROUND = -60
 
@@ -86,8 +86,7 @@ describe('vehicles (U7): mount / dismount', function () {
     await error.promise
   })
 
-  it('moveVehicle steers the boat (physics plugin, U5)', async function () {
-    if (!implemented(env.bot.moveVehicle)) this.skip() // U5 (input.setVehicle) — docs/parity/U7.md
+  it('moveVehicle steers the boat (physics plugin, U5)', async () => {
     const { bot } = env
     const boat = await bot.test.summon('boat', new Vec3(2, GROUND, -2))
     await ride(boat)

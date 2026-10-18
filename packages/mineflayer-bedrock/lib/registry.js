@@ -29,6 +29,28 @@ function installDataOverlay () {
   if (overlayInstalled) return
   overlayInstalled = true
   require('@bedboo/bedrock-data').install()
+  aliasBotVersion()
+}
+
+/**
+ * mineflayer API: "`require('minecraft-data')(bot.version)` gives you access to it" (docs/upstream/api.md). bot.version
+ * is the bare Bedrock version '1.26.51', which minecraft-data resolves as a Java version (none exists: there is no Java
+ * 1.26.51) and answers `null` — breaking upstream code that relies on it, e.g. prismarine-physics' `PlayerState`
+ * (built by mineflayer-pathfinder), mineflayer-pvp. Alias it to the `bedrock_1.26.51` data (U5; type 'bedrock').
+ */
+function aliasBotVersion () {
+  const data = require('minecraft-data/data.js')
+  if (!data.pc || data.pc[VERSION] || !data.bedrock?.[VERSION]) return
+  data.pc[VERSION] = data.bedrock[VERSION]
+  const mcData = require('minecraft-data')
+  const aliased = mcData(VERSION)
+  const bedrock = mcData('bedrock_' + VERSION)
+  if (!aliased || !bedrock || aliased === bedrock) return
+  aliased.type = bedrock.type
+  aliased.version = bedrock.version
+  aliased.supportFeature = bedrock.supportFeature
+  aliased.isNewerOrEqualTo = bedrock.isNewerOrEqualTo
+  aliased.isOlderThan = bedrock.isOlderThan
 }
 
 /** Bedrock printf format → prismarine-chat format (`%s`, `%N$s`, `%%`). */

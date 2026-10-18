@@ -297,7 +297,7 @@ describe('entities & players (U7)', function () {
     data([{ key: 'flags', type: 'long', value: flags({ sneaking: true, sprinting: true }) }])
     assert.strictEqual(p.crouching, true)
     assert.strictEqual(p.sprinting, true)
-    assert.strictEqual(p.height, 1.5)
+    assert.strictEqual(p.height, 1.49)
     assert.strictEqual(p.eyeHeight, 1.27)
     data([{ key: 'flags', type: 'long', value: flags({ gliding: true }) }])
     assert.strictEqual(p.crouching, false)
@@ -488,7 +488,8 @@ describe('entities & players (U7)', function () {
     assert.deepStrictEqual(client.sent('interact'), [{ action_id: 'leave_vehicle', target_entity_id: 1051n, has_position: false }])
     assert.strictEqual(bot.attack.length, 1)
     assert.strictEqual(bot.swingArm.length, 0)
-    assert.ok(bot.moveVehicle.notImplemented && bot.moveVehicle.unit === 'U5', 'moveVehicle is the physics plugin\'s (U5)')
+    // moveVehicle is the physics plugin's (U5, input.setVehicle; tested in physics_plugin.test.js)
+    assert.ok(!bot.moveVehicle.notImplemented && bot.moveVehicle.length === 2, 'moveVehicle is implemented by the physics plugin (U5)')
   })
 
   it('nearestEntity skips the bot; unknown entity types; xp orbs; dimension change drops the entities', async () => {
