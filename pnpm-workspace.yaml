@@ -43,6 +43,7 @@ patchedDependencies:
   bedrock-protocol@3.60.1: patches/bedrock-protocol@3.60.1.patch
   prismarine-block@1.23.0: patches/prismarine-block@1.23.0.patch
   prismarine-chunk@1.41.0: patches/prismarine-chunk@1.41.0.patch
+  prismarine-entity@2.6.0: patches/prismarine-entity@2.6.0.patch
   prismarine-item@1.18.0: patches/prismarine-item@1.18.0.patch
   prismarine-registry@1.12.0: patches/prismarine-registry@1.12.0.patch
   raknet-native@1.2.3: patches/raknet-native@1.2.3.patch

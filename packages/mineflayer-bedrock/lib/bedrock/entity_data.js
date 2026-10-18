@@ -138,13 +138,20 @@ function applyMetadata (bot, packet, entity = bot.entity) {
     setElytraFlying(bot, entity, !!flags.gliding)
   }
   const extended = entry('flags_extended')
-  if (extended && typeof extended === 'object') {
-    const sleeping = !!extended.sleeping
+  // players: BDS 1.26.51 reports sleep in player_flags (bit 1), not in flags_extended (U7 fix, observed live); once
+  // player_flags were seen, flags_extended no longer decides (a flags_extended-only update must not wake the player)
+  const playerFlags = entry('player_flags')
+  if (playerFlags !== undefined) playerFlagEntities.add(entity)
+  let sleeping
+  if (playerFlags !== undefined) sleeping = (Number(playerFlags) & 2) !== 0
+  else if (extended && typeof extended === 'object' && !playerFlagEntities.has(entity)) sleeping = !!extended.sleeping
+  if (sleeping !== undefined) {
     if (sleeping && !entity.sleeping) bot.emit('entitySleep', entity)
     else if (!sleeping && entity.sleeping) bot.emit('entityWake', entity)
     entity.sleeping = sleeping
   }
 }
+const playerFlagEntities = new WeakSet()
 
 function applyMotion (bot, packet, entity = bot.entity) {
   if (!entity) return
