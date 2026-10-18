@@ -2,18 +2,22 @@
 // Adapted from mineflayer master lib/plugins/abilities.js (MIT, Copyright (c) 2013 Andrew Kelley; not in 4.39.0;
 //   pinned copy in docs/upstream/abilities.master.js, master SHA 7b4bb8d2b56be9cdb832474af873acd37e609746)
 // Surface: bot.abilities { invulnerable, flying, mayFly, instantBuild, flyingSpeed, walkingSpeed }
-//   (also mirrors bot.entity.flying / bot.entity.flyingSpeed for physics, like master, and switches the physics
-//   engine's flight with bot._bedrock.physics.setFlying when `flying` changes)
+//   (also mirrors bot.entity.flying / bot.entity.flyingSpeed for physics, like master)
 // Events: 'abilities' (abilities)
-// Bedrock (docs/differences/U9.md#abilities):
+// This plugin is the single source of truth for bot.abilities (the only parser of update_abilities): the physics
+//   plugin follows bot.abilities for the engine's flight state and reads flyingSpeed / mayFly from it (W3-FIX-A).
+// Bedrock (docs/differences/U9.md#abilities, docs/differences/W3FIX.md#abilities):
 // - update_abilities for the local player (entity_unique_id = own unique id): ability layers (base, spectator,
 //   commands, editor, loading_screen), each with `allowed` / `enabled` flag sets and fly/walk speeds. A layer decides
 //   a flag when it allows it, later layers override earlier ones (the client's layered abilities).
-// - BDS 1.26.51.1 sends update_abilities at join (and on permission changes) but NOT on a game mode change: the
-//   vanilla client derives the game mode's abilities itself. The same derivation as the Java server's
-//   GameType.updatePlayerAbilities (what mineflayer receives on Java) is applied on update_player_game_type /
+// - BDS 1.26.51.1 sends update_abilities at join, on permission changes, twice in answer to a request_ability, and
+//   on a game mode change only when the flight changes (flying → survival, into / out of spectator; measured by
+//   W3-FIX-A) — the vanilla client derives the game mode's abilities itself. The same derivation as the Java
+//   server's GameType.updatePlayerAbilities (what mineflayer receives on Java) is applied on update_player_game_type /
 //   set_player_game_type: creative → mayFly, instantBuild, invulnerable (flying kept); spectator → mayFly,
 //   flying, invulnerable; survival/adventure → none; speeds kept.
+// - Java sends one abilities packet per change: an update_abilities that changes nothing (BDS repeats them, and
+//   follows a derived game mode change with the same values) emits no 'abilities' and keeps the bot.abilities object.
 'use strict'
 const { gameModeName } = require('../bedrock/constants')
 
@@ -43,6 +47,11 @@ function fromLayers (layers, current) {
     if (allowed.walk_speed && typeof layer.walk_speed === 'number') out.walkingSpeed = layer.walk_speed
   }
   return out
+}
+
+const FIELDS = ['invulnerable', 'flying', 'mayFly', 'instantBuild', 'flyingSpeed', 'walkingSpeed']
+function sameAbilities (a, b) {
+  return FIELDS.every((k) => a[k] === b[k])
 }
 
 /** Java GameType.updatePlayerAbilities */
@@ -78,30 +87,25 @@ function inject (bot) {
   }
 
   function setAbilities (abilities) {
-    const wasFlying = bot.abilities.flying
     bot.abilities = abilities
     // prismarine-physics reads the flight state off the entity.
     if (bot.entity) {
       bot.entity.flying = bot.abilities.flying
       bot.entity.flyingSpeed = bot.abilities.flyingSpeed
     }
-    // the Bedrock physics engine's flight hook (lib/loader.js: "creative/abilities flight"), when the server
-    // starts / stops the flight (spectator, update_abilities)
-    const setFlying = bot._bedrock?.physics?.setFlying
-    if (wasFlying !== bot.abilities.flying && typeof setFlying === 'function' && !setFlying.notImplemented) {
-      try {
-        setFlying(bot.abilities.flying)
-      } catch (err) {
-        bot.emit('error', err)
-      }
-    }
+    // the physics plugin (Bedrock engine) follows this event: the server started / stopped the flight (game mode,
+    // update_abilities) — no request_ability goes back, the server already decided
     bot.emit('abilities', bot.abilities)
   }
 
+  let received = false // the first update_abilities (join) is always reported
   bot._client.on('update_abilities', (packet) => {
     const ids = bot._bedrock?.ids
     if (packet.entity_unique_id !== undefined && ids?.isSelfUnique && !ids.isSelfUnique(toBigInt(packet.entity_unique_id))) return
-    setAbilities(fromLayers(packet.abilities, bot.abilities))
+    const next = fromLayers(packet.abilities, bot.abilities)
+    if (received && sameAbilities(next, bot.abilities)) return
+    received = true
+    setAbilities(next)
   })
 
   function onGameMode (packet) {
@@ -115,3 +119,4 @@ function inject (bot) {
 module.exports.fromLayers = fromLayers
 module.exports.forGameMode = forGameMode
 module.exports.toBigInt = toBigInt
+module.exports.sameAbilities = sameAbilities

@@ -54,11 +54,13 @@ describe('dimensionTravel', function () {
     bot.on('chunkColumnUnload', onUnload)
     const loadedBefore = Object.keys(bot.world.async.columns).length
     let columnsAtSpawn
+    let positionAtSpawn
     const spawned = onceWithCleanup(bot, 'spawn', {
       timeout,
       checkCondition: () => {
         if (bot.game.dimension !== expected) return false
         columnsAtSpawn = Object.values(bot.world.async.columns)
+        positionAtSpawn = bot.entity.position.clone()
         return true
       }
     })
@@ -71,6 +73,9 @@ describe('dimensionTravel', function () {
     }
     // the previous dimension's columns are gone when the new one spawns
     const dim = DIMENSIONS[expected]
+    // 'spawn' fires at the real position (W3-FIX-A: the End exit's change_dimension carries the y 32767 search height,
+    // the position follows in respawn state 1)
+    assert.ok(positionAtSpawn.y >= dim.minY && positionAtSpawn.y < dim.minY + dim.height, `position at spawn ${positionAtSpawn}`)
     for (const column of columnsAtSpawn) {
       assert.strictEqual(column.minY, dim.minY, `column ${column.x},${column.z} of another dimension at spawn`)
       assert.strictEqual(column.worldHeight, dim.height, `column ${column.x},${column.z} height`)

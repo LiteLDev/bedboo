@@ -8,6 +8,11 @@ const { createFakeBot, replayJoin } = require('./helpers/fake')
 
 const EYE = 1.62
 const close = (a, b, eps = 1e-4, msg) => assert.ok(Math.abs(a - b) <= eps, `${msg ?? ''} ${a} ≉ ${b}`)
+/** a base ability layer the way BDS sends it (every flag allowed) */
+const ALLOWED = { build: true, mine: true, invulnerable: true, flying: true, may_fly: true, instant_build: true, fly_speed: true, walk_speed: true }
+function abilitiesPacket (bot, enabled) {
+  return { entity_unique_id: bot._bedrock.ids.selfUniqueId(), permission_level: 'operator', command_permission: 'operator', abilities: [{ type: 'base', allowed: ALLOWED, enabled, fly_speed: 0.05, vertical_fly_speed: 1, walk_speed: 0.1 }] }
+}
 
 async function spawned (options) {
   const created = await createFakeBot(options)
@@ -138,7 +143,9 @@ describe('physics plugin (U5): Bedrock movement over player_auth_input', functio
     bot.setControlState('sprint', true)
     tick(30)
     assert.ok(last().input_data.includes('sprinting'))
+    // activateItem: usingHeldItem + click_air (the server enters item use)
     bot.usingHeldItem = true
+    require('../../lib/bedrock/transactions').useItem(bot)
     tick()
     assert.ok(last().input_data.includes('stop_sprinting'))
     assert.ok(!last().input_data.includes('sprinting'))
@@ -223,7 +230,7 @@ describe('physics plugin (U5): Bedrock movement over player_auth_input', functio
     close(last().delta.y, 0.15 * 0.6, 1e-6)
     bot.setControlState('jump', false)
     // the server ends the flight (gamemode change): no request is echoed back
-    client.receive('update_abilities', { entity_unique_id: bot._bedrock.ids.selfUniqueId(), permission_level: 'operator', command_permission: 'operator', abilities: [{ type: 'base', allowed: {}, enabled: { flying: false, may_fly: true }, fly_speed: 0.05, vertical_fly_speed: 1, walk_speed: 0.1 }] })
+    client.receive('update_abilities', abilitiesPacket(bot, { flying: false, may_fly: true }))
     assert.strictEqual(bot._bedrock.physics.isFlying(), false)
     client.clearSent()
     tick()
@@ -233,7 +240,7 @@ describe('physics plugin (U5): Bedrock movement over player_auth_input', functio
 
   it('flyTo: flies there with flight inputs (no teleports) and resolves when stopped at the destination', async () => {
     const { bot, client, tick, inputs } = await spawned()
-    const abilities = (flying) => client.receive('update_abilities', { entity_unique_id: bot._bedrock.ids.selfUniqueId(), permission_level: 'operator', command_permission: 'operator', abilities: [{ type: 'base', allowed: {}, enabled: { flying, may_fly: true }, fly_speed: 0.05, vertical_fly_speed: 1, walk_speed: 0.1 }] })
+    const abilities = (flying) => client.receive('update_abilities', abilitiesPacket(bot, { flying, may_fly: true }))
     abilities(false) // creative: may fly
     const target = new Vec3(4.5, -55, 3.5)
     const state = { done: false }

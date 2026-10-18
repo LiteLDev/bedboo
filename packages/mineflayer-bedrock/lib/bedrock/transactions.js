@@ -27,6 +27,11 @@ const { feetToWire, FACE_VECTORS } = require('./conversions')
  * The builders (`buildUseItemOn`, `buildUseItem`, `buildRelease`, `buildUseOnEntity`, `buildMouseOver`) return
  * the packet params without sending (unit-tested against bedrock-protocol's serializer).
  *
+ * Sneak / sprint ordering (W3-FIX-A): `setControlState('sneak' | 'sprint')` reaches the server only with the next
+ * player_auth_input (upstream sends it at once), so `useItemOn` and `useOnEntity` first wait for
+ * `bot._bedrock.physics.controlsSent()` when a change is pending — a sneak-click on a chest places instead of
+ * opening it. Nothing pending: the packets are queued synchronously, as before.
+ *
  * Packet shapes after a real 1.26.51 client (notes from Pix3lPirat3/mineflayer feat/bedrock-edition-adapter,
  * lib/bedrock_plugins/interact.js, MIT — reference only): placement = start_item_use_on → item_use click_block
  * (hand, client_prediction 'success') → stop_item_use_on ~150 ms later; click_air uses trigger 'unknown',
@@ -171,9 +176,24 @@ function buildMouseOver (bot, entity, position) {
 }
 
 /**
+ * Promise of the physics plugin's `controlsSent()` when a sneak / sprint change has not reached the server yet, else
+ * null (the caller sends synchronously).
+ */
+function pendingControls (bot) {
+  const physics = bot._bedrock?.physics
+  if (typeof physics?.controlsPending !== 'function' || typeof physics.controlsSent !== 'function') return null
+  return physics.controlsPending() ? physics.controlsSent() : null
+}
+
+/**
  * @returns {Promise<void>} resolves once start/transaction/stop are queued (stop after `stopDelay` ms)
  */
-async function useItemOn (bot, opts) {
+function useItemOn (bot, opts) {
+  const pending = pendingControls(bot)
+  return pending ? pending.then(() => sendUseItemOn(bot, opts)) : sendUseItemOn(bot, opts)
+}
+
+async function sendUseItemOn (bot, opts) {
   const { lifecycle = true, stopDelay = DEFAULT_STOP_DELAY_MS } = opts
   const { start, transaction, stop } = buildUseItemOn(bot, opts)
   if (lifecycle) bot._client.queue('player_action', start)
@@ -192,6 +212,8 @@ async function release (bot, opts) {
 }
 
 async function useOnEntity (bot, entity, opts) {
+  const pending = pendingControls(bot)
+  if (pending) await pending
   bot._client.queue('inventory_transaction', buildUseOnEntity(bot, entity, opts ?? {}))
 }
 
@@ -243,6 +265,7 @@ function createHeldItemProvider (bot) {
 }
 
 module.exports = {
+  pendingControls,
   useItemOn,
   useItem,
   release,

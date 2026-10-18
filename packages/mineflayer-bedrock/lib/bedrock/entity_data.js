@@ -108,11 +108,24 @@ function applyEffect (bot, packet, entity = bot.entity) {
   bot.emit('entityEffect', entity, effect)
 }
 
+/**
+ * The server's `gliding` flag. 'entityElytraFlew' fires on the flag's rising edge, like upstream (the server's
+ * metadata) — not on entity.elytraFlying, which the physics plugin already sets for the bot when bot.elytraFly()
+ * predicts the glide (W3-FIX-A).
+ */
 function setElytraFlying (bot, entity, flying) {
-  const started = flying && !entity.elytraFlying
+  const started = flying && !serverGliding.has(entity)
+  if (flying) serverGliding.add(entity)
+  else serverGliding.delete(entity)
   entity.elytraFlying = flying
   if (!flying && entity === bot.entity && bot.fireworkRocketDuration) bot.fireworkRocketDuration = 0
   if (started) bot.emit('entityElytraFlew', entity)
+}
+const serverGliding = new WeakSet()
+
+/** forget the server's gliding flag of `entity` (death, dimension change: the next confirmed glide is a new one) */
+function resetGliding (entity) {
+  if (entity) serverGliding.delete(entity)
 }
 
 function applyMetadata (bot, packet, entity = bot.entity) {
@@ -167,5 +180,6 @@ module.exports = {
   applyHealth,
   applyEffect,
   applyMetadata,
-  applyMotion
+  applyMotion,
+  resetGliding
 }

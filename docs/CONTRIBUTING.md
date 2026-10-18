@@ -328,6 +328,26 @@ Additions/precisions to the tables above; all live on `main` since PR #5.
   prismarine-chunk biomes fixed at every height; prismarine-block Bedrock signs read/write `FrontText`/`BackText`.
   Vendored ray_trace fixes upstream's null-at-exact-0-pitch/yaw bug (documented). Emulated: abilities after gamemode
   change, break-progress stages, `time` every 20 ticks, `spawnReset` from `tile.bed.notValid`.
+- **Wave-3 fix-ups (W3-FIX-A)** — wave-4 units build on these:
+  - **Sneak / sprint before a click:** `setControlState('sneak' | 'sprint')` reaches the server only with the next
+    `player_auth_input` (upstream sends it at once). Anything that clicks right after a control change must wait for it:
+    `bot._bedrock.physics.controlsPending()` (a change is not sent yet), `controlsSent()` → Promise (resolves right after
+    the input that carries the current state was queued; at once when nothing is pending), `afterControlsSent(fn)` (runs
+    `fn` now, or right after that input — for synchronous APIs: entities.js `attack` / `useOn` / `mount` must send
+    through it). `transactions.useItemOn` / `useOnEntity` already wait (and stay synchronous when nothing is pending),
+    so U11's `_genericPlace` / `activateBlock` get it for free when they use them.
+  - **Abilities:** `abilities.js` is the only parser of `update_abilities`; physics follows `bot.abilities` (flight,
+    `flyingSpeed`, `mayFly`) and never echoes a server-side change with `request_ability`. A repeated `update_abilities`
+    emits no `abilities` event. `creative.startFlying` leaves `bot.physics.gravity` alone when the physics hook exists.
+  - **Item use in physics:** the ±0.1225 clamp applies only after a `click_air` (observed on outgoing transactions); a
+    raised shield (sneak) is not an item use.
+  - **Firework boosts:** a raise of `bot.fireworkRocketDuration` between ticks is recorded in that tick's input
+    (`fireworkStart`) and replayed by corrections / resimulations / teleports; set it when the bot's rocket appears.
+  - **Spawn:** `lifecycle.markSpawned('respawn' | 'dimension')` waits (≤ 2 s) for the real position when the server sent
+    the spawn search height (End exit, cross-dimension respawn); `spawn` then follows that position's `forcedMove`.
+  - **Physics events:** a throwing `physicsTick` listener no longer aborts the tick (the error is emitted after the
+    input is sent); `look()` / `lookAt()` resolve once the rotation was really sent (also from tick / move listeners);
+    a jump queued between ticks survives replays; `entityElytraFlew(bot.entity)` fires on the server's gliding flag.
 
 ## Ownership
 

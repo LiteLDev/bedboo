@@ -100,7 +100,7 @@ describe('riding (U14): boat and horse control', function () {
     assert.ok(rec.minVehicleGap() >= 5, `${what}: vehicle corrections ${rec.vehicle.length}, ticks ${rec.vehicle.map((c) => String(c.tick)).join(',')}`)
   }
 
-  it('boat on open water: forward, turn, stop, dismount next to it', async function () {
+  it('boat on open water: forward, turn, stop, dismount next to it', async () => {
     const { bot, server } = env
     const fill = async (block) => {
       const out = await server.commandOutput(`fill -3 ${GROUND - 1} -4 40 ${GROUND - 1} 4 ${block}`)
@@ -130,16 +130,16 @@ describe('riding (U14): boat and horse control', function () {
         assert.ok(coasting < 1, `boat still moving ${coasting.toFixed(2)} blocks/s after stopping`)
         console.log(`      boat: ${forward.toFixed(1)} blocks in 3 s, turned ${turned.toFixed(2)} rad; corrections: player ${rec.player.length}, vehicle ${rec.vehicle.length} (min gap ${rec.minVehicleGap()} ticks)`)
         assertNoStorm(rec, 'boat')
+        // the rider is reported at the boat's seat (W3-FIX-A), not where it mounted
+        assert.ok(bot.entity.position.distanceTo(boat.position) < 1, `rider ${bot.entity.position}, boat ${boat.position}`)
+        assert.ok(bot.entity.position.distanceTo(mountedAt) > 4, `rider still at its mount position ${bot.entity.position}`)
       } finally {
         rec.stop()
       }
-      if (!await dismount(bot, boat)) {
-        // BDS has no dismount teleport for boats: it keeps the position the rider reported, and the physics plugin
-        // still reports the position the bot mounted at (pending physics fix, see docs/differences/U14.md#riding)
-        assert.ok(bot.entity.position.distanceTo(mountedAt) < 2, `rider ${bot.entity.position}, boat ${boat.position}`)
-        console.log(`      skipped: the rider got off at its mount position ${bot.entity.position}, not next to the boat (physics: rider position while riding, pending)`)
-        this.skip()
-      }
+      // BDS may not teleport a boat rider on dismount (it keeps the position the rider reported): the physics plugin
+      // reports the seat while riding (W3-FIX-A), so the rider gets off next to the boat either way
+      const placed = await dismount(bot, boat)
+      assert.ok(placed || bot.entity.position.distanceTo(boat.position) < 3, `rider ${bot.entity.position}, boat ${boat.position}`)
     } finally {
       if (boat && bot.entities[boat.id]) await bot.test.killEntity(boat)
       await fill('grass_block')
@@ -171,6 +171,8 @@ describe('riding (U14): boat and horse control', function () {
       assert.ok(coasting < 0.5, `horse still moving ${coasting.toFixed(2)} blocks/s after stopping`)
       console.log(`      horse: ${forward.toFixed(1)} blocks in 3 s; corrections: player ${rec.player.length}, vehicle ${rec.vehicle.length} (min gap ${rec.minVehicleGap()} ticks)`)
       assertNoStorm(rec, 'horse')
+      // the rider sits on the horse (W3-FIX-A: seat 0.7 above its feet)
+      assert.ok(bot.entity.position.distanceTo(horse.position) < 1.5, `rider ${bot.entity.position}, horse ${horse.position}`)
     } finally {
       rec.stop()
     }

@@ -11,6 +11,7 @@ const assert = require('assert')
 const { Vec3 } = require('vec3')
 const { useBot, createTestBot } = require('./common')
 const { useItemOn } = require('../../lib/bedrock/transactions')
+const { SNEAK_HEIGHT, PLAYER_HEIGHT } = require('../../lib/bedrock/constants')
 
 const GROUND = -60
 
@@ -74,15 +75,20 @@ describe('players (U7): a second player seen by the bot', function () {
     input.hold('sneaking', true)
     input.hold('sneak_down', true)
     await crouch.promise
-    assert.strictEqual(otherEntity.crouching, true)
-    assert.strictEqual(otherEntity.height, 1.5)
-    const uncrouch = ev('entityUncrouch', (e) => e === otherEntity)
-    input.addFlags(['stop_sneaking'])
-    input.hold('sneaking', false)
-    input.hold('sneak_down', false)
-    await uncrouch.promise
+    try {
+      assert.strictEqual(otherEntity.crouching, true)
+      // the Bedrock sneaking hitbox (1.49, measured on BDS by U5; Java 1.5)
+      assert.strictEqual(otherEntity.height, SNEAK_HEIGHT)
+    } finally {
+      // always stand up again: a player left sneaking cannot use a bed (entitySleep below)
+      const uncrouch = ev('entityUncrouch', (e) => e === otherEntity)
+      input.addFlags(['stop_sneaking'])
+      input.hold('sneaking', false)
+      input.hold('sneak_down', false)
+      await uncrouch.promise
+    }
     assert.strictEqual(otherEntity.crouching, false)
-    assert.strictEqual(otherEntity.height, 1.8)
+    assert.strictEqual(otherEntity.height, PLAYER_HEIGHT)
   })
 
   it('entitySwingArm: the other bot swings its arm', async () => {
