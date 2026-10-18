@@ -26,6 +26,11 @@
 //   'chunkColumnUnload'.
 // - start_game / the lifecycle's 'dimensionChange' (change_dimension): bot._bedrock.world.reset(dimension) unloads
 //   every column (upstream's switchWorld); U9 calls the same hook for its dimension flow.
+// - block entities (U9, upstream tile_entity_data): block.entity / block.blockEntity from the sub-chunk payloads'
+//   NBT and from block_entity_data { position, nbt } (stored on the column, then 'blockEntityData' with
+//   bot.blockAt(position)); a block replaced by another block type loses its block entity (BDS sends the new one
+//   right after the update_block). Signs: block.signText / getSignText() read FrontText/BackText (prismarine-block
+//   patch); sign editing is sign.js.
 'use strict'
 const { Vec3 } = require('vec3')
 const { onceWithCleanup } = require('mineflayer/lib/promise_utils')
@@ -198,13 +203,45 @@ function inject (bot) {
       if (pending) {
         const local = new Vec3(point.x & 15, point.y, point.z & 15)
         if (layer === 1) local.l = 1
+        if (layer !== 1) dropStaleBlockEntity(pending.column, local, stateId)
         pending.column.setBlockStateId(local, stateId)
       }
       return
     }
-    if (layer === 1) updateLiquidLayer(point, stateId)
-    else updateBlockState(point, stateId)
+    if (layer === 1) {
+      updateLiquidLayer(point, stateId)
+    } else {
+      dropStaleBlockEntity(bot.world.getColumnAt(point), new Vec3(point.x & 15, point.y, point.z & 15), stateId)
+      updateBlockState(point, stateId)
+    }
   }
+
+  // ---- block entities (U9) -----------------------------------------------------------------------------
+  // block.entity (raw NBT) / block.blockEntity (simplified) come from the sub-chunk payloads (prismarine-chunk) and
+  // block_entity_data packets; BDS sends the new block's block_entity_data right after its update_block, so the
+  // block entity of a replaced block (another block type) is dropped first.
+  function dropStaleBlockEntity (column, local, newStateId) {
+    if (!column?.getBlockEntity?.(local)) return
+    const oldStateId = column.getBlockStateId(local)
+    const oldType = bot.registry.blocksByStateId[oldStateId]?.id
+    const newType = bot.registry.blocksByStateId[newStateId]?.id
+    if (oldType !== newType) column.removeBlockEntity(local)
+  }
+
+  bot._client.on('block_entity_data', (packet) => {
+    const point = new Vec3(packet.position.x, packet.position.y, packet.position.z)
+    const local = new Vec3(point.x & 15, point.y, point.z & 15)
+    const column = bot.world.getColumnAt(point)
+    if (!column) {
+      // column still waiting for its sub-chunks: keep the block entity, without event
+      pendingColumns.get(`${Math.floor(point.x / 16)},${Math.floor(point.z / 16)}`)?.column.setBlockEntity(local, packet.nbt)
+      return
+    }
+    // a late update of a block that was removed meanwhile (BDS re-sends a fresh block entity one tick later)
+    if (column.getBlockStateId(local) === bot.registry.blocksByName.air?.defaultState) return
+    column.setBlockEntity(local, packet.nbt)
+    bot.emit('blockEntityData', bot.blockAt(point))
+  })
 
   bot._client.on('update_block', (packet) => {
     applyBlockUpdate(packet.position, packet.block_runtime_id, packet.layer)

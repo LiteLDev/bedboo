@@ -1,3 +1,67 @@
+diff --git a/blockEntity.js b/blockEntity.js
+index d435eac2e28dc02de4eb08a1a6ea5fd8f9a1292c..67d4330a472ee31670c91b590f38cf609821245f 100644
+--- a/blockEntity.js
++++ b/blockEntity.js
+@@ -146,19 +146,50 @@ function signPC (registry) {
+   }
+ }
+ 
++// bedboo patch: Bedrock 1.19.80+ signs are two-sided: the block entity has `FrontText` / `BackText` compounds
++// whose `Text` string holds every line (`\n`-separated); only pre-1.19.80 signs had a top-level `Text`.
++// (upstream read `this.entity.Text`, i.e. the compound itself, and threw on every sign)
+ function signBedrock (registry) {
++  const SIDE_DEFAULTS = {
++    IgnoreLighting: () => nbt.byte(0),
++    HideGlowOutline: () => nbt.byte(0),
++    PersistFormatting: () => nbt.byte(1),
++    SignTextColor: () => nbt.int(-16777216),
++    TextOwner: () => nbt.string(''),
++    FilteredText: () => nbt.string('')
++  }
++  const toText = (text) => Array.isArray(text) ? text.map(t => typeof t === 'string' ? t : (t?.toString?.() ?? String(t))).join('\n') : String(text)
++
++  function sideText (entity, side) {
++    const compound = entity?.value?.[side]
++    if (compound?.type === 'compound') return compound.value?.Text?.value ?? ''
++    return undefined
++  }
++
++  function setSide (block, side, text) {
++    if (!block.entity) block.entity = nbt.comp({ id: nbt.string('Sign') })
++    let compound = block.entity.value[side]
++    if (compound?.type !== 'compound') {
++      compound = nbt.comp({})
++      block.entity.value[side] = compound
++    }
++    for (const [key, make] of Object.entries(SIDE_DEFAULTS)) {
++      if (!(key in compound.value)) compound.value[key] = make()
++    }
++    compound.value.Text = nbt.string(toText(text))
++  }
++
+   return {
++    /** [front, back] like the Java multi-sided signs (each side: every line joined with '\n') */
+     getSignText () {
+-      if (!this.entity) return ['']
+-      return [this.entity.Text.value]
++      if (!this.entity) return ['', '']
++      const front = sideText(this.entity, 'FrontText') ?? this.entity.value?.Text?.value ?? ''
++      const back = sideText(this.entity, 'BackText') ?? ''
++      return [front, back]
+     },
+-    setSignText (text) {
+-      if (!this.entity) {
+-        this.entity = nbt.comp({ id: nbt.string('Sign') })
+-      }
+-      Object.assign(this.entity.value, {
+-        Text: nbt.string(Array.isArray(text) ? text.join('\n') : text)
+-      })
++    setSignText (front, back) {
++      if (front !== undefined) setSide(this, 'FrontText', front)
++      if (back !== undefined) setSide(this, 'BackText', back)
+     },
+     // Deprecated APIs for backwards compatibility
+     get signText () {
 diff --git a/index.js b/index.js
 index e91fb333b383a87d4a14300555ea0b5bfa8f9a28..587df7a2a0d07ed335416a33216dc7c6e130422c 100644
 --- a/index.js

@@ -184,8 +184,8 @@ describe('e2e harness steps back once plugins handle join / respawn (helpers/bas
     assert.strictEqual(ctx.state.spawned, true)
   })
 
-  it('bot.respawn still a stub (U9): the raw respawn handshake answers a death, not the join respawn packets', async () => {
-    const { bot, client } = await createFakeBot()
+  it('bot.respawn not implemented (health plugin disabled): the raw respawn handshake answers a death, not the join respawn packets', async () => {
+    const { bot, client } = await createFakeBot({ plugins: { health: false } })
     const ctx = createContext(bot, fakeServer, { autoRespawn: true })
     await replayJoin(bot, client)
     assert.strictEqual(ctx.raw.respawn, true)

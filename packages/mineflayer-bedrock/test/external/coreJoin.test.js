@@ -86,7 +86,7 @@ describe('core: join, spawn, game, physics stub, dimensions (U4)', function () {
     const { bot, ctx } = await createTestBot({ server, username: uniqueName('harness') })
     bots.push(bot)
     assert.strictEqual(ctx.raw.join, false)
-    assert.strictEqual(ctx.raw.respawn, true, 'bot.respawn is U9 (wave 3): the harness still answers deaths')
+    assert.strictEqual(ctx.raw.respawn, false, 'bot.respawn (U9) answers deaths: the harness steps back')
     assert.strictEqual(ctx.state.spawned, true)
     assert.strictEqual(bot._bedrock.lifecycle.state, 'spawned')
   })

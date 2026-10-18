@@ -185,6 +185,8 @@ function createBot (options = {}) {
   bot.loadPlugins([...internalPlugins, ...externalPlugins])
 
   bot._client = bot._client ?? createClient(options)
+  // every plugin listens to the client (more than 10 listeners for start_game, update_attributes, …)
+  if (typeof bot._client.setMaxListeners === 'function') bot._client.setMaxListeners(0)
   // bedrock-protocol knows the version up front (no ping-based discovery): the registry exists before the
   // first packet. Its start_game / item_registry wiring is registered before every other client listener
   // (lifecycle, plugins), so they all see a registry with runtime ids.
