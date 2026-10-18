@@ -166,6 +166,20 @@ describe('bedrock_1.26.51 datasets', () => {
       assert.strictEqual(mcData.entitiesByName.zombie.type, 'hostile')
     })
 
+    it('entities: identifiers minecraft-data lists twice keep the Bedrock entity, not a Java-only variant', () => {
+      const displayNames = {
+        zombie: 'Zombie', // not Giant
+        llama: 'Llama', // not Trader Llama (Bedrock: trader_llama)
+        arrow: 'Arrow', // not Spectral Arrow
+        evocation_illager: 'Evoker', // not Illusioner
+        armor_stand: 'Armor Stand',
+        minecart: 'Minecart',
+        trader_llama: 'Trader Llama'
+      }
+      for (const [name, displayName] of Object.entries(displayNames)) assert.strictEqual(mcData.entitiesByName[name].displayName, displayName, name)
+      for (const javaOnly of ['Giant', 'Spectral Arrow', 'Illusioner']) assert.ok(!mcData.entitiesArray.some(e => e.displayName === javaOnly), javaOnly)
+    })
+
     it('particles: Bedrock particle types', () => {
       assert.ok(unique(mcData.particlesArray, 'id') && unique(mcData.particlesArray, 'name'))
       assert.strictEqual(mcData.particlesByName.bubble.id, 1)
@@ -176,6 +190,73 @@ describe('bedrock_1.26.51 datasets', () => {
       assert.ok(unique(mcData.soundsArray, 'id') && unique(mcData.soundsArray, 'name'))
       assert.strictEqual(mcData.soundsByName['item.use.on'].id, 0)
       for (const name of ['spawn', 'pop', 'armor.equip_iron', 'mob.warning', 'disappeared']) assert.ok(mcData.soundsByName[name], name)
+    })
+  })
+
+  describe('biomes', () => {
+    /** the minecraft-data schema (draft-07 subset it uses: type, required, additionalProperties, min/max, enum, pattern) */
+    function validate (value, schema, where) {
+      const types = { integer: Number.isInteger, number: v => typeof v === 'number', string: v => typeof v === 'string', boolean: v => typeof v === 'boolean', array: Array.isArray, object: v => v !== null && typeof v === 'object' && !Array.isArray(v) }
+      assert.ok(types[schema.type](value), `${where}: ${JSON.stringify(value)} is not ${schema.type}`)
+      if (schema.minimum !== undefined) assert.ok(value >= schema.minimum, `${where} >= ${schema.minimum}`)
+      if (schema.maximum !== undefined) assert.ok(value <= schema.maximum, `${where} <= ${schema.maximum}`)
+      if (schema.enum) assert.ok(schema.enum.includes(value), `${where} in ${schema.enum}`)
+      if (schema.pattern) assert.match(value, new RegExp(schema.pattern), where)
+      if (schema.type === 'array' && schema.items) value.forEach((v, i) => validate(v, schema.items, `${where}[${i}]`))
+      if (schema.type === 'object') {
+        for (const key of schema.required ?? []) assert.ok(key in value, `${where}.${key} is required`)
+        for (const [key, v] of Object.entries(value)) {
+          assert.ok(schema.properties[key] || schema.additionalProperties !== false, `${where}.${key} is not in the schema`)
+          if (schema.properties[key]) validate(v, schema.properties[key], `${where}.${key}`)
+        }
+      }
+    }
+
+    it('are keyed by the vanilla Bedrock ids that chunk biome palettes carry', () => {
+      const ids = [
+        ['ocean', 0], ['plains', 1], ['desert', 2], ['river', 7], ['hell', 8], ['the_end', 9], ['stone_beach', 25],
+        ['bamboo_jungle', 48], ['sunflower_plains', 129], ['soulsand_valley', 178], ['crimson_forest', 179],
+        ['warped_forest', 180], ['basalt_deltas', 181], ['frozen_peaks', 183], ['grove', 185], ['lush_caves', 187],
+        ['deep_dark', 190], ['mangrove_swamp', 191], ['cherry_grove', 192], ['pale_garden', 193], ['sulfur_caves', 194],
+        ['dappled_forest', 195]
+      ]
+      for (const [name, id] of ids) {
+        assert.strictEqual(mcData.biomesByName[name]?.id, id, name)
+        assert.strictEqual(mcData.biomes[id].name, name, String(id))
+      }
+      assert.strictEqual(mcData.biomesArray.length, 89)
+      assert.ok(unique(mcData.biomesArray, 'id') && unique(mcData.biomesArray, 'name'))
+    })
+
+    it('ids sort exactly like BDS lists the biomes in biome_definition_list (probe)', () => {
+      const order = require('../scripts/probe/1.26.51.json').biomeOrder
+      assert.deepStrictEqual([...mcData.biomesArray].sort((a, b) => a.id - b.id).map(b => b.name), order)
+    })
+
+    it('agree with minecraft-data bedrock 1.20.0 (vanilla ids) on every biome it lists', () => {
+      const legacy = require('minecraft-data/minecraft-data/data/bedrock/1.20.0/biomes.json')
+      for (const old of legacy) {
+        const b = mcData.biomes[old.id]
+        assert.strictEqual(b?.name, old.name, `id ${old.id}`)
+        assert.strictEqual(b.category, old.category, old.name)
+        assert.strictEqual(b.displayName, old.displayName, old.name)
+        assert.strictEqual(b.dimension, old.dimension === 'end' ? 'the_end' : old.dimension, old.name)
+      }
+    })
+
+    it('follow the minecraft-data biomes schema', () => {
+      validate(mcData.biomesArray, require('minecraft-data/minecraft-data/schemas/biomes_schema.json'), 'biomes')
+    })
+
+    it('carry the BDS climate and dimension', () => {
+      const b = mcData.biomesByName
+      assert.deepStrictEqual([b.hell.dimension, b.hell.temperature, b.hell.has_precipitation], ['nether', 2, false])
+      assert.deepStrictEqual([b.the_end.dimension, b.the_end.has_precipitation], ['the_end', false])
+      assert.deepStrictEqual([b.plains.dimension, b.plains.temperature, b.plains.rainfall, b.plains.has_precipitation], ['overworld', 0.8, 0.4, true])
+      assert.strictEqual(b.desert.has_precipitation, false)
+      assert.strictEqual(b.frozen_peaks.temperature, -0.7)
+      assert.deepStrictEqual(mcData.biomesArray.filter(x => x.dimension === 'nether').map(x => x.name).sort(), ['basalt_deltas', 'crimson_forest', 'hell', 'soulsand_valley', 'warped_forest'])
+      assert.deepStrictEqual(mcData.biomesArray.filter(x => x.dimension === 'the_end').map(x => x.name), ['the_end'])
     })
   })
 

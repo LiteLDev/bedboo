@@ -43,7 +43,6 @@ let counter = 0
 /** servers started (owned) by this process: removed on exit / signals */
 const active = new Set()
 let cleanupInstalled = false
-let reaped = false
 
 function slug (str) {
   return String(str).toLowerCase().replace(/[^a-z0-9_.-]+/g, '-').replace(/^[^a-z0-9]+/, '').slice(-24) || 'x'
@@ -459,10 +458,10 @@ async function startServer (opts = {}) {
   const snap = opts.snapshot ? snapshots.requireSnapshot(opts.snapshot) : null
   require('./golden').requireGolden()
   if (!opts.persistent) installCleanup()
-  if (!reaped) {
-    reaped = true
-    await reap({ log: (m) => log(`[bedboo] ${m}`) }).catch((err) => log(`[bedboo] reaper failed: ${err.message}`))
-  }
+  // every start (one `docker ps`, shared by concurrent starts of this process): other processes may have
+  // died since this one last looked; their containers keep their slots busy until reaped
+  const reapNow = () => reapShared((m) => log(`[bedboo] ${m}`))
+  await reapNow().catch((err) => log(`[bedboo] reaper failed: ${err.message}`))
 
   const identity = config.selfIdentity()
   const container = CONTAINER_PREFIX + (opts.name ? validateName(opts.name) : `${slug(path.basename(identity.owner))}-${process.pid}-${++counter}`)
@@ -481,9 +480,10 @@ async function startServer (opts = {}) {
   const onWait = async () => {
     if (Date.now() - lastReap < 10000) return
     lastReap = Date.now()
-    await reap({ log: (m) => log(`[bedboo] ${m}`) })
+    await reapNow()
   }
   const exclude = new Set()
+  const retried = new Set() // slots retried once their port was free again
   for (let attempt = 0; ; attempt++) {
     const slot = await slots.acquire({ container, persistent: !!opts.persistent, timeout: opts.slotTimeout, exclude, log, onWait })
     let server
@@ -491,7 +491,15 @@ async function startServer (opts = {}) {
       server = await launch(container, slot, identity, opts, snap)
     } catch (err) {
       slot.release()
-      if (err instanceof PortInUseError && attempt < config.limits().maxServers) {
+      if (err instanceof PortInUseError && attempt < config.limits().maxServers * 2) {
+        // a process that died after the last reap may have left its BDS on the port: reap (here or in another
+        // process) and try the slot again (once) if the port is free now; otherwise it is used outside the harness
+        await reapNow().catch(() => {})
+        if (!retried.has(slot.slot) && await udpPortFree(err.port, err.port === slot.ports.v6)) {
+          retried.add(slot.slot)
+          log(`[bedboo] ${err.message}; the port is free now (a dead owner's server was removed), retrying`)
+          continue
+        }
         log(`[bedboo] ${err.message}; trying another slot`)
         exclude.add(slot.slot)
         continue
@@ -507,6 +515,28 @@ async function startServer (opts = {}) {
       throw err
     }
   }
+}
+
+let reapInFlight = null
+/** reap(), sharing one run between concurrent callers of this process. */
+function reapShared (log) {
+  if (!reapInFlight) reapInFlight = reap({ log }).finally(() => { reapInFlight = null })
+  return reapInFlight
+}
+
+/**
+ * Whether a UDP port can be bound right now (BDS binds its RakNet ports on every interface; `v6`: probe
+ * with an IPv6 socket). Errors other than EADDRINUSE (e.g. no IPv6) count as free.
+ */
+function udpPortFree (port, v6 = false) {
+  return new Promise((resolve) => {
+    const socket = require('dgram').createSocket(v6 ? 'udp6' : 'udp4')
+    socket.once('error', (err) => {
+      try { socket.close() } catch {}
+      resolve(err.code !== 'EADDRINUSE')
+    })
+    socket.bind(port, () => socket.close(() => resolve(true)))
+  })
 }
 
 function validateName (name) {
@@ -605,5 +635,6 @@ module.exports = {
   READY_RE,
   PORT_IN_USE_RE,
   STARTUP_ERROR_WHITELIST,
+  udpPortFree,
   _active: active
 }

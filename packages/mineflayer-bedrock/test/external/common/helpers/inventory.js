@@ -20,6 +20,50 @@ function replaceItemSlot (javaSlot) {
   throw new Error(`setInventorySlot: Java slot ${javaSlot} has no Bedrock replaceitem equivalent`)
 }
 
+/** Static bedrock_1.26.51 data (raw-client bots have no bot.registry); item durability does not depend on the server. */
+const staticRegistry = () => {
+  require('@bedboo/bedrock-data').install()
+  return require('minecraft-data')('bedrock_1.26.51')
+}
+
+/**
+ * What `replaceitem` cannot express: NBT (enchantments, custom name/lore, book pages, …) and the ItemV4
+ * can_place_on / can_destroy lists. The one exception is a damageable item's `Damage` (prismarine-item
+ * `durabilityUsed`; new tools carry `Damage: 0`): BDS 1.26.51 stores replaceitem's data value of a tool as
+ * `Damage` (metadata stays 0), so it is sent as the data value (see replaceItemSpec).
+ * @returns {{ nbt: string[], lists: string[] } | null} what cannot be set, or null if replaceitem places
+ *   the item exactly
+ */
+function unsupportedItemData (item, registry = staticRegistry()) {
+  const value = item.nbt?.value ?? {}
+  const nbt = Object.keys(value).filter((key) => !(key === 'Damage' && damageAsData(item, registry) !== null))
+  const lists = []
+  if (item.canPlaceOn?.length) lists.push('can_place_on')
+  if (item.canDestroy?.length) lists.push('can_destroy')
+  return nbt.length || lists.length ? { nbt, lists } : null
+}
+
+/** The `Damage` replaceitem can set through its data value (a damageable item with metadata 0), else null. */
+function damageAsData (item, registry = staticRegistry()) {
+  const damage = item.nbt?.value?.Damage
+  if (!damage || !['int', 'short'].includes(damage.type) || (item.metadata ?? 0) !== 0) return null
+  const maxDurability = item.maxDurability ?? registry?.itemsByName?.[item.name]?.maxDurability
+  return maxDurability > 0 ? damage.value : null
+}
+
+/** `<name> <count> <data>` for replaceitem (`air` for an empty slot). */
+function replaceItemSpec (item, registry = staticRegistry()) {
+  if (!item) return 'air'
+  return `${item.name} ${item.count ?? 1} ${damageAsData(item, registry) ?? item.metadata ?? 0}`
+}
+
+/** The error for an item replaceitem cannot place exactly. */
+function unsupportedItemError (item, { nbt, lists }) {
+  const what = [nbt.length ? `NBT ${nbt.join(', ')}` : null, ...lists].filter(Boolean).join(' + ')
+  const subject = nbt.length ? 'NBT' : lists.join('/')
+  return new Error(`setInventorySlot: ${subject} cannot be set with replaceitem; use bot.creative.setInventorySlot (U8) — ${item.name} carries ${what}`)
+}
+
 function install (bot, ctx) {
   const { state } = ctx
   const t = bot.test
@@ -32,12 +76,17 @@ function install (bot, ctx) {
   /**
    * Upstream signature `setInventorySlot(targetSlot, item)` (Java slot numbers, prismarine Item or
    * null). Bedrock: `replaceitem entity <bot> <slot type> <index> <name> <count> <metadata>` (works in
-   * any gamemode; NBT such as enchantments is not applied).
+   * any gamemode). `replaceitem` cannot set NBT (enchantments, names, book contents, …): such items are
+   * rejected instead of being placed without it (U8 switches this helper to bot.creative.setInventorySlot).
+   * A tool's Damage is set through the data value.
    */
   t.setInventorySlot = async (targetSlot, item) => {
     if (item && item.name === 'unknown') throw new Error(`item should not be unknown ${JSON.stringify(item)}`)
+    const registry = bot.registry ?? staticRegistry()
+    const unsupported = item && unsupportedItemData(item, registry)
+    if (unsupported) throw unsupportedItemError(item, unsupported)
     const { slotType, index, window } = replaceItemSlot(targetSlot)
-    const spec = item ? `${item.name} ${item.count ?? 1} ${item.metadata ?? 0}` : 'air'
+    const spec = replaceItemSpec(item, registry)
     const update = inventoryUpdate(window)
     update.promise.catch(() => {})
     try {
@@ -106,3 +155,5 @@ function install (bot, ctx) {
 
 module.exports = install
 module.exports.replaceItemSlot = replaceItemSlot
+module.exports.unsupportedItemData = unsupportedItemData
+module.exports.replaceItemSpec = replaceItemSpec

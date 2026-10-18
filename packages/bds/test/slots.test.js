@@ -146,6 +146,110 @@ describe('slot registry', function () {
     b.release()
   })
 
+  it('a stealer acting on a stale read never moves a live holder\'s mutex (steal lock + re-check)', () => {
+    fs.mkdirSync(dir(), { recursive: true })
+    const mutex = path.join(dir(), slots.MUTEX)
+    fs.writeFileSync(mutex, JSON.stringify({ ...deadIdentity(), token: 'dead' }))
+    const live = JSON.stringify({ ...config.selfIdentity(), token: 'live' })
+    const renamed = []
+    const renameSync = fs.renameSync
+    fs.renameSync = function (from, to) {
+      renamed.push(from)
+      return renameSync.call(this, from, to)
+    }
+    try {
+      // A saw the dead holder; before it acts, B steals the dead mutex and a live process takes a new one
+      slots.stealDeadMutex(mutex, {
+        beforeSteal () {
+          slots.stealDeadMutex(mutex)
+          assert.ok(!fs.existsSync(mutex), 'B stole the dead mutex')
+          fs.writeFileSync(mutex, live, { flag: 'wx' })
+          renamed.length = 0
+        }
+      })
+    } finally {
+      fs.renameSync = renameSync
+    }
+    assert.deepStrictEqual(renamed.filter((f) => f === mutex), [], 'A did not move the live mutex aside')
+    assert.strictEqual(fs.readFileSync(mutex, 'utf8'), live)
+    assert.deepStrictEqual(fs.readdirSync(dir()).sort(), [slots.MUTEX], 'no steal lock or junk left behind')
+  })
+
+  it('a steal lock left by a crashed stealer is removed once stale; a fresh one blocks stealing', () => {
+    fs.mkdirSync(dir(), { recursive: true })
+    const mutex = path.join(dir(), slots.MUTEX)
+    const steal = `${mutex}.steal`
+    fs.writeFileSync(mutex, JSON.stringify({ ...deadIdentity(), token: 'dead' }))
+    fs.writeFileSync(steal, 'other-stealer')
+    slots.stealDeadMutex(mutex)
+    assert.ok(fs.existsSync(mutex), 'a fresh steal lock means someone else is stealing right now')
+    assert.ok(fs.existsSync(steal))
+    const old = new Date(Date.now() - slots.STEAL_STALE_MS - 1000)
+    fs.utimesSync(steal, old, old)
+    slots.stealDeadMutex(mutex) // removes the stale steal lock (this attempt backs off)
+    assert.ok(!fs.existsSync(steal))
+    slots.stealDeadMutex(mutex)
+    assert.ok(!fs.existsSync(mutex), 'dead mutex stolen')
+    assert.deepStrictEqual(fs.readdirSync(dir()), [])
+  })
+
+  it('concurrent processes stealing dead mutexes never share the critical section', async function () {
+    this.timeout(60000)
+    fs.mkdirSync(dir(), { recursive: true })
+    const hammer = path.join(__dirname, 'fixtures/mutex-hammer.js')
+    const env = { ...process.env, DIR: dir(), ITER: '40', DEAD: JSON.stringify(deadIdentity()) }
+    const runs = Array.from({ length: 6 }, () => new Promise((resolve, reject) => {
+      const child = spawn(process.execPath, [hammer], { env, stdio: ['ignore', 'pipe', 'inherit'] })
+      let out = ''
+      child.stdout.on('data', (d) => { out += d })
+      child.on('error', reject)
+      child.on('close', () => { // after stdout was drained ('exit' may come first)
+        try { resolve(JSON.parse(out)) } catch { reject(new Error(`hammer printed ${JSON.stringify(out)}`)) }
+      })
+    }))
+    const results = await Promise.all(runs)
+    for (const r of results) assert.strictEqual(r.error, undefined, r.error)
+    assert.strictEqual(results.reduce((n, r) => n + r.sections, 0), 6 * 40)
+    assert.deepStrictEqual(results.map((r) => r.overlaps), [0, 0, 0, 0, 0, 0])
+  })
+
+  it('a dead owner\'s slot is not reused while its container exists (it may still bind the ports)', async () => {
+    fs.mkdirSync(dir(), { recursive: true })
+    const dead = deadIdentity()
+    const write = (slot, info) => fs.writeFileSync(slots.lockPath(dir(), slot), JSON.stringify({ slot, owner: 'me', createdAt: new Date(0).toISOString(), ...info }))
+    write(0, { token: 'dead-with-container', ...dead, container: 'bedboo-old' })
+    write(1, { token: 'dead-container-gone', ...dead, container: 'bedboo-gone' })
+    const existing = new Set(['bedboo-old'])
+    const deps = { containerExists: async (name) => existing.has(name) }
+    const opts = { dir: dir(), limits: lim({ maxServers: 2, workerSlots: 1 }), log: () => {}, identity: { owner: 'me' }, deps }
+    assert.strictEqual(await slots.isLockAlive(slots.readLock(dir(), 0), deps), true)
+    assert.strictEqual(await slots.isLockAlive(slots.readLock(dir(), 1), deps), false)
+    const listed = await slots.listSlots({ dir: dir(), limits: lim({ maxServers: 2 }), deps })
+    assert.deepStrictEqual(listed.map((s) => [s.alive, s.ownerGone]), [[true, true], [false, true]])
+    assert.match(slots.describeHolders(listed), /bedboo-old pid \d+ owner me \[owner gone, container not reaped yet\]/)
+    // slot 1 is free; the leftover container does not count against the worker cap of its (dead) owner
+    const a = await slots.acquire(opts)
+    assert.strictEqual(a.slot, 1)
+    a.release()
+    write(1, { token: 'live-other', ...config.selfIdentity(), owner: 'other', container: 'bedboo-other' })
+    // all busy: queue until the reaper (onWait) removes the container and releases its lock
+    let waits = 0
+    const onWait = async () => {
+      if (++waits < 2) return
+      existing.delete('bedboo-old')
+      slots.releaseSlot(dir(), 0, 'dead-with-container')
+    }
+    const b = await slots.acquire({ ...opts, onWait, timeout: 10000 })
+    assert.strictEqual(b.slot, 0)
+    assert.ok(waits >= 2)
+    b.release()
+    // without the reaper, a lock whose container is gone is replaced
+    write(0, { token: 'dead-again', ...dead, container: 'bedboo-old' })
+    const c = await slots.acquire({ ...opts, timeout: 3000 })
+    assert.strictEqual(c.slot, 0)
+    c.release()
+  })
+
   it('persistent locks live as long as their container', async () => {
     const young = { persistent: true, container: 'bedboo-x', createdAt: new Date().toISOString(), token: 't' }
     assert.strictEqual(await slots.isLockAlive(young, { containerExists: async () => false }), true, 'grace period')

@@ -53,20 +53,23 @@ sudo. A fresh flat world starts in ≈1 s and never touches the network.
 ports 40100–40121 never collide. The registry is `~/.cache/bedboo/slots/<n>.lock` (JSON: slot, token,
 pid + process start time + boot id, host, owner = git worktree, container, persistent, ports,
 createdAt), created with `O_EXCL` inside a short synchronous section holding the registry mutex
-`slots/registry.lock` (also `O_EXCL`; a mutex left by a dead process is stolen with an atomic rename;
-docker is never queried while it is held). A lock is live while its process runs (`bds up` locks: while
-the container exists); dead owners' locks are replaced. Each worker (owner key = the git worktree, or
-`BEDBOO_OWNER`) may hold at most `BEDBOO_WORKER_SLOTS` (2) test slots; persistent `bds up` servers count
-only against `BEDBOO_MAX_SERVERS`. When nothing is
+`slots/registry.lock` (also `O_EXCL`; a mutex left by a dead process is stolen with an atomic rename,
+one stealer at a time under `slots/registry.lock.steal`, which re-checks the holder; docker is never
+queried while it is held). A lock is live while its process runs, and after that while the container it
+names still exists — a crashed owner's BDS keeps binding the slot's ports until the reaper removes it
+(`bds up` locks: while the container exists); other locks are replaced. Each worker (owner key = the git
+worktree, or `BEDBOO_OWNER`) may hold at most `BEDBOO_WORKER_SLOTS` (2) test slots of running processes;
+persistent `bds up` servers count only against `BEDBOO_MAX_SERVERS`. When nothing is
 free, `startServer()` queues (polling ~1 s, reaping dead owners every 10 s) for up to
 `BEDBOO_SLOT_TIMEOUT` (15 min), printing who holds the slots every minute; the timeout error lists them
-too. If BDS reports its port in use by something outside the harness, the harness retries on another
-slot.
+too. If BDS reports its port in use, the harness reaps dead owners' containers and retries the slot once
+if the port can be bound now; otherwise (something outside the harness) it moves to another slot.
 
 **Containers** are named `bedboo-<name>` (default `bedboo-<worktree>-<pid>-<n>`) and labelled
 `bedboo.managed=1`, `bedboo.owner` (worktree), `bedboo.pid` / `bedboo.pidstart` / `bedboo.boot` /
 `bedboo.host` (owner process identity), `bedboo.slot`, `bedboo.dir`, `bedboo.persistent`, `bedboo.name`.
-The **reaper** (run by the first `startServer()` of every process, while queueing, and by `bds clean`)
+The **reaper** (run by every `startServer()` — one run shared by concurrent starts of a process —, after
+a port-in-use failure, every 10 s while queueing, and by `bds clean`)
 removes containers, instance dirs and slot locks whose owner process is gone (pid reuse is detected by the
 start time), plus orphan instance dirs. Persistent (`bds up`) servers are never reaped. `bds clean`
 removes only this worktree's containers unless `--all` is given.
@@ -254,7 +257,7 @@ coordinates; "in dim" = prefixed with `execute in <bot's dimension> run`.
 | `setBlock({ x, y, z, relative, blockName })` | in dim `setblock X Y Z <blockName>` (`relative`: offset from the floored bot position) | `Block placed` + `update_block`/`update_subchunk_blocks` at the position; `The block couldn't be placed` (already that block) resolves at once |
 | `placeBlock(slot, pos)` | `execute as <bot> at @s run setblock X Y Z <item in slot>` | `Block placed` + block update (item not consumed; U11 switches to `bot.placeBlock`) |
 | `resetBlocksToSuperflat()` *(extra)* | in dim `fill` 11×11 around the bot: grass at groundY-1, air groundY…groundY+4 | console marker |
-| `setInventorySlot(slot, item)` | `replaceitem entity <bot> slot.hotbar\|slot.inventory\|slot.armor.*\|slot.weapon.offhand <i> <name> <count> <metadata>` (`null` → `air`) | `Replaced …` + `inventory_content`/`inventory_slot` of that window |
+| `setInventorySlot(slot, item)` | `replaceitem entity <bot> slot.hotbar\|slot.inventory\|slot.armor.*\|slot.weapon.offhand <i> <name> <count> <data>` (`null` → `air`; data = metadata, or a tool's `Damage`; any other NBT throws `NBT cannot be set with replaceitem`) | `Replaced …` + `inventory_content`/`inventory_slot` of that window |
 | `clearInventory()` | `clear <bot>` | `Cleared the inventory…`/`Could not clear…` + `inventory_content` |
 | `give(name, count, metadata)` *(extra)* | `give <bot> <name> <count> <metadata>` | `Gave …` + inventory update |
 | `awaitItemReceived(command)` | `command` sent **by the bot** (raw `command_request`) | `command_output` success + next inventory update |

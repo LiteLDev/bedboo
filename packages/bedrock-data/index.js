@@ -9,7 +9,8 @@
  * Datasets (data/1.26.51/, one file per dataset, auto-discovered by install()): blocks, blockStates,
  * blockCollisionShapes, items, materials (minecraft-data PR #1335, MIT, b34f7dfed829098a34f16046c9e3f2bd8632bcd6,
  * with CloudburstMC/Data 659ce1e2eee3a67045693f4fd5515c6ccf571953 (Apache-2.0) friction, collision and
- * runtime-id fixes), foods, effects, enchantments, attributes, entities, particles, sounds (generated).
+ * runtime-id fixes), foods, effects, enchantments, attributes, entities, particles, sounds, biomes (vanilla
+ * numeric ids from pmmp/BedrockData, CC0) (generated).
  * Regenerate with `corepack pnpm --filter @bedboo/bedrock-data generate` (scripts/generate.js). Sources and
  * attribution: NOTICE.md.
  */

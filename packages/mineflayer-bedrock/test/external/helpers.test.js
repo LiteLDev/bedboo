@@ -68,6 +68,19 @@ describe('harness helpers (raw client bot)', function () {
     await bot.test.setInventorySlot(36, null)
     assert.strictEqual(inv.inventory[0], null)
     await assert.rejects(bot.test.setInventorySlot(0, { name: 'stone', count: 1 }), /no Bedrock replaceitem equivalent/)
+    // a tool's Damage goes through replaceitem's data value; NBT replaceitem cannot set is refused
+    const nbtOf = (value) => ({ type: 'compound', name: '', value })
+    const update = bot.test.ctx.packet('inventory_content', (p) => String(p.window_id) === 'inventory')
+    update.promise.catch(() => {})
+    try {
+      await bot.test.setInventorySlot(36, { name: 'diamond_sword', count: 1, metadata: 0, nbt: nbtOf({ Damage: { type: 'int', value: 10 } }) })
+    } catch (err) {
+      update.cancel()
+      throw err
+    }
+    assert.strictEqual((await update.promise).input[0].extra.nbt?.nbt?.value?.Damage?.value, 10)
+    const ench = nbtOf({ ench: { type: 'list', value: { type: 'compound', value: [{ id: { type: 'short', value: 9 }, lvl: { type: 'short', value: 1 } }] } } })
+    await assert.rejects(bot.test.setInventorySlot(36, { name: 'diamond_sword', count: 1, nbt: ench }), /NBT cannot be set with replaceitem; use bot\.creative\.setInventorySlot/)
   })
 
   it('clearInventory empties inventory, armor and off-hand', async () => {

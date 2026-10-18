@@ -5,7 +5,7 @@
  * `supportFeature` table for bedrock_1.26.51: an explicit Bedrock value for
  *   - every minecraft-data Bedrock feature (bedrock/common/features.json), equal to what minecraft-data
  *     computes for 1.26.51 (a unit test checks it), and
- *   - every Java feature name used by mineflayer 4.39.0 lib/, its external tests, the ecosystem plugins
+ *   - every Java feature name used by mineflayer 4.39.0 lib/ and examples/, its tests, the ecosystem plugins
  *     (pathfinder, pvp, collectblock, tool, armor-manager, auto-eat) and the prismarine-* modules that call
  *     `registry.supportFeature` (a unit test greps them and fails on any name missing here).
  *
@@ -56,7 +56,17 @@ const JAVA = {
   doesntHaveChestType: true, // Bedrock chests have no `type` state; pairing lives in the block entity
   doesntHaveOffHandSlot: false, // Bedrock has an off-hand slot
   shieldSlot: true, // 46-slot Java-layout player window (slot 45 = off-hand)
-  netherUpdateInventoryWindows: true, // modern (1.16+) prismarine-windows window set
+  // prismarine-windows: false selects its legacy window table, whose player inventory has 46 slots
+  // (shieldSlot). The 1.14+ branch it guards calls `registry.version['>=']('1.20.3')`, a Java version
+  // comparison that throws a RangeError for bedrock_1.26.51. Bedrock windows are not Java protocol
+  // windows anyway: U8 registers every Bedrock container type itself (bot._bedrock.windows) and builds a
+  // 46-slot Java-layout player inventory.
+  'village&pillageInventoryWindows': false,
+  // Only read inside prismarine-windows' 1.14+ branch (adds minecraft:smithing), which Bedrock never takes
+  // (see above), so the value has no effect there; true records that Bedrock has the 1.16+ containers.
+  netherUpdateInventoryWindows: true,
+  mobSpawner: true, // the spawner block is `mob_spawner` on Bedrock (mineflayer examples/block_entity.js)
+  spawner: false,
   noteBlockNameIsNoteBlock: false, // Bedrock block/item is `noteblock`
   hasElytraFlying: true,
   creativeSleepNearMobs: true, // creative players may sleep with monsters nearby

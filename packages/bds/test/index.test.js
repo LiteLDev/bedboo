@@ -27,6 +27,16 @@ describe('@bedboo/bds API', () => {
     assert.strictEqual(bds.config.BDS_VERSION, '1.26.51.1')
   })
 
+  it('udpPortFree() tells whether a port BDS reported in use is free again (port-in-use retry)', async () => {
+    const { udpPortFree } = require('../lib/server')
+    const socket = require('dgram').createSocket('udp4')
+    await new Promise((resolve) => socket.bind(0, resolve))
+    const { port } = socket.address()
+    assert.strictEqual(await udpPortFree(port), false)
+    await new Promise((resolve) => socket.close(resolve))
+    assert.strictEqual(await udpPortFree(port), true)
+  })
+
   it('startServer() uses an already-running server from BDS_HOST/BDS_PORT', async () => {
     process.env.BDS_HOST = '10.0.0.5'
     process.env.BDS_PORT = '40100'

@@ -71,6 +71,7 @@ describe('reaper', function () {
     ])
     const res = await reap({ docker, env })
     assert.deepStrictEqual(res.containers, ['bedboo-dead'])
+    assert.deepStrictEqual(res.slots, [1], 'slots whose ports the removed containers bound')
     assert.deepStrictEqual(docker.removed, ['bedboo-dead'])
     assert.ok(!fs.existsSync(path.join(p.instances, 'bedboo-dead')))
     assert.ok(fs.existsSync(path.join(p.instances, 'bedboo-alive')))
@@ -118,11 +119,19 @@ describe('reaper', function () {
     ]
     // stale lock without container
     fs.writeFileSync(slots.lockPath(p.slots, 5), JSON.stringify({ slot: 5, token: 'x', pid: deadPid(), pidStart: '1', boot: me.boot, host: me.host, owner: 'w9', container: 'gone' }))
+    // files moved aside / pinned by mutex stealers, and a steal lock (left to the next stealer)
+    const leftovers = ['registry.lock.steal', 'registry.lock.steal.dead-1-ab-pin', 'registry.lock.dead-2-cd']
+    for (const f of leftovers) fs.writeFileSync(path.join(p.slots, f), 'x')
+    const registryFiles = () => fs.readdirSync(p.slots).filter((f) => f.startsWith('registry.')).sort()
     const docker = fakeDocker(containers)
     const res = await clean({ docker, env, owner: 'w1' })
     assert.deepStrictEqual(res.containers.sort(), ['bedboo-a', 'bedboo-c'])
+    assert.deepStrictEqual(res.slots.sort(), [0, 2])
     assert.strictEqual(slots.readLock(p.slots, 5), null, 'stale lock released')
     assert.ok(slots.readLock(p.slots, 1), 'other worker untouched')
+    assert.deepStrictEqual(registryFiles(), [...leftovers].sort(), 'files moved aside less than a minute ago may be in use')
+    await clean({ docker: fakeDocker([]), env, owner: 'w1', now: Date.now() + 120e3 })
+    assert.deepStrictEqual(registryFiles(), ['registry.lock.steal'], 'old junk removed; the steal lock is never removed by path')
     const all = await clean({ docker, env, owner: 'w1', all: true })
     assert.deepStrictEqual(all.containers, ['bedboo-b'])
     assert.deepStrictEqual(fs.readdirSync(p.instances), [])

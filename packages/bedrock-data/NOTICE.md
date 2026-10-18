@@ -10,10 +10,11 @@ minecraft-data's `bedrock_1.26.51` entry.
 | Source | License | Used for |
 |---|---|---|
 | [PrismarineJS/minecraft-data](https://github.com/PrismarineJS/minecraft-data) PR [#1335](https://github.com/PrismarineJS/minecraft-data/pull/1335) (`mc-zuri/minecraft-data@b34f7dfed829098a34f16046c9e3f2bd8632bcd6`, `data/bedrock/1.26.51/`) | MIT (PrismarineJS contributors) | blocks, blockStates, blockCollisionShapes, items, materials (vendored, then fixed as below) |
-| [PrismarineJS/minecraft-data](https://github.com/PrismarineJS/minecraft-data) 3.117.0 (npm dependency) | MIT (PrismarineJS contributors) | bedrock 1.19.1 enchantments, bedrock 1.21.80 entities, pc 26.1 attributes/enchantments/entities (fields for new entries), bedrock 1.26.51 protocol (particle and legacy sound ids) |
-| [CloudburstMC/Data](https://github.com/CloudburstMC/Data) `659ce1e2eee3a67045693f4fd5515c6ccf571953` (`blocks.json`, `runtime_item_states.json`, `item_components.nbt`, `entity_identifiers.dat`, `creative_items.json`) | Apache License 2.0, Copyright CloudburstMC | block-state runtime ids (verification + `unknown`), collision boxes (allowlist), friction, item id verification, foods, entity identifiers, block items' block states; `test/fixtures/cloudburst-block-hashes.json.gz` is the `blockStateHash` column of `blocks.json` |
+| [PrismarineJS/minecraft-data](https://github.com/PrismarineJS/minecraft-data) 3.117.0 (npm dependency) | MIT (PrismarineJS contributors) | bedrock 1.19.1 enchantments, bedrock 1.21.80 entities, bedrock 1.20.0 biomes (categories, display names, id cross-check), pc 26.1 attributes/enchantments/entities/biomes (fields for new entries), bedrock 1.26.51 protocol (particle and legacy sound ids) |
+| [CloudburstMC/Data](https://github.com/CloudburstMC/Data) `659ce1e2eee3a67045693f4fd5515c6ccf571953` (`blocks.json`, `runtime_item_states.json`, `item_components.nbt`, `entity_identifiers.dat`, `creative_items.json`, `stripped_biome_definitions.json`) | Apache License 2.0, Copyright CloudburstMC | block-state runtime ids (verification + `unknown`), collision boxes (allowlist), friction, item id verification, foods, entity identifiers, block items' block states, the biome list and climate; `test/fixtures/cloudburst-block-hashes.json.gz` is the `blockStateHash` column of `blocks.json` |
 | [Sandertv/gophertunnel](https://github.com/Sandertv/gophertunnel) `80c811b6186016b3860c358368cfa47e507f26e9` (`minecraft/protocol/packet/level_sound_event.go`, `mob_effect.go`) | MIT, Copyright (c) 2019 Sandertv | level sound event identifiers, Bedrock effect ids 1..27 |
-| BDS 1.26.51.1 probe (`scripts/probe-bds.js` → `scripts/probe/1.26.51.json`) | facts observed on a running server | effect ids 28..37, enchantment ids 38..41, entity bounding boxes |
+| [pmmp/BedrockData](https://github.com/pmmp/BedrockData) `bdb44a48fb6beffb6e9f6864f06d2232eb62b6a3` (`biome_id_map.json`, 1.26.30) | CC0 1.0 | vanilla numeric biome ids |
+| BDS 1.26.51.1 probe (`scripts/probe-bds.js` → `scripts/probe/1.26.51.json`) | facts observed on a running server | effect ids 28..37, enchantment ids 38..41, entity bounding boxes, the order of the vanilla biomes in `biome_definition_list` (= id order) |
 
 The generated files contain material derived from CloudburstMC/Data (filtered, re-keyed and merged by
 `scripts/generate.js`); that material stays under the Apache License 2.0
@@ -29,8 +30,10 @@ package is MIT like the rest of the repository.
   Cloudburst; `minecraft:unknown` → the reserved -2), so registries need not hash 22k states at `start_game`.
 - `items[].blockStateId` (new field): the block state a block item places (Cloudburst `creative_items.json`,
   else the default state of the same-named block).
-- New datasets: effects, foods, attributes, enchantments, entities, particles, sounds (see
-  `docs/differences/U2.md#datasets`).
+- New datasets: effects, foods, attributes, enchantments, entities, particles, sounds, biomes (see
+  `docs/differences/U2.md#datasets`). Biomes are keyed by the vanilla numeric ids (pmmp `biome_id_map.json` +
+  `tables.BIOME_IDS_ADDED`; the generator fails unless the ids sort exactly like BDS lists the biomes); entities
+  that minecraft-data lists twice use the row named in `tables.ENTITY_DUPLICATES`.
 
 ## Regenerate
 
@@ -38,8 +41,10 @@ package is MIT like the rest of the repository.
 node packages/bedrock-data/scripts/fetch-sources.js          # downloads into ~/.cache/bedboo/bedrock-data-src ($BEDBOO_DATA_SRC)
 node packages/bedrock-data/scripts/generate.js               # writes data/1.26.51 + test/fixtures
 node packages/bedrock-data/scripts/generate.js --check       # CI-style: fails if the committed output is stale
-# live facts (needs the manual BDS container, docs/testing.md); rewrites scripts/probe/1.26.51.json
-node packages/bedrock-data/scripts/probe-bds.js --port 40110
-# end-to-end data check against BDS (overworld, nether, end)
-node packages/bedrock-data/scripts/live-check.js --port 40110
+# live facts against a BDS (`corepack pnpm bds up --name <me>-data --world default --seed 20261019` prints the
+# port); rewrites scripts/probe/1.26.51.json (`--only biomes`: just the biome order)
+node packages/bedrock-data/scripts/probe-bds.js --port <P> [--only biomes]
+# end-to-end data check against BDS (overworld, nether, end); --biomes: /locate each biome, check its id in the chunk
+node packages/bedrock-data/scripts/live-check.js --port <P> --biomes plains,river,cherry_grove,pale_garden,sulfur_caves,dappled_forest,deep_dark,lush_caves,dripstone_caves,frozen_peaks,crimson_forest,warped_forest,soulsand_valley,basalt_deltas,hell,the_end
+corepack pnpm bds down <me>-data
 ```

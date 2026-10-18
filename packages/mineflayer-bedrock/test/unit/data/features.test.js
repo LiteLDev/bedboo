@@ -16,6 +16,7 @@ const dirOf = (req, name) => path.dirname(req.resolve(name + '/package.json'))
 /** Every place whose `supportFeature('…')` calls reach bot.supportFeature / registry.supportFeature on Bedrock. */
 const SCANNED = {
   'mineflayer lib/': path.join(dirOf(requireLib, 'mineflayer'), 'lib'),
+  'mineflayer examples/ (ported by U15)': path.join(dirOf(requireLib, 'mineflayer'), 'examples'),
   'mineflayer external tests (docs/upstream)': path.join(repoRoot, 'docs', 'upstream'),
   ...Object.fromEntries(['mineflayer-pathfinder', 'mineflayer-pvp', 'mineflayer-collectblock', 'mineflayer-tool', 'mineflayer-armor-manager', 'mineflayer-auto-eat']
     .map(name => [name, dirOf(requireAgent, name)])),
@@ -33,14 +34,22 @@ function * jsFiles (dir) {
   }
 }
 
+/**
+ * Literal feature names passed to `supportFeature(…)`. A name may contain any character but a quote
+ * (prismarine-windows asks for 'village&pillageInventoryWindows'), so it runs up to the matching quote.
+ */
+function featureNamesIn (src) {
+  return [...src.matchAll(/supportFeature\(\s*(['"`])([^'"`]+)\1/g)].map(m => m[2])
+}
+
 function usedFeatureNames () {
   const used = new Map() // name → first place
   for (const [label, dir] of Object.entries(SCANNED)) {
     for (const file of jsFiles(dir)) {
       if (/(^|[\\/])test[\\/]/.test(path.relative(dir, file)) && !label.startsWith('mineflayer external')) continue
       const src = fs.readFileSync(file, 'utf8')
-      for (const m of src.matchAll(/supportFeature\(\s*['"`]([A-Za-z0-9_]+)['"`]/g)) {
-        if (!used.has(m[1])) used.set(m[1], `${label}: ${path.relative(dir, file)}`)
+      for (const name of featureNamesIn(src)) {
+        if (!used.has(name)) used.set(name, `${label}: ${path.relative(dir, file)}`)
       }
     }
   }
@@ -53,6 +62,23 @@ describe('lib/bedrock/features.js', () => {
     assert.ok(used.size > 100, `scanned ${used.size} names`)
     const missing = [...used].filter(([name]) => !Object.prototype.hasOwnProperty.call(FEATURES, name))
     assert.deepStrictEqual(missing, [], 'add these to packages/bedrock-data/features.js')
+  })
+
+  it('the scan finds names with any non-quote character (village&pillageInventoryWindows)', () => {
+    const src = "a.supportFeature('village&pillageInventoryWindows') || x.supportFeature(\"tallWorld\") || supportFeature( `with-dash.v2` ) || supportFeature(name)"
+    assert.deepStrictEqual(featureNamesIn(src), ['village&pillageInventoryWindows', 'tallWorld', 'with-dash.v2'])
+    assert.ok(usedFeatureNames().has('village&pillageInventoryWindows'), 'prismarine-windows index.js is scanned')
+  })
+
+  it('prismarine-windows loads with a strict supportFeature and keeps the 46-slot player window', () => {
+    const registry = createRegistry()
+    registry.supportFeature = createSupportFeature(registry, { strict: true })
+    assert.strictEqual(registry.supportFeature('village&pillageInventoryWindows'), false)
+    // true would take the 1.14+ branch, whose registry.version['>=']('1.20.3') throws on Bedrock
+    assert.throws(() => registry.version['>=']('1.20.3'))
+    const windows = require('prismarine-windows')(registry)
+    assert.strictEqual(windows.windows['minecraft:inventory'].slots, 46)
+    assert.strictEqual(windows.createWindow(0, 'minecraft:inventory', 'Inventory').slots.length, 46)
   })
 
   it('agrees with minecraft-data on every Bedrock feature (so prismarine-* behave the same)', () => {

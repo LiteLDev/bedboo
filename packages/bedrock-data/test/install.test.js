@@ -6,7 +6,7 @@ const { execFileSync } = require('child_process')
 const data = require('..')
 
 const DATASETS = [
-  'attributes', 'blockCollisionShapes', 'blockStates', 'blocks', 'effects', 'enchantments', 'entities', 'foods',
+  'attributes', 'biomes', 'blockCollisionShapes', 'blockStates', 'blocks', 'effects', 'enchantments', 'entities', 'foods',
   'items', 'materials', 'particles', 'sounds'
 ]
 
@@ -30,7 +30,7 @@ describe('@bedboo/bedrock-data install()', () => {
     }
     // untouched datasets keep minecraft-data's own files
     assert.ok(entry.protocol.types, 'protocol')
-    assert.ok(Array.isArray(entry.biomes), 'biomes')
+    assert.ok(Array.isArray(entry.instruments), 'instruments')
     // other versions keep their data
     const older = require('minecraft-data')('bedrock_1.26.30')
     assert.notStrictEqual(older.blocksArray.length, 0)

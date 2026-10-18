@@ -35,14 +35,14 @@ function releaseSlotOf (container, slot, p) {
 /**
  * Remove containers/dirs/locks of dead owners.
  * @param {{ docker?: object, isAlive?: Function, log?: Function, env?: object }} [opts]
- * @returns {Promise<{ containers: string[], dirs: string[] }>}
+ * @returns {Promise<{ containers: string[], dirs: string[], slots: number[] }>} `slots`: slot labels of the removed containers
  */
 async function reap (opts = {}) {
   const docker = opts.docker ?? require('./docker')
   const isAlive = opts.isAlive ?? isProcessAlive
   const log = opts.log ?? (() => {})
   const p = paths(opts.env)
-  const removed = { containers: [], dirs: [] }
+  const removed = { containers: [], dirs: [], slots: [] }
 
   const containers = await docker.listManaged()
   const known = new Set()
@@ -62,6 +62,7 @@ async function reap (opts = {}) {
       removed.dirs.push(dir)
     }
     releaseSlotOf(c.name, l[LABELS.slot], p)
+    if (l[LABELS.slot] != null && l[LABELS.slot] !== '') removed.slots.push(Number(l[LABELS.slot]))
   }
 
   // orphan instance dirs (container already gone): instance.json holds the owner identity
@@ -102,7 +103,8 @@ function readInstanceMeta (dir) {
 /**
  * `bds clean`: reap dead owners, then remove this owner's containers (or every harness container
  * with `all`), their dirs and locks, plus stale slot locks.
- * @param {{ all?: boolean, owner?: string, docker?: object, log?: Function, env?: object }} [opts]
+ * @param {{ all?: boolean, owner?: string, docker?: object, log?: Function, env?: object, now?: number }} [opts]
+ *   `now`: clock for the age of leftover files (tests)
  */
 async function clean (opts = {}) {
   const docker = opts.docker ?? require('./docker')
@@ -125,6 +127,7 @@ async function clean (opts = {}) {
       result.dirs.push(dir)
     }
     releaseSlotOf(c.name, c.labels[LABELS.slot], p)
+    if (c.labels[LABELS.slot] != null && c.labels[LABELS.slot] !== '') result.slots.push(Number(c.labels[LABELS.slot]))
   }
 
   // stale locks (dead owner, container gone) and leftovers of crashed mutex holders
@@ -138,9 +141,17 @@ async function clean (opts = {}) {
         const info = slots.readLock(p.slots, slot)
         if (!info || await slots.isLockAlive(info, deps)) continue
         if (slots.releaseSlot(p.slots, slot, info.token)) log(`released stale slot ${slot} (${info.container ?? 'no container'})`)
-      } else if (/^registry\.lock\.dead-|^\.\d+\.lock\./.test(entry)) {
+      } else if (/^registry\.lock(\.steal)?\.dead-|^\.\d+\.lock\./.test(entry)) {
+        // files moved aside / pinned by crashed mutex stealers (the steal lock itself is left to the next
+        // stealer, which re-checks it). ctime: when it was linked or moved here (mtime is the original's).
         const file = path.join(p.slots, entry)
-        if (Date.now() - fs.statSync(file).mtimeMs > 60000) fs.rmSync(file, { force: true })
+        const now = opts.now ?? Date.now()
+        let changed = now
+        try {
+          const st = fs.statSync(file)
+          changed = Math.max(st.mtimeMs, st.ctimeMs)
+        } catch {} // removed meanwhile
+        if (now - changed > 60000) fs.rmSync(file, { force: true })
       }
     }
   }
