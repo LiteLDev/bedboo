@@ -5,6 +5,7 @@ const path = require('path')
 const os = require('os')
 const { LABELS, paths, isProcessAlive, selfIdentity } = require('./config')
 const slots = require('./slots')
+const { safeInstanceDir } = require('./instance')
 
 /**
  * Reaper and cleaner.
@@ -13,16 +14,12 @@ const slots = require('./slots')
  * `bedboo.pidstart`, `bedboo.boot`, `bedboo.host`), its owner key (`bedboo.owner`, the worktree), its
  * slot and instance dir. {@link reap} removes the containers, instance dirs and slot locks of owners
  * that no longer run (crashed / killed test processes). Persistent containers (`bds up`) have no
- * owner process and are never reaped — only `bds down` / `bds clean` remove them.
+ * owner process and are never reaped — only `bds down` / `bds clean` remove them; their instance dir
+ * is reaped once the container is gone.
  */
 
-/** Only ever delete dirs inside the instances root. */
-function safeInstanceDir (dir, p) {
-  if (!dir) return null
-  const resolved = path.resolve(dir)
-  const root = path.resolve(p.instances) + path.sep
-  return resolved.startsWith(root) ? resolved : null
-}
+/** A persistent instance dir is created a moment before its container. */
+const PERSISTENT_GRACE_MS = 3 * 60 * 1000
 
 function rmDir (dir) {
   fs.rmSync(dir, { recursive: true, force: true, maxRetries: 3 })
@@ -72,9 +69,13 @@ async function reap (opts = {}) {
     const name = path.basename(dir)
     if (known.has(name)) continue
     const meta = readInstanceMeta(dir)
-    if (meta && meta.persistent) continue
     if (meta && meta.host && meta.host !== os.hostname()) continue
-    if (meta && isAlive(meta)) continue
+    if (meta && meta.persistent) {
+      // `bds up` dir whose container was removed outside the harness (docker rm, prune)
+      if (Date.now() - Date.parse(meta.createdAt) < PERSISTENT_GRACE_MS) continue
+    } else if (meta && isAlive(meta)) {
+      continue
+    }
     if (!meta && Date.now() - fs.statSync(dir).mtimeMs < 10 * 60 * 1000) continue // being created right now
     log(`removing orphan instance dir ${dir}`)
     rmDir(dir)
@@ -126,7 +127,7 @@ async function clean (opts = {}) {
     releaseSlotOf(c.name, c.labels[LABELS.slot], p)
   }
 
-  // stale locks (dead owner, container gone) and leftovers of crashed reclaimers
+  // stale locks (dead owner, container gone) and leftovers of crashed mutex holders
   if (fs.existsSync(p.slots)) {
     const stillThere = new Set((await docker.listManaged()).map((c) => c.name))
     const deps = { isProcessAlive: opts.isAlive, containerExists: async (name) => stillThere.has(name) }

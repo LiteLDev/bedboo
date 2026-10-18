@@ -61,15 +61,25 @@ function createInstance (container, propOpts, extra = {}, p = paths()) {
     }
     return { dir, dataDir, properties: values }
   } catch (err) {
-    removeInstance(dir)
+    removeInstance(dir, p)
     throw err
   }
 }
 
-/** Remove an instance dir (ignores missing). */
-function removeInstance (dir) {
-  if (!dir) return
-  fs.rmSync(dir, { recursive: true, force: true, maxRetries: 3 })
+/** @returns {string|null} `dir` resolved if it lies inside the instances root, else null */
+function safeInstanceDir (dir, p = paths()) {
+  if (!dir) return null
+  const resolved = path.resolve(dir)
+  const root = path.resolve(p.instances) + path.sep
+  return resolved.startsWith(root) ? resolved : null
+}
+
+/** Remove an instance dir (ignores missing; never touches anything outside the instances root). */
+function removeInstance (dir, p = paths()) {
+  const safe = safeInstanceDir(dir, p)
+  if (!safe) return false
+  fs.rmSync(safe, { recursive: true, force: true, maxRetries: 3 })
+  return true
 }
 
 /** Path of the world dir of an instance. */
@@ -77,4 +87,4 @@ function worldDir (dataDir, levelName) {
   return path.join(dataDir, 'worlds', levelName)
 }
 
-module.exports = { instanceDir, createInstance, removeInstance, worldDir }
+module.exports = { instanceDir, createInstance, removeInstance, safeInstanceDir, worldDir }

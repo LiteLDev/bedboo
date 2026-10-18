@@ -73,6 +73,38 @@ describe('Console', () => {
     assert.strictEqual(written[2], 'say hi', 'leading slash stripped')
   })
 
+  it('commandOutput returns every line a command printed (bounded by a marker)', async () => {
+    const { con, written } = fakeBds()
+    const [list, silent, err] = await Promise.all([
+      con.commandOutput('list'),
+      con.commandOutput('say hi'),
+      con.commandOutput('nosuch thing')
+    ])
+    assert.deepStrictEqual(list.map((l) => l.message), ['There are 1/10 players online:', 'flatbot'])
+    assert.deepStrictEqual(silent, [])
+    assert.deepStrictEqual(err.map((l) => l.message), ['Unknown command: nosuch. Please check that the command exists and that you have permission to use it.'])
+    assert.strictEqual(written.length, 6, 'one marker after each command')
+    assert.ok(written.filter((w, i) => i % 2 === 1).every((w) => /^bedboo_marker_/.test(w)))
+  })
+
+  it('keeps multi-byte characters split across chunks', () => {
+    const con = new Console()
+    const bytes = Buffer.from('[2026-10-18 15:26:49:887 INFO] §aSteve joined — ü\n')
+    const cut = bytes.indexOf(Buffer.from('§')) + 1 // in the middle of the 2-byte '§'
+    con.push(bytes.subarray(0, cut))
+    con.push(bytes.subarray(cut))
+    assert.strictEqual(con.lines[0].message, '§aSteve joined — ü')
+  })
+
+  it('linesSince works across buffer trimming', () => {
+    const con = new Console({ maxLines: 4 })
+    for (let i = 1; i <= 12; i++) con.push(`l${i}\n`)
+    assert.ok(con.lines.length <= 5)
+    assert.deepStrictEqual(con.linesSince(10).map((l) => l.raw), ['l11', 'l12'])
+    assert.deepStrictEqual(con.linesSince(12), [])
+    assert.strictEqual(con.linesSince(0)[0].seq, con.lines[0].seq)
+  })
+
   it('marker resolves after the earlier commands executed', async () => {
     const { con, written } = fakeBds()
     await con.write('say hi')

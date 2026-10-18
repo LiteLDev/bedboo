@@ -98,6 +98,8 @@ describe('bds CLI', () => {
     assert.match(run(['cmd']).stderr, /usage: bds cmd/)
     assert.match(run(['snapshot', 'x']).stderr, /usage: bds snapshot/)
     assert.match(run(['up', '--gamerule', 'novalue']).stderr, /--gamerule expects <key>=<value>/)
+    assert.match(run(['up', '--gamerule', 'randomtickspeed=']).stderr, /expected true, false or an integer/)
+    assert.match(run(['up', '--gamerule', 'domobspawning=yes']).stderr, /expected true, false or an integer/)
   })
 
   it('lists and deletes snapshots in BEDBOO_CACHE', () => {

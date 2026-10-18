@@ -52,10 +52,12 @@ sudo. A fresh flat world starts in ≈1 s and never touches the network.
 **41000 + 2n** (IPv4) and **41000 + 2n + 1** (IPv6) — 41000–41011 by default; the pre-harness manual
 ports 40100–40121 never collide. The registry is `~/.cache/bedboo/slots/<n>.lock` (JSON: slot, token,
 pid + process start time + boot id, host, owner = git worktree, container, persistent, ports,
-createdAt), created with `O_EXCL` while holding the registry mutex `slots/registry.lock` (also `O_EXCL`;
-a mutex left by a dead process is stolen with an atomic rename). A lock is live while its process runs
-(`bds up` locks: while the container exists); dead owners' locks are replaced. Each worker (owner key =
-the git worktree, or `BEDBOO_OWNER`) may hold at most `BEDBOO_WORKER_SLOTS` (2) slots. When nothing is
+createdAt), created with `O_EXCL` inside a short synchronous section holding the registry mutex
+`slots/registry.lock` (also `O_EXCL`; a mutex left by a dead process is stolen with an atomic rename;
+docker is never queried while it is held). A lock is live while its process runs (`bds up` locks: while
+the container exists); dead owners' locks are replaced. Each worker (owner key = the git worktree, or
+`BEDBOO_OWNER`) may hold at most `BEDBOO_WORKER_SLOTS` (2) test slots; persistent `bds up` servers count
+only against `BEDBOO_MAX_SERVERS`. When nothing is
 free, `startServer()` queues (polling ~1 s, reaping dead owners every 10 s) for up to
 `BEDBOO_SLOT_TIMEOUT` (15 min), printing who holds the slots every minute; the timeout error lists them
 too. If BDS reports its port in use by something outside the harness, the harness retries on another
@@ -72,16 +74,20 @@ removes only this worktree's containers unless `--all` is given.
 **Console.** Harness-started servers are started with `docker start -a -i` in their own process group:
 one long-lived child carries the server's stdin and stdout, attached before BDS starts, so no line is
 lost and Ctrl-C in the terminal reaches only the test process (whose exit handler removes the container).
-Every output line gets a sequence number, so `commandWithOutput(cmd, matcher)` waits for a line printed
-*after* the command was written; such calls are serialized. Commands that print nothing (`say`,
-`tellraw`, …) use `command(cmd)`. `awaitCommandsProcessed()` writes a unique unknown command
+Every output line gets a sequence number. `awaitCommandsProcessed()` writes a unique unknown command
 (`bedboo_marker_<hex>`) and waits for BDS's `Unknown command: bedboo_marker_<hex>` — commands run in
-order on the server thread, so everything written before has executed. For containers not started by
-this process (BDS_CONTAINER, `bds up`, the CLI) the console is `docker exec` (write to the server's
-stdin as the server's uid, see quirks) plus a `docker logs -f` child. Startup is ready at
-`Server started.`; the RakNet `TRANSPORT TYPE ERROR` block that follows is whitelisted, any other ERROR
-line during startup is collected in `server.startupErrors`; `Port [n] may be in use by another process`
-and a container exit fail fast (the last 40 log lines are in the error).
+order on the server thread and print their output before the next one runs, so everything written
+before has executed. `commandOutput(cmd)` uses this to return exactly the lines a command printed
+(command, then marker; `[]` for silent commands such as `say`); the helpers check those lines for the
+success message and fail fast with the whole output otherwise. `commandWithOutput(cmd, matcher)` waits
+for the first matching line printed after the command. Output-reading calls are serialized;
+`command(cmd)` only writes. For containers not started by this process (BDS_CONTAINER, `bds up`, the
+CLI) the console is `docker exec` (write to the server's stdin as the server's uid, see quirks) plus a
+`docker logs -f --since <first use>` child (`waitForLog` with an older `since` asks docker directly).
+Startup is ready at `Server started.`; unexpected ERROR lines before it are collected in
+`server.startupErrors` (the RakNet `TRANSPORT TYPE ERROR` block after it is harmless);
+`Port [n] may be in use by another process` and a container exit fail fast (the last 40 log lines are
+in the error).
 
 **server.properties.** Precedence (lowest first): BDS template < harness defaults (`gamemode=creative`,
 `difficulty=peaceful`, `level-type=FLAT`, `level-name=bedboo`, `allow-cheats=true`,
@@ -141,7 +147,8 @@ const server = await bds.startServer({ world: 'flat', gamemode: 'creative' })
 | method | |
 |---|---|
 | `command(cmd) → Promise<Date>` | write a console command (no `/`); resolves once written with the send time (U0 contract, pass it to `waitForLog`) |
-| `commandWithOutput(cmd, matcher, { timeout }) → Promise<string>` | write and resolve with the first output message (log prefix stripped) matching `matcher` (substring, RegExp or `(message, line) => bool`); serialized |
+| `commandOutput(cmd, { timeout }) → Promise<string[]>` | write the command + a console marker; resolve with every message (log prefix stripped) printed in between (`[]` for silent commands); serialized |
+| `commandWithOutput(cmd, matcher, { timeout }) → Promise<string>` | write and resolve with the first output message matching `matcher` (substring, RegExp or `(message, line) => bool`); serialized |
 | `waitForLog(re, { since, timeout }) → Promise<string>` | first raw log line matching `re` printed at/after `since` (Date, default now) |
 | `awaitCommandsProcessed()` | console marker (see above) |
 | `logs(n)` | last `n` raw console lines |
@@ -154,7 +161,7 @@ const server = await bds.startServer({ world: 'flat', gamemode: 'creative' })
 Other exports: `createTestBot({ server?, serverOptions?, createBot, username?, botOptions?, onCreate?,
 waitForSpawn?, timeout? }) → { bot, server, stop }` (generic; the e2e suites use the wrapper in
 `test/external/common`), `attachServer(name)` (handle for an existing container, exec console),
-`externalServer(env)`, `pull({ force })`, `reap()`, `clean({ all })`, `listSlots()`, `listSnapshots()`,
+`downServer(name)` (`bds down`), `externalServer(env)`, `pull({ force })`, `reap()`, `clean({ all })`, `listSlots()`, `listSnapshots()`,
 `readSnapshot(name)`, `deleteSnapshot(name)`, `Console`, `config`, `properties`, `profiles`, `docker`
 (`sendCommand(container, cmd)`, `waitForLog(container, re, { since })` — the U0 helpers).
 
@@ -168,7 +175,7 @@ waitForSpawn?, timeout? }) → { bot, server, stop }` (generic; the e2e suites u
 | `up [--name n] [--world flat\|default] [--seed s] [--gamemode m] [--difficulty d] [--profile p] [--gamerule k=v]… [--property k=v]… [--snapshot s]` | persistent server; prints `BDS_HOST=… BDS_PORT=… BDS_CONTAINER=…` (default name `<user>-dbg`) |
 | `cmd <n> <command…>` | run a console command, print its output (everything up to a console marker) |
 | `logs <n> [-f] [--tail k]` | `docker logs` |
-| `down <n>…` | remove container, data dir and slot |
+| `down <n>…` | remove container, data dir and slot (also when the container was already removed with `docker rm`) |
 | `ls` | slots (holder, pid/persistent, owner, stale) and harness containers |
 | `snapshot <n> <s> [--overwrite]` / `restore <n> <s>` | as the API (restarts `<n>`; meant for `bds up` servers) |
 | `snapshots [--delete s]` | list / delete snapshots |
@@ -212,7 +219,8 @@ before it — that is how later units upgrade them in their own files (U6 `chat.
 `inventory.js`, U11 `place.js`). The context (`bot.test.ctx`) offers: `server`, `state` (packet tracker:
 `runtimeId`, `uniqueId`, feet `position`, `gameMode`, `dimension`, `alive`, `spawned`, raw `inventory`
 windows with item names, `entities`, `worldDirty`, `events`), `packet(name|names, predicate, timeout) →
-{ promise, cancel }` (arm before triggering), `event(name, predicate, timeout)`, `botCommand(cmd)` (raw
+{ promise, cancel }` (arm before triggering), `event(name, predicate, timeout)`, `consoleOutput(cmd)`,
+`consoleExpect(cmd, okRegExp)` (throws with the whole output unless a line matches), `botCommand(cmd)` (raw
 `command_request` → `command_output`, correlated by origin uuid), `chat(msg)` (bot.chat when implemented,
 else a raw `text` packet), `position()`, `username()`, `who()`, `inDimension()`, `raw` flags.
 

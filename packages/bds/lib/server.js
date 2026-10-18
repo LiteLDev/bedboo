@@ -10,7 +10,7 @@ const slots = require('./slots')
 const instance = require('./instance')
 const profiles = require('./profiles')
 const snapshots = require('./snapshots')
-const { reap } = require('./reaper')
+const { reap, readInstanceMeta } = require('./reaper')
 const { Console } = require('./console')
 
 const { LABELS, CONTAINER_PREFIX, IMAGE } = config
@@ -153,13 +153,30 @@ class BdsServer extends EventEmitter {
   }
 
   /**
+   * Run a console command and resolve with ALL messages it printed (log prefix stripped; `[]` for
+   * silent commands): the lines between the command and a console marker written right after it.
+   * Serialized with the other output-reading calls.
+   * @param {string} cmd
+   * @param {{ timeout?: number }} [opts]
+   * @returns {Promise<string[]>}
+   */
+  async commandOutput (cmd, opts = {}) {
+    const lines = await this._console().commandOutput(cmd, opts)
+    return lines.map((l) => l.message)
+  }
+
+  /**
    * Resolve with the first log line (raw, with prefix) matching `re` printed at/after `since`
    * (a Date, default now).
    * @returns {Promise<string>}
    */
   async waitForLog (re, { timeout = 30000, since = new Date() } = {}) {
-    const con = this._console()
     const t = since instanceof Date ? since.getTime() : Number(since)
+    const con = this._console(new Date(t))
+    if (this._consoleSince && this._consoleSince.getTime() > t) {
+      // the exec console started following the log after `since`: ask docker for the older lines
+      return docker.waitForLog(this.container, re, { timeout, since: new Date(t) })
+    }
     let seq = con.seq
     for (let i = con.lines.length - 1; i >= 0 && con.lines[i].time >= t; i--) seq = con.lines[i].seq - 1
     const { line } = await con.waitFor(re, { since: seq, timeout })
@@ -243,8 +260,9 @@ class BdsServer extends EventEmitter {
     if (info && info.container === this.container) slots.releaseSlot(dir, this.slot, info.token)
   }
 
-  _console () {
-    if (!this.console.hasInput()) this._attachExecConsole()
+  /** The console, attaching an exec console (log lines from `since`, default now) if needed. */
+  _console (since) {
+    if (!this.console.hasInput()) this._attachExecConsole(since)
     return this.console
   }
 
@@ -261,6 +279,7 @@ class BdsServer extends EventEmitter {
     child.stdout.unref?.()
     child.stderr.unref?.()
     this.console.attachProcess(child)
+    this._consoleSince = since
   }
 
   async _stopContainer () {
@@ -282,6 +301,8 @@ class BdsServer extends EventEmitter {
     const timeout = opts.timeout ?? 120000
     const con = this.console
     const since = con.seq
+    // unexpected ERROR lines up to "Server started." (the RakNet transport block that follows it is
+    // harmless; later ERROR lines are command answers, not startup problems)
     const errors = []
     const onLine = (line) => {
       if (line.seq <= since || line.level !== 'ERROR') return
@@ -295,6 +316,7 @@ class BdsServer extends EventEmitter {
         child.unref()
         con.attachProcess(child, { useStdin: true })
         for (const s of [child.stdin, child.stdout, child.stderr]) s.unref?.()
+        this._consoleSince = null // attached before the server started: every line is there
       } else {
         const startedAt = new Date() // only this run's lines (same host clock as the docker daemon)
         await docker.docker(['start', this.container], { timeout: 60000 })
@@ -308,8 +330,7 @@ class BdsServer extends EventEmitter {
       const state = await docker.inspect(this.container).catch(() => null)
       throw new Error(`BDS ${this.container} did not start (${state ? `container ${state.State.Status}, exit ${state.State.ExitCode}` : 'container gone'}): ${err.message.split('\n')[0]}\n${con.tail(40).join('\n')}`)
     } finally {
-      // the transport ERROR block is printed right after "Server started.": keep collecting briefly
-      setTimeout(() => con.removeListener('line', onLine), 1000).unref()
+      con.removeListener('line', onLine)
     }
     this.startupErrors = errors
   }
@@ -354,7 +375,8 @@ async function attachServer (name) {
   const labels = info.Config.Labels ?? {}
   const env = Object.fromEntries((info.Config.Env ?? []).map((e) => [e.slice(0, e.indexOf('=')), e.slice(e.indexOf('=') + 1)]))
   const managed = labels[LABELS.managed] === '1'
-  const dir = managed ? (labels[LABELS.dir] || null) : null
+  // never trust a label pointing outside the instances root (stop() deletes `dir`)
+  const dir = managed ? instance.safeInstanceDir(labels[LABELS.dir]) : null
   const dataDir = dir ? path.join(dir, 'data') : null
   let props = null
   if (dataDir) {
@@ -377,6 +399,29 @@ async function attachServer (name) {
     levelName: props?.['level-name'] ?? null,
     running: info.State.Running
   })
+}
+
+/**
+ * `bds down`: remove a harness server by name — its container, instance dir and slot. Also cleans up
+ * after a container that was removed outside the harness (`docker rm`), so the name can be reused.
+ * @returns {Promise<{ container: string, removed: boolean }>} `removed`: a container existed
+ */
+async function downServer (name) {
+  const container = containerName(name)
+  if (await docker.inspect(container)) {
+    const srv = await attachServer(container)
+    if (srv.external) throw new Error(`${container} is not a bedboo harness container`)
+    await srv.stop()
+    return { container, removed: true }
+  }
+  const p = config.paths()
+  const dir = instance.instanceDir(container, p)
+  if (!fs.existsSync(dir)) throw new Error(`No container ${container}`)
+  instance.removeInstance(dir, p)
+  for (const s of await slots.listSlots()) {
+    if (s.info?.container === container) slots.releaseSlot(p.slots, s.slot, s.info.token)
+  }
+  return { container, removed: false }
 }
 
 /**
@@ -404,7 +449,8 @@ async function startServer (opts = {}) {
   if (opts.useExternal !== false) {
     const external = externalServer()
     if (external) {
-      if (external.container && opts.profile !== 'none') await applyGamerules(external, profiles.resolveGamerules(opts.profile, opts.gamerules))
+      const rules = profiles.resolveGamerules(opts.profile, opts.gamerules)
+      if (external.container && Object.keys(rules).length) await applyGamerules(external, rules)
       return external
     }
   }
@@ -421,6 +467,14 @@ async function startServer (opts = {}) {
   const identity = config.selfIdentity()
   const container = CONTAINER_PREFIX + (opts.name ? validateName(opts.name) : `${slug(path.basename(identity.owner))}-${process.pid}-${++counter}`)
   if (await docker.inspect(container)) throw new Error(`Container ${container} already exists (bds down ${container.slice(CONTAINER_PREFIX.length)})`)
+  const leftover = instance.instanceDir(container)
+  if (fs.existsSync(leftover)) {
+    // no container with this name: a dir left by a removed `bds up` container or a dead process
+    const meta = readInstanceMeta(leftover)
+    if (meta && !meta.persistent && config.isProcessAlive(meta)) throw new Error(`${leftover} is being used by pid ${meta.pid}`)
+    log(`[bedboo] removing stale instance dir ${leftover}`)
+    instance.removeInstance(leftover)
+  }
 
   // while queueing, reap dead owners' containers now and then (frees their slots and ports)
   let lastReap = Date.now()
@@ -544,6 +598,7 @@ module.exports = {
   startServer,
   externalServer,
   attachServer,
+  downServer,
   containerName,
   applyGamerules,
   cleanupSync,

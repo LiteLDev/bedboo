@@ -6,7 +6,7 @@
  */
 
 function install (bot, ctx) {
-  const { server, state, TIMEOUT } = ctx
+  const { state, TIMEOUT } = ctx
   const t = bot.test
 
   /** Bedrock unique id of a mineflayer entity (id = Number(runtime id)) or of a summon() result. */
@@ -32,9 +32,7 @@ function install (bot, ctx) {
     if (!pos) throw new Error('summon: bot position unknown')
     const spawned = ctx.event('entitySpawn', (e) => e.name === name && e.position.distanceTo(pos) < 2, opts.timeout ?? TIMEOUT)
     spawned.catch(() => {})
-    const msg = await server.commandWithOutput(`${ctx.inDimension()}summon ${name} ${pos.x} ${pos.y} ${pos.z}`,
-      /successfully summoned|No targets matched|Syntax error|Unknown|Could not|Invalid|not a valid|cannot/i)
-    if (!/successfully summoned/i.test(msg)) throw new Error(`summon ${name}: ${msg}`)
+    await ctx.consoleExpect(`${ctx.inDimension()}summon ${name} ${pos.x} ${pos.y} ${pos.z}`, /successfully summoned/i, `summon ${name}`)
     const [entity] = await spawned
     return bot.entities?.[entity.id] ?? entity
   }
@@ -49,10 +47,11 @@ function install (bot, ctx) {
     const gone = ctx.packet('remove_entity', (p) => BigInt(p.entity_id_self) === uniqueId, TIMEOUT)
     gone.promise.catch(() => {})
     const type = String(entity.name ?? entity.type).replace(/^minecraft:/, '')
-    const msg = await server.commandWithOutput(`${ctx.inDimension()}kill @e[type=${type}]`, /^Killed|No targets matched|Syntax error|Unknown|Invalid|not a valid/i)
-    if (!/^Killed/.test(msg)) {
+    try {
+      await ctx.consoleExpect(`${ctx.inDimension()}kill @e[type=${type}]`, /^Killed/, `killEntity(${type})`)
+    } catch (err) {
       gone.cancel()
-      throw new Error(`killEntity(${type}): ${msg}`)
+      throw err
     }
     await gone.promise
   }

@@ -98,6 +98,17 @@ describe('reaper', function () {
     assert.ok(fs.existsSync(path.join(p.instances, 'bedboo-creating')))
   })
 
+  it('removes the dir of a persistent server whose container was removed outside the harness', async () => {
+    const me = config.selfIdentity()
+    for (const [name, age] of [['bedboo-up-old', 3600e3], ['bedboo-up-new', 0]]) {
+      fs.mkdirSync(path.join(p.instances, name))
+      fs.writeFileSync(path.join(p.instances, name, 'instance.json'), JSON.stringify({ ...me, pid: null, persistent: true, createdAt: new Date(Date.now() - age).toISOString() }))
+    }
+    await reap({ docker: fakeDocker([]), env })
+    assert.ok(!fs.existsSync(path.join(p.instances, 'bedboo-up-old')))
+    assert.ok(fs.existsSync(path.join(p.instances, 'bedboo-up-new')), 'container may still be being created')
+  })
+
   it('clean removes this owner\'s containers (or all with --all) and stale locks', async () => {
     const me = config.selfIdentity()
     const containers = [

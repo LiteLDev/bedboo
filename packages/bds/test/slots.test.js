@@ -102,6 +102,18 @@ describe('slot registry', function () {
     b.release()
   })
 
+  it('persistent (bds up) locks count against the host cap only', async () => {
+    const opts = { dir: dir(), limits: lim({ workerSlots: 1 }), log: () => {}, identity: { owner: 'w' } }
+    const up = await slots.acquire({ ...opts, persistent: true, container: 'bedboo-dbg' })
+    assert.strictEqual(slots.readLock(dir(), up.slot).persistent, true)
+    assert.strictEqual(slots.readLock(dir(), up.slot).pid, null)
+    const test = await slots.acquire(opts) // the worker's one non-persistent slot is still free
+    assert.notStrictEqual(test.slot, up.slot)
+    await assert.rejects(slots.acquire({ ...opts, timeout: 1100 }), /already holds 1\/1/)
+    up.release()
+    test.release()
+  })
+
   it('reclaims locks of dead owners', async () => {
     fs.mkdirSync(dir(), { recursive: true })
     const dead = deadIdentity()

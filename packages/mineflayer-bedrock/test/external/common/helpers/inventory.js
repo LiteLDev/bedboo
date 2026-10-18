@@ -21,7 +21,7 @@ function replaceItemSlot (javaSlot) {
 }
 
 function install (bot, ctx) {
-  const { server, state } = ctx
+  const { state } = ctx
   const t = bot.test
 
   /** Arm a waiter for an inventory update of `window` (inventory/armor/offhand/ui). */
@@ -40,11 +40,12 @@ function install (bot, ctx) {
     const spec = item ? `${item.name} ${item.count ?? 1} ${item.metadata ?? 0}` : 'air'
     const update = inventoryUpdate(window)
     update.promise.catch(() => {})
-    const msg = await server.commandWithOutput(`replaceitem entity ${ctx.who()} ${slotType} ${index} ${spec}`,
-      /^Replaced|No targets matched|Syntax error|Unknown|Could not|Invalid|not a valid/i)
-    if (!/^Replaced/.test(msg)) {
+    try {
+      await ctx.consoleExpect(`replaceitem entity ${ctx.who()} ${slotType} ${index} ${spec}`, /^Replaced/,
+        `setInventorySlot(${targetSlot}, ${item ? item.name : null})`)
+    } catch (err) {
       update.cancel()
-      throw new Error(`setInventorySlot(${targetSlot}, ${item ? item.name : null}): ${msg}`)
+      throw err
     }
     await update.promise
   }
@@ -56,10 +57,12 @@ function install (bot, ctx) {
   t.clearInventory = async () => {
     const update = inventoryUpdate('inventory')
     update.promise.catch(() => {})
-    const msg = await server.commandWithOutput(`clear ${ctx.who()}`, /^Cleared the inventory|^Could not clear the inventory|No targets matched|Syntax error/i)
-    if (!/^(Cleared|Could not clear) the inventory/.test(msg)) {
+    try {
+      // "Could not clear …, no items to remove" is fine: the server still sends the (empty) inventory
+      await ctx.consoleExpect(`clear ${ctx.who()}`, /^(Cleared|Could not clear) the inventory/, 'clearInventory')
+    } catch (err) {
       update.cancel()
-      throw new Error(`clearInventory: ${msg}`)
+      throw err
     }
     await update.promise
   }
@@ -73,11 +76,11 @@ function install (bot, ctx) {
   t.give = async (name, count = 1, metadata = 0) => {
     const update = inventoryUpdate('inventory')
     update.promise.catch(() => {})
-    const msg = await server.commandWithOutput(`give ${ctx.who()} ${name} ${count} ${metadata}`,
-      /^Gave |No targets matched|Syntax error|Unknown|Could not|Invalid|not a valid/i)
-    if (!/^Gave /.test(msg)) {
+    try {
+      await ctx.consoleExpect(`give ${ctx.who()} ${name} ${count} ${metadata}`, /^Gave /, `give ${name}`)
+    } catch (err) {
       update.cancel()
-      throw new Error(`give ${name}: ${msg}`)
+      throw err
     }
     await update.promise
   }

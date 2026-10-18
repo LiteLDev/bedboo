@@ -60,7 +60,10 @@ function keyValues (list, what) {
 function gameruleValues (list) {
   const out = {}
   for (const [k, v] of Object.entries(keyValues(list, 'gamerule'))) {
-    out[k] = v === 'true' ? true : v === 'false' ? false : Number.isInteger(Number(v)) ? Number(v) : v
+    const value = v.trim().toLowerCase()
+    if (value === 'true' || value === 'false') out[k] = value === 'true'
+    else if (/^-?\d+$/.test(value)) out[k] = Number(value)
+    else throw new Error(`--gamerule ${k}: expected true, false or an integer, got ${JSON.stringify(v)}`)
   }
   return out
 }
@@ -109,13 +112,8 @@ async function main () {
       if (!name || !words.length) throw new Error('usage: bds cmd <name> <command…>')
       const srv = await bds.attachServer(name)
       try {
-        const con = srv._console()
-        const since = con.seq
-        await srv.command(words.join(' '))
-        await srv.awaitCommandsProcessed({ timeout: Number(flags.timeout ?? 30000) })
-        for (const line of con.linesSince(since)) {
-          if (!/Unknown command: bedboo_marker_/.test(line.message)) console.log(line.raw)
-        }
+        const lines = await srv._console().commandOutput(words.join(' '), { timeout: Number(flags.timeout ?? 30000) })
+        for (const line of lines) console.log(line.raw)
       } finally {
         srv.detach()
       }
@@ -136,10 +134,8 @@ async function main () {
     case 'down': {
       if (!positional.length) throw new Error('usage: bds down <name>…')
       for (const name of positional) {
-        const srv = await bds.attachServer(name)
-        if (srv.external) throw new Error(`${srv.container} is not a bedboo harness container`)
-        await srv.stop()
-        console.log(`removed ${srv.container}`)
+        const { container, removed } = await server.downServer(name)
+        console.log(removed ? `removed ${container}` : `${container} was already gone: removed its data dir and slot`)
       }
       return 0
     }

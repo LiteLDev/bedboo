@@ -22,13 +22,11 @@ const path = require('path')
 const { EventEmitter } = require('events')
 const bds = require('@bedboo/bds')
 
+const base = require('./helpers/base')
+const { implemented } = base
+
 const HELPERS_DIR = path.join(__dirname, 'helpers')
 const HELPER_ORDER = ['base', 'world', 'inventory', 'entities']
-
-/** @returns {boolean} whether `fn` is a real implementation (not missing, not a NotImplemented stub) */
-function implemented (fn) {
-  return typeof fn === 'function' && fn.notImplemented !== true
-}
 
 /** helper files in load order */
 function helperFiles () {
@@ -46,7 +44,6 @@ function helperFiles () {
  * @returns {object} ctx shared by the helper files
  */
 function inject (bot, server, opts = {}) {
-  const base = require('./helpers/base')
   const ctx = base.createContext(bot, server, opts)
   bot.test = {}
   for (const name of helperFiles()) {

@@ -30,15 +30,14 @@ function install (bot, ctx) {
   async function setblockCommand (command, pos) {
     const update = blockUpdateAt(pos)
     update.promise.catch(() => {})
-    const msg = await server.commandWithOutput(command,
-      /^Block placed|^The block couldn't be placed|No targets matched|Syntax error|Unknown|out of the world|Cannot place block outside of the world|not loaded|Invalid/i)
-    if (/^Block placed/.test(msg)) {
+    const out = await server.commandOutput(command)
+    if (out.some((l) => /^Block placed/.test(l))) {
       await update.promise
       return true
     }
     update.cancel()
-    if (/^The block couldn't be placed/.test(msg)) return false // already that block
-    throw new Error(`${command}: ${msg}`)
+    if (out.some((l) => /^The block couldn't be placed/.test(l))) return false // already that block
+    throw new Error(`${command}: ${out.join(' | ') || '(no output)'}`)
   }
 
   /**

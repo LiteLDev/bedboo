@@ -19,6 +19,7 @@ const { spawn } = require('child_process')
 const { EventEmitter } = require('events')
 const { Vec3 } = require('vec3')
 const { EYE_HEIGHT } = require('../../../../lib/bedrock/constants')
+const { isStub } = require('../../../../lib/bedrock/errors')
 
 const TIMEOUT = 5000
 /** Feet y of the default flat world (bedrock -64, dirt -63/-62, grass_block -61). */
@@ -26,8 +27,9 @@ const GROUND_Y = -60
 /** Bedrock `execute in` dimension names */
 const EXECUTE_DIMENSION = { overworld: 'overworld', the_nether: 'nether', nether: 'nether', the_end: 'the_end' }
 
+/** @returns {boolean} whether `fn` is a real implementation (not missing, not a NotImplemented stub) */
 function implemented (fn) {
-  return typeof fn === 'function' && fn.notImplemented !== true
+  return typeof fn === 'function' && !isStub(fn)
 }
 
 const stripFormatting = (s) => String(s ?? '').replace(/§./g, '')
@@ -271,8 +273,18 @@ function createContext (bot, server, opts = {}) {
     },
     /** console command (fire and forget once written) */
     console: (cmd) => server.command(cmd),
-    /** console command + first matching output message */
-    consoleOutput: (cmd, matcher, o) => server.commandWithOutput(cmd, matcher, o),
+    /** console command → every message it printed (bounded by a console marker) */
+    consoleOutput: (cmd, o) => server.commandOutput(cmd, o),
+    /**
+     * Console command that must succeed: resolves with its first output message matching `ok`,
+     * throws with the whole output otherwise (fails fast on any BDS error message).
+     */
+    async consoleExpect (cmd, ok, what = cmd) {
+      const lines = await server.commandOutput(cmd)
+      const hit = lines.find((l) => ok.test(l))
+      if (hit === undefined) throw new Error(`${what}: ${lines.join(' | ') || '(no output)'}`)
+      return hit
+    },
     /**
      * Wait for a raw packet. Arm it BEFORE triggering the packet.
      * @returns {{ promise: Promise<object>, cancel: () => void }}
@@ -392,8 +404,7 @@ function install (bot, ctx) {
     if (current === mode && state.gameMode === mode) return
     const changed = ctx.event('gameMode', (m) => m === mode, TIMEOUT)
     changed.catch(() => {})
-    const msg = await server.commandWithOutput(`gamemode ${mode} ${ctx.who()}`, /game mode to|No targets matched|Syntax error|Unknown/i)
-    if (!/game mode to/i.test(msg)) throw new Error(`gamemode ${mode}: ${msg}`)
+    await ctx.consoleExpect(`gamemode ${mode} ${ctx.who()}`, /game mode to/i)
     if (state.gameMode === mode) return // tracker already up to date
     if (state.gameMode === null) {
       // unknown mode (helpers injected late): the server sends nothing if it was already `mode`
@@ -411,9 +422,7 @@ function install (bot, ctx) {
   t.teleport = async (position) => {
     const moved = ctx.event('move', (pos) => pos.distanceTo(position) < 0.9, TIMEOUT)
     moved.catch(() => {})
-    const msg = await server.commandWithOutput(`execute in overworld run tp ${ctx.who()} ${position.x} ${position.y} ${position.z}`,
-      /^Teleported|No targets matched|Syntax error|Unknown|cannot/i)
-    if (!/^Teleported/.test(msg)) throw new Error(`teleport: ${msg}`)
+    await ctx.consoleExpect(`execute in overworld run tp ${ctx.who()} ${position.x} ${position.y} ${position.z}`, /^Teleported/, 'teleport')
     await moved
   }
 
@@ -424,8 +433,7 @@ function install (bot, ctx) {
     const dest = from.plus(delta)
     const moved = ctx.event('move', (pos) => pos.distanceTo(dest) < 0.9, TIMEOUT)
     moved.catch(() => {})
-    const msg = await server.commandWithOutput(`${ctx.inDimension()}tp ${ctx.who()} ${dest.x} ${dest.y} ${dest.z}`, /^Teleported|No targets matched|Syntax error/i)
-    if (!/^Teleported/.test(msg)) throw new Error(`fly: ${msg}`)
+    await ctx.consoleExpect(`${ctx.inDimension()}tp ${ctx.who()} ${dest.x} ${dest.y} ${dest.z}`, /^Teleported/, 'fly')
     await moved
   }
 
@@ -440,8 +448,7 @@ function install (bot, ctx) {
     if (mode !== 'survival' && mode !== 'adventure') await setGameMode('survival')
     const dead = ctx.event('death', () => true, TIMEOUT)
     dead.catch(() => {})
-    const msg = await server.commandWithOutput(`kill ${ctx.who()}`, /^Killed|No targets matched|cannot be killed|Syntax error/i)
-    if (!/^Killed/.test(msg)) throw new Error(`selfKill: ${msg}`)
+    await ctx.consoleExpect(`kill ${ctx.who()}`, /^Killed/, 'selfKill')
     await dead
   }
   /** Resolve once the bot is alive again (after selfKill / any death). */
@@ -506,18 +513,15 @@ function install (bot, ctx) {
       // the player list entry arrives before the child spawned: retry until it is targetable
       for (;;) {
         if (signal.aborted) throw signal.reason
-        const out = await server.commandWithOutput(`tp ${target(childBotName)} ${dest.x} ${dest.y} ${dest.z}`, /^Teleported|No targets/)
-        if (/^Teleported/.test(out)) break
+        const out = await server.commandOutput(`tp ${target(childBotName)} ${dest.x} ${dest.y} ${dest.z}`)
+        if (out.some((l) => /^Teleported/.test(l))) break
         await t.wait(200)
       }
       // wait until the server reports the child at the destination
       for (;;) {
         if (signal.aborted) throw signal.reason
-        const out = await server.commandWithOutput(`querytarget ${target(childBotName)}`, /^Target data|No targets/)
-        if (/^Target data/.test(out)) {
-          const pos = await readQueryTargetPosition(server)
-          if (pos && pos.distanceTo(dest) <= 5) break
-        }
+        const pos = await queryTargetPosition(server, childBotName)
+        if (pos && pos.distanceTo(dest) <= 5) break
         await t.wait(100)
       }
       ctx.chat('loaded')
@@ -587,34 +591,27 @@ function install (bot, ctx) {
   }
 }
 
-/** Parse the JSON block printed by `querytarget` (the lines after "Target data: ["). */
-async function readQueryTargetPosition (server) {
-  const lines = server.console.lines
-  let start = -1
-  for (let i = lines.length - 1; i >= 0; i--) {
-    if (/^Target data: \[/.test(lines[i].message)) { start = i; break }
-  }
+/**
+ * Server-side feet position of a player from `querytarget` (prints "Target data: [" followed by a
+ * JSON block with the eye-level position), or null if it is not targetable.
+ */
+async function queryTargetPosition (server, name) {
+  const lines = await server.commandOutput(`querytarget ${target(name)}`)
+  const start = lines.findIndex((l) => /^Target data: \[/.test(l))
   if (start < 0) return null
-  // the block ends with a line "]"; it may still be arriving
-  for (let tries = 0; tries < 20; tries++) {
-    const end = lines.findIndex((l, i) => i > start && l.raw === ']')
-    if (end > 0) {
-      try {
-        const data = JSON.parse('[' + lines.slice(start + 1, end + 1).map((l) => l.raw).join('\n'))
-        const p = data[0]?.position
-        return p ? new Vec3(p.x, p.y - EYE_HEIGHT, p.z) : null
-      } catch {
-        return null
-      }
-    }
-    await new Promise((resolve) => setTimeout(resolve, 50))
+  try {
+    const data = JSON.parse('[' + lines.slice(start + 1).join('\n'))
+    const p = data[0]?.position
+    return p ? new Vec3(p.x, p.y - EYE_HEIGHT, p.z) : null
+  } catch {
+    return null
   }
-  return null
 }
 
 module.exports = install
 module.exports.createContext = createContext
 module.exports.createTracker = createTracker
-module.exports.readQueryTargetPosition = readQueryTargetPosition
+module.exports.queryTargetPosition = queryTargetPosition
+module.exports.implemented = implemented
 module.exports.GROUND_Y = GROUND_Y
 module.exports.target = target

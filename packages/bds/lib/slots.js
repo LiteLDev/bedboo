@@ -8,15 +8,17 @@ const { paths, limits, slotPorts, selfIdentity, isProcessAlive } = require('./co
 /**
  * Host-wide BDS slot registry: `<cache>/slots/<n>.lock`, n in [0, BEDBOO_MAX_SERVERS).
  *
- * - Every change to the registry (take, reclaim, release) happens while holding the registry mutex
- *   `<cache>/slots/registry.lock`, created with O_CREAT|O_EXCL (`open(…, 'wx')`). The mutex records
- *   its holder; a mutex whose holder process is dead is stolen with an atomic rename. Inside the
- *   mutex the caps are exact.
+ * - Every change to the registry (take, replace a dead owner's lock, release) happens in a short
+ *   synchronous section holding the registry mutex `<cache>/slots/registry.lock`, created with
+ *   O_CREAT|O_EXCL (`open(…, 'wx')`). The mutex records its holder; a mutex whose holder process is
+ *   dead is stolen with an atomic rename. Inside the mutex the caps are exact; nothing slow (docker)
+ *   runs while it is held.
  * - `<n>.lock` (JSON: slot, token, pid, pid start time, boot id, host, owner, container, persistent,
- *   ports, createdAt) is also created with O_EXCL. A lock is *live* while its owner process runs (pid
- *   + start time + boot id), or, for persistent servers (`bds up`), while its container exists.
- *   Locks of dead owners are replaced.
- * - Per-worker cap: at most BEDBOO_WORKER_SLOTS live locks with the same owner key (git worktree).
+ *   ports, createdAt) is created with O_EXCL too. A lock is *live* while its owner process runs (pid
+ *   + start time + boot id), or, for persistent servers (`bds up`), while its container exists. Locks
+ *   of dead owners are replaced.
+ * - Per-worker cap: at most BEDBOO_WORKER_SLOTS live non-persistent locks with the same owner key (git
+ *   worktree). Persistent `bds up` servers count only against BEDBOO_MAX_SERVERS.
  * - When nothing is free, acquire() queues (polls every ~1 s) until BEDBOO_SLOT_TIMEOUT and reports
  *   who holds the slots.
  * Slot n uses ports BEDBOO_PORT_BASE + 2n (IPv4) and + 2n + 1 (IPv6).
@@ -106,7 +108,10 @@ function releaseMutex (dir, token) {
   if (current && current.token === token) fs.rmSync(file, { force: true })
 }
 
-/** Run `fn` (sync or async) holding the registry mutex. */
+/**
+ * Run the synchronous `fn` holding the registry mutex, waiting (asynchronously) for it.
+ * `fn` must not be async: nothing else of this process can run while the mutex is held.
+ */
 async function withRegistry (dir, fn) {
   fs.mkdirSync(dir, { recursive: true })
   const deadline = Date.now() + MUTEX_TIMEOUT_MS
@@ -116,13 +121,13 @@ async function withRegistry (dir, fn) {
     await sleep(5 + Math.random() * 20)
   }
   try {
-    return await fn()
+    return fn()
   } finally {
     releaseMutex(dir, token)
   }
 }
 
-/** Synchronous variant (exit handlers); falls back to running unlocked after `timeout` ms. */
+/** Synchronous variant (exit handlers); runs unlocked after `timeout` ms rather than hang. */
 function withRegistrySync (dir, fn, timeout = 5000) {
   if (!fs.existsSync(dir)) return fn()
   const deadline = Date.now() + timeout
@@ -141,25 +146,45 @@ function withRegistrySync (dir, fn, timeout = 5000) {
 // ---------------------------------------------------------------------------------------------
 // locks
 
+const isYoung = (info) => Date.now() - Date.parse(info.createdAt) < PERSISTENT_GRACE_MS
+
+/**
+ * Liveness without I/O beyond /proc: `containers` maps persistent containers to whether they exist
+ * (missing entry = unknown = alive).
+ */
+function isLockAliveSync (info, { containers, isProcessAlive: alive = isProcessAlive } = {}) {
+  if (!info || info.corrupt) return false
+  if (info.persistent) {
+    if (!info.container) return false
+    // the container is created a moment after the lock: young locks are alive
+    if (isYoung(info)) return true
+    return containers?.get(info.container) ?? true
+  }
+  return alive(info)
+}
+
+/** Existence of the containers of old persistent locks (checked outside the mutex). */
+async function persistentContainers (infos, deps = {}) {
+  const exists = deps.containerExists ?? defaultContainerExists
+  const out = new Map()
+  for (const info of infos) {
+    if (!info || !info.persistent || !info.container || isYoung(info) || out.has(info.container)) continue
+    try {
+      out.set(info.container, await exists(info.container))
+    } catch {
+      out.set(info.container, true) // docker unavailable: cannot tell, keep the lock
+    }
+  }
+  return out
+}
+
 /**
  * @param {object} info lock content
  * @param {{ containerExists?: (name: string) => Promise<boolean>, isProcessAlive?: Function }} deps
  * @returns {Promise<boolean>}
  */
 async function isLockAlive (info, deps = {}) {
-  if (!info || info.corrupt) return false
-  if (info.persistent) {
-    if (!info.container) return false
-    // the container is created a moment after the lock: young locks are alive
-    if (Date.now() - Date.parse(info.createdAt) < PERSISTENT_GRACE_MS) return true
-    const exists = deps.containerExists ?? defaultContainerExists
-    try {
-      return await exists(info.container)
-    } catch {
-      return true // docker unavailable: cannot tell, keep the lock
-    }
-  }
-  return (deps.isProcessAlive ?? isProcessAlive)(info)
+  return isLockAliveSync(info, { containers: await persistentContainers([info], deps), isProcessAlive: deps.isProcessAlive })
 }
 
 async function defaultContainerExists (name) {
@@ -191,12 +216,15 @@ function tryCreate (dir, slot, info) {
 async function listSlots (opts = {}) {
   const dir = opts.dir ?? paths().slots
   const { maxServers, portBase } = { ...limits(), ...opts.limits }
-  const out = []
-  for (let slot = 0; slot < maxServers; slot++) {
-    const info = fs.existsSync(dir) ? readLock(dir, slot) : null
-    out.push({ slot, ports: slotPorts(slot, portBase), info, alive: info ? await isLockAlive(info, opts.deps) : false })
-  }
-  return out
+  const infos = []
+  for (let slot = 0; slot < maxServers; slot++) infos.push(fs.existsSync(dir) ? readLock(dir, slot) : null)
+  const containers = await persistentContainers(infos, opts.deps)
+  return infos.map((info, slot) => ({
+    slot,
+    ports: slotPorts(slot, portBase),
+    info,
+    alive: info ? isLockAliveSync(info, { containers, isProcessAlive: opts.deps?.isProcessAlive }) : false
+  }))
 }
 
 function describeHolders (states) {
@@ -232,20 +260,27 @@ async function acquire (opts = {}) {
   const log = opts.log ?? ((msg) => console.error(msg))
   if (lim.maxServers < 1) throw new Error('BEDBOO_MAX_SERVERS must be >= 1')
   if (lim.workerSlots < 1) throw new Error('BEDBOO_WORKER_SLOTS must be >= 1')
+  fs.mkdirSync(dir, { recursive: true })
 
   const started = Date.now()
   let lastReport = 0
   for (;;) {
-    const attempt = await withRegistry(dir, async () => {
+    // slow checks (docker) before taking the mutex
+    const preview = []
+    for (let slot = 0; slot < lim.maxServers; slot++) preview.push(readLock(dir, slot))
+    const containers = await persistentContainers(preview, opts.deps)
+    const liveness = { containers, isProcessAlive: opts.deps?.isProcessAlive }
+
+    const attempt = await withRegistry(dir, () => {
       const states = []
       let ownLive = 0
       for (let slot = 0; slot < lim.maxServers; slot++) {
         const info = readLock(dir, slot)
-        const alive = info ? await isLockAlive(info, opts.deps) : false
-        if (info && alive && info.owner === identity.owner) ownLive++
+        const alive = info ? isLockAliveSync(info, liveness) : false
+        if (info && alive && !info.persistent && info.owner === identity.owner) ownLive++
         states.push({ slot, info, alive, ports: slotPorts(slot, lim.portBase) })
       }
-      if (ownLive >= lim.workerSlots) return { states, ownLive }
+      if (!opts.persistent && ownLive >= lim.workerSlots) return { states, ownLive }
       for (const s of states) {
         if (exclude.has(s.slot) || (s.info && s.alive)) continue
         if (s.info) fs.rmSync(lockPath(dir, s.slot), { force: true }) // dead owner
@@ -269,7 +304,7 @@ async function acquire (opts = {}) {
     if (attempt.handle) return attempt.handle
 
     const { states, ownLive } = attempt
-    const why = ownLive >= lim.workerSlots
+    const why = !opts.persistent && ownLive >= lim.workerSlots
       ? `this worker (${identity.owner}) already holds ${ownLive}/${lim.workerSlots} slots (BEDBOO_WORKER_SLOTS)`
       : `all ${lim.maxServers} slots are busy (BEDBOO_MAX_SERVERS)`
     const waited = Date.now() - started
@@ -327,6 +362,7 @@ module.exports = {
   readLock,
   releaseSlot,
   isLockAlive,
+  isLockAliveSync,
   describeHolders,
   lockPath,
   withRegistry,

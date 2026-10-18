@@ -124,16 +124,31 @@ async function pull (opts = {}) {
       url: BDS_ZIP.url,
       extractedAt: new Date().toISOString()
     }, null, 2) + '\n')
-    // replace atomically (a concurrent pull may have finished first: keep whichever is complete)
+    // a concurrent pull may have finished first: keep its (complete) golden dir
+    if (!opts.force && goldenInfo(p)) {
+      log(opts, `golden BDS ${BDS_VERSION} was completed by another process`)
+      return result
+    }
+    fs.mkdirSync(path.dirname(p.golden), { recursive: true })
     if (fs.existsSync(p.golden)) {
+      // incomplete or forced: move it away, then put ours in place
       const old = `${p.golden}.old-${process.pid}`
-      fs.renameSync(p.golden, old)
+      try {
+        fs.renameSync(p.golden, old)
+      } catch (err) {
+        if (err.code !== 'ENOENT') throw err
+      }
+      if (fs.existsSync(old)) {
+        makeWritable(old)
+        fs.rmSync(old, { recursive: true, force: true })
+      }
+    }
+    try {
       fs.renameSync(tmp, p.golden)
-      makeWritable(old)
-      fs.rmSync(old, { recursive: true, force: true })
-    } else {
-      fs.mkdirSync(path.dirname(p.golden), { recursive: true })
-      fs.renameSync(tmp, p.golden)
+    } catch (err) {
+      if (!['ENOTEMPTY', 'EEXIST'].includes(err.code) || !goldenInfo(p)) throw err
+      log(opts, `golden BDS ${BDS_VERSION} was completed by another process`)
+      return result
     }
   } finally {
     if (fs.existsSync(tmp)) {

@@ -48,6 +48,10 @@ describe('harness helpers (raw client bot)', function () {
     await bot.test.setBlock({ x: 1, y: 0, z: 0, relative: true, blockName: 'dirt' })
     const p = bot.test.ctx.position().floored()
     assert.ok(await at(p.x + 1, p.y, p.z, 'dirt'))
+    // BDS errors fail fast with the console output
+    const t0 = Date.now()
+    await assert.rejects(bot.test.setBlock({ x: 3, y, z: 2, blockName: 'no_such_block_xyz' }), /setblock 3 -60 2 no_such_block_xyz: .+/)
+    assert.ok(Date.now() - t0 < 3000)
   })
 
   it('setInventorySlot: hotbar, main inventory, armor, off-hand and clearing a slot', async () => {
@@ -83,6 +87,7 @@ describe('harness helpers (raw client bot)', function () {
     await bot.test.awaitItemReceived(`/give ${bot.test.ctx.who()} stone 2`)
     assert.ok(bot.test.ctx.state.inventory.inventory.some((i) => i?.name === 'stone' && i.count === 2))
     await assert.rejects(bot.test.awaitItemReceived('/give @s no_such_item_xyz'), /awaitItemReceived/)
+    await assert.rejects(bot.test.give('no_such_item_xyz'), /give no_such_item_xyz: .+/)
   })
 
   it('teleport and fly move the bot (move_player)', async () => {

@@ -1,6 +1,7 @@
 // owner: U1 (BDS harness & e2e infra)
 'use strict'
 const { EventEmitter } = require('events')
+const { StringDecoder } = require('string_decoder')
 const crypto = require('crypto')
 
 /**
@@ -8,16 +9,21 @@ const crypto = require('crypto')
  * sequence numbers, so a caller can wait for the output of the command it just wrote.
  *
  * Sources:
- * - {@link Console#attachProcess}: a long-lived `docker start -a -i` / `docker attach` child (stdin
- *   and stdout of the server together; used for containers the harness starts);
- * - {@link Console#setInput} + {@link Console#attachProcess} on a `docker logs -f` child (external
+ * - {@link Console#attachProcess} with `useStdin`: a long-lived `docker start -a -i` child (stdin and
+ *   stdout of the server together; containers the harness starts);
+ * - {@link Console#setInput} + {@link Console#attachProcess} on a `docker logs -f` child (other
  *   containers: input through lib/docker.sendCommand, output from the log).
  *
- * BDS prints `[YYYY-MM-DD hh:mm:ss:mmm LEVEL] message`; continuation lines (e.g. the player list of
- * `list`, the file list of `save query`) have no prefix. Matchers see the message without prefix.
+ * BDS prints `[YYYY-MM-DD hh:mm:ss:mmm LEVEL] message`; continuation lines (the player list of `list`,
+ * the JSON of `querytarget`, …) have no prefix. Matchers see the message without the prefix.
+ *
+ * Ordering: BDS runs console commands one by one on its main thread and prints their output before
+ * running the next one, so the output of a command lies between the command and an unknown-command
+ * marker written right after it ({@link Console#commandOutput}).
  */
 
 const PREFIX_RE = /^\[(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d(?::\d+)?) (\w+)\] ?/
+const MARKER_PREFIX = 'bedboo_marker_'
 
 /**
  * @typedef {{ seq: number, time: number, raw: string, message: string, level: string|null, stream: string }} ConsoleLine
@@ -36,6 +42,9 @@ function compileMatcher (matcher) {
   throw new TypeError('matcher must be a string, RegExp or function')
 }
 
+const newMarker = () => MARKER_PREFIX + crypto.randomBytes(5).toString('hex')
+const isMarkerLine = (line) => line.message.includes(`Unknown command: ${MARKER_PREFIX}`)
+
 class Console extends EventEmitter {
   /**
    * @param {{ name?: string, maxLines?: number, echo?: boolean|((line: ConsoleLine) => void) }} [opts]
@@ -45,19 +54,23 @@ class Console extends EventEmitter {
     this.setMaxListeners(0)
     this.name = opts.name ?? 'bds'
     this.maxLines = opts.maxLines ?? 5000
-    /** @type {ConsoleLine[]} */
+    /** @type {ConsoleLine[]} contiguous seq numbers, oldest first */
     this.lines = []
     this.seq = 0
     this.closed = false
+    this.child = null
     this._input = null
     this._queue = Promise.resolve()
     this._partial = {}
+    this._decoders = {}
     this._echo = opts.echo === true ? (l) => process.stderr.write(`[${this.name}] ${l.raw}\n`) : (opts.echo || null)
   }
 
-  /** Feed raw output (used by attachProcess; public for tests). */
+  /** Feed raw output (Buffer or string; used by attachProcess, public for tests). */
   push (chunk, stream = 'stdout') {
-    const text = (this._partial[stream] ?? '') + chunk.toString()
+    // one decoder per stream: a multi-byte character split across chunks stays intact
+    const decoder = this._decoders[stream] ??= new StringDecoder('utf8')
+    const text = (this._partial[stream] ?? '') + (typeof chunk === 'string' ? chunk : decoder.write(chunk))
     const parts = text.split(/\r?\n/)
     this._partial[stream] = parts.pop()
     for (const raw of parts) this._line(raw, stream)
@@ -65,9 +78,10 @@ class Console extends EventEmitter {
 
   /** Flush partial lines (end of stream). */
   flush () {
-    for (const [stream, rest] of Object.entries(this._partial)) {
-      if (rest) this._line(rest, stream)
+    for (const stream of Object.keys(this._partial)) {
+      const rest = this._partial[stream] + (this._decoders[stream]?.end() ?? '')
       this._partial[stream] = ''
+      if (rest) this._line(rest, stream)
     }
   }
 
@@ -83,7 +97,8 @@ class Console extends EventEmitter {
       stream
     }
     this.lines.push(line)
-    if (this.lines.length > this.maxLines) this.lines.splice(0, this.lines.length - this.maxLines)
+    // trim in batches (amortized O(1) per line)
+    if (this.lines.length > this.maxLines * 1.25) this.lines.splice(0, this.lines.length - this.maxLines)
     if (this._echo) this._echo(line)
     this.emit('line', line)
   }
@@ -96,6 +111,7 @@ class Console extends EventEmitter {
   attachProcess (child, opts = {}) {
     this.child = child
     this.closed = false
+    this._decoders = {}
     child.stdout?.on('data', (c) => this.push(c, 'stdout'))
     child.stderr?.on('data', (c) => this.push(c, 'stderr'))
     if (opts.useStdin) {
@@ -135,9 +151,11 @@ class Console extends EventEmitter {
     }
   }
 
-  /** @returns {ConsoleLine[]} lines with seq > `seq` */
+  /** @returns {ConsoleLine[]} buffered lines with seq > `seq` */
   linesSince (seq) {
-    return this.lines.filter((l) => l.seq > seq)
+    if (!this.lines.length) return []
+    const first = this.lines[0].seq
+    return this.lines.slice(Math.max(0, seq - first + 1))
   }
 
   /** @returns {string[]} the last `n` raw lines */
@@ -146,8 +164,8 @@ class Console extends EventEmitter {
   }
 
   /**
-   * Write one command line (no leading '/'). Resolves with the console seq just before the write;
-   * output of this command has a greater seq.
+   * Write one command line (a leading '/' is dropped). Resolves with the console seq just before the
+   * write; output of this command has a greater seq.
    * @returns {Promise<number>}
    */
   async write (cmd) {
@@ -216,7 +234,7 @@ class Console extends EventEmitter {
 
   /**
    * Write a command and resolve with its first output line matching `matcher`.
-   * Serialized with other commandWithOutput / marker calls.
+   * Serialized with the other output-reading calls.
    * @param {string} cmd
    * @param {Matcher} matcher
    * @param {{ timeout?: number }} [opts]
@@ -230,13 +248,31 @@ class Console extends EventEmitter {
   }
 
   /**
+   * Write a command followed by a marker and resolve with every line the command printed (the lines
+   * between the command and the marker's `Unknown command` answer). Commands that print nothing
+   * resolve with `[]`. Serialized with the other output-reading calls.
+   * @param {string} cmd
+   * @param {{ timeout?: number }} [opts]
+   * @returns {Promise<ConsoleLine[]>}
+   */
+  commandOutput (cmd, opts = {}) {
+    return this.exclusive(async () => {
+      const since = await this.write(cmd)
+      const id = newMarker()
+      await this.write(id)
+      const { line: end } = await this.waitFor(id, { since, timeout: opts.timeout ?? 30000 })
+      return this.linesSince(since).filter((l) => l.seq < end.seq && !isMarkerLine(l))
+    })
+  }
+
+  /**
    * Resolve once every command written before has been executed: writes a unique unknown command
    * (BDS answers `Unknown command: <marker>…` in order on its main thread) and waits for its echo.
    */
   async marker (opts = {}) {
-    const id = `bedboo_marker_${crypto.randomBytes(5).toString('hex')}`
+    const id = newMarker()
     await this.commandWithOutput(id, id, opts)
   }
 }
 
-module.exports = { Console, compileMatcher, PREFIX_RE }
+module.exports = { Console, compileMatcher, isMarkerLine, PREFIX_RE, MARKER_PREFIX }

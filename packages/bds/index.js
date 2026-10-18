@@ -101,6 +101,7 @@ module.exports = {
   createTestBot,
   externalServer: server.externalServer,
   attachServer: server.attachServer,
+  downServer: server.downServer,
   pull: golden.pull,
   reap: reaper.reap,
   clean: reaper.clean,
