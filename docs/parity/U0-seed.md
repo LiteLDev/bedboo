@@ -10,7 +10,7 @@ update `status` and fill `asserting test` (the test file + test name proving the
 assembles fragments into `docs/parity.md`; a row with `n.a.` or `adapted` must link a
 `docs/differences/U<n>.md` entry.
 
-Totals: 10 export, 95 property, 110 method, 104 event, 36 window, 46 test.
+Totals: 10 export, 160 property, 112 method, 104 event, 43 window, 46 test.
 
 ## Module exports (`require('mineflayer-bedrock')`)
 
@@ -80,8 +80,6 @@ Totals: 10 export, 95 property, 110 method, 104 event, 36 window, 46 test.
 | `bot.oxygenLevel` | property | U9 | todo |  |
 | `bot.physics` | property | U4 → U5 | todo |  |
 | `bot.fireworkRocketDuration` | property | U7 | todo |  |
-| `bot.simpleClick.leftMouse` | property | U8 | todo |  |
-| `bot.simpleClick.rightMouse` | property | U8 | todo |  |
 | `bot.time.doDaylightCycle` | property | U9 | todo |  |
 | `bot.time.bigTime` | property | U9 | todo |  |
 | `bot.time.time` | property | U9 | todo |  |
@@ -126,6 +124,73 @@ Totals: 10 export, 95 property, 110 method, 104 event, 36 window, 46 test.
 | `bot.entity.equipment` | property | U4 | todo |  |
 | `bot.abilities` | property | U9 | todo |  |
 | `bot.bedrock` (Bedrock-only extras namespace) | property | U0 | todo |  |
+| `bot.settings.mainHand` | property | U4 | todo |  |
+| `bot.physics.gravity` | property | U4 → U5 | todo |  |
+| `bot.physics.airdrag` | property | U4 → U5 | todo |  |
+| `bot.physics.yawSpeed` | property | U4 → U5 | todo |  |
+| `bot.physics.pitchSpeed` | property | U4 → U5 | todo |  |
+| `bot.physics.playerSpeed` | property | U4 → U5 | todo |  |
+| `bot.physics.sprintSpeed` | property | U4 → U5 | todo |  |
+| `bot.physics.sneakSpeed` | property | U4 → U5 | todo |  |
+| `bot.physics.stepHeight` | property | U4 → U5 | todo |  |
+| `bot.physics.negligeableVelocity` | property | U4 → U5 | todo |  |
+| `bot.physics.soulsandSpeed` | property | U4 → U5 | todo |  |
+| `bot.physics.honeyblockSpeed` | property | U4 → U5 | todo |  |
+| `bot.physics.honeyblockJumpSpeed` | property | U4 → U5 | todo |  |
+| `bot.physics.ladderMaxSpeed` | property | U4 → U5 | todo |  |
+| `bot.physics.ladderClimbSpeed` | property | U4 → U5 | todo |  |
+| `bot.physics.playerHalfWidth` | property | U4 → U5 | todo |  |
+| `bot.physics.playerHeight` | property | U4 → U5 | todo |  |
+| `bot.physics.waterInertia` | property | U4 → U5 | todo |  |
+| `bot.physics.lavaInertia` | property | U4 → U5 | todo |  |
+| `bot.physics.liquidAcceleration` | property | U4 → U5 | todo |  |
+| `bot.physics.airborneInertia` | property | U4 → U5 | todo |  |
+| `bot.physics.airborneAcceleration` | property | U4 → U5 | todo |  |
+| `bot.physics.defaultSlipperiness` | property | U4 → U5 | todo |  |
+| `bot.physics.outOfLiquidImpulse` | property | U4 → U5 | todo |  |
+| `bot.physics.autojumpCooldown` | property | U4 → U5 | todo |  |
+| `bot.physics.bubbleColumnSurfaceDrag` | property | U4 → U5 | todo |  |
+| `bot.physics.bubbleColumnDrag` | property | U4 → U5 | todo |  |
+| `bot.physics.slowFalling` | property | U4 → U5 | todo |  |
+| `bot.physics.movementSpeedAttribute` | property | U4 → U5 | todo |  |
+| `bot.physics.sprintingUUID` | property | U4 → U5 | todo |  |
+| `bot.physics.waterGravity` | property | U4 → U5 | todo |  |
+| `bot.physics.lavaGravity` | property | U4 → U5 | todo |  |
+| `bot.controlState.forward` | property | U4 → U5 | todo |  |
+| `bot.controlState.back` | property | U4 → U5 | todo |  |
+| `bot.controlState.left` | property | U4 → U5 | todo |  |
+| `bot.controlState.right` | property | U4 → U5 | todo |  |
+| `bot.controlState.jump` | property | U4 → U5 | todo |  |
+| `bot.controlState.sprint` | property | U4 → U5 | todo |  |
+| `bot.controlState.sneak` | property | U4 → U5 | todo |  |
+| `bot.entity.id` | property | U4 | todo |  |
+| `bot.entity.position` | property | U4 | todo |  |
+| `bot.entity.velocity` | property | U4 | todo |  |
+| `bot.entity.yaw` | property | U4 | todo |  |
+| `bot.entity.pitch` | property | U4 | todo |  |
+| `bot.entity.onGround` | property | U4 | todo |  |
+| `bot.entity.height` | property | U4 | todo |  |
+| `bot.entity.width` | property | U4 | todo |  |
+| `bot.entity.effects` | property | U4 | todo |  |
+| `bot.entity.isValid` | property | U4 | todo |  |
+| `bot.entity.metadata` | property | U4 | todo |  |
+| `bot.entity.passengers` | property | U4 | todo |  |
+| `bot.entity.vehicle` | property | U4 | todo |  |
+| `bot.entity.username` | property | U4 | todo |  |
+| `bot.entity.type` | property | U4 | todo |  |
+| `bot.entity.name` | property | U4 | todo |  |
+| `bot.entity.eyeHeight` | property | U4 | todo |  |
+| `bot.tablist.header` | property | U6 | todo |  |
+| `bot.tablist.footer` | property | U6 | todo |  |
+| `bot.scoreboard.list` | property | U6 | todo |  |
+| `bot.scoreboard.sidebar` | property | U6 | todo |  |
+| `bot.scoreboard.belowName` | property | U6 | todo |  |
+| `bot.abilities.invulnerable` | property | U9 | todo |  |
+| `bot.abilities.flying` | property | U9 | todo |  |
+| `bot.abilities.mayFly` | property | U9 | todo |  |
+| `bot.abilities.instantBuild` | property | U9 | todo |  |
+| `bot.abilities.flyingSpeed` | property | U9 | todo |  |
+| `bot.abilities.walkingSpeed` | property | U9 | todo |  |
 
 ## Bot methods (incl. `bot.creative.*`, `bot.simpleClick.*`, runtime-only and internal members)
 
@@ -241,6 +306,8 @@ Totals: 10 export, 95 property, 110 method, 104 event, 36 window, 46 test.
 | `bot._placeEntityWithOptions` (internal) | method | U11 | todo |  |
 | `bot._genericPlace` (internal) | method | U11 | todo |  |
 | `bot.physics.simulatePlayer` (used by mineflayer-pathfinder) | method | U5 | todo |  |
+| `bot._warn` (internal) | method | U4 | todo |  |
+| `bot.physics.adjustPositionHeight` (prismarine-physics) | method | U5 | todo |  |
 
 ## Bot events
 
@@ -391,6 +458,13 @@ Totals: 10 export, 95 property, 110 method, 104 event, 36 window, 46 test.
 | `Villager .trades` | property | U13 | todo |  |
 | `Villager .close()` | method | U13 | todo |  |
 | `villager.trade(tradeIndex, [times])` | method | U13 | todo |  |
+| `Window (base) "close" event` | event | U8 | todo |  |
+| `Window (base) "updateSlot" event` | event | U8 | todo |  |
+| `Furnace .totalFuel` (runtime only) | property | U13 | todo |  |
+| `Furnace .fuelSeconds` (runtime only) | property | U13 | todo |  |
+| `Furnace .totalProgress` (runtime only) | property | U13 | todo |  |
+| `Furnace .progressSeconds` (runtime only) | property | U13 | todo |  |
+| `Villager .selectedTrade` (runtime only) | property | U13 | todo |  |
 
 ## mineflayer 4.39.0 external tests (`docs/upstream/externalTests/`)
 
