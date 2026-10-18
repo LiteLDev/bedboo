@@ -18,6 +18,7 @@
     "test": "pnpm -r --if-present run test",
     "test:e2e": "node scripts/run-e2e.js",
     "typecheck": "pnpm --filter mineflayer-bedrock run typecheck",
+    "parity": "node scripts/parity/index.js",
     "bds": "bds"
   },
   "devDependencies": {

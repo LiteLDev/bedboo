@@ -42,7 +42,7 @@ function inject (bot) {
   bot.clickWindow = stubAsync('U8', 'bot.clickWindow', 3)
   bot.putSelectedItemRange = stubAsync('U8', 'bot.putSelectedItemRange', 4)
   bot.putAway = stubAsync('U8', 'bot.putAway', 1)
-  bot.closeWindow = stubSync('U8', 'bot.closeWindow', 1)
+  bot.closeWindow = stubAsync('U8', 'bot.closeWindow', 1)
   bot.transfer = stubAsync('U8', 'bot.transfer', 1)
   bot.openBlock = stubAsync('U8', 'bot.openBlock', 3)
   bot.openEntity = stubAsync('U8', 'bot.openEntity', 1)
