@@ -2,6 +2,7 @@
 // owner: U9 (player state, world extras & dimensions) — abilities, experience, breath, spawn point, command block,
 // ray trace and explosion plugins on the recorded BDS join
 const assert = require('assert')
+const nbt = require('prismarine-nbt')
 const { Vec3 } = require('vec3')
 const { createFakeBot, replayJoin, afterSpawnRecords } = require('./helpers/fake')
 const { xpForLevel, xpToNextLevel, totalPoints } = require('../../lib/plugins/experience')
@@ -127,6 +128,12 @@ describe('player state (U9)', function () {
     assert.deepStrictEqual([sent[1].mode, sent[1].needs_redstone, sent[1].conditional, sent[1].should_track_output], ['repeat', false, true, true])
     assert.strictEqual(sent[2].mode, 'chain')
     assert.throws(() => bot.setCommandBlock(pos.offset(0, 1, 0), '/say x', {}), /isn't a command block/)
+    // fields Java's packet does not carry keep the block's values (custom name, tick delay, first tick, output)
+    client.receive('block_entity_data', { position: { x: 1, y: -60, z: 1 }, nbt: nbt.comp({ id: nbt.string('CommandBlock'), Command: nbt.string('/say hi'), CustomName: nbt.string('Named'), TickDelay: nbt.int(20), ExecuteOnFirstTick: nbt.byte(1), LastOutput: nbt.string('commands.say.ok') }) })
+    client.clearSent()
+    bot.setCommandBlock(pos, '/say kept')
+    const [kept] = client.sent('command_block_update')
+    assert.deepStrictEqual([kept.name, kept.tick_delay, kept.execute_on_first_tick, kept.last_output], ['Named', 20, true, 'commands.say.ok'])
   })
 
   it('ray trace + explosion (vendored upstream plugins) on the flat world', async () => {
@@ -138,6 +145,11 @@ describe('player state (U9)', function () {
     assert.ok(hit.position.equals(below.position))
     assert.strictEqual(hit.face, 1)
     assert.ok(bot.blockInSight().position.equals(below.position))
+    // a level look (pitch 0) facing north (yaw 0) — the default orientation — at a wall (upstream returned null)
+    bot.world.setBlockStateId(new Vec3(0, -59, -2), bot.registry.blocksByName.stone.defaultState)
+    await bot.look(0, 0, true)
+    const wall = bot.blockAtCursor(5)
+    assert.ok(wall && wall.name === 'stone' && wall.position.equals(new Vec3(0, -59, -2)), `${wall?.name} ${wall?.position}`)
     await bot.lookAt(bot.entity.position.offset(0, 3, 0), true)
     assert.strictEqual(bot.blockAtCursor(), null)
     assert.strictEqual(bot.blockInSight(), undefined)

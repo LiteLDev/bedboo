@@ -78,7 +78,8 @@ describe('block actions, block entities, signs (U9)', function () {
     client.receive('block_event', { position: { x: 4, y: -60, z: 4 }, type: 'change_state', data: 1 })
     client.receive('block_event', { position: { x: 5, y: -60, z: 4 }, type: 'change_state', data: 1 })
     client.receive('block_event', { position: { x: 5, y: -60, z: 4 }, type: 'change_state', data: 0 })
-    assert.deepStrictEqual(lids, [['(4, -60, 4)', 1, '(5, -60, 4)'], ['(5, -60, 4)', 0, '(4, -60, 4)']])
+    client.receive('block_event', { position: { x: 4, y: -60, z: 4 }, type: 'change_state', data: 0 })
+    assert.deepStrictEqual(lids, [['(4, -60, 4)', 1, '(5, -60, 4)'], ['(5, -60, 4)', 0, '(4, -60, 4)']], 'a close reported for both halves: one event')
   })
 
   it('break progress: level_event start / speed / stop → blockBreakProgressObserved stages, blockBreakProgressEnd; own digging skipped', async () => {
@@ -105,6 +106,17 @@ describe('block actions, block entities, signs (U9)', function () {
     ev('block_start_break', 1000)
     bot._updateBlockState(new Vec3(4, -60, 0), bot.registry.blocksByName.air.defaultState)
     assert.strictEqual(ended.length, 2)
+
+    // a new break over an entry whose stop_break was lost restarts at stage 0; a stale break ends by itself
+    set(new Vec3(4, -60, 0), 'stone')
+    observed.length = 0
+    ev('block_start_break', 30000)
+    await new Promise(resolve => setTimeout(resolve, 120))
+    ev('block_start_break', 30000)
+    assert.deepStrictEqual(observed.filter(o => o[1] === 0).length, 2, 'stage 0 again')
+    const endedBefore = ended.length
+    await new Promise(resolve => setTimeout(resolve, 400)) // 30000/65535 per tick: done after ~3 ticks, stale after ~4
+    assert.strictEqual(ended.length, endedBefore + 1, 'the lost stop_break is assumed after 150 % of the time')
 
     // the bot's own digging (BDS sends these to the breaker too): skipped
     set(new Vec3(4, -60, 0), 'stone')
@@ -173,10 +185,14 @@ describe('block actions, block entities, signs (U9)', function () {
     const [packet] = client.sent('block_entity_data')
     assert.deepStrictEqual([packet.nbt.value.FrontText.value.Text.value, packet.nbt.value.BackText.value.Text.value, packet.nbt.value.x.value], ['hi', '', 3])
 
-    // the block replaced by another type: its block entity goes; a stale block_entity_data for air is dropped
+    // the block replaced by another type: its block entity goes (after 'blockUpdate', whose old block still has it);
+    // a stale block_entity_data for air is dropped
+    let oldSign
+    bot.once('blockUpdate:(2, -60, 5)', (oldBlock) => { oldSign = oldBlock })
     client.receive('update_block', { position: { x: 2, y: -60, z: 5 }, block_runtime_id: Number(Object.keys(bot.registry.blocksByRuntimeId).find(id => bot.registry.blocksByRuntimeId[id].name === 'stone')), flags: {}, layer: 0 })
     assert.strictEqual(bot.blockAt(pos).name, 'stone')
     assert.strictEqual(bot.blockAt(pos).blockEntity, undefined)
+    assert.strictEqual(oldSign.signText, '1\n2\n3', 'blockUpdate: the old block keeps its block entity')
     const airId = Number(Object.keys(bot.registry.blocksByRuntimeId).find(id => bot.registry.blocksByRuntimeId[id].name === 'air'))
     client.receive('update_block', { position: { x: 2, y: -60, z: 5 }, block_runtime_id: airId, flags: {}, layer: 0 })
     const before = events.length

@@ -82,7 +82,6 @@ describe('weather and time (U9)', function () {
 
     // the clock runs with the server tick while doDaylightCycle is on
     clock.advance(1000)
-    bot.emit('physicsTick') // refreshed every 20 physics ticks; force a refresh through the game rule path instead
     client.receive('game_rules_changed', { rules: [{ name: 'doDayLightCycle', editable: true, type: 'bool', value: false }] })
     assert.strictEqual(bot.time.doDaylightCycle, false)
     assert.strictEqual(bot.time.time, 6024 + 20, '20 ticks elapsed before the cycle stopped')
@@ -92,8 +91,13 @@ describe('weather and time (U9)', function () {
     assert.strictEqual(bot.time.time, 18000)
     assert.strictEqual(bot.time.isDay, false)
     clock.advance(5000)
-    for (let i = 0; i < 20; i++) bot.emit('physicsTick')
+    times.length = 0
+    bot.physicsEnabled = false // the periodic event does not depend on physics
+    for (let i = 0; i < 40; i++) {
+      clock.advance(50)
+      bot._bedrock.input.pump()
+    }
     assert.strictEqual(bot.time.time, 18000, `frozen (was ${frozen})`)
-    assert.strictEqual(times[times.length - 1], 18000, 'periodic time event every 20 physics ticks')
+    assert.deepStrictEqual(times, [18000, 18000], 'periodic time event every 20 ticks')
   })
 })

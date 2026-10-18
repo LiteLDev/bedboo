@@ -203,29 +203,33 @@ function inject (bot) {
       if (pending) {
         const local = new Vec3(point.x & 15, point.y, point.z & 15)
         if (layer === 1) local.l = 1
-        if (layer !== 1) dropStaleBlockEntity(pending.column, local, stateId)
+        const stale = layer !== 1 && staleBlockEntity(pending.column, local, stateId)
         pending.column.setBlockStateId(local, stateId)
+        if (stale) pending.column.removeBlockEntity(local)
       }
       return
     }
     if (layer === 1) {
       updateLiquidLayer(point, stateId)
     } else {
-      dropStaleBlockEntity(bot.world.getColumnAt(point), new Vec3(point.x & 15, point.y, point.z & 15), stateId)
-      updateBlockState(point, stateId)
+      const column = bot.world.getColumnAt(point)
+      const local = new Vec3(point.x & 15, point.y, point.z & 15)
+      const stale = staleBlockEntity(column, local, stateId)
+      updateBlockState(point, stateId) // 'blockUpdate' with the old block still carrying its block entity
+      if (stale) column.removeBlockEntity(local)
     }
   }
 
   // ---- block entities (U9) -----------------------------------------------------------------------------
   // block.entity (raw NBT) / block.blockEntity (simplified) come from the sub-chunk payloads (prismarine-chunk) and
   // block_entity_data packets; BDS sends the new block's block_entity_data right after its update_block, so the
-  // block entity of a replaced block (another block type) is dropped first.
-  function dropStaleBlockEntity (column, local, newStateId) {
-    if (!column?.getBlockEntity?.(local)) return
+  // block entity of a replaced block (another block type) is dropped with the update.
+  function staleBlockEntity (column, local, newStateId) {
+    if (!column?.getBlockEntity?.(local)) return false
     const oldStateId = column.getBlockStateId(local)
     const oldType = bot.registry.blocksByStateId[oldStateId]?.id
     const newType = bot.registry.blocksByStateId[newStateId]?.id
-    if (oldType !== newType) column.removeBlockEntity(local)
+    return oldType !== newType
   }
 
   bot._client.on('block_entity_data', (packet) => {

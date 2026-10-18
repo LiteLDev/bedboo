@@ -2,7 +2,8 @@
 // Adapted from mineflayer master lib/plugins/abilities.js (MIT, Copyright (c) 2013 Andrew Kelley; not in 4.39.0;
 //   pinned copy in docs/upstream/abilities.master.js, master SHA 7b4bb8d2b56be9cdb832474af873acd37e609746)
 // Surface: bot.abilities { invulnerable, flying, mayFly, instantBuild, flyingSpeed, walkingSpeed }
-//   (also mirrors bot.entity.flying / bot.entity.flyingSpeed for physics, like master)
+//   (also mirrors bot.entity.flying / bot.entity.flyingSpeed for physics, like master, and switches the physics
+//   engine's flight with bot._bedrock.physics.setFlying when `flying` changes)
 // Events: 'abilities' (abilities)
 // Bedrock (docs/differences/U9.md#abilities):
 // - update_abilities for the local player (entity_unique_id = own unique id): ability layers (base, spectator,
@@ -77,11 +78,22 @@ function inject (bot) {
   }
 
   function setAbilities (abilities) {
+    const wasFlying = bot.abilities.flying
     bot.abilities = abilities
     // prismarine-physics reads the flight state off the entity.
     if (bot.entity) {
       bot.entity.flying = bot.abilities.flying
       bot.entity.flyingSpeed = bot.abilities.flyingSpeed
+    }
+    // the Bedrock physics engine's flight hook (lib/loader.js: "creative/abilities flight"), when the server
+    // starts / stops the flight (spectator, update_abilities)
+    const setFlying = bot._bedrock?.physics?.setFlying
+    if (wasFlying !== bot.abilities.flying && typeof setFlying === 'function' && !setFlying.notImplemented) {
+      try {
+        setFlying(bot.abilities.flying)
+      } catch (err) {
+        bot.emit('error', err)
+      }
     }
     bot.emit('abilities', bot.abilities)
   }

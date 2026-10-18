@@ -18,15 +18,6 @@ const { Vec3 } = require('vec3')
 
 module.exports = inject
 
-const SIDE_FIELDS = {
-  IgnoreLighting: () => nbt.byte(0),
-  HideGlowOutline: () => nbt.byte(0),
-  PersistFormatting: () => nbt.byte(1),
-  SignTextColor: () => nbt.int(-16777216),
-  TextOwner: () => nbt.string(''),
-  FilteredText: () => nbt.string('')
-}
-
 /** deep copy of an NBT tag (keeps bigint longs) */
 function cloneTag (tag) {
   if (tag === null || typeof tag !== 'object') return tag
@@ -36,26 +27,25 @@ function cloneTag (tag) {
   return out
 }
 
-/** the block_entity_data compound for a sign whose `side` ('FrontText' | 'BackText') text becomes `text` */
-function signNbt (current, position, side, text) {
-  const tag = current?.type === 'compound' ? cloneTag(current) : nbt.comp({})
-  const value = tag.value
-  value.id ??= nbt.string('Sign')
-  value.x = nbt.int(position.x)
-  value.y = nbt.int(position.y)
-  value.z = nbt.int(position.z)
-  for (const name of ['FrontText', 'BackText']) {
-    if (value[name]?.type !== 'compound') value[name] = nbt.comp({ Text: nbt.string('') })
-    for (const [key, make] of Object.entries(SIDE_FIELDS)) {
-      if (!(key in value[name].value)) value[name].value[key] = make()
-    }
-    if (!('Text' in value[name].value)) value[name].value.Text = nbt.string('')
-  }
-  value[side].value.Text = nbt.string(text)
-  return tag
+/**
+ * The block_entity_data compound for `block` (a sign) whose front (or back) text becomes `text`: a copy of its
+ * current block entity, both sides filled in by prismarine-block's Bedrock sign helpers (FrontText / BackText with
+ * their style fields), the position set.
+ */
+function signNbt (Block, block, current, position, text, back) {
+  // (prismarine-block adds the sign helpers to sign blocks only: any other block is edited as a standing sign)
+  const isSign = typeof block?.name === 'string' && block.name.includes('sign')
+  const sign = Block.fromStateId(isSign ? block.stateId : Block.fromProperties('standing_sign', {}, 0).stateId, 0)
+  sign.entity = current?.type === 'compound' ? cloneTag(current) : nbt.comp({ id: nbt.string('Sign') })
+  const [front, backText] = sign.getSignText()
+  sign.setSignText(back ? front : text, back ? text : backText)
+  Object.assign(sign.entity.value, { x: nbt.int(position.x), y: nbt.int(position.y), z: nbt.int(position.z) })
+  return sign.entity
 }
 
 function inject (bot) {
+  const Block = require('prismarine-block')(bot.registry)
+
   bot._client.on('open_sign', (packet) => {
     const pos = new Vec3(packet.position.x, packet.position.y, packet.position.z)
     bot.emit('signOpen', bot.blockAt(pos))
@@ -76,10 +66,10 @@ function inject (bot) {
     }
 
     const position = new Vec3(Math.floor(block.position.x), Math.floor(block.position.y), Math.floor(block.position.z))
-    const current = bot.blockAt(position)?.entity ?? block.entity
+    const target = bot.blockAt(position) ?? block
     bot._client.queue('block_entity_data', {
       position: { x: position.x, y: position.y, z: position.z },
-      nbt: signNbt(current, position, back ? 'BackText' : 'FrontText', text)
+      nbt: signNbt(Block, target, target.entity ?? block.entity, position, text, back)
     })
   }
 }

@@ -20,7 +20,9 @@
 //   → 'health', isAlive = true, lifecycle.markSpawned('respawn') → 'spawn'.
 //   A respawn into another dimension (death in the nether, overworld spawn) gets a change_dimension (without
 //   loading_screen_id) between the client state 2 and the server state 1: the lifecycle completes it without
-//   'spawn' (it resumes 'respawning') and the respawn above spawns once; 'respawn' is emitted once per death.
+//   'spawn' (it resumes 'respawning') and the respawn above spawns once (after the change completed, whatever the
+//   packet order); 'respawn' is emitted once per death. A death during a dimension change still emits 'death'
+//   and the lifecycle (markDead) completes the change without 'spawn'.
 //   With `respawn: false` the bot stays dead (death screen) until bot.respawn() is called.
 // - dimension change (change_dimension, mineflayer: a Java respawn packet to another dimension): isAlive = false +
 //   'respawn' at the change, isAlive = true when the lifecycle spawns in the new dimension (upstream sets isAlive back
@@ -63,6 +65,8 @@ function inject (bot, options) {
     lc.setState(state)
   }
 
+  let reviveAfterDimension = false // revived while the lifecycle still completes a dimension change
+
   function onHealthUpdate () {
     bot.emit('health')
     if (bot.health <= 0) {
@@ -80,12 +84,17 @@ function inject (bot, options) {
       readySent = false
       actionSent = false
       respawnEmitted = false
-      changingDimension = false
+      reviveAfterDimension = false
       clearTimeout(reviveTimer)
-      // (a dimension change in progress keeps its state: the lifecycle completes it first)
-      setLifecycle('dead', ['spawned', 'respawning'])
-    }
-    if (bot.isAlive) {
+      const lc = lifecycle()
+      // a dimension change in progress completes first (without 'spawn'), then the lifecycle is 'dead'
+      if (typeof lc?.markDead === 'function') lc.markDead()
+      else setLifecycle('dead', ['spawned', 'respawning'])
+      // a real death, even while isAlive is false for a dimension change
+      changingDimension = false
+      bot.isAlive = false
+      bot.emit('death')
+    } else if (bot.isAlive) {
       bot.isAlive = false
       bot.emit('death')
     }
@@ -101,7 +110,13 @@ function inject (bot, options) {
     screen = requested = readySent = actionSent = false
     bot.isAlive = true
     const lc = lifecycle()
-    if (lc && lc.state !== 'ended') lc.markSpawned('respawn')
+    if (!lc || lc.state === 'ended') return
+    // the respawn's dimension change is still loading: spawn once the lifecycle completed it
+    if (lc.state === 'changing_dimension') {
+      reviveAfterDimension = true
+      return
+    }
+    lc.markSpawned('respawn')
   }
 
   /** mineflayer's 'respawn' (Java respawn packet): once per death / dimension change */
@@ -200,6 +215,12 @@ function inject (bot, options) {
         changingDimension = false
         bot.isAlive = true
       }
+    })
+    // a dimension change of the respawn completed (lifecycle back to 'respawning' / 'dead', no 'spawn')
+    lc.events.on('dimensionChanged', () => {
+      if (!reviveAfterDimension) return
+      reviveAfterDimension = false
+      if (lc.state !== 'ended') lc.markSpawned('respawn')
     })
   }
 

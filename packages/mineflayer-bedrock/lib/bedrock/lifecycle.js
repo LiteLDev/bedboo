@@ -60,6 +60,7 @@ const { feetFromWire } = require('./conversions')
  * @property {(loadingScreenId?: number) => void} sendLoadingScreenAck serverbound_loading_screen 1 then 2
  * @property {(packet: object) => void} beginDimensionChange
  * @property {() => void} completeDimensionChange
+ * @property {() => void} markDead U9: death (deferred to the end of a dimension change in progress)
  */
 
 const STATES = ['connecting', 'loading', 'spawned', 'dead', 'respawning', 'changing_dimension', 'ended']
@@ -167,6 +168,15 @@ function createLifecycle (bot) {
         result_position: { x: 0, y: 0, z: 0 },
         face: 0
       })
+    },
+
+    /**
+     * U9 (health.js): the player died. A dimension change in progress completes first — without 'spawn' — and then
+     * resumes 'dead'; otherwise the state becomes 'dead' at once.
+     */
+    markDead () {
+      if (lifecycle.state === 'changing_dimension') resumeState = 'dead'
+      else if (lifecycle.state === 'spawned' || lifecycle.state === 'respawning') lifecycle.setState('dead')
     },
 
     /** End of a dimension change (the server's dimension_change_ack): loading screen acks, then 'spawn'. */

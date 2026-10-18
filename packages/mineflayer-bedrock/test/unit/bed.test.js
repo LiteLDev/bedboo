@@ -68,7 +68,12 @@ describe('bed state (U9)', function () {
     // BDS after a respawn whose bed is gone (observed: rawtext translate tile.bed.notValid)
     client.receive('text', { needs_translation: false, category: 'message_only', type: 'json', message: '{"rawtext":[{"translate":"tile.bed.notValid"}]}\n', xuid: '', platform_chat_id: '', has_filtered_message: false })
     client.receive('text', { needs_translation: false, category: 'message_only', type: 'json', message: '{"rawtext":[{"translate":"tile.bed.respawnSet"}]}\n', xuid: '', platform_chat_id: '', has_filtered_message: false })
+    // players cannot fake it by chatting the key
+    client.receive('text', { needs_translation: false, category: 'authored', type: 'chat', source_name: 'troll', message: 'tile.bed.notValid', xuid: '', platform_chat_id: '', has_filtered_message: false })
+    client.receive('text', { needs_translation: false, category: 'message_only', type: 'json', message: '{"rawtext":[{"text":"tile.bed.notValid"}]}', xuid: '', platform_chat_id: '', has_filtered_message: false })
     assert.deepStrictEqual(events, ['sleep', 'wake', 'spawnReset'])
+    client.receive('text', { needs_translation: true, category: 'message_only', type: 'translation', message: 'tile.respawn_anchor.notValid', parameters: [], xuid: '', platform_chat_id: '', has_filtered_message: false })
+    assert.deepStrictEqual(events, ['sleep', 'wake', 'spawnReset', 'spawnReset'])
   })
 
   it('internalTest › bed: bot.sleep rejects a far bed / monsters nearby (U14, wave 4)', async function () {

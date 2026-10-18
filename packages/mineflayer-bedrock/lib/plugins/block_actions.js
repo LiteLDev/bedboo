@@ -21,8 +21,8 @@
 //   breaker: the destroy stage 0..9 is advanced locally from the speed (one blockBreakProgressObserved per new
 //   stage, like Java's block_break_animation), the entity is the nearest other player within 8 blocks (or
 //   undefined). BDS also sends these to the breaking player: positions the bot digs itself
-//   (bot.targetDigBlock) are skipped, as Java never tells the breaker. blockBreakProgressEnd on stop_break or when
-//   the block changes.
+//   (bot.targetDigBlock) are skipped, as Java never tells the breaker. blockBreakProgressEnd on stop_break, when
+//   the block changes, or when a break runs 50 % past its expected time (its stop_break was lost).
 'use strict'
 const { Vec3 } = require('vec3')
 
@@ -36,6 +36,9 @@ const PISTON_PULLING = 3
 const BREAK_SCALE = 65535
 const BREAKER_RANGE = 8
 const TICK_MS = 50
+/** a break still running at 150 % of its expected time (or 60 s without speed) lost its stop_break */
+const STALE_PROGRESS = 1.5
+const STALE_IDLE_TICKS = 1200
 
 function inject (bot) {
   const key = (p) => `${p.x},${p.y},${p.z}`
@@ -65,9 +68,10 @@ function inject (bot) {
       bot.emit('pistonMove', block, type, packet.data)
     } else {
       const block2 = pairedChest(block)
-      // one event for the pair, stored under the lower position
+      // one event for the pair, stored under the lower position (a closed chest counts 0, so a close reported for
+      // both halves is one event too)
       const where = block2 && key(block2.position) < key(block.position) ? block2.position : block.position
-      if (openCountByPos[where] !== packet.data) {
+      if ((openCountByPos[where] ?? 0) !== packet.data) {
         bot.emit('chestLidMove', block, packet.data, block2)
         if (packet.data > 0) {
           openCountByPos[where] = packet.data
@@ -126,8 +130,13 @@ function inject (bot) {
   }
 
   function tick () {
-    for (const state of breaking.values()) {
+    for (const [k, state] of breaking) {
       state.progress += state.speed / BREAK_SCALE
+      // no stop_break for a long time (breaker gone out of range): give up like an abort
+      if (state.progress > STALE_PROGRESS || (state.speed <= 0 && ++state.idleTicks > STALE_IDLE_TICKS)) {
+        endBreak(k)
+        continue
+      }
       const stage = Math.min(9, Math.floor(state.progress * 10))
       if (stage > state.stage) {
         state.stage = stage
@@ -165,25 +174,25 @@ function inject (bot) {
     const speed = Math.max(0, Number(packet.data) || 0)
     let state = breaking.get(k)
     if (packet.event === 'block_break_speed') {
-      if (state) state.speed = speed
+      if (state) {
+        state.speed = speed
+        state.idleTicks = 0
+      }
       return
     }
-    if (state) {
-      // a restart: keep the observed stage, new speed
-      state.speed = speed
-      return
-    }
-    state = { position, speed, progress: 0, stage: 0, entity: breakerNear(position) }
+    // a new break (also over an entry whose stop_break was missed): stage 0 again, like Java's animation reset
+    state = { position, speed, progress: 0, stage: 0, idleTicks: 0, entity: breakerNear(position) }
     breaking.set(k, state)
     startTimer()
     bot.emit('blockBreakProgressObserved', bot.blockAt(position), 0, state.entity)
   })
 
-  // the block broke (or changed): the animation ends like Java's stage -1
+  // the block broke (or changed): the animation ends like Java's stage -1; a piston that is gone is forgotten
   bot.on('blockUpdate', (oldBlock, newBlock) => {
-    if (!newBlock || breaking.size === 0) return
+    if (!newBlock || oldBlock?.type === newBlock.type) return
     const k = key(newBlock.position)
-    if (breaking.has(k) && oldBlock?.type !== newBlock.type) endBreak(k)
+    if (breaking.has(k)) endBreak(k)
+    if (k in pistonStates) delete pistonStates[k]
   })
 
   // positions belong to the old world after a dimension change

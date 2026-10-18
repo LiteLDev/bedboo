@@ -5,7 +5,8 @@
 //   2 redstone/impulse — default 2), trackOutput, conditional, alwaysActive }
 // Bedrock: command_block_update { is_block: true, position, mode: 'chain' | 'repeat' | 'impulse',
 //   needs_redstone: !alwaysActive, conditional, command, last_output, name, filtered_name, should_track_output,
-//   tick_delay: 0, execute_on_first_tick: false }. BDS applies it to the block entity (the new `Command` comes back
+//   tick_delay, execute_on_first_tick } — the name, tick delay and first-tick flag (no Java option) keep the values of
+//   the block's current block entity. BDS applies it to the block entity (the new `Command` comes back
 //   as block_entity_data → 'blockEntityData') and prints no "Command set" message
 //   (docs/differences/U9.md#command-block).
 'use strict'
@@ -33,6 +34,8 @@ function inject (bot) {
     options.alwaysActive = options.alwaysActive ?? false
     options.mode = options.mode ?? 2 // Possible values: 0: SEQUENCE, 1: AUTO and 2: REDSTONE
 
+    // the fields Java's update_command_block does not carry keep the block's current values (block entity)
+    const current = bot.blockAt(pos)?.blockEntity ?? {}
     bot._client.queue('command_block_update', {
       is_block: true,
       position: { x: Math.floor(pos.x), y: Math.floor(pos.y), z: Math.floor(pos.z) },
@@ -40,12 +43,12 @@ function inject (bot) {
       needs_redstone: !options.alwaysActive,
       conditional: !!options.conditional,
       command,
-      last_output: '',
-      name: '',
+      last_output: typeof current.LastOutput === 'string' ? current.LastOutput : '',
+      name: typeof current.CustomName === 'string' ? current.CustomName : '',
       filtered_name: '',
       should_track_output: !!options.trackOutput,
-      tick_delay: 0,
-      execute_on_first_tick: false
+      tick_delay: Number.isInteger(current.TickDelay) ? current.TickDelay : 0,
+      execute_on_first_tick: !!current.ExecuteOnFirstTick
     })
   }
 

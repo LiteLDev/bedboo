@@ -13,7 +13,8 @@
 //   'time' (the Java server re-sends update_time on that change too).
 // - bigAge/age: the server tick (start_game.current_tick + elapsed ticks of lib/bedrock/input_queue.js).
 // - Between syncs the clock runs locally (one tick per server tick while doDaylightCycle is on and the clock is not
-//   paused); like Java's once-per-second update_time, 'time' is emitted every 20 physics ticks.
+//   paused); like Java's once-per-second update_time, 'time' is emitted every 20 ticks of the input clock (every
+//   20th player_auth_input sent, physics enabled or not).
 // - bot.time.clocks: one entry per Bedrock world clock keyed by its name without `minecraft:` (upstream 26.1 shape
 //   { id, totalTicks, partialTick, rate } plus the Bedrock `name`, `paused`, `timeMarkers`).
 'use strict'
@@ -107,7 +108,7 @@ function inject (bot) {
     const clock = mainClock()
     if (!clock || !synced) return false
     const time = Math.max(0, Math.floor(clock.totalTicks))
-    bot.time.doDaylightCycle = daylightRule ?? true
+    bot.time.doDaylightCycle = clock.rate > 0 // upstream (26.1 clocks): rate > 0; here the game rule and not paused
     bot.time.bigTime = BigInt(time)
     bot.time.time = time
     bot.time.timeOfDay = time % TICKS_PER_DAY
@@ -179,8 +180,24 @@ function inject (bot) {
     emitTime()
   })
 
-  // Java servers send update_time once per second: the same cadence locally
-  bot.on('physicsTick', () => {
+  // Java servers send update_time once per second: the same cadence locally, on the tick clock's player_auth_input
+  // (runs whether physics is enabled or not; paused while the input is suspended: loading, dimension change)
+  let subscribedTo = null
+  let unsubscribe = null
+  const onTick = () => {
     if (++ticks % EMIT_EVERY_TICKS === 0) emitTime()
+  }
+  function subscribe () {
+    const input = bot._bedrock?.input
+    if (!input || input === subscribedTo || typeof input.onSent !== 'function') return
+    unsubscribe?.()
+    unsubscribe = input.onSent(onTick)
+    subscribedTo = input
+  }
+  subscribe()
+  bot.on('spawn', subscribe)
+  bot.on('end', () => {
+    unsubscribe?.()
+    unsubscribe = subscribedTo = null
   })
 }
