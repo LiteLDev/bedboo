@@ -60,7 +60,8 @@ describe('bed state (U9)', function () {
 
     const events = []
     for (const e of ['sleep', 'wake', 'spawnReset']) bot.on(e, () => events.push(e))
-    const sleeping = (on) => client.receive('set_entity_data', { runtime_entity_id: 91n, metadata: [{ key: 'flags_extended', type: 'long', value: { sleeping: on } }], tick: 0n })
+    // BDS reports a sleeping player in player_flags (bit 1, U7's entity data), the entities plugin emits entitySleep
+    const sleeping = (on) => client.receive('set_entity_data', { runtime_entity_id: 91n, metadata: [{ key: 'player_flags', type: 'byte', value: on ? 2 : 0 }], tick: 0n })
     sleeping(true)
     assert.strictEqual(bot.isSleeping, true)
     sleeping(false)

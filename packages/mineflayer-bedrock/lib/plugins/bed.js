@@ -3,8 +3,8 @@
 //   parseBedMetadata (same result shape), isSleeping + 'sleep' / 'wake', 'spawnReset'.
 // Surface: bot.isSleeping, bot.isABed(block), bot.parseBedMetadata(bedBlock), bot.sleep(bedBlock) (U14),
 //   bot.wake() (U14)
-// Events: 'sleep', 'wake' (from entitySleep / entityWake of bot.entity, emitted by the entities plugin from the
-//   `sleeping` metadata flag), 'spawnReset'
+// Events: 'sleep', 'wake' (from entitySleep / entityWake of bot.entity, emitted from the sleeping metadata — BDS:
+//   player_flags bit 1 for players — by the entity data code), 'spawnReset'
 // Bedrock (docs/differences/U9.md#beds):
 // - beds are one block `bed` (colour in the block entity; plus `straw_bed`) with states `direction` (0 south,
 //   1 west, 2 north, 3 east — the head's side, like Java's facing index), `head_piece_bit`, `occupied_bit`

@@ -91,13 +91,16 @@ describe('block actions, block entities, signs (U9)', function () {
     bot.on('blockBreakProgressEnd', (block, entity) => ended.push([block.name, entity]))
     const ev = (event, data) => client.receive('level_event', { event, position: { x: 4, y: -60, z: 0 }, data })
     ev('block_start_break', Math.ceil(65535 / 10)) // 10 ticks to break: a stage per tick
-    assert.deepStrictEqual(observed, [['stone', 0, undefined]])
+    assert.deepStrictEqual(observed.map(o => o.slice(0, 2)), [['stone', 0]])
+    // the breaker: the nearest other player within 8 blocks (Bedrock does not say who breaks), else undefined
+    const others = Object.values(bot.entities).filter(e => e !== bot.entity && e.type === 'player' && e.position.distanceTo(new Vec3(4.5, -59.5, 0.5)) <= 8)
+    assert.strictEqual(observed[0][2], others.sort((a, b) => a.position.distanceTo(new Vec3(4.5, -59.5, 0.5)) - b.position.distanceTo(new Vec3(4.5, -59.5, 0.5)))[0])
     await new Promise(resolve => setTimeout(resolve, 330))
     ev('block_break_speed', Math.ceil(65535 / 10))
     assert.ok(observed.length >= 4, `${observed.length} stages`)
     assert.deepStrictEqual(observed.map(o => o[1]), [...observed.map(o => o[1])].sort((a, b) => a - b))
     ev('block_stop_break', 0)
-    assert.deepStrictEqual(ended, [['stone', undefined]])
+    assert.deepStrictEqual(ended, [['stone', observed[0][2]]])
     const count = observed.length
     await new Promise(resolve => setTimeout(resolve, 120))
     assert.strictEqual(observed.length, count, 'no stage after the end')
