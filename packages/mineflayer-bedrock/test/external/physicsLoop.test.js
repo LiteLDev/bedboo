@@ -82,6 +82,7 @@ function suite (name, properties, check) {
       const rec = correctionRecorder(bot)
       const { laps, ticks } = await runLaps(bot, 60000)
       rec.stop()
+      console.log(`      ${laps} laps, ${ticks} ticks, ${rec.count} corrections (${rec.mispredictions().length} mispredictions)`)
       assert.ok(laps >= 5, `${laps} laps`)
       const pos = await serverPosition(bot, server)
       assert.ok(pos && pos.distanceTo(bot.entity.position) < 0.1, `client ${bot.entity.position} server ${pos}`)

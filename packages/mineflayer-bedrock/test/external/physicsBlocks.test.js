@@ -54,6 +54,7 @@ describe('physics: liquids, climbables, special blocks, falls, knockback, effect
     const pos = await serverPosition(bot, server)
     assert.ok(pos, 'querytarget')
     const d = pos.distanceTo(bot.entity.position)
+    console.log(`      ${label}: ${rec.count} corrections (max ${rec.maxConsecutive()} consecutive, ${rec.mispredictions().length} mispredictions), |Δpos| ${d.toFixed(4)}`)
     assert.ok(d <= 0.1, `${label}: |Δpos| ${d.toFixed(4)} (client ${bot.entity.position}, server ${pos})`)
     assert.ok(rec.maxConsecutive() <= 2, `${label}: ${rec.count} corrections, ${rec.maxConsecutive()} consecutive: ${JSON.stringify(rec.list.map((c) => [String(c.tick), c.error && +c.error.toFixed(4)]))}`)
   }

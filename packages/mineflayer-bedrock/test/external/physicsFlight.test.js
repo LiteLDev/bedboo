@@ -53,6 +53,7 @@ describe('physics: creative flight, flyTo, elytra (U5)', function () {
       await bot._bedrock.physics.flyTo(second)
       assert.ok(bot.entity.position.distanceTo(second) <= 0.3, `${bot.entity.position}`)
       await idle(bot, 10)
+      console.log(`      15 s hover + 2 flyTo (${String(bot._bedrock.input.lastTick - BigInt(phases.hover))} ticks): ${rec.count} corrections`)
       assert.strictEqual(rec.count, 0, `phases ${JSON.stringify(phases)} corrections: ${JSON.stringify(rec.list.map((c) => [String(c.tick), c.error, String(c.position), String(c.predicted), String(c.velocity)]))}`)
       const pos = await serverPosition(bot, server)
       assert.ok(pos.distanceTo(bot.entity.position) < 0.01, `client ${bot.entity.position} server ${pos}`)
