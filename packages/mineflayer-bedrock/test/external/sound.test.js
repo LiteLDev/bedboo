@@ -13,7 +13,7 @@ const { once } = require('mineflayer/lib/promise_utils')
 const { useBot } = require('./common')
 
 /** U9's block_actions plugin emits noteHeard; flip once it is on main (the coordinator re-runs this at the wave gate). */
-const NOTE_HEARD_READY = false
+const NOTE_HEARD_READY = true
 
 describe('sound', function () {
   this.timeout(120000)
