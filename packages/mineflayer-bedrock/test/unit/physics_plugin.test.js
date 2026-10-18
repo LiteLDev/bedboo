@@ -131,6 +131,26 @@ describe('physics plugin (U5): Bedrock movement over player_auth_input', functio
     assert.ok(last().input_data.includes('stop_sneaking'))
   })
 
+  it('using an item (bot.usingHeldItem): sprinting stops, the impulse is clamped to ±0.1225 (BDS trace useitem)', async () => {
+    const { bot, tick, last, inputs } = await spawned()
+    await bot.look(-Math.PI / 2, 0, true) // east
+    bot.setControlState('forward', true)
+    bot.setControlState('sprint', true)
+    tick(30)
+    assert.ok(last().input_data.includes('sprinting'))
+    bot.usingHeldItem = true
+    tick()
+    assert.ok(last().input_data.includes('stop_sprinting'))
+    assert.ok(!last().input_data.includes('sprinting'))
+    tick(40)
+    const xs = inputs().slice(-2).map((p) => p.position.x)
+    close(xs[1] - xs[0], 0.0264, 1e-3, 'walking speed while using an item')
+    bot.usingHeldItem = false
+    tick()
+    assert.ok(last().input_data.includes('start_sprinting'), 'the held sprint key sprints again')
+    bot.clearControlStates()
+  })
+
   it('rewind + replay: a correction rewinds to its tick and replays the recorded inputs', async () => {
     const { bot, client, tick } = await spawned()
     await bot.look(-Math.PI / 2, 0, true)

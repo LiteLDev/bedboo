@@ -79,7 +79,7 @@ function replay (trace, limits) {
     for (let t = from.at + 1n; t <= to.at; t++) {
       const rec = ticks.get(t)
       if (!rec) { complete = false; break }
-      const [, bits, yaw, pitch, mvx, mvz, flying, gliding, skip, simulated, effects, speed] = rec
+      const [, bits, yaw, pitch, mvx, mvz, flying, gliding, skip, simulated, effects, speed, , usingItem] = rec
       if (skip || !simulated) continue
       state.control = Object.fromEntries(CONTROLS.map((c, k) => [c, !!(bits & (1 << k))]))
       state.yaw = yaw
@@ -89,6 +89,7 @@ function replay (trace, limits) {
       state.flySpeed = 0.05
       state.elytraFlying = !!gliding
       state.elytraEquipped = true
+      state.usingItem = !!usingItem
       const levels = effectLevels(effects, effectEvents, t)
       state.jumpBoost = levels[8] ?? 0
       state.slowFalling = levels[27] ?? 0

@@ -160,10 +160,13 @@ function inject (bot, { physicsEnabled }) {
     return torso?.name === 'elytra' || rawChestName === 'elytra'
   }
 
-  /** effective control states of this tick (Bedrock sprint: only forward, not sneaking, not flying) */
+  /**
+   * effective control states of this tick (Bedrock sprint: only forward, not sneaking, not flying, not while using an
+   * item — BDS drops the sprint modifier as soon as an item is in use; measured)
+   */
   function effectiveControls () {
     const c = { ...controlState }
-    c.sprint = c.sprint && c.forward && !c.back && !c.sneak
+    c.sprint = c.sprint && c.forward && !c.back && !c.sneak && !bot.usingHeldItem
     if (bot.jumpQueued) c.jump = true
     return c
   }
