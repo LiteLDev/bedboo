@@ -102,6 +102,7 @@ describe('physics: creative flight, flyTo, elytra (U5)', function () {
       assert.strictEqual(bot.entity.elytraFlying, false)
       await idle(bot, 10)
       const pos = await serverPosition(bot, server)
+      console.log(`      elytra glide + landing: ${rec.count} corrections (max ${rec.maxConsecutive()} consecutive), |Δpos| ${pos.distanceTo(bot.entity.position).toFixed(4)}`)
       assert.ok(pos.distanceTo(bot.entity.position) <= 0.1, `client ${bot.entity.position} server ${pos}`)
     } finally {
       rec.stop()
