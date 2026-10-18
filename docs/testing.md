@@ -255,7 +255,7 @@ coordinates; "in dim" = prefixed with `execute in <bot's dimension> run`.
 | `teleport(pos)` | `execute in overworld run tp <bot> X Y Z` | `Teleported …` + own `move_player` within 0.9 of `pos` |
 | `fly(delta)` | in dim `tp <bot> X Y Z` (position + delta) | own `move_player` (creative flight itself is U5's) |
 | `setBlock({ x, y, z, relative, blockName })` | in dim `setblock X Y Z <blockName>` (`relative`: offset from the floored bot position) | `Block placed` + `update_block`/`update_subchunk_blocks` at the position; `The block couldn't be placed` (already that block) resolves at once |
-| `placeBlock(slot, pos)` | `execute as <bot> at @s run setblock X Y Z <item in slot>` | `Block placed` + block update (item not consumed; U11 switches to `bot.placeBlock`) |
+| `placeBlock(slot, pos)` | upstream: `setQuickBarSlot(slot - 36)` + `bot.placeBlock(<block below pos>, up)` (helpers/place.js, U11); raw bots: `execute as <bot> at @s run setblock X Y Z <item in slot>` | `blockPlaced` (the item is used in survival) / raw: `Block placed` + block update (item not consumed) |
 | `resetBlocksToSuperflat()` *(extra)* | in dim `fill` 11×11 around the bot: grass at groundY-1, air groundY…groundY+4 | console marker |
 | `setInventorySlot(slot, item)` | `replaceitem entity <bot> slot.hotbar\|slot.inventory\|slot.armor.*\|slot.weapon.offhand <i> <name> <count> <data>` (`null` → `air`; data = metadata, or a tool's `Damage`; any other NBT throws `NBT cannot be set with replaceitem`) | `Replaced …` + `inventory_content`/`inventory_slot` of that window |
 | `clearInventory()` | `clear <bot>` | `Cleared the inventory…`/`Could not clear…` + `inventory_content` |

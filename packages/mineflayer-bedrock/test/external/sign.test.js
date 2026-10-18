@@ -1,15 +1,15 @@
 // owner: U9 (wave 3: written, skipped until bot.placeBlock exists) → U11 (wave 4, the seed's owner of `sign`)
 'use strict'
 /**
- * Port of mineflayer 4.39.0 test/externalTests/sign.js: place a sign with bot.placeBlock, wait for the editor,
- * updateSign, read signText. Skipped until U11's bot.placeBlock (wave 4) and U8's bot.activateBlock exist.
- * ADAPTED packet name: Bedrock opens the editor with `open_sign { position, is_front }` instead of Java's
- * `open_sign_entity { location }`; everything else is verbatim.
+ * Port of mineflayer 4.39.0 test/externalTests/sign.js: place a sign with bot.placeBlock (U11), wait for the editor,
+ * updateSign, read signText. Two adaptations: Bedrock opens the editor with `open_sign { position, is_front }`
+ * instead of Java's `open_sign_entity { location }`, and the sign item search skips the sign BLOCKS the Bedrock item
+ * registry lists (`*_wall_sign`, `*_standing_sign`: no command gives them); everything else is verbatim.
  * The sign API itself (signOpen, updateSign front/back, blockEntityData, signText) is tested now, without
  * placeBlock, by blockEntities.test.js.
  */
 const assert = require('assert')
-const { Vec3 } = require('vec3')
+const Vec3 = require('vec3')
 const { useBot, implemented } = require('./common')
 
 const upstream = () => async (bot) => {
@@ -18,6 +18,9 @@ const upstream = () => async (bot) => {
 
   let signItem = null
   for (const name in bot.registry.itemsByName) {
+    // Bedrock (adapted): the item registry also lists the sign BLOCKS (`*_wall_sign`, `*_standing_sign`), which no
+    // command can give
+    if (/(wall|standing)_sign$/.test(name)) continue
     if (name.includes('sign') && !name.includes('hanging')) signItem = bot.registry.itemsByName[name]
   }
   assert.notStrictEqual(signItem, null)
