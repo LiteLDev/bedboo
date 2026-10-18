@@ -1,6 +1,5 @@
 // owner: U4 (core runtime)
 'use strict'
-const { stubSync } = require('./errors')
 
 /**
  * Id bookkeeping, exposed as `bot._bedrock.ids` (created by the loader).
@@ -26,12 +25,21 @@ const { stubSync } = require('./errors')
  * @property {(networkId: number) => string|undefined} itemName item identifier (without `minecraft:`) from network id
  * @property {(name: string) => number|undefined} itemNetworkId network id from item name
  * @property {(itemRegistryPacket: object) => void} loadItemRegistry fill the item tables
+ * @property {(startGame: object) => void} setSelf remember the local player's ids (the loader calls it on start_game)
+ * @property {() => bigint|null} selfRuntimeId local player runtime id (null before start_game)
+ * @property {() => bigint|null} selfUniqueId local player unique id (null before start_game)
+ * @property {(runtimeId: bigint|number|null|undefined) => boolean} isSelf whether a runtime id is the local player
+ * @property {(uniqueId: bigint|number|null|undefined) => boolean} isSelfUnique whether a unique id is the local player
  */
 
 /** @returns {BedrockIds} */
 function createIds () {
   const runtimeToUnique = new Map()
   const uniqueToRuntime = new Map()
+  const itemNames = new Map() // network id → name without namespace
+  const itemIds = new Map() // name (with and without `minecraft:`) → network id
+  let selfRuntime = null
+  let selfUnique = null
 
   return {
     runtimeToUnique,
@@ -56,9 +64,37 @@ function createIds () {
       const runtime = uniqueToRuntime.get(BigInt(uniqueId))
       return runtime !== undefined ? Number(runtime) : undefined
     },
-    itemName: stubSync('U4', 'bot._bedrock.ids.itemName', 1),
-    itemNetworkId: stubSync('U4', 'bot._bedrock.ids.itemNetworkId', 1),
-    loadItemRegistry: stubSync('U4', 'bot._bedrock.ids.loadItemRegistry', 1)
+    setSelf (startGame) {
+      selfRuntime = BigInt(startGame.runtime_entity_id)
+      selfUnique = BigInt(startGame.entity_id)
+    },
+    selfRuntimeId () {
+      return selfRuntime
+    },
+    selfUniqueId () {
+      return selfUnique
+    },
+    isSelf (runtimeId) {
+      return selfRuntime !== null && runtimeId !== undefined && runtimeId !== null && BigInt(runtimeId) === selfRuntime
+    },
+    isSelfUnique (uniqueId) {
+      return selfUnique !== null && uniqueId !== undefined && uniqueId !== null && BigInt(uniqueId) === selfUnique
+    },
+    itemName (networkId) {
+      return itemNames.get(Number(networkId))
+    },
+    itemNetworkId (name) {
+      return itemIds.get(String(name))
+    },
+    /** item_registry (or a start_game carrying `itemstates`): `{ itemstates: [{ name, runtime_id }] }` */
+    loadItemRegistry (packet) {
+      for (const state of packet?.itemstates ?? []) {
+        const name = String(state.name).replace(/^minecraft:/, '')
+        itemNames.set(state.runtime_id, name)
+        itemIds.set(name, state.runtime_id)
+        itemIds.set(String(state.name), state.runtime_id)
+      }
+    }
   }
 }
 

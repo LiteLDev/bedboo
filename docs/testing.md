@@ -245,7 +245,7 @@ coordinates; "in dim" = prefixed with `execute in <bot's dimension> run`.
 | `port`, `host`, `server`, `ctx` | — | server handle / helper context |
 | `wait(ms)` | — | timer |
 | `dumpMarker(msg)` | — | logs when `BEDBOO_TRACE` is set |
-| `sayEverywhere(msg)` | `say <msg>` | written (`say` prints nothing in the log); also `console.log` |
+| `sayEverywhere(msg)` | bot chat (`bot.chat` or raw `text`); `/…` → the bot's own `command_request` | sent (`/…`: its `command_output`); also `console.log` |
 | `awaitCommandsProcessed()` *(extra)* | unknown-command marker | `Unknown command: bedboo_marker_…` |
 | `becomeCreative()` / `becomeSurvival()` | `gamemode creative\|survival <bot>` | `Set <bot>'s game mode to …` + `update_player_game_type` (skipped when already in that mode) |
 | `setGameMode(mode)` *(extra)* | same | same |

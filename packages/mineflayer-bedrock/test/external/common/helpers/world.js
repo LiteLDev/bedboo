@@ -77,17 +77,20 @@ function install (bot, ctx) {
     await setblockCommand(`execute as ${ctx.who()} at @s run setblock ${pos.x} ${pos.y} ${pos.z} ${name}`, pos)
   }
 
-  /** Restore the superflat layers (grass at groundY-1, air up to groundY+4) in an 11×11 area around the bot. */
+  /**
+   * Restore the superflat layers (grass at groundY-1, air up to groundY+4) in an 11×11 area around the bot.
+   * Every layer's console output is checked (`<n> blocks filled`, including 0 when nothing changed; BDS adds
+   * "Failed to execute 'fill' as [Null]" to a 0 under `execute`): any other answer (e.g. "Cannot place blocks
+   * outside of the world") throws, so resetState keeps the world marked dirty.
+   */
   t.resetBlocksToSuperflat = async () => {
     const p = (ctx.position() ?? new Vec3(0, t.groundY, 0)).floored()
     const prefix = ctx.inDimension()
     for (let y = t.groundY + 4; y >= t.groundY - 1; y--) {
       const block = y === t.groundY - 1 ? SUPERFLAT_TOP : 'air'
-      await server.command(`${prefix}fill ${p.x - 5} ${y} ${p.z - 5} ${p.x + 5} ${y} ${p.z + 5} ${block}`)
+      const cmd = `${prefix}fill ${p.x - 5} ${y} ${p.z - 5} ${p.x + 5} ${y} ${p.z + 5} ${block}`
+      await ctx.consoleExpect(cmd, /^\d+ blocks? filled/i, `resetBlocksToSuperflat: ${cmd}`)
     }
-    // the fills run in order on the server thread: the marker confirms they executed (their block
-    // updates are already queued for the client)
-    await server.awaitCommandsProcessed()
   }
 }
 

@@ -1,3 +1,35 @@
+diff --git a/src/bedrock/1.18/ChunkColumn.js b/src/bedrock/1.18/ChunkColumn.js
+index 65e8a79eade6cc2895d4ab11c90a00bd5963cf79..eca633ef6174e4d1654551aa1333bac0525b744b 100644
+--- a/src/bedrock/1.18/ChunkColumn.js
++++ b/src/bedrock/1.18/ChunkColumn.js
+@@ -11,7 +11,16 @@ const nbt = require('prismarine-nbt')
+ 
+ class ChunkColumn180 extends ChunkColumn13 {
+   Section = SubChunk
+-  bounds = this.setBounds(-4, 20) // World height changed
++
++  // bedboo patch: honour the dimension's height (options.minY / options.worldHeight, like the pc columns) instead
++  // of always the overworld's -64..320: nether 0..128 (8 sections), end 0..256 (16 sections). Section and biome
++  // indexes are relative to minY, so a nether column's biomes must not be shifted by the overworld's 4 sections.
++  constructor (options = {}, registry, Block, Biome) {
++    super(options, registry, Block, Biome)
++    const minY = options.minY ?? -64
++    const worldHeight = options.worldHeight ?? 384
++    this.setBounds(Math.floor(minY / 16), Math.floor((minY + worldHeight) / 16))
++  }
+ 
+   // BIOMES
+ 
+@@ -294,7 +303,8 @@ class ChunkColumn180 extends ChunkColumn13 {
+   }
+ 
+   toObject () {
+-    return { ...super.toObject(), version: this.registry.version.minecraftVersion }
++    // bedboo patch: keep the bounds through toJson/fromJson
++    return { ...super.toObject(), minY: this.minY, worldHeight: this.worldHeight, version: this.registry.version.minecraftVersion }
+   }
+ }
+ 
 diff --git a/src/bedrock/1.18/SubChunk.js b/src/bedrock/1.18/SubChunk.js
 index 35cd85306027d1d27a5f0b50748ecd66d6f8fb03..1aec89b6d7b623bf5eca6425d48397829a3db103 100644
 --- a/src/bedrock/1.18/SubChunk.js
@@ -72,10 +104,37 @@ index 35cd85306027d1d27a5f0b50748ecd66d6f8fb03..1aec89b6d7b623bf5eca6425d4839782
  }
  
 diff --git a/src/bedrock/1.3/SubChunk.js b/src/bedrock/1.3/SubChunk.js
-index 52b233e622669057afd12bc3c17a641100eff62e..c645f2c41edcc02bec7a111db4b44e304295f232 100644
+index 52b233e622669057afd12bc3c17a641100eff62e..554ceafbb397fad320a2914bb1787e26c449359a 100644
 --- a/src/bedrock/1.3/SubChunk.js
 +++ b/src/bedrock/1.3/SubChunk.js
-@@ -250,14 +250,15 @@ class SubChunk {
+@@ -205,14 +205,19 @@ class SubChunk {
+       return this.Block.fromStateId(stateId, biomeId)
+     } else {
+       const layer1 = this.getBlockStateId(0, x, y, z)
+-      const layer2 = this.getBlockStateId(1, x, y, z)
+       const block = this.Block.fromStateId(layer1, biomeId)
+-      if (layer2) {
+-        block.superimposed = this.Block.fromStateId(layer2, biomeId)
+-        const name = block.superimposed.name
+-        // TODO: Snowy blocks have to be handled in prismarine-viewer
+-        if (name.includes('water')) {
+-          block.computedStates.waterlogged = true
++      // bedboo patch: only a non-air layer-1 entry is superimposed (getBlockStateId returns air's state id, which
++      // is truthy, for a missing layer or an air entry); a liquid in layer 1 is the waterlogged state
++      if (this.blocks[1]) {
++        const layer2 = this.getBlockStateId(1, x, y, z)
++        if (layer2 !== undefined && layer2 !== this.registry.blocksByName.air.defaultState) {
++          block.superimposed = this.Block.fromStateId(layer2, biomeId)
++          const name = block.superimposed.name
++          // TODO: Snowy blocks have to be handled in prismarine-viewer
++          if (name.includes('water')) {
++            block.computedStates.waterlogged = true
++            block.isWaterlogged = true
++          }
+         }
+       }
+       return block
+@@ -250,14 +255,15 @@ class SubChunk {
        // Decrement count of old block
        const currentIndex = this.blocks[l].get(x, y, z)
        const currentEntry = this.palette[l][currentIndex]
@@ -93,7 +152,7 @@ index 52b233e622669057afd12bc3c17a641100eff62e..c645f2c41edcc02bec7a111db4b44e30
            entry.count = Math.max(entry.count, 0) + 1
            this.blocks[l].set(x, y, z, i)
            return
-@@ -271,8 +272,9 @@ class SubChunk {
+@@ -271,8 +277,9 @@ class SubChunk {
    }
  
    addToPalette (l, stateId, count = 0) {

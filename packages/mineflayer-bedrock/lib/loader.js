@@ -5,7 +5,7 @@
 'use strict'
 const { EventEmitter } = require('events')
 const pluginLoader = require('mineflayer/lib/plugin_loader')
-const { createRegistry } = require('./registry')
+const { createRegistry, attachRegistry } = require('./registry')
 const { createClient } = require('./client')
 const { createSupportFeature } = require('./bedrock/features')
 const { testedVersions, latestSupportedVersion, oldestSupportedVersion } = require('./version')
@@ -15,6 +15,7 @@ const { createLifecycle } = require('./bedrock/lifecycle')
 const { createStackRequestManager } = require('./bedrock/stack_request')
 const { createWindowRegistry } = require('./bedrock/windows')
 const { createIds } = require('./bedrock/ids')
+const { createHeldItemProvider } = require('./bedrock/transactions')
 const { stubSync } = require('./bedrock/errors')
 
 // Every mineflayer 4.39.0 plugin name (41) + `abilities` (mineflayer master) + `sign` (Bedrock
@@ -75,7 +76,19 @@ module.exports = {
   latestSupportedVersion,
   oldestSupportedVersion,
   testedVersions,
-  supportFeature: (feature, version) => createSupportFeature(createRegistry(version || VERSION))(feature)
+  supportFeature
+}
+
+// mineflayer's module-level supportFeature(feature, version). The Bedrock feature table does not depend on a
+// registry, so no registry is built per call (U2 note); other versions are answered by minecraft-data like upstream.
+let tableSupportFeature = null
+function supportFeature (feature, version) {
+  const v = typeof version === 'string' ? version.replace(/^bedrock_/, '') : version
+  if (!v || testedVersions.includes(v)) {
+    tableSupportFeature ??= createSupportFeature(null)
+    return tableSupportFeature(feature)
+  }
+  return require('minecraft-data')(version).supportFeature(feature)
 }
 // internal (tests / U3 conformance tooling); non-enumerable so the export names match mineflayer's
 Object.defineProperty(module.exports, '_plugins', { value: plugins, enumerable: false })
@@ -87,8 +100,8 @@ Object.defineProperty(module.exports, '_plugins', { value: plugins, enumerable: 
 function createBedrockState (bot, options) {
   return {
     /** tick clock + player_auth_input queue (lib/bedrock/input_queue.js) */
-    input: createInputQueue(bot),
-    /** physics hooks used outside physics.js (U4 stub → U5) */
+    input: createInputQueue(bot, { maxCatchupTicks: options.maxCatchupTicks }),
+    /** physics hooks used outside physics.js (implemented by the physics plugin: U4 stub → U5) */
     physics: {
       /** set the feet position; `forced` = server teleport/correction (resets velocity, sends handled_teleport) */
       setPosition: stubSync('U4', 'bot._bedrock.physics.setPosition', 2),
@@ -102,7 +115,7 @@ function createBedrockState (bot, options) {
     /** Bedrock container type → Java window spec registry (lib/bedrock/windows.js, U8) */
     windows: createWindowRegistry(bot),
     /** () => wire Item currently held (exact server copy) for inventory_transaction held_item (U4 → U8) */
-    heldNetworkItem: stubSync('U4', 'bot._bedrock.heldNetworkItem', 0),
+    heldNetworkItem: createHeldItemProvider(bot),
     /** runtime/unique entity ids, item network ids (lib/bedrock/ids.js) */
     ids: createIds(),
     /** the raw start_game packet params once received (U4), else null */
@@ -172,6 +185,16 @@ function createBot (options = {}) {
   bot.loadPlugins([...internalPlugins, ...externalPlugins])
 
   bot._client = bot._client ?? createClient(options)
+  // bedrock-protocol knows the version up front (no ping-based discovery): the registry exists before the
+  // first packet. Its start_game / item_registry wiring is registered before every other client listener
+  // (lifecycle, plugins), so they all see a registry with runtime ids.
+  const registry = createRegistry(options.version)
+  bot.registry = registry
+  attachRegistry(bot)
+  bot._client.on('start_game', (packet) => {
+    bot._bedrock.startGame = packet
+    bot._bedrock.ids.setSelf(packet)
+  })
   bot._bedrock = createBedrockState(bot, options)
 
   let ended = false
@@ -199,9 +222,7 @@ function createBot (options = {}) {
   bot._client.on('end', (reason) => emitEnd(reason))
   bot._client.on('close', () => emitEnd(endReason ?? 'socketClosed'))
 
-  // bedrock-protocol knows the version up front (no ping-based discovery): inject immediately.
-  const registry = createRegistry(options.version)
-  bot.registry = registry
+  // inject immediately (no version discovery)
   bot.protocolVersion = registry.version.version
   bot.majorVersion = registry.version.majorVersion
   bot.version = registry.version.minecraftVersion
