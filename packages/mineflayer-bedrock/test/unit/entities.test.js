@@ -4,8 +4,9 @@
 // synthesized Bedrock packets. The upstream internalTest analogs keep their names (docs/parity/U3-internal-tests.md).
 const assert = require('assert')
 const { Vec3 } = require('vec3')
-const { createFakeBot, replayJoin, afterSpawnRecords } = require('./helpers/fake')
+const { createFakeBot, fakeClient, replayJoin, afterSpawnRecords } = require('./helpers/fake')
 const paintings = require('../../lib/bedrock/paintings')
+const conv = require('../../lib/bedrock/conversions')
 const { POSITION_OFFSETS, armorTotals } = require('../../lib/plugins/entities')
 
 const EMPTY_ITEM = { network_id: 0, count: 0, metadata: 0, has_stack_id: false, block_runtime_id: 0 }
@@ -212,6 +213,32 @@ describe('entities & players (U7)', function () {
     assert.strictEqual(bot.entity.getDroppedItem(), null, 'not an item')
   })
 
+  it('item stacks merging (entity_event item_entity_merge) → the new count, entityUpdate + itemDrop like Java\'s metadata update', async () => {
+    const { bot, client, events, record } = await joined()
+    const drop = (runtimeId, unique) => client.receive('add_item_entity', { entity_id_self: unique, runtime_entity_id: runtimeId, item: wireItem(bot, 'dirt', 1), position: { x: 3.5, y: -59.875, z: -3.5 }, velocity: { x: 0, y: 0, z: 0 }, metadata: [], is_from_fishing: false })
+    drop(2n, -2n)
+    drop(3n, -3n)
+    drop(4n, -4n)
+    record('entityUpdate', 'itemDrop', 'entityGone')
+    // live BDS 1.26.51.1 sequence: the merge event on the surviving item (data = the new stack size), then the
+    // absorbed item's remove_entity
+    client.receive('entity_event', { runtime_entity_id: 3n, event_id: 'item_entity_merge', data: 2 })
+    client.receive('remove_entity', { entity_id_self: -2n })
+    client.receive('entity_event', { runtime_entity_id: 3n, event_id: 'item_entity_merge', data: 3 })
+    client.receive('remove_entity', { entity_id_self: -4n })
+    const survivor = bot.entities[3]
+    assert.strictEqual(survivor.getDroppedItem().count, 3)
+    assert.strictEqual(survivor.getDroppedItem().name, 'dirt')
+    assert.deepStrictEqual(events.map(e => [e[0], e[1].id]), [['entityUpdate', 3], ['itemDrop', 3], ['entityGone', 2], ['entityUpdate', 3], ['itemDrop', 3], ['entityGone', 4]])
+    // not an item / a bogus count: nothing
+    events.length = 0
+    addEntity(client, { runtimeId: 1009n, type: 'zombie', health: 20 })
+    client.receive('entity_event', { runtime_entity_id: 1009n, event_id: 'item_entity_merge', data: 5 })
+    client.receive('entity_event', { runtime_entity_id: 3n, event_id: 'item_entity_merge', data: 0 })
+    assert.deepStrictEqual(events, [])
+    assert.strictEqual(survivor.getDroppedItem().count, 3)
+  })
+
   it('positions: add_entity offsets, move_entity / move_entity_delta (absolute, optional, byte rotations), move_player eye level', async () => {
     const { bot, client, events, record } = await joined()
     record('entityMoved')
@@ -231,21 +258,30 @@ describe('entities & players (U7)', function () {
     assert.ok(near(zombie.pitch, 10 * Math.PI / 180), 'pitch unchanged')
     client.receive('move_entity_delta', { runtime_entity_id: 1004n, y: -59.125, on_ground: false, force_move: false, force_move_local_entity: false, force_completion: false, ticks: 0n })
     assert.ok(nearVec(boat.position, 6.7, -59.5, 6.7), 'boat delta y − 0.375')
-    client.receive('move_entity', { runtime_entity_id: 1005n, flags: 1, position: { x: 5.5, y: -59, z: -4.5 }, rotation: { yaw: 270, pitch: 0, head_yaw: 270 } })
-    assert.ok(nearVec(zombie.position, 5.5, -59, -4.5) && zombie.onGround && near(zombie.yaw, Math.PI * 3 / 2))
+    // move_entity rotation bytes on the wire: pitch, yaw, head yaw — bedrock-protocol labels them yaw, pitch, head_yaw
+    client.receive('move_entity', { runtime_entity_id: 1005n, flags: 1, position: { x: 5.5, y: -59, z: -4.5 }, rotation: { yaw: 30, pitch: 270, head_yaw: 225 } })
+    assert.ok(nearVec(zombie.position, 5.5, -59, -4.5) && zombie.onGround, `${zombie.position}`)
+    assert.ok(near(zombie.yaw, Math.PI * 3 / 2), `yaw from the second byte (${zombie.yaw})`)
+    assert.ok(near(zombie.pitch, -30 * Math.PI / 180), `pitch from the first byte (${zombie.pitch})`)
+    assert.ok(near(zombie.headYaw, Math.PI * 7 / 4), `head yaw from the third byte (${zombie.headYaw})`)
+    // the same entity seen through move_entity_delta (rot_x pitch, rot_y yaw: `/tp … 90 30` → 21, 64 live)
+    client.receive('move_entity_delta', { runtime_entity_id: 1005n, rot_x: 21, rot_y: 64, on_ground: true, force_move: true, force_move_local_entity: false, force_completion: false, ticks: 0n })
+    assert.ok(near(zombie.yaw, conv.fromNotchianYawByte(64)) && near(zombie.pitch, conv.fromNotchianPitchByte(21)))
+    client.receive('move_entity', { runtime_entity_id: 1005n, flags: 1, position: { x: 5.5, y: -59, z: -4.5 }, rotation: { yaw: 21 * 360 / 256, pitch: 90, head_yaw: 90 } })
+    assert.ok(near(zombie.yaw, conv.fromNotchianYawByte(64)) && near(zombie.pitch, conv.fromNotchianPitchByte(21)), 'move_entity agrees with move_entity_delta')
     // another player: move_player is eye level
     client.receive('player_list', { records: [playerRecord('1f0b6a52-0000-4000-8000-000000000004', 'Alex', -4294967302n)] })
     addPlayer(client, { runtimeId: 1007n, uniqueId: [-2, -6], uuid: '1f0b6a52-0000-4000-8000-000000000004', username: 'Alex' })
     client.receive('move_player', { runtime_id: 1007, position: { x: 3.5, y: -57.38, z: 3.5 }, pitch: 0, yaw: 0, head_yaw: 0, mode: 'normal', on_ground: true, ridden_runtime_id: 0, tick: 5n })
     assert.ok(nearVec(bot.entities[1007].position, 3.5, -59, 3.5), `player feet ${bot.entities[1007].position}`)
-    assert.deepStrictEqual(events.map(e => e[1].id), [1005, 1004, 1005, 1007])
+    assert.deepStrictEqual(events.map(e => e[1].id), [1005, 1004, 1005, 1005, 1005, 1007])
     // the local player and unknown ids are not ours / ignored
     const before = bot.entity.position.clone()
     client.receive('move_entity_delta', { runtime_entity_id: SELF_RUNTIME, x: 99, on_ground: true, force_move: false, force_move_local_entity: false, force_completion: false, ticks: 0n })
     client.receive('move_entity_delta', { runtime_entity_id: 4242n, x: 99, on_ground: true, force_move: false, force_move_local_entity: false, force_completion: false, ticks: 0n })
     assert.deepStrictEqual(bot.entity.position, before)
     assert.strictEqual(bot.entities[4242], undefined, 'no ghost entities')
-    assert.strictEqual(events.length, 4)
+    assert.strictEqual(events.length, 6)
   })
 
   it('entity_event / animate → hurt, dead (+ the killing blow), taming, tamed, shaking, eating grass, eat, swing, wake, critical', async () => {
@@ -283,6 +319,25 @@ describe('entities & players (U7)', function () {
     client.receive('animate', { action_id: 'swing_arm', runtime_entity_id: SELF_RUNTIME, data: 0, has_swing_source: true, swing_source: 'interact' })
     client.receive('entity_event', { runtime_entity_id: SELF_RUNTIME, event_id: 'hurt_animation', data: -1 })
     assert.deepStrictEqual(events, [['entityHurt', bot.entity]])
+  })
+
+  it('killing blow: the extra entityHurt depends on the packet batch (server tick), not on the event-loop turn', async () => {
+    // a client with bedrock-protocol's batch entry point: one handle() call per batch the server flushed (one tick)
+    const client = fakeClient()
+    client.handle = function (batch) { for (const [name, params] of batch) this.receive(name, params) }
+    const { bot } = await createFakeBot({ client })
+    await replayJoin(bot, client)
+    const events = []
+    for (const name of ['entityHurt', 'entityDead']) bot.on(name, (e) => events.push([name, e.id]))
+    addEntity(client, { runtimeId: 1012n, type: 'zombie', health: 20 })
+    addEntity(client, { runtimeId: 1013n, type: 'zombie', health: 20 })
+    const ev = (id, eventId) => ['entity_event', { runtime_entity_id: id, event_id: eventId, data: 0 }]
+    // tick N: a hurt; tick N+3: the death — two batches read back to back in ONE event-loop turn (busy loop)
+    client.handle([ev(1012n, 'hurt_animation')])
+    client.handle([ev(1012n, 'death_animation')])
+    // the same tick: hurt + death in one batch → no extra hurt
+    client.handle([ev(1013n, 'hurt_animation'), ev(1013n, 'death_animation')])
+    assert.deepStrictEqual(events, [['entityHurt', 1012], ['entityHurt', 1012], ['entityDead', 1012], ['entityHurt', 1013], ['entityDead', 1013]])
   })
 
   it('set_entity_data of others: crouch / uncrouch (hitbox), elytra, sleep (player_flags) / wake, sprinting', async () => {
@@ -445,10 +500,45 @@ describe('entities & players (U7)', function () {
     assert.deepStrictEqual(left, [], 'the bot itself never leaves')
   })
 
+  it('player_list: playerJoined (the bot and the players already online) comes after login and game, like upstream', async () => {
+    const created = await createFakeBot()
+    const { bot, client } = created
+    const order = []
+    bot.on('login', () => order.push('login'))
+    bot.on('game', () => order.push('game'))
+    bot.on('spawn', () => order.push('spawn'))
+    bot.on('playerJoined', (p) => order.push(`playerJoined ${p.username} (game ${bot.game.gameMode}, entity ${!!p.entity})`))
+    await replayJoin(bot, client)
+    // the capture: U0Bot's record before start_game, SmokeT3969's after
+    const firstGame = order.indexOf('game')
+    assert.deepStrictEqual(order.slice(0, firstGame + 1), ['login', 'game'], order.join(', '))
+    const mode = bot.game.gameMode
+    assert.ok(mode, 'bot.game exists')
+    assert.ok(order.indexOf(`playerJoined U0Bot (game ${mode}, entity true)`) > firstGame, order.join(', '))
+    assert.ok(order.indexOf(`playerJoined SmokeT3969 (game ${mode}, entity false)`) > firstGame, order.join(', '))
+    assert.ok(order.indexOf('spawn') > order.indexOf('playerJoined SmokeT3969 (game ' + mode + ', entity false)'), order.join(', '))
+    assert.strictEqual(bot.player, bot.players.U0Bot)
+
+    // records before start_game without a game plugin 'game' event in the same batch: flushed at the end of it
+    const other = await createFakeBot()
+    const joined2 = []
+    other.bot.on('playerJoined', (p) => joined2.push([p.username, other.bot.entity !== undefined]))
+    await replayJoin(other.bot, other.client, { until: (name) => name === 'start_game' })
+    assert.deepStrictEqual(joined2, [], 'nothing before start_game')
+    const emit = other.bot.emit
+    other.bot.emit = function (name, ...args) { return name === 'game' ? false : emit.call(this, name, ...args) } // no game plugin event
+    const startGame = require('./helpers/fake').joinRecords().find(r => r.name === 'start_game').params
+    other.client.receive('start_game', startGame)
+    assert.deepStrictEqual(joined2, [], 'deferred past the start_game listeners')
+    await new Promise(resolve => process.nextTick(resolve))
+    assert.deepStrictEqual(joined2.map(j => j[0]), ['U0Bot'])
+  })
+
   it('actions: attack / useOn / mount / dismount / swingArm packets', async () => {
     const { bot, client } = await joined()
     addEntity(client, { runtimeId: 1050n, type: 'zombie', health: 20, position: { x: 2.5, y: -60, z: 0.5 } })
     const zombie = bot.entities[1050]
+    const { yaw, pitch } = bot.entity
     client.clearSent()
     bot.attack(zombie)
     const sent = client.written.map(([, name, params]) => [name, params])
@@ -461,7 +551,7 @@ describe('entities & players (U7)', function () {
     assert.strictEqual(tx.transaction_data.action_type, 'attack')
     assert.strictEqual(tx.transaction_data.entity_runtime_id, 1050n)
     assert.ok(near(tx.transaction_data.click_pos.y, zombie.height / 2), 'clicked position relative to the feet')
-    assert.ok(near(bot.entity.yaw, -Math.PI / 2, 0.01), `the bot faces the target (${bot.entity.yaw})`)
+    assert.deepStrictEqual([bot.entity.yaw, bot.entity.pitch], [yaw, pitch], 'like upstream, attacking does not turn the bot')
     client.clearSent()
     bot.attack(zombie, false)
     assert.deepStrictEqual(client.written.map(w => w[1]), ['inventory_transaction'], 'no swing, no repeated hover')
@@ -469,6 +559,21 @@ describe('entities & players (U7)', function () {
     bot.useOn(zombie)
     bot.mount(zombie)
     assert.deepStrictEqual(client.sent('inventory_transaction').map(p => p.transaction.transaction_data.action_type), ['interact', 'interact'])
+    assert.deepStrictEqual([bot.entity.yaw, bot.entity.pitch], [yaw, pitch], 'useOn / mount do not turn the bot either')
+    // a sneak / sprint change not yet in a player_auth_input: the click waits for that input (physics.afterControlsSent)
+    const waited = []
+    const after = bot._bedrock.physics.afterControlsSent
+    let release
+    bot._bedrock.physics.afterControlsSent = (fn) => { waited.push(fn); release = fn }
+    client.clearSent()
+    bot.attack(zombie, false)
+    bot.useOn(zombie)
+    assert.deepStrictEqual(client.sent('inventory_transaction'), [], 'held until the control state was sent')
+    assert.strictEqual(waited.length, 2)
+    release()
+    waited[0]()
+    assert.deepStrictEqual(client.sent('inventory_transaction').map(p => p.transaction.transaction_data.action_type), ['interact', 'attack'])
+    bot._bedrock.physics.afterControlsSent = after
     client.clearSent()
     bot.swingArm()
     bot.swingArm('left', false)
@@ -525,5 +630,17 @@ describe('entities & players (U7)', function () {
     assert.ok(bot.fireworkRocketDuration >= 30 && bot.fireworkRocketDuration <= 41, `duration ${bot.fireworkRocketDuration}`)
     client.receive('set_entity_data', { runtime_entity_id: 1071n, metadata: [{ key: 'owner_eid', type: 'long', value: SELF_UNIQUE }], properties: { ints: [], floats: [] }, tick: 0n })
     assert.strictEqual(events.length, 1, 'once per rocket')
+    // what BDS 1.26.51.1 sends for a boosting rocket (U14, live): owner_eid -1, the boosted player's unique id in
+    // metadata key 18 (`minecart_has_display`, a long for rockets)
+    bot.fireworkRocketDuration = 0
+    addEntity(client, { runtimeId: 1072n, type: 'fireworks_rocket', metadata: [{ key: 'owner_eid', type: 'long', value: -1n }, { key: 'minecart_has_display', type: 'long', value: SELF_UNIQUE }, { key: 'minecart_display_block', type: 'compound', value: nbt }] })
+    assert.deepStrictEqual(events, [['usedFirework', 1071], ['usedFirework', 1072]])
+    assert.ok(bot.fireworkRocketDuration >= 30 && bot.fireworkRocketDuration <= 41, `duration ${bot.fireworkRocketDuration}`)
+    // another player's boost (key 18 = someone else) is not the bot's
+    addEntity(client, { runtimeId: 1073n, type: 'fireworks_rocket', metadata: [{ key: 'owner_eid', type: 'long', value: -1n }, { key: 'minecart_has_display', type: 'long', value: -4294967302n }, { key: 'minecart_display_block', type: 'compound', value: nbt }] })
+    // the key 18 can also arrive in a later set_entity_data
+    addEntity(client, { runtimeId: 1074n, type: 'fireworks_rocket', metadata: [{ key: 'owner_eid', type: 'long', value: -1n }] })
+    client.receive('set_entity_data', { runtime_entity_id: 1074n, metadata: [{ key: 'minecart_has_display', type: 'long', value: SELF_UNIQUE }], properties: { ints: [], floats: [] }, tick: 0n })
+    assert.deepStrictEqual(events.map(e => e[1]), [1071, 1072, 1074])
   })
 })

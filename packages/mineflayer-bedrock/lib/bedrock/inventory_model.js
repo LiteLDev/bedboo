@@ -26,6 +26,8 @@ const { placeBackPlan, armorSlotFor, sameItem } = require('./click')
  * keys or `{ created: Item }`), predicts the result (each changed slot gets one updateSlot, its item carries the
  * request id as pending stack id), sends it and resolves with the response (rejects with the StackRequestError).
  * Responses apply the server's counts / stack ids; an error, timeout or disconnect rolls the prediction back.
+ * Requests may overlap (a click planned on another one's prediction): per slot, a settled request hands its result
+ * to the next request in flight on that slot instead of overwriting its prediction (see "per-slot request chains").
  * Steps on bot.inventory need the player's inventory screen (BDS rejects cursor / cross-container moves and
  * craft_creative without one): the model opens it (`interact open_inventory` → container_open window_type
  * 'inventory') and closes it again 100 ms after the last request when the cursor is empty (`screen`).
@@ -100,7 +102,12 @@ const HOTBAR_KEY = /^p:[0-8]$/
 function createInventoryModel (bot, { Item, Window }) {
   let cursor = null
   const uiStore = new Array(54).fill(null)
-  const inflight = new Map() // request id → { changes, predicted }
+  const inflight = new Map() // request id → entry { id, window, changes: [{ key, before, after }], byKey }
+  // per slot, the requests in flight that changed it, in send order: a request's `before` of the slot is the state it
+  // was planned on (the previous request's prediction, then that request's server result); see applyResponse
+  const chains = new Map() // chain key → entry[]
+  const windowTags = new WeakMap()
+  let nextWindowTag = 1
   const earlyContent = new Map() // window id → items (inventory_content before / without container_open)
 
   const mgr = () => bot._bedrock.stackRequests
@@ -169,8 +176,11 @@ function createInventoryModel (bot, { Item, Window }) {
     return slots.isPlayerInventory(window) ? null : `w:${javaSlot}`
   }
 
-  /** physical key of an item_stack_response container slot */
-  function keyOfResponse (containerId, slot) {
+  /**
+   * physical key of an item_stack_response container slot
+   * @param {object} [window] the container window the request was made for (default: the open one)
+   */
+  function keyOfResponse (containerId, slot, window = null) {
     if (slots.PLAYER_CONTAINERS.has(containerId)) return slot >= 0 && slot <= 35 ? `p:${slot}` : null
     switch (containerId) {
       case 'armor': return slot >= 0 && slot <= 3 ? `a:${slot}` : null
@@ -179,7 +189,7 @@ function createInventoryModel (bot, { Item, Window }) {
       case 'creative_output': return 'out'
     }
     if (UI_CONTAINER_IDS.get(slot) === containerId) return `u:${slot}`
-    const cw = currentWindow()
+    const cw = window && !slots.isPlayerInventory(window) ? window : currentWindow()
     if (!cw) return null
     const j = slots.toJava(cw, containerId, slot)
     return typeof j === 'number' ? `w:${j}` : null
@@ -403,40 +413,108 @@ function createInventoryModel (bot, { Item, Window }) {
 
   // ---------------------------------------------------------------- requests
 
-  function applyResponse (response, entry) {
+  // ---- per-slot request chains
+  // Requests are not serialized: a click planned while another is in flight builds on its prediction (and names the
+  // pending request id as stack id, like the vanilla client). BDS answers in send order. Each slot keeps the requests
+  // in flight that changed it; a settled request hands its result for the slot (the server's count + stack id, or its
+  // own `before` when rejected) to the NEXT request on that slot as that request's `before`, and only the last
+  // request on a slot writes the slot. So a later prediction is never overwritten by an earlier answer, and a chain
+  // of rejections ends at the state before the first request.
+
+  function tagOf (window) {
+    let tag = windowTags.get(window)
+    if (tag === undefined) windowTags.set(window, (tag = nextWindowTag++))
+    return tag
+  }
+  /** chain key of a slot: 'w:' keys are per container window */
+  function chainKey (entry, key) {
+    return key.startsWith('w:') ? `${tagOf(entry.window)}|${key}` : key
+  }
+  function chainOf (entry, key) {
+    return chains.get(chainKey(entry, key)) ?? []
+  }
+  function link (entry) {
+    for (const { key } of entry.changes) {
+      const ck = chainKey(entry, key)
+      if (!chains.has(ck)) chains.set(ck, [])
+      chains.get(ck).push(entry)
+    }
+  }
+  function unlink (entry) {
+    for (const { key } of entry.changes) {
+      const ck = chainKey(entry, key)
+      const chain = chains.get(ck)
+      const index = chain ? chain.indexOf(entry) : -1
+      if (index === -1) continue
+      chain.splice(index, 1)
+      if (chain.length === 0) chains.delete(ck)
+    }
+  }
+  /** the request in flight after `entry` (or the first one, when `entry` is not in the chain) on slot `key` */
+  function nextOnSlot (entry, key) {
+    const chain = entry ? chainOf(entry, key) : (chains.get(key) ?? [])
+    const index = entry ? chain.indexOf(entry) : -1
+    return chain[index + 1] ?? null
+  }
+  /**
+   * the slot is still addressable: a container window's own slots ('w:' keys) are dropped once that window is no
+   * longer open (a late answer, a close); the ui container (station slots, 'u:') outlives the window server side
+   */
+  function windowKeyValid (entry, key) {
+    const window = entry?.window
+    if (!window || slots.isPlayerInventory(window) || window === currentWindow()) return true
+    return !key.startsWith('w:')
+  }
+
+  /**
+   * Apply an `ok` response of `entry` (`late`: of a request that timed out and was rolled back): per slot the
+   * server's count and stack id, on the item the request predicted there (or the current item when it did not touch
+   * the slot, or a server packet replaced it meanwhile).
+   */
+  function applyResponse (response, entry, late = false) {
     for (const container of response.containers ?? []) {
       const containerId = container.slot_type?.container_id
       for (const s of container.slots ?? []) {
-        const key = keyOfResponse(containerId, s.slot)
-        if (!key || key === 'out') continue
+        const key = keyOfResponse(containerId, s.slot, entry?.window)
+        if (!key || key === 'out' || !windowKeyValid(entry, key)) continue
+        const change = entry?.byKey.get(key)
+        const next = nextOnSlot(entry, key)
         const current = read(key)
-        if (!s.count) {
+        let item = null
+        if (s.count) {
+          let base
+          if (next) base = change ? (change.after ?? change.before) : next.byKey.get(key).before
+          else if (change && (late || !current)) base = change.after ?? change.before ?? current
+          else base = current ?? change?.after ?? change?.before
+          if (!base) {
+            bot._warn?.(`item stack response ${response.request_id}: ${containerId} ${s.slot} holds ${s.count} unknown item(s)`)
+            continue
+          }
+          item = cloneItem(base, s.count, s.item_stack_id ?? base.stackId)
+        }
+        if (next) {
+          // a later request in flight planned on this slot: the server state is what it builds on, its own
+          // prediction stays visible until its answer
+          next.byKey.get(key).before = item
+        } else if (!item) {
           if (current) write(key, null)
-          continue
+        } else if (item.type !== current?.type || item.count !== current?.count || item.stackId !== current?.stackId) {
+          write(key, item)
         }
-        const base = current ?? entry?.predicted.get(key) ?? null
-        if (!base) {
-          bot._warn?.(`item stack response ${response.request_id}: ${containerId} ${s.slot} holds ${s.count} unknown item(s)`)
-          continue
-        }
-        const stackId = s.item_stack_id ?? base.stackId
-        if (base !== current || base.count !== s.count || base.stackId !== stackId) write(key, cloneItem(base, s.count, stackId))
       }
     }
   }
 
+  /** undo `entry`'s prediction (rejected, timed out, disconnected) */
   function rollback (entry) {
     for (let k = entry.changes.length - 1; k >= 0; k--) {
       const { key, before, after } = entry.changes[k]
-      if (read(key) === after) write(key, before)
+      if (!windowKeyValid(entry, key)) continue
+      const next = nextOnSlot(entry, key)
+      if (next) next.byKey.get(key).before = before // the next request was planned on our (rejected) prediction
+      else if (read(key) === after) write(key, before) // else a server packet replaced the slot meanwhile: keep it
     }
-  }
-
-  /** re-apply a rolled-back prediction (a request that timed out but was accepted after all) */
-  function reapply (entry) {
-    for (const { key, before, after } of entry.changes) {
-      if (read(key) === before) write(key, after)
-    }
+    unlink(entry)
   }
 
   // requests that timed out: rolled back, kept for a while in case the server's answer comes late
@@ -449,18 +527,18 @@ function createInventoryModel (bot, { Item, Window }) {
     mgr().observe(({ request, response, outcome }) => {
       const id = request.request_id
       if (outcome === 'late-ok' || outcome === 'late-error') {
+        // a request that timed out (rolled back, out of its chains) was answered after all: an accepted one's
+        // response carries every slot it changed (handed to the requests in flight after it, like applyResponse)
         const entry = expired.get(id)
         expired.delete(id)
-        if (outcome === 'late-ok') {
-          if (entry) reapply(entry)
-          applyResponse(response, entry)
-        }
+        if (outcome === 'late-ok') applyResponse(response, entry, true)
         return
       }
       const entry = inflight.get(id)
       inflight.delete(id)
       if (outcome === 'ok') {
         applyResponse(response, entry)
+        if (entry) unlink(entry)
       } else if (entry) {
         rollback(entry)
         if (outcome === 'timeout') {
@@ -480,12 +558,16 @@ function createInventoryModel (bot, { Item, Window }) {
   /**
    * Build, predict and send one item stack request.
    * @param {object} window the window whose Java slots the caller planned with (bot.inventory or bot.currentWindow)
-   * @param {object[]} steps keys-based steps (see the module comment and lib/bedrock/click.js)
-   * @param {{ timeout?: number, creativeEntry?: (item: object) => { id: number, item: object } }} [opts]
+   * @param {object[] | (() => object[])} steps keys-based steps (see the module comment and lib/bedrock/click.js),
+   *   or a planner: called again after waiting for the inventory screen, so a request planned while an earlier one
+   *   waited too builds on that one's prediction (like Java's synchronous click prediction)
+   * @param {{ timeout?: number, creativeEntry?: (item: object) => { id: number, item: object }, customNames?: string[],
+   *   cause?: number, requestId?: number }} [opts] `customNames` / `cause` / `requestId`: the request's fields (see
+   *   stack_request.js; a `raw` step's `action` may also be a function of the request id)
    * @returns {Promise<object|null>} the ItemStackResponse (null: nothing to do)
    */
   async function execute (window, steps, opts = {}) {
-    if (!steps || steps.length === 0) return null
+    if (!steps || (Array.isArray(steps) && steps.length === 0)) return null
     try {
       return await executeOnce(window, steps, opts)
     } catch (err) {
@@ -496,15 +578,25 @@ function createInventoryModel (bot, { Item, Window }) {
     }
   }
 
-  async function executeOnce (window, steps, opts) {
+  async function executeOnce (window, plan, opts) {
     observeResponses()
     const isInventory = slots.isPlayerInventory(window)
+    let steps = typeof plan === 'function' ? plan() : plan
+    if (!steps || steps.length === 0) return null // nothing to do (even for a window closed meanwhile)
     if (!isInventory && window !== currentWindow()) throw new Error(`window ${window?.id} is not open`)
     const useScreen = isInventory && !currentWindow() && steps.some(needsScreen)
     // busy before the screen opens: the idle close must not fire while this request is being built or in flight
     screen.busy++
     try {
-      if (useScreen) await screen.open()
+      // no wait when the screen is open already: the prediction is committed synchronously, so the next click
+      // (even not awaited) is planned on it
+      if (useScreen && !screen.isOpen()) {
+        await screen.open()
+        if (typeof plan === 'function') {
+          steps = plan() // on the predictions committed meanwhile
+          if (!steps || steps.length === 0) return null
+        }
+      }
       const virtual = new Map()
       const touched = new Set()
       const vget = (k) => virtual.has(k) ? virtual.get(k) : read(k)
@@ -517,12 +609,15 @@ function createInventoryModel (bot, { Item, Window }) {
         }
         const info = (k) => slots.slotInfo(refOfKey(k), sid(k))
         const mark = (k, item) => { virtual.set(k, item); touched.add(k) }
+        // `src: { created: item }`: the created output (creative_output 50) of an earlier craft action of this request
+        const createdOf = (step) => typeof step.src === 'object' && step.src !== null ? step.src.created : null
+        const createdOutput = () => slots.slotInfo({ container_id: 'creative_output', slot: 50 }, requestId)
         for (const step of steps) {
           switch (step.type) {
             case 'take':
             case 'place': {
               const n = step.count
-              const created = typeof step.src === 'object' && step.src !== null ? step.src.created : null
+              const created = createdOf(step)
               const s = created ?? vget(step.src)
               if (!s || !(n >= 1) || (!created && n > s.count)) throw new Error(`cannot move ${n} item(s) from ${step.src}`)
               const d = vget(step.dst)
@@ -530,7 +625,7 @@ function createInventoryModel (bot, { Item, Window }) {
               actions.push({
                 type_id: step.type,
                 count: n,
-                source: created ? slots.slotInfo({ container_id: 'creative_output', slot: 50 }, requestId) : info(step.src),
+                source: created ? createdOutput() : info(step.src),
                 destination: info(step.dst)
               })
               if (!created) mark(step.src, s.count - n > 0 ? cloneItem(s, s.count - n) : null)
@@ -548,13 +643,15 @@ function createInventoryModel (bot, { Item, Window }) {
             case 'drop':
             case 'destroy':
             case 'consume': {
-              const s = vget(step.src)
+              const created = createdOf(step)
+              const s = created ?? vget(step.src)
               const n = step.count
-              if (!s || !(n >= 1) || n > s.count) throw new Error(`cannot ${step.type} ${n} item(s) from ${step.src}`)
-              const action = { type_id: step.type, count: n, source: info(step.src) }
+              if (!s || !(n >= 1) || (!created && n > s.count)) throw new Error(`cannot ${step.type} ${n} item(s) from ${created ? 'the created output' : step.src}`)
+              const source = created ? createdOutput() : info(step.src)
+              const action = { type_id: step.type, count: n, source }
               if (step.type === 'drop') action.randomly = false
               actions.push(action)
-              mark(step.src, s.count - n > 0 ? cloneItem(s, s.count - n) : null)
+              if (!created) mark(step.src, s.count - n > 0 ? cloneItem(s, s.count - n) : null)
               break
             }
             case 'creative': {
@@ -567,28 +664,33 @@ function createInventoryModel (bot, { Item, Window }) {
               actions.push({
                 type_id: step.dst === 'c' ? 'take' : 'place',
                 count: step.count,
-                source: slots.slotInfo({ container_id: 'creative_output', slot: 50 }, requestId),
+                source: createdOutput(),
                 destination: info(step.dst)
               })
               mark(step.dst, d ? cloneItem(d, d.count + step.count) : made)
               break
             }
-            case 'raw':
-              actions.push(step.action)
+            case 'raw': // `action` may be a function of the request id (actions that name the request itself)
+              actions.push(typeof step.action === 'function' ? step.action(requestId) : step.action)
               break
             default:
               throw new Error(`unknown inventory step ${step.type}`)
           }
         }
         return actions
-      }, { timeout: opts.timeout, meta: { window } })
+      }, { timeout: opts.timeout, meta: { window }, customNames: opts.customNames, cause: opts.cause, requestId: opts.requestId })
       // commit the prediction: one updateSlot per changed slot
       const changes = []
+      const byKey = new Map()
       for (const [key, item] of virtual) {
         if (item) item.stackId = request.request_id
-        changes.push({ key, before: read(key), after: item })
+        const change = { key, before: read(key), after: item }
+        changes.push(change)
+        byKey.set(key, change)
       }
-      inflight.set(request.request_id, { changes, predicted: virtual })
+      const entry = { id: request.request_id, window: isInventory ? bot.inventory : window, changes, byKey }
+      inflight.set(request.request_id, entry)
+      link(entry)
       for (const { key, after } of changes) write(key, after)
       mgr().write(request)
       return await response
@@ -696,6 +798,10 @@ function createInventoryModel (bot, { Item, Window }) {
    * dropped — one request. Java's server does this when a container closes; BDS keeps them where they are.
    */
   async function returnItems (window, keys) {
+    // planned when the request is built (after a wait for the inventory screen, on the predictions made meanwhile)
+    return execute(window, () => returnSteps(keys))
+  }
+  function returnSteps (keys) {
     const steps = []
     const virtual = new Map()
     const keyOfIndex = (i) => i === 'offhand' ? 'o' : `p:${i}`
@@ -715,7 +821,7 @@ function createInventoryModel (bot, { Item, Window }) {
       }
       if (plan.rest > 0) steps.push({ type: 'drop', count: plan.rest, src: key })
     }
-    return execute(window, steps)
+    return steps
   }
 
   /** put the carried item back into the inventory (see returnItems) */
@@ -779,7 +885,8 @@ function createInventoryModel (bot, { Item, Window }) {
     set closingWindow (window) { closingWindow = window ?? null },
     currentWindow,
     uiStore,
-    inflight
+    inflight,
+    chains
   }
 }
 

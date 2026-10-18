@@ -45,13 +45,16 @@ describe('chat plugin: patterns, chat/whisper events, awaitMessage, actionBar (U
     client.receive('text', chat('Steve Builder§r', '§ahello there'))
     client.receive('text', text({ category: 'authored', type: 'whisper', source_name: 'bob', message: 'psst' }))
     client.receive('text', tellraw({ translate: 'chat.type.text', with: ['U9G', 'Hello World!'] })) // regex
-    client.receive('text', text({ category: 'authored', type: 'announcement', source_name: 'Server', message: '[Server] hi all' })) // regex, like Java /say
+    client.receive('text', text({ category: 'authored', type: 'announcement', source_name: 'Server', message: '[Server] hi all' })) // /say: like Java's say_command
+    client.receive('text', text({ category: 'authored', type: 'announcement', source_name: 'Steve Builder', message: '[Steve Builder] hello all' })) // a sender with a space
     client.receive('text', chat('', '* bob waves')) // /me: no sender, no match
     assert.deepStrictEqual(chats.map(c => c.slice(0, 3)), [
       ['Steve Builder', 'hello there', 'chat.type.text'],
       ['U9G', 'Hello World!', 'chat.type.text'],
-      ['Server', 'hi all', undefined]
+      ['Server', 'hi all', 'chat.type.announcement'],
+      ['Steve Builder', 'hello all', 'chat.type.announcement']
     ])
+    assert.strictEqual(chats[3][3].toString(), '[Steve Builder] hello all')
     assert.strictEqual(chats[0][3].toString(), '<Steve Builder> hello there')
     assert.strictEqual(chats[0].length, 4, 'deprecated patterns emit (username, message, translate, jsonMsg)')
     assert.deepStrictEqual(whispers.map(w => w.slice(0, 3)), [['bob', 'psst', 'commands.message.display.incoming']], 'only one whisper event per whisper packet')
@@ -99,7 +102,7 @@ describe('chat plugin: patterns, chat/whisper events, awaitMessage, actionBar (U
     bot.chatAddPattern(/^\[(\w+)\] (.*)$/, 'announce')
     const announce = record(bot, 'announce')
     client.receive('text', text({ category: 'authored', type: 'announcement', source_name: 'Server', message: '[Server] boot' }))
-    assert.deepStrictEqual(announce.map(a => a.slice(0, 3)), [['Server', 'boot', undefined]])
+    assert.deepStrictEqual(announce.map(a => a.slice(0, 3)), [['Server', 'boot', 'chat.type.announcement']])
   })
 
   it('removeChatPattern by name and by number', async () => {

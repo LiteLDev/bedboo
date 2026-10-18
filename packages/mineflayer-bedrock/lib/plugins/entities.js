@@ -157,6 +157,36 @@ function installArmorAttributes (entity) {
   define('generic.armorToughness', 'toughness')
 }
 
+/**
+ * Packet batch boundaries of a bedrock-protocol client. BDS flushes one batch per server tick and bedrock-protocol
+ * reads the packets of a batch synchronously, from `handle(buffer)` (unencrypted) or `onDecryptedPacket(buffer)`
+ * (encrypted): both are wrapped to count batches. `current()` → the id of the batch being read, `same(id)` → that
+ * batch is still being read. A client without these hooks (a test's fake client) falls back to one event-loop turn.
+ */
+function trackBatches (client) {
+  let seq = 0
+  let hooked = false
+  for (const name of ['handle', 'onDecryptedPacket']) {
+    const original = client?.[name]
+    if (typeof original !== 'function') continue
+    hooked = true
+    client[name] = function (...args) {
+      seq++
+      return original.apply(this, args)
+    }
+  }
+  let turn = 0
+  let turnEnd = null
+  return {
+    current () {
+      if (hooked) return seq
+      turnEnd ??= setImmediate(() => { turn++; turnEnd = null })
+      return turn
+    },
+    same (id) { return id === (hooked ? seq : turn) }
+  }
+}
+
 /** protodef li64 ([high, low]) or varint64 / zigzag64 → BigInt */
 function toBigInt (v) {
   if (Array.isArray(v)) return BigInt.asIntN(64, (BigInt(v[0]) << 32n) | BigInt(v[1] >>> 0))
@@ -173,10 +203,15 @@ function inject (bot) {
   bot.vehicle = null
   bot.fireworkRocketDuration = 0
 
-  let pendingRecords = [] // player_list records received before start_game (applied after its reset)
+  // player_list records received before start_game, or between start_game and the 'game' event of that login:
+  // applied after the login's 'login' / 'game' events like upstream's player_info (which follows the login packet)
+  let pendingRecords = []
+  let deferRecords = false
   const playerUniques = new Map() // unique id (BigInt) → player uuid, from player_list records
-  const hurtThisBatch = new Set() // entities with a hurt_animation in the packet batch being read (one server tick)
-  let batchEnd = null
+  // entity → the packet batch (one BDS server tick) of its last hurt_animation: a death_animation in the same batch
+  // already had its entityHurt (see the entity_event handler)
+  const hurtBatch = new Map()
+  const batch = trackBatches(bot._client)
   const knownFireworks = new Set()
   let hovered = null // id of the entity the last interact mouse_over_entity named
 
@@ -369,15 +404,17 @@ function inject (bot) {
   }
 
   /**
-   * A rocket boosting the local player: a fireworks_rocket whose owner / shooter is the bot while it glides
-   * (Bedrock has no "attached to" metadata; the rocket's item NBT is the display item, metadata key 16).
+   * A rocket boosting the local player: a fireworks_rocket attached to (metadata key 18) or owned / shot by the bot
+   * while it glides (the rocket's item NBT is the display item, metadata key 16).
    */
   function checkFirework (entity) {
     if (entity.name !== 'fireworks_rocket' || !bot.entity?.elytraFlying) return
     const md = entity.metadata ?? {}
     const self = ids()?.selfUniqueId()
     const selfRuntime = ids()?.selfRuntimeId()
-    const owners = [md.owner_eid, md.firework_shooter_id, md.arrow_shooter_id]
+    // BDS 1.26.51.1 (U14, live): a rocket boosting a gliding player has owner_eid -1 and names that player's unique
+    // id in metadata key 18, which bedrock-protocol calls `minecart_has_display` (a long for rockets)
+    const owners = [md.minecart_has_display, md.owner_eid, md.firework_shooter_id, md.arrow_shooter_id]
     const mine = owners.some(v => v !== undefined && v !== null && (BigInt(v) === self || BigInt(v) === selfRuntime))
     if (mine) handleBotUsedFireworkRocket(entity.id, { nbtData: md.minecart_display_block })
   }
@@ -439,6 +476,7 @@ function inject (bot) {
       bot.players[entity.username].entity = null
     }
     delete bot.entities[entity.id]
+    hurtBatch.delete(entity)
     knownFireworks.delete(entity.id)
     if (hovered === entity.id) hovered = null
     const paintings = bot._bedrock?.world?.paintings
@@ -481,6 +519,7 @@ function inject (bot) {
     bot.player = undefined
     bot.vehicle = null
     hovered = null
+    hurtBatch.clear()
     knownFireworks.clear()
     playerUniques.clear()
     ids()?.runtimeToUnique.clear()
@@ -518,11 +557,22 @@ function inject (bot) {
     bot.entities[entity.id] = entity
     ids()?.trackEntity(entity.runtimeId, entity.uniqueId)
 
+    // upstream order is login → game → playerJoined (player_info follows the login packet): the records wait until
+    // this login's 'game' event (game.js, a later start_game listener) was handled — the listener added here runs
+    // after the ones registered before — or the end of the packet batch without it
+    deferRecords = true
+    bot.once('game', flushRecords)
+    process.nextTick(flushRecords)
+  })
+
+  function flushRecords () {
+    if (!deferRecords) return
+    deferRecords = false
     const records = pendingRecords
     pendingRecords = []
     handleRecords(records)
     if (!bot.player) addSelfPlayer() // no player_list record of our own (yet)
-  })
+  }
 
   bot._client.on('update_attributes', (packet) => {
     if (isSelf(packet.runtime_entity_id)) return entityData.applyAttributes(bot, packet)
@@ -650,8 +700,11 @@ function inject (bot) {
     if (!entity) return
     const p = packet.position
     entity.position.set(p.x, p.y - moveOffset(entity), p.z)
+    // MoveActorAbsolute's rotation bytes are X = pitch, Y = yaw, Z = head yaw on the wire (the move_entity_delta
+    // convention, verified live; PocketMine / gophertunnel / dragonfly read and write them in that order), but
+    // bedrock-protocol's `Rotation` type labels them { yaw, pitch, head_yaw }: `yaw` is the pitch byte
     const r = packet.rotation
-    if (r) setRotation(entity, r.yaw, r.pitch, r.head_yaw)
+    if (r) setRotation(entity, r.pitch, r.yaw, r.head_yaw)
     entity.onGround = (Number(packet.flags) & 1) !== 0
     bot.emit('entityMoved', entity)
   })
@@ -716,17 +769,27 @@ function inject (bot) {
   bot._client.on('entity_event', (packet) => {
     const entity = entityByRuntime(packet.runtime_entity_id)
     if (!entity) return
+    if (packet.event_id === 'item_entity_merge') {
+      // BDS merges nearby item stacks: entity_event { data: the new stack size } on the surviving item, then
+      // remove_entity of the absorbed one. Java updates the item stack metadata instead (entityUpdate + itemDrop).
+      const count = Number(packet.data)
+      if (entity.name === 'item' && entity.metadata?.item && Number.isInteger(count) && count > 0) {
+        entity.metadata.item = { ...entity.metadata.item, count }
+        bot.emit('entityUpdate', entity)
+        bot.emit('itemDrop', entity)
+      }
+      return
+    }
     const eventName = entityEventEvents[packet.event_id]
     if (!eventName) return
     if (entity === bot.entity && eventName === 'entitySwingArm') return
-    if (eventName === 'entityHurt') {
-      // bedrock-protocol reads a batch's packets synchronously: the set lives until the batch is done
-      hurtThisBatch.add(entity)
-      batchEnd ??= setImmediate(() => { hurtThisBatch.clear(); batchEnd = null })
-    }
-    if (eventName === 'entityDead' && !hurtThisBatch.has(entity)) {
-      // Java reports the killing blow (damage_event) before the death status; BDS sends death_animation only
-      bot.emit('entityHurt', entity)
+    if (eventName === 'entityHurt') hurtBatch.set(entity, batch.current())
+    if (eventName === 'entityDead') {
+      // Java reports the killing blow (damage_event) before the death status; BDS sends death_animation only,
+      // or hurt_animation + death_animation in the same server tick (= the same packet batch)
+      const hurtIn = hurtBatch.get(entity)
+      hurtBatch.delete(entity)
+      if (hurtIn === undefined || !batch.same(hurtIn)) bot.emit('entityHurt', entity)
     }
     bot.emit(eventName, entity)
   })
@@ -826,7 +889,7 @@ function inject (bot) {
   bot._client.on('player_list', (packet) => {
     const list = Array.isArray(packet.records) ? packet.records : (packet.records?.records ?? [])
     const records = list.map(record => ({ record, type: record.type ?? packet.records?.type }))
-    if (!bot.entity) pendingRecords.push(...records)
+    if (!bot.entity || deferRecords) pendingRecords.push(...records)
     else handleRecords(records)
   })
 
@@ -922,41 +985,55 @@ function inject (bot) {
     sendSwing()
   }
 
-  /** Center of the target's hitbox (absolute), where the bot looks and "clicks". */
+  /** Center of the target's hitbox (absolute), where the bot "clicks". */
   function aimPoint (target) {
     return target.position.offset(0, (target.height ?? 0) / 2, 0)
   }
 
-  /** Face the target and hover it (interact mouse_over_entity) like the vanilla client before using it. */
-  function aim (target) {
-    if (bot.entity && typeof bot.lookAt === 'function' && !bot.lookAt.notImplemented) {
-      bot.lookAt(aimPoint(target), true).catch(() => {})
-    }
+  /**
+   * Hover the target (interact mouse_over_entity) like the vanilla client before using it. Like upstream, the bot's
+   * view is left alone: BDS accepts attacks and interactions whatever the player faces (verified live).
+   */
+  function hover (target) {
     if (hovered !== target.id) {
       hovered = target.id
       bot._client.queue('interact', buildMouseOver(bot, target, aimPoint(target)))
     }
   }
 
+  /**
+   * Run `send` once the server has the current sneak / sprint state (upstream writes entity_action synchronously in
+   * setControlState, so a click right after it is handled with the new state): the physics plugin's
+   * `afterControlsSent` runs it at once when no change is pending (synchronous like upstream), else right after the
+   * next player_auth_input was queued (an error then becomes an 'error' event).
+   */
+  function afterControls (send) {
+    const after = bot._bedrock?.physics?.afterControlsSent
+    if (typeof after === 'function') after(send)
+    else send()
+  }
+
   /** item_use_on_entity transaction; the clicked position is relative to the target's feet */
   function useEntity (target, action) {
-    aim(target)
+    hover(target)
     const clickPos = { x: 0, y: (target.height ?? 0) / 2, z: 0 }
     bot._client.queue('inventory_transaction', buildUseOnEntity(bot, target, { action, position: clickPos }))
   }
 
   function useOn (target) {
-    useEntity(target, 'interact')
+    afterControls(() => useEntity(target, 'interact'))
   }
 
   function attack (target, swing = true) {
-    // the vanilla client swings, then sends the attack transaction
-    if (swing) sendSwing('attack')
-    useEntity(target, 'attack')
+    afterControls(() => {
+      // the vanilla client swings, then sends the attack transaction
+      if (swing) sendSwing('attack')
+      useEntity(target, 'attack')
+    })
   }
 
   function mount (target) {
-    useEntity(target, 'interact')
+    afterControls(() => useEntity(target, 'interact'))
   }
 
   function dismount () {

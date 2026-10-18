@@ -64,7 +64,18 @@ describe('text.js: Bedrock text → ChatMessage (U6)', function () {
     const me = t({ type: 'chat', source_name: '', message: '* u6probe waves' })
     assert.deepStrictEqual([me.message.toString(), me.sender, me.source], ['* u6probe waves', null, null])
     const say = t({ type: 'announcement', source_name: 'u6probe', message: '[u6probe] hi all' })
-    assert.deepStrictEqual([say.message.toString(), say.sender, say.source], ['[u6probe] hi all', 'u6probe', null])
+    assert.deepStrictEqual([say.message.toString(), say.message.translate, say.sender, say.source],
+      ['[u6probe] hi all', 'chat.type.announcement', 'u6probe', { kind: 'chat', username: 'u6probe', message: 'hi all' }])
+    const saySpaced = t({ type: 'announcement', source_name: 'Steve Builder', message: '[Steve Builder] §ahello' })
+    assert.deepStrictEqual([saySpaced.message.toString(), saySpaced.source], ['[Steve Builder] hello', { kind: 'chat', username: 'Steve Builder', message: 'hello' }])
+    const sayFormatted = t({ type: 'announcement', source_name: 'Bob', message: '[§aBob§r] hi' })
+    assert.deepStrictEqual([sayFormatted.message.toString(), sayFormatted.source.message], ['[Bob] hi', 'hi'])
+    const sayBracket = t({ type: 'announcement', source_name: 'Shop] Bob', message: '[Shop] Bob] hi' })
+    assert.strictEqual(sayBracket.source.message, 'hi')
+    const sayOdd = t({ type: 'announcement', source_name: 'x', message: 'no prefix' }) // keeps the whole message
+    assert.deepStrictEqual([sayOdd.message.toString(), sayOdd.source.message], ['[x] no prefix', 'no prefix'])
+    const sayAnon = t({ type: 'announcement', source_name: '', message: '[Server] hi' })
+    assert.deepStrictEqual([sayAnon.message.toString(), sayAnon.sender, sayAnon.source], ['[Server] hi', null, null])
     const spaced = t({ type: 'chat', source_name: 'Steve Builder§r', message: '§ahi §lthere' })
     assert.deepStrictEqual([spaced.message.toString(), spaced.source.username, spaced.source.message], ['<Steve Builder> hi there', 'Steve Builder', 'hi there'])
   })
@@ -83,6 +94,16 @@ describe('text.js: Bedrock text → ChatMessage (U6)', function () {
     assert.strictEqual(r({ rawtext: [{ selector: '@p' }] }).toString(), '@p')
     assert.strictEqual(r({ rawtext: [{ score: { name: '@p', objective: 'kills' } }] }).toString(), '<score:@p:kills>')
     assert.strictEqual(text.fromRawText(registry, 'not json §aat all').toString(), 'not json at all')
+  })
+
+  it('malformed rawtext (BDS refuses it; other senders may not): a non-array rawtext is one part, a bad score is empty — no endless recursion', () => {
+    const r = (json) => text.fromRawText(registry, typeof json === 'string' ? json : JSON.stringify(json)).toString()
+    assert.strictEqual(r({ rawtext: { text: 'x' } }), 'x')
+    assert.strictEqual(r({ rawtext: 'x' }), 'x')
+    assert.strictEqual(r({ rawtext: [{ rawtext: { rawtext: { text: 'deep' } } }, { text: '!' }] }), 'deep!')
+    assert.strictEqual(r({ rawtext: [{ score: null }, { score: 'kills' }, { text: 'ok' }] }), 'ok')
+    assert.strictEqual(r({ rawtext: null }), '')
+    assert.strictEqual(r('{"rawtext":{"translate":"chat.type.text","with":["a","b"]}}'), '<a> b')
   })
 
   it('§ codes with Bedrock semantics: material colours (§g…§v, §m/§n are colours), formats persist over colours, §r resets', () => {

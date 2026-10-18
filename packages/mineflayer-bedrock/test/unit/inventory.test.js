@@ -186,6 +186,197 @@ describe('inventory: clickWindow → item stack requests (U8)', function () {
     assert.strictEqual(bot.inventory.selectedItem, null)
   })
 
+  describe('overlapping requests on the same slot (a click planned on another one\'s prediction)', function () {
+    const slotResult = (slot, count, stackId) => ({ slot, hotbar_slot: slot, count, ...(count ? { item_stack_id: stackId } : {}), custom_name: '', filtered_custom_name: '', durability_correction: 0 })
+    const ok = (request, containers) => ({ status: 'ok', request_id: request.request_id, containers: Object.entries(containers).map(([id, slots]) => ({ slot_type: { container_id: id }, slots: slots.map(s => slotResult(...s)) })) })
+    const err = (request, status = 49) => ({ status, request_id: request.request_id })
+    const show = (bot) => {
+      const c = bot.inventory.selectedItem
+      return `${bot.inventory.slots.map((it, i) => it ? `${i}:${it.name}x${it.count}#${it.stackId}` : null).filter(Boolean).join(' ')} | cursor ${c ? `${c.name}x${c.count}#${c.stackId}` : '-'}`
+    }
+
+    /** stone×10 (stack 100) in hotbar 0 = Java 36, dirt×4 (stack 101) in slot 9; A = take the stone, B = swap it with the dirt */
+    async function twoClicks () {
+      const created = await joined()
+      const { bot, client, server } = created
+      client.receive('inventory_content', inventoryContent(bot, { 0: ['stone', 10], 9: ['dirt', 4] }, { firstStackId: 100 }))
+      server.ignoreRequests = true // answered by hand
+      const results = []
+      const a = bot.clickWindow(36, 0, 0).then(() => 'ok', e => e.message)
+      for (let i = 0; i < 20 && server.requests.length < 1; i++) await tick()
+      const b = bot.clickWindow(9, 0, 0).then(() => 'ok', e => e.message)
+      for (let i = 0; i < 20 && server.requests.length < 2; i++) await tick()
+      assert.strictEqual(server.requests.length, 2)
+      const [reqA, reqB] = server.requests
+      assert.deepStrictEqual(reqB.actions.map(x => [x.type_id, x.source.slot_type.container_id, x.source.stack_id, x.destination.stack_id]),
+        [['swap', 'cursor', reqA.request_id, 101]], 'B names A\'s pending request as the cursor stack id')
+      assert.strictEqual(show(bot), `9:stonex10#${reqB.request_id} | cursor dirtx4#${reqB.request_id}`)
+      const respond = (response) => client.receive('item_stack_response', { responses: [response] })
+      const okA = ok(reqA, { hotbar: [[0, 0]], cursor: [[0, 10, 1000]] })
+      const okB = ok(reqB, { cursor: [[0, 4, 101]], inventory: [[9, 10, 1000]] })
+      return { ...created, a, b, reqA, reqB, okA, okB, respond, results }
+    }
+
+    it('A ok, B rejected: the cursor holds the stone with A\'s server stack id (never the dirt with it)', async () => {
+      const { bot, a, b, reqB, okA, respond } = await twoClicks()
+      respond(okA)
+      assert.strictEqual(show(bot), `9:stonex10#${reqB.request_id} | cursor dirtx4#${reqB.request_id}`, 'B\'s prediction stays visible')
+      respond(err(reqB))
+      assert.deepStrictEqual([await a, await b], ['ok', 'Server rejected transaction for clicking on slot 9, on window with id 0.'])
+      assert.strictEqual(show(bot), '9:dirtx4#101 | cursor stonex10#1000')
+      assert.strictEqual(bot._bedrock.inventoryModel.chains.size, 0)
+    })
+
+    it('A rejected, then B rejected (it named A\'s dead request id): back to the state before A, no duplicate, no dead stack id', async () => {
+      const { bot, a, b, reqA, reqB, respond, server } = await twoClicks()
+      respond(err(reqA))
+      respond(err(reqB))
+      assert.match(await a, /rejected/)
+      assert.match(await b, /rejected/)
+      assert.strictEqual(show(bot), '9:dirtx4#101 36:stonex10#100 | cursor -')
+      // the next click names the real stack ids
+      server.ignoreRequests = false
+      await bot.clickWindow(36, 0, 0)
+      assert.strictEqual(server.requests.at(-1).actions[0].source.stack_id, 100)
+      assert.strictEqual(bot.inventory.selectedItem.name, 'stone')
+    })
+
+    it('both ok: between the answers the later prediction is kept; then the server counts / stack ids', async () => {
+      const { bot, a, b, reqB, okA, okB, respond } = await twoClicks()
+      respond(okA)
+      assert.strictEqual(bot.inventory.selectedItem.name, 'dirt', 'not A\'s count / stack id on B\'s dirt')
+      assert.strictEqual(bot.inventory.selectedItem.stackId, reqB.request_id)
+      respond(okB)
+      assert.deepStrictEqual([await a, await b], ['ok', 'ok'])
+      assert.strictEqual(show(bot), '9:stonex10#1000 | cursor dirtx4#101')
+    })
+
+    it('both time out (rolled back to the start), then both are answered late: the server results in order', async () => {
+      const { bot, client, server } = await joined()
+      client.receive('inventory_content', inventoryContent(bot, { 0: ['stone', 10], 9: ['dirt', 4] }, { firstStackId: 100 }))
+      const mgr = bot._bedrock.stackRequests
+      const create = mgr.create
+      mgr.create = (actions, opts) => create(actions, { ...opts, timeout: 40 })
+      server.ignoreRequests = true
+      const a = bot.clickWindow(36, 0, 0).then(() => 'ok', e => e.message)
+      for (let i = 0; i < 20 && server.requests.length < 1; i++) await tick()
+      const b = bot.clickWindow(9, 0, 0).then(() => 'ok', e => e.message)
+      for (let i = 0; i < 20 && server.requests.length < 2; i++) await tick()
+      const [reqA, reqB] = server.requests
+      assert.match(await a, /didn't respond/)
+      assert.match(await b, /didn't respond/)
+      assert.strictEqual(show(bot), '9:dirtx4#101 36:stonex10#100 | cursor -', 'rolled back')
+      client.receive('item_stack_response', { responses: [ok(reqA, { hotbar: [[0, 0]], cursor: [[0, 10, 1000]] })] })
+      assert.strictEqual(show(bot), '9:dirtx4#101 | cursor stonex10#1000')
+      client.receive('item_stack_response', { responses: [ok(reqB, { cursor: [[0, 4, 101]], inventory: [[9, 10, 1000]] })] })
+      assert.strictEqual(show(bot), '9:stonex10#1000 | cursor dirtx4#101')
+    })
+
+    it('clicks issued back to back without awaiting are planned on each other\'s prediction (like Java\'s client-side click)', async () => {
+      const { bot, client, server } = await joined()
+      client.receive('inventory_content', inventoryContent(bot, { 0: ['stone', 10], 9: ['dirt', 4] }, { firstStackId: 100 }))
+      // the screen is closed: both wait for it, the second is (re)planned after the first committed its prediction
+      const clicks = [bot.clickWindow(36, 0, 0), bot.clickWindow(9, 0, 0), bot.clickWindow(36, 0, 0)]
+      await Promise.all(clicks)
+      assert.deepStrictEqual(server.requests.map(r => r.actions.map(a => a.type_id)), [['take'], ['swap'], ['place']])
+      assert.strictEqual(show(bot).replace(/#-?\d+/g, ''), '9:stonex10 36:dirtx4 | cursor -')
+      // the screen is open (the cursor holds an item): the prediction is committed synchronously
+      await bot.clickWindow(9, 0, 0)
+      const before = server.requests.length
+      const a = bot.clickWindow(20, 1, 0)
+      assert.strictEqual(bot.inventory.slots[20]?.count, 1, 'predicted before clickWindow returned')
+      const b = bot.clickWindow(21, 1, 0)
+      const c = bot.clickWindow(9, 0, 0)
+      await Promise.all([a, b, c])
+      assert.strictEqual(server.requests.length, before + 3)
+      assert.strictEqual(show(bot).replace(/#-?\d+/g, ''), '9:stonex8 20:stonex1 21:stonex1 36:dirtx4 | cursor -')
+    })
+
+    it('a rejected place into the off-hand, then a click planned on it (live BDS 1.26.51.1 case): the cursor gets the dirt back', async () => {
+      const { bot, client, server } = await joined()
+      client.receive('inventory_content', inventoryContent(bot, { 0: ['dirt', 3] }, { firstStackId: 5 }))
+      await bot.clickWindow(36, 0, 0) // dirt on the cursor (stack 5 → server id)
+      const cursorId = bot.inventory.selectedItem.stackId
+      server.ignoreRequests = true
+      const before = server.requests.length
+      const a = bot.clickWindow(45, 0, 0).then(() => 'ok', e => e.message)
+      for (let i = 0; i < 20 && server.requests.length < before + 1; i++) await tick()
+      const b = bot.clickWindow(45, 0, 0).then(() => 'ok', e => e.message)
+      for (let i = 0; i < 20 && server.requests.length < before + 2; i++) await tick()
+      const [reqA, reqB] = server.requests.slice(before)
+      client.receive('item_stack_response', { responses: [err(reqA, 55)] })
+      client.receive('item_stack_response', { responses: [err(reqB, 49)] })
+      assert.match(await a, /rejected/)
+      assert.match(await b, /rejected/)
+      assert.strictEqual(bot.inventory.slots[45], null, 'no phantom off-hand item')
+      assert.strictEqual(show(bot), ` | cursor dirtx3#${cursorId}`)
+    })
+
+    it('an answer for a window that was closed meanwhile is not written into the next window', async () => {
+      const { bot, client, server } = await joined()
+      client.receive('inventory_content', inventoryContent(bot, { 0: ['bone', 5] }, { firstStackId: 300 }))
+      const open = async (id, items) => {
+        const opened = new Promise(resolve => bot.once('windowOpen', resolve))
+        client.receive('container_open', { window_id: id, window_type: 'container', coordinates: { x: id, y: -60, z: 0 }, runtime_entity_id: -1n })
+        client.receive('inventory_content', { window_id: id, input: items, container: { container_id: 'anvil_input' }, storage_item: wireItem(bot, null) })
+        return opened
+      }
+      const chestA = await open(4, Array(27).fill(wireItem(bot, null)))
+      server.ignoreRequests = true
+      const click = bot.clickWindow(chestA.inventoryStart + 27, 0, 1).catch(e => e.message) // shift click the bones into chest A
+      for (let i = 0; i < 20 && server.requests.length < 1; i++) await tick()
+      const [req] = server.requests
+      assert.strictEqual(chestA.slots[0]?.name, 'bone', 'predicted into chest A')
+      // the server closes chest A and the bot opens chest B (with an apple in its slot 0) before the answer arrives
+      client.receive('container_close', { window_id: 4, window_type: 'container', server: true })
+      const chestB = await open(5, [wireItem(bot, 'apple', 1, 900), ...Array(26).fill(wireItem(bot, null))])
+      client.receive('item_stack_response', { responses: [ok(req, { container: [[0, 5, 901]], hotbar: [[0, 0]] })] })
+      await click
+      assert.strictEqual(chestB.slots[0]?.name, 'apple', 'chest B untouched')
+      assert.strictEqual(chestB.slots[0].count, 1)
+      assert.strictEqual(bot.inventory.slots[36], null, 'the player part still gets the answer')
+    })
+  })
+
+  it('execute: custom_names / cause / a chosen request id reach the request; raw actions naming the request; drop from the created output', async () => {
+    const { bot, client, server } = await joined()
+    client.receive('inventory_content', inventoryContent(bot, { 0: ['stone', 4] }, { firstStackId: 900 }))
+    const model = bot._bedrock.inventoryModel
+    const requestId = bot._bedrock.stackRequests.nextRequestId()
+    const created = new (require('prismarine-item')(bot.registry))(bot.registry.itemsByName.stick.id, 4)
+    await model.execute(bot.inventory, [
+      { type: 'raw', action: (id) => ({ type_id: 'craft_recipe', recipe_network_id: 7, times_crafted: 1, echo: id }) },
+      { type: 'drop', count: 2, src: { created } },
+      { type: 'place', count: 2, src: { created }, dst: 'p:1' }
+    ], { customNames: ['Renamed'], cause: 2, requestId })
+    const [request] = server.requests
+    assert.strictEqual(request.request_id, requestId)
+    assert.deepStrictEqual([request.custom_names, request.cause], [['Renamed'], 2])
+    assert.strictEqual(request.actions[0].echo, requestId)
+    assert.deepStrictEqual([request.actions[1].type_id, request.actions[1].count, request.actions[1].source], ['drop', 2, { slot_type: { container_id: 'creative_output' }, slot: 50, stack_id: requestId }])
+    assert.strictEqual(bot.inventory.slots[37]?.name, 'stick')
+    assert.strictEqual(bot.inventory.slots[36]?.count, 4, 'the created output is not an inventory slot')
+  })
+
+  it('update_trade without container_open opens the trading window (minecraft:merchant); a resend or a closing window does not reopen it', async () => {
+    const { bot, client } = await joined()
+    const opened = []
+    bot.on('windowOpen', (w) => opened.push(w.type))
+    const trade = (id) => client.receive('update_trade', { window_id: id, window_type: 'trading', size: 0, trade_tier: 0, villager_unique_id: -5n, entity_unique_id: -1n, display_name: 'Villager', new_trading_ui: true, economic_trades: true, offers: { type: 'compound', name: '', value: {} } })
+    trade(7)
+    await tick()
+    assert.deepStrictEqual(opened, ['minecraft:merchant'])
+    trade(7) // the offers refreshed (a trade was used)
+    assert.strictEqual(opened.length, 1)
+    const window = bot.currentWindow
+    const closed = bot.closeWindow(window)
+    trade(7) // still counted while the server's close echo is pending
+    await closed
+    await tick()
+    assert.deepStrictEqual(opened, ['minecraft:merchant'])
+    assert.strictEqual(bot.currentWindow, null)
+  })
+
   it('putAway falls back to click + place when Java\'s shift click target range is full (hotbar item, full main inventory)', async () => {
     const { bot, client, server } = await joined()
     const main = {}
