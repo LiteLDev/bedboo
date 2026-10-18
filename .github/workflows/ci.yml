@@ -1,0 +1,71 @@
+# owner: U1 (BDS harness & e2e infra)
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      e2e:
+        description: 'Also run the BDS e2e smoke suite (best effort)'
+        type: boolean
+        default: true
+      grep:
+        description: 'mocha --grep for the e2e run'
+        type: string
+        default: smoke
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  COREPACK_ENABLE_DOWNLOAD_PROMPT: '0'
+
+jobs:
+  test:
+    name: lint, unit tests, typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Enable corepack (pnpm from packageManager)
+        run: corepack enable
+      - name: Install
+        run: corepack pnpm install --frozen-lockfile
+      - name: Lint
+        run: corepack pnpm lint
+      - name: Unit tests
+        run: corepack pnpm test
+      - name: Typecheck
+        run: corepack pnpm typecheck
+
+  e2e:
+    name: e2e (BDS in Docker, best effort)
+    if: github.event_name == 'workflow_dispatch' && inputs.e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: corepack enable
+      - run: corepack pnpm install --frozen-lockfile
+      - name: Pull image + golden BDS cache
+        run: corepack pnpm bds pull
+      - name: e2e
+        env:
+          E2E_GREP: ${{ inputs.grep }}
+        run: corepack pnpm test:e2e -- --grep "$E2E_GREP"
+      - name: Clean up containers
+        if: always()
+        run: corepack pnpm bds clean --all

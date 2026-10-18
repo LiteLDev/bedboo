@@ -1,83 +1,120 @@
 // owner: U1 (BDS harness & e2e infra)
 'use strict'
 /**
- * @bedboo/bds — Docker-based Bedrock Dedicated Server harness (API).
+ * @bedboo/bds — Docker-based Bedrock Dedicated Server harness.
  *
- * U0 ships the API shape + the environment fallback only; U1 implements the Docker harness
- * (golden BDS cache, per-instance dirs, slot registry, persistent console, snapshots, …).
+ *   const { startServer, createTestBot } = require('@bedboo/bds')
+ *   const server = await startServer({ world: 'flat', gamemode: 'creative' })   // isolated BDS in a slot
+ *   await server.commandWithOutput('list', /players online/)
+ *   const { bot } = await createTestBot({ server, createBot: require('mineflayer-bedrock').createBot })
+ *   …
+ *   bot.end(); await server.stop()
  *
- * ENV FALLBACK (works today): if `BDS_HOST` or `BDS_PORT` is set, `startServer()` does not start
- * anything and returns a handle to that already-running server. `BDS_CONTAINER` (optional) names
- * its Docker container so `command()` and `waitForLog()` work against the manual recipe container
- * (docs/testing.md).
+ * ENV FALLBACK: if `BDS_HOST` or `BDS_PORT` is set, `startServer()` starts nothing and returns a
+ * handle to that already-running server (`BDS_CONTAINER` names its container for console commands).
  *
- * @typedef {object} ServerHandle
- * @property {string} host
- * @property {number} port
- * @property {boolean} external true when using the BDS_HOST/BDS_PORT fallback
- * @property {string} [container] Docker container name
- * @property {(cmd: string) => Promise<Date>} command run a console command (no leading '/'); resolves
- *   with the time it was sent — pass it as `waitForLog(re, { since })` to match the command's output
- * @property {(re: RegExp|string, opts?: { timeout?: number, since?: Date }) => Promise<string>} waitForLog
- *   resolve with the first matching server log line printed at/after `since` (default: now)
- * @property {() => Promise<void>} stop stop + remove the container (no-op for external servers)
+ * Details: docs/testing.md.
  *
- * @typedef {object} StartServerOptions
- * @property {string} [name] instance name (container `bedboo-<name>`)
- * @property {'flat'|'default'|string} [world] world preset or snapshot name
- * @property {object} [properties] extra server.properties (cannot override the enforced ones)
- * @property {object} [gamerules] gamerules to apply after start (deterministic test profile by default)
+ * @typedef {import('./lib/server').BdsServer} ServerHandle
  */
 
 const { NotImplementedError } = require('./lib/errors')
+const server = require('./lib/server')
+const golden = require('./lib/golden')
+const snapshots = require('./lib/snapshots')
+const reaper = require('./lib/reaper')
+const slots = require('./lib/slots')
+const config = require('./lib/config')
+const properties = require('./lib/properties')
+const profiles = require('./lib/profiles')
 const docker = require('./lib/docker')
+const { Console } = require('./lib/console')
 
 const DEFAULT_PORT = 19132
 
-/** @returns {ServerHandle | null} handle for BDS_HOST/BDS_PORT, or null when unset */
-function externalServer (env = process.env) {
-  if (!env.BDS_HOST && !env.BDS_PORT) return null
-  const host = env.BDS_HOST || '127.0.0.1'
-  const port = Number(env.BDS_PORT || DEFAULT_PORT)
-  if (!Number.isInteger(port) || port <= 0 || port > 65535) throw new Error(`Invalid BDS_PORT: ${env.BDS_PORT}`)
-  const container = env.BDS_CONTAINER || undefined
-  return {
-    host,
-    port,
-    external: true,
-    container,
-    async command (cmd) {
-      if (!container) throw new NotImplementedError('U1', 'ServerHandle.command without BDS_CONTAINER')
-      return docker.sendCommand(container, cmd)
-    },
-    async waitForLog (re, opts = {}) {
-      if (!container) throw new NotImplementedError('U1', 'ServerHandle.waitForLog without BDS_CONTAINER')
-      return docker.waitForLog(container, re, opts)
-    },
-    async stop () {}
-  }
-}
-
 /**
- * Start (or attach to) a BDS instance.
- * @param {StartServerOptions} [opts]
- * @returns {Promise<ServerHandle>}
- */
-async function startServer (opts = {}) {
-  const external = externalServer()
-  if (external) return external
-  throw new NotImplementedError('U1', 'startServer (Docker harness); set BDS_HOST/BDS_PORT to use a running server')
-}
-
-/**
- * Start a server (or use `opts.server`) and connect a mineflayer-bedrock bot to it.
- * Resolves after the bot's `spawn`. `createBot` defaults to the caller's mineflayer-bedrock.
+ * Start a server (or use `opts.server`) and connect a bot to it. Resolves after the bot spawned.
  *
- * @param {{ server?: ServerHandle, username?: string, createBot?: Function } & object} [opts]
- * @returns {Promise<{ bot: object, server: ServerHandle }>}
+ * @param {object} [opts]
+ * @param {ServerHandle} [opts.server] existing server (not stopped by `stop()`)
+ * @param {object} [opts.serverOptions] startServer options when no server is given
+ * @param {(options: object) => object} opts.createBot e.g. `require('mineflayer-bedrock').createBot`
+ * @param {string} [opts.username] default `flatbot` (random suffix on shared external servers)
+ * @param {object} [opts.botOptions] extra createBot options
+ * @param {(bot: object, server: ServerHandle) => (void|Promise<void>)} [opts.onCreate] called synchronously
+ *   right after createBot (before any packet is processed), e.g. to inject test helpers
+ * @param {(bot: object, server: ServerHandle) => Promise<void>} [opts.waitForSpawn] default: the bot's `spawn` event
+ * @param {number} [opts.timeout] spawn timeout (ms), default 60000
+ * @returns {Promise<{ bot: object, server: ServerHandle, stop: () => Promise<void> }>}
  */
 async function createTestBot (opts = {}) {
-  throw new NotImplementedError('U1', 'createTestBot')
+  if (typeof opts.createBot !== 'function') {
+    throw new TypeError('createTestBot needs opts.createBot (e.g. require("mineflayer-bedrock").createBot)')
+  }
+  const ownsServer = !opts.server
+  const srv = opts.server ?? await server.startServer(opts.serverOptions)
+  const username = opts.username ?? (srv.external ? `flatbot${Math.floor(Math.random() * 1e4)}` : 'flatbot')
+  let bot
+  try {
+    bot = opts.createBot({ host: srv.host, port: srv.port, username, ...opts.botOptions })
+    if (opts.onCreate) await opts.onCreate(bot, srv)
+    const wait = opts.waitForSpawn ?? defaultWaitForSpawn
+    await withTimeout(wait(bot, srv), opts.timeout ?? 60000, `${username} did not spawn on ${srv.host}:${srv.port}`)
+  } catch (err) {
+    try { bot?.end?.('createTestBot failed') } catch {}
+    if (ownsServer) await srv.stop().catch(() => {})
+    throw err
+  }
+  const stop = async () => {
+    try { bot.end?.('test done') } catch {}
+    if (ownsServer) await srv.stop()
+  }
+  return { bot, server: srv, stop }
 }
 
-module.exports = { startServer, createTestBot, externalServer, DEFAULT_PORT }
+function defaultWaitForSpawn (bot) {
+  return new Promise((resolve, reject) => {
+    const onSpawn = () => { cleanup(); resolve() }
+    const onEnd = (reason) => { cleanup(); reject(new Error(`bot ended before spawning: ${reason}`)) }
+    const onKick = (reason) => { cleanup(); reject(new Error(`bot kicked before spawning: ${typeof reason === 'string' ? reason : JSON.stringify(reason)}`)) }
+    const cleanup = () => {
+      bot.removeListener('spawn', onSpawn)
+      bot.removeListener('end', onEnd)
+      bot.removeListener('kicked', onKick)
+    }
+    bot.once('spawn', onSpawn)
+    bot.once('end', onEnd)
+    bot.once('kicked', onKick)
+  })
+}
+
+function withTimeout (promise, ms, message) {
+  let timer
+  return Promise.race([
+    promise,
+    new Promise((resolve, reject) => { timer = setTimeout(() => reject(new Error(`${message} within ${ms} ms`)), ms) })
+  ]).finally(() => clearTimeout(timer))
+}
+
+module.exports = {
+  startServer: server.startServer,
+  createTestBot,
+  externalServer: server.externalServer,
+  attachServer: server.attachServer,
+  pull: golden.pull,
+  reap: reaper.reap,
+  clean: reaper.clean,
+  listSlots: slots.listSlots,
+  listSnapshots: snapshots.listSnapshots,
+  readSnapshot: snapshots.readSnapshot,
+  deleteSnapshot: snapshots.deleteSnapshot,
+  BdsServer: server.BdsServer,
+  PortInUseError: server.PortInUseError,
+  Console,
+  NotImplementedError,
+  config,
+  properties,
+  profiles,
+  docker,
+  DEFAULT_PORT
+}
