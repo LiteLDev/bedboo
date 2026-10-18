@@ -58,12 +58,15 @@ describe('containerWindows', function () {
       assert.strictEqual(window.slots.length, size + 36)
       assert.strictEqual(window.slots[window.hotbarStart]?.name, itemName)
       await bot.clickWindow(window.hotbarStart, 0, 0)
-      await bot.clickWindow(slot, 0, 0)
-      assert.strictEqual(window.slots[slot]?.name, itemName)
+      await bot.clickWindow(slot, 0, 0) // accepted (a rejection throws)
       assert.strictEqual(window.selectedItem, null)
       if (keeps === 'consumed') {
+        // the block may already have used it up (blaze powder → brewing fuel) when the response arrives
+        assert.ok([itemName, undefined].includes(window.slots[slot]?.name))
+        assert.strictEqual(bot.inventory.items().length, 0)
         await window.close()
       } else if (keeps) {
+        assert.strictEqual(window.slots[slot]?.name, itemName)
         await window.close()
         const again = await bot.openBlock(bot.blockAt(pos))
         assert.strictEqual(again.slots[slot]?.name, itemName, 'the block entity kept the item')
@@ -72,6 +75,7 @@ describe('containerWindows', function () {
         await again.close()
         assert.strictEqual(bot.inventory.slots.filter(Boolean).length, 1)
       } else {
+        assert.strictEqual(window.slots[slot]?.name, itemName)
         // station slots live in the ui container: take it back, BDS confirms the move
         await bot.clickWindow(slot, 0, 1)
         assert.strictEqual(window.slots[slot], null)
