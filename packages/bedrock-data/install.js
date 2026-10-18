@@ -30,6 +30,7 @@ const zlib = require('zlib')
 const VERSION = '1.26.51'
 const DATA_DIR = path.join(__dirname, 'data', VERSION)
 let result = null
+let patched = null // { datasets } once the getters are defined (they are never redefined)
 
 /** dataset name → file in DATA_DIR (auto-discovered) */
 function discover () {
@@ -62,21 +63,25 @@ function install () {
   const versionJson = require.resolve(`minecraft-data/minecraft-data/data/bedrock/${VERSION}/version.json`)
   const alreadyBuilt = Boolean(require.cache[versionJson])
 
-  const files = discover()
-  const cache = {}
-  for (const [name, file] of Object.entries(files)) {
-    Object.defineProperty(entry, name, {
-      configurable: true,
-      enumerable: true,
-      get () {
-        if (!(name in cache)) cache[name] = readDataset(file)
-        return cache[name]
-      }
-    })
+  if (!patched) {
+    const files = discover()
+    const cache = {}
+    for (const [name, file] of Object.entries(files)) {
+      Object.defineProperty(entry, name, {
+        configurable: true,
+        enumerable: true,
+        get () {
+          if (!(name in cache)) cache[name] = readDataset(file)
+          return cache[name]
+        }
+      })
+    }
+    patched = { datasets: Object.keys(files) }
   }
 
-  result = { installed: true, version: VERSION, datasets: Object.keys(files) }
+  // If this throws, `result` stays unset: the next install() retries the refresh (the getters stay as they are).
   if (alreadyBuilt) refreshCachedVersion(entry)
+  result = { installed: true, version: VERSION, datasets: patched.datasets }
   return result
 }
 
