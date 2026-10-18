@@ -19,15 +19,15 @@ describe('bedrock_1.26.51 datasets', () => {
     it('every block state hashes to the CloudburstMC runtime id at the same palette index', () => {
       assert.strictEqual(cloudburst.hashes.length, mcData.blockStates.length)
       const known = new Set(cloudburst.hashes)
-      let explicit = 0
+      const notFnv = []
       for (let i = 0; i < mcData.blockStates.length; i++) {
         const { name, states, hash } = mcData.blockStates[i]
-        const runtimeId = hash ?? blockStateHash(name, states)
-        if (hash !== undefined) explicit++
-        assert.ok(known.has(runtimeId >>> 0), `${name} ${JSON.stringify(states)} hash ${runtimeId} not in Cloudburst`)
-        assert.strictEqual(runtimeId >>> 0, cloudburst.hashes[i], `state ${i} (${name})`)
+        assert.ok(Number.isInteger(hash) && hash === (hash | 0), `state ${i} carries its runtime id as a signed int32`)
+        if (hash !== blockStateHash(name, states)) notFnv.push(name)
+        assert.ok(known.has(hash >>> 0), `${name} ${JSON.stringify(states)} hash ${hash} not in Cloudburst`)
+        assert.strictEqual(hash >>> 0, cloudburst.hashes[i], `state ${i} (${name})`)
       }
-      assert.strictEqual(explicit, 1, 'only minecraft:unknown carries an explicit runtime id')
+      assert.deepStrictEqual(notFnv, ['unknown'], 'only minecraft:unknown has a reserved runtime id')
       assert.strictEqual(mcData.blockStates.find(s => s.name === 'unknown').hash, -2)
     })
 

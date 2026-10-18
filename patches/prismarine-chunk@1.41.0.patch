@@ -1,8 +1,8 @@
 diff --git a/src/bedrock/1.18/SubChunk.js b/src/bedrock/1.18/SubChunk.js
-index 35cd85306027d1d27a5f0b50748ecd66d6f8fb03..bc6d408bf5e1f9d7f0e11641ac8d8f7b0535d6e3 100644
+index 35cd85306027d1d27a5f0b50748ecd66d6f8fb03..1aec89b6d7b623bf5eca6425d48397829a3db103 100644
 --- a/src/bedrock/1.18/SubChunk.js
 +++ b/src/bedrock/1.18/SubChunk.js
-@@ -3,35 +3,55 @@ const { StorageType } = require('../common/constants')
+@@ -3,35 +3,56 @@ const { StorageType } = require('../common/constants')
  const PalettedStorage = require('../common/PalettedStorage')
  
  class SubChunk118 extends SubChunk13 {
@@ -11,7 +11,8 @@ index 35cd85306027d1d27a5f0b50748ecd66d6f8fb03..bc6d408bf5e1f9d7f0e11641ac8d8f7b
 +  // to a placeholder - minecraft:unknown (BDS's own placeholder block) or air - keeping its runtimeId, so the
 +  // rest of the chunk still decodes and re-encodes unchanged.
 +  resolveRuntimeEntry (runtimeId) {
-+    const block = this.registry.blocksByRuntimeId?.[runtimeId]
++    if (!this.registry.blocksByRuntimeId) throw new Error('prismarine-chunk: call registry.handleStartGame(start_game) before decoding network chunks')
++    const block = this.registry.blocksByRuntimeId[runtimeId]
 +    if (block) return { stateId: block.stateId, ...block, count: 0 }
 +    const placeholder = this.registry.blocksByName.unknown ?? this.registry.blocksByName.air
 +    return { stateId: placeholder.defaultState, name: placeholder.name, runtimeId, count: 0 }
@@ -71,10 +72,28 @@ index 35cd85306027d1d27a5f0b50748ecd66d6f8fb03..bc6d408bf5e1f9d7f0e11641ac8d8f7b
  }
  
 diff --git a/src/bedrock/1.3/SubChunk.js b/src/bedrock/1.3/SubChunk.js
-index 52b233e622669057afd12bc3c17a641100eff62e..b9e41a12cb5d8716354e3eb6453f8f9787d139ac 100644
+index 52b233e622669057afd12bc3c17a641100eff62e..c645f2c41edcc02bec7a111db4b44e304295f232 100644
 --- a/src/bedrock/1.3/SubChunk.js
 +++ b/src/bedrock/1.3/SubChunk.js
-@@ -271,8 +271,9 @@ class SubChunk {
+@@ -250,14 +250,15 @@ class SubChunk {
+       // Decrement count of old block
+       const currentIndex = this.blocks[l].get(x, y, z)
+       const currentEntry = this.palette[l][currentIndex]
+-      if (currentEntry.stateId === stateId) {
++      // bedboo patch: a placeholder for an unknown runtime id (entry.runtimeId) is not the state it stands in for
++      if (currentEntry.stateId === stateId && currentEntry.runtimeId === undefined) {
+         return // No change
+       }
+       currentEntry.count--
+ 
+       for (let i = 0; i < this.palette[l].length; i++) {
+         const entry = this.palette[l][i]
+-        if (entry.stateId === stateId) {
++        if (entry.stateId === stateId && entry.runtimeId === undefined) {
+           entry.count = Math.max(entry.count, 0) + 1
+           this.blocks[l].set(x, y, z, i)
+           return
+@@ -271,8 +272,9 @@ class SubChunk {
    }
  
    addToPalette (l, stateId, count = 0) {

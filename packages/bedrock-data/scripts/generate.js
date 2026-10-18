@@ -45,8 +45,9 @@ const COLLISION_FROM_CLOUDBURST = [
 ]
 /**
  * Block-state hash allowlist: states whose FNV-1a hash (name + sorted states, little-endian NBT) is not the
- * runtime id BDS uses. They get an explicit `hash` in blockStates.json, taken from Cloudburst (same index:
- * both lists use the BDS palette order).
+ * runtime id BDS uses; their `hash` is taken from Cloudburst (same index: both lists use the BDS palette order).
+ * Every state carries its `hash` (the BDS runtime id with block_network_ids_are_hashes) so registries do not
+ * have to NBT-encode and hash all 22k states at start_game.
  */
 const HASH_FROM_CLOUDBURST = new Set(['unknown'])
 
@@ -104,12 +105,12 @@ function buildBlocks (report) {
     if (!cbHashes.has(h)) {
       if (!HASH_FROM_CLOUDBURST.has(s.name)) throw new Error(`state ${i} ${s.name} ${JSON.stringify(s.states)}: hash ${h} not in Cloudburst`)
       h = cb.blockStateHash | 0
-      blockStates[i] = { ...s, hash: h }
       report.push(`blockStates: ${s.name} uses the BDS runtime id ${h} (allowlisted, not its FNV-1a hash)`)
     } else if (h !== (cb.blockStateHash | 0)) {
       throw new Error(`state ${i} ${s.name}: hash ${h} is Cloudburst state ${[...cloudburst].findIndex(e => (e.blockStateHash | 0) === h)}, not ${i}`)
     }
     hashes[i] = h
+    blockStates[i] = { ...s, hash: h }
   }
 
   // 2. per block: friction (Cloudburst), collision (PR #1335, Cloudburst for allowlisted blocks)
@@ -421,7 +422,9 @@ async function main () {
   const expected = new Set(Object.keys(files))
   for (const [file, buf] of Object.entries(files)) {
     const current = fs.existsSync(file) ? fs.readFileSync(file) : null
-    if (current && current.equals(buf)) continue
+    // compare content, not gzip bytes (the gzip header/zlib build differ between platforms)
+    const content = b => file.endsWith('.gz') ? zlib.gunzipSync(b) : b
+    if (current && content(current).equals(content(buf))) continue
     if (check) {
       console.error('stale:', path.relative(pkgRoot, file))
       stale++

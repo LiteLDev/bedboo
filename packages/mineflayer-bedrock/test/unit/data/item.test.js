@@ -68,6 +68,27 @@ describe('prismarine-item (bedboo patch) with Bedrock ItemV4', () => {
     assert.ok(blockItems > 1000)
   })
 
+  it('can_place_on / can_destroy stay in the extra data (blocksCanPlaceOn / blocksCanDestroy)', () => {
+    const base = contents.flatMap(p => p.input).find(i => registry.items[i.network_id]?.name === 'diamond_pickaxe')
+    const wire = { ...base, extra: { ...base.extra, can_place_on: ['minecraft:stone'], can_destroy: ['minecraft:dirt', 'minecraft:sand'] } }
+    const item = Item.fromNotch(wire)
+    assert.deepStrictEqual(item.blocksCanPlaceOn, [['minecraft:stone']])
+    assert.deepStrictEqual(item.blocksCanDestroy, [['minecraft:dirt'], ['minecraft:sand']])
+    const nbtBefore = JSON.stringify(item.nbt)
+    assert.ok(ser.createPacketBuffer({ name: 'inventory_content', params: { ...contents[0], input: [wire] } })
+      .equals(ser.createPacketBuffer({ name: 'inventory_content', params: { ...contents[0], input: [Item.toNotch(item)] } })))
+    item.blocksCanPlaceOn = ['grass_block']
+    assert.deepStrictEqual(Item.toNotch(item).extra.can_place_on, ['minecraft:grass_block'])
+    assert.strictEqual(JSON.stringify(item.nbt), nbtBefore, 'the NBT is untouched')
+    item.blocksCanDestroy = []
+    assert.deepStrictEqual(Item.toNotch(item).extra.can_destroy, [])
+  })
+
+  it('a server block_runtime_id of 0 is kept', () => {
+    const wire = { network_id: registry.itemsByName.oak_log.id, count: 1, metadata: 0, has_stack_id: true, stack_id: 7, block_runtime_id: 0, extra: { has_nbt: false, can_place_on: [], can_destroy: [] } }
+    assert.strictEqual(Item.toNotch(Item.fromNotch(wire)).block_runtime_id, 0)
+  })
+
   it('new items get a client stack id; non-block items carry block_runtime_id 0', () => {
     const pick = new Item(registry.itemsByName.diamond_pickaxe.id, 1)
     const wire = Item.toNotch(pick)

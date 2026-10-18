@@ -63,6 +63,15 @@ describe('prismarine-registry (bedboo patch) from start_game + item_registry', (
     assert.strictEqual(registry.blocksByRuntimeId[-2].name, 'unknown')
   })
 
+  it('the precomputed runtime ids are what prismarine-block computes (FNV-1a of the state NBT)', () => {
+    const Block = require('prismarine-block')(registry)
+    for (let stateId = 0; stateId < registry.blockStates.length; stateId += 7) {
+      const { name, states } = registry.blockStates[stateId]
+      if (name === 'unknown') continue
+      assert.strictEqual(Block.getHash(name, states), registry.runtimeIdByStateId[stateId], `${name} ${JSON.stringify(states)}`)
+    }
+  })
+
   it('every block runtime id in the capture resolves', () => {
     const ids = capturedRuntimeIds()
     assert.ok(ids.size >= 3)
@@ -98,6 +107,8 @@ describe('prismarine-registry (bedboo patch) from start_game + item_registry', (
     assert.strictEqual(r.foodsByName.bread.id, md.itemsByName.bread.id + 10000)
     assert.strictEqual(r.foods[r.foodsByName.bread.id], r.foodsByName.bread)
     assert.ok(r.blocksByName.stone.drops.includes(r.itemsByName.cobblestone.id))
+    const stoneRuntime = r.blocksByRuntimeId[r.runtimeIdByStateId[r.blocksByName.stone.defaultState]]
+    assert.strictEqual(stoneRuntime.harvestTools[wooden], true, 'blocksByRuntimeId follows the re-keying')
     const Block = require('prismarine-block')(r)
     assert.ok(Block.fromStateId(r.blocksByName.stone.defaultState, 0).canHarvest(wooden))
     // minecraft-data (shared by every registry) is untouched
@@ -116,9 +127,18 @@ describe('prismarine-registry (bedboo patch) from start_game + item_registry', (
       version: 'data_driven',
       nbt: nbt.comp({ components: nbt.comp({ item_properties: nbt.comp({ max_stack_size: nbt.int(16) }), 'minecraft:display_name': nbt.comp({ value: nbt.string('Widget') }) }) })
     }
-    r.handleItemRegistry({ itemstates: [...itemRegistry.itemstates, custom] })
+    const single = {
+      name: 'test:relic',
+      runtime_id: 9001,
+      component_based: true,
+      version: 'data_driven',
+      nbt: nbt.comp({ components: nbt.comp({ 'minecraft:max_stack_size': nbt.comp({ value: nbt.byte(1) }), 'minecraft:durability': nbt.comp({ max_durability: nbt.int(30) }) }) })
+    }
+    r.handleItemRegistry({ itemstates: [...itemRegistry.itemstates, custom, single] })
     assert.strictEqual(r.items[9000].name, 'test:widget')
     assert.strictEqual(r.items[9000].stackSize, 16)
     assert.strictEqual(r.items[9000].displayName, 'Widget')
+    assert.strictEqual(r.items[9001].stackSize, 1)
+    assert.strictEqual(r.items[9001].maxDurability, 30)
   })
 })

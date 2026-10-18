@@ -1,8 +1,8 @@
 diff --git a/index.d.ts b/index.d.ts
-index 839067f789be9900c00a3258452abdda4102dfdc..32bf5653ac870b5f5e0f512fc0ecce4617ba0b20 100644
+index 839067f789be9900c00a3258452abdda4102dfdc..ae74d3282c1e72fb46467b28b47edb61cffb9738 100644
 --- a/index.d.ts
 +++ b/index.d.ts
-@@ -12,6 +12,11 @@ export class Item {
+@@ -12,6 +12,13 @@ export class Item {
    metadata: number;
    nbt: Tags[TagType] | null;
    stackId: number | null;
@@ -11,14 +11,16 @@ index 839067f789be9900c00a3258452abdda4102dfdc..32bf5653ac870b5f5e0f512fc0ecce46
 +  /** Bedrock ItemV4: extra can_place_on / can_destroy block names as sent by the server (bedboo patch) */
 +  canPlaceOn?: string[];
 +  canDestroy?: string[];
++  /** Bedrock ItemV4: shield blocking tick as sent by the server (bedboo patch) */
++  blockingTick?: unknown;
    name: string;
    displayName: string;
    stackSize: number;
 diff --git a/index.js b/index.js
-index 47a27b092b1358ebfdc0198f89bb0d392d8cdf1e..2246aebdad91e41f9cd9c456352374b1781f0aed 100644
+index 47a27b092b1358ebfdc0198f89bb0d392d8cdf1e..cbfea4193d0e9dd715e717577b82a1cc2f1af69e 100644
 --- a/index.js
 +++ b/index.js
-@@ -2,6 +2,14 @@ const nbt = require('prismarine-nbt')
+@@ -2,6 +2,18 @@ const nbt = require('prismarine-nbt')
  
  function loader (registryOrVersion) {
    const registry = typeof registryOrVersion === 'string' ? require('prismarine-registry')(registryOrVersion) : registryOrVersion
@@ -30,10 +32,14 @@ index 47a27b092b1358ebfdc0198f89bb0d392d8cdf1e..2246aebdad91e41f9cd9c456352374b1
 +    return registry.runtimeIdByStateId?.[stateId] ?? 0
 +  }
 +
++  // Bedrock ItemV4 (no aux value): can_place_on / can_destroy live in the item's extra data, not in its NBT
++  const usesItemExtraLists = () => registry.type === 'bedrock' && !registry.supportFeature('itemSerializeUsesAuxValue')
++  const namespaced = name => name.includes(':') ? name : `minecraft:${name}`
++
    class Item {
      constructor (type, count, metadata, nbt, stackId, sentByServer) {
        if (type == null) return
-@@ -113,9 +121,8 @@ function loader (registryOrVersion) {
+@@ -113,9 +125,8 @@ function loader (registryOrVersion) {
            }
          }
        } else if (registry.type === 'bedrock') {
@@ -44,7 +50,7 @@ index 47a27b092b1358ebfdc0198f89bb0d392d8cdf1e..2246aebdad91e41f9cd9c456352374b1
            return {
              network_id: item.id,
              auxiliary_value: (item.metadata << 8) | (item.count & 0xff),
-@@ -126,16 +133,19 @@ function loader (registryOrVersion) {
+@@ -126,17 +137,20 @@ function loader (registryOrVersion) {
              nbt: hasNBT ? { version: 1, nbt: item.nbt } : undefined
            }
          } else {
@@ -64,12 +70,14 @@ index 47a27b092b1358ebfdc0198f89bb0d392d8cdf1e..2246aebdad91e41f9cd9c456352374b1
              extra: {
 -              can_place_on: item.blocksCanPlaceOn,
 -              can_destroy: item.blocksCanDestroy,
-+              can_place_on: item.canPlaceOn ?? item.blocksCanPlaceOn.map(names => names[0]),
-+              can_destroy: item.canDestroy ?? item.blocksCanDestroy.map(names => names[0]),
-               blocking_tick: 0,
+-              blocking_tick: 0,
++              can_place_on: item.blocksCanPlaceOn.map(names => names[0]),
++              can_destroy: item.blocksCanDestroy.map(names => names[0]),
++              blocking_tick: item.blockingTick ?? 0,
                has_nbt: hasNBT,
                nbt: hasNBT ? { version: 1, nbt: item.nbt } : undefined
-@@ -181,9 +191,13 @@ function loader (registryOrVersion) {
+             }
+@@ -181,9 +195,14 @@ function loader (registryOrVersion) {
            if (networkItem.can_destroy.length > 0) item.blocksCanDestroy = networkItem.can_destroy
            return item
          } else {
@@ -80,9 +88,45 @@ index 47a27b092b1358ebfdc0198f89bb0d392d8cdf1e..2246aebdad91e41f9cd9c456352374b1
 +          // can_destroy lists as they are (not folded into the NBT) so toNotch() reproduces the item exactly.
 +          const extra = networkItem.extra ?? {}
 +          const item = new Item(networkItem.network_id, networkItem.count, networkItem.metadata, extra.nbt?.nbt ?? null, networkItem.has_stack_id ? networkItem.stack_id : stackId, true)
-+          if (networkItem.block_runtime_id) item.blockRuntimeId = networkItem.block_runtime_id
++          if (networkItem.block_runtime_id !== undefined) item.blockRuntimeId = networkItem.block_runtime_id
 +          if (extra.can_place_on?.length > 0) item.canPlaceOn = extra.can_place_on
 +          if (extra.can_destroy?.length > 0) item.canDestroy = extra.can_destroy
++          if (extra.blocking_tick !== undefined) item.blockingTick = extra.blocking_tick // shields
            return item
          }
        }
+@@ -317,11 +336,16 @@ function loader (registryOrVersion) {
+     }
+ 
+     get blocksCanPlaceOn () {
+-      const blockNames = this?.nbt?.value?.CanPlaceOn?.value?.value ?? []
++      // bedboo patch: Bedrock ItemV4 carries the list in extra.can_place_on (item.canPlaceOn), not in the NBT
++      const blockNames = this.canPlaceOn ?? this?.nbt?.value?.CanPlaceOn?.value?.value ?? []
+       return blockNames.map(name => [name])
+     }
+ 
+     set blocksCanPlaceOn (newBlocks) {
++      if (usesItemExtraLists()) {
++        this.canPlaceOn = newBlocks.length ? newBlocks.map(namespaced) : undefined
++        return
++      }
+       if (newBlocks.length === 0) {
+         if (this.blocksCanPlaceOn.length !== 0) delete this.nbt.value.CanPlaceOn
+         return
+@@ -342,11 +366,15 @@ function loader (registryOrVersion) {
+     }
+ 
+     get blocksCanDestroy () {
+-      const blockNames = this?.nbt?.value?.CanDestroy?.value?.value ?? []
++      const blockNames = this.canDestroy ?? this?.nbt?.value?.CanDestroy?.value?.value ?? []
+       return blockNames.map(name => [name])
+     }
+ 
+     set blocksCanDestroy (newBlocks) {
++      if (usesItemExtraLists()) {
++        this.canDestroy = newBlocks.length ? newBlocks.map(namespaced) : undefined
++        return
++      }
+       if (newBlocks.length === 0) {
+         if (this.blocksCanDestroy.length !== 0) delete this.nbt.value.CanDestroy
+         return

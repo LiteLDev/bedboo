@@ -57,7 +57,8 @@ function install () {
   if (!entry) throw new Error(`minecraft-data has no bedrock ${VERSION} entry`)
 
   // Was the bedrock_1.26.51 version object already built (and cached) by minecraft-data? Building it
-  // always reads this version's version.json, which nothing else loads.
+  // always reads this version's version.json, which nothing else loads. (Module systems that bypass
+  // require.cache — e.g. Jest's registry — are not detected: install() must then simply come first.)
   const versionJson = require.resolve(`minecraft-data/minecraft-data/data/bedrock/${VERSION}/version.json`)
   const alreadyBuilt = Boolean(require.cache[versionJson])
 
@@ -74,8 +75,8 @@ function install () {
     })
   }
 
-  if (alreadyBuilt) refreshCachedVersion(entry)
   result = { installed: true, version: VERSION, datasets: Object.keys(files) }
+  if (alreadyBuilt) refreshCachedVersion(entry)
   return result
 }
 

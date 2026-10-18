@@ -47,6 +47,9 @@ async function main () {
     if (expected && expected !== actual && !updateLock) {
       throw new Error(`${s.id}: sha256 ${actual} does not match the lock ${expected}`)
     }
+    if (!expected && fs.existsSync(LOCK) && !updateLock) {
+      throw new Error(`${s.id} is not pinned in ${path.basename(LOCK)}: re-run with --update-lock after checking it`)
+    }
     lock[s.id] = actual
   }
   if (updateLock || !fs.existsSync(LOCK)) {

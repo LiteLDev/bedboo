@@ -25,7 +25,8 @@ package is MIT like the rest of the repository.
 - `blocks[].friction` (new field) from Cloudburst `friction` (constant per block).
 - `blockCollisionShapes`: Cloudburst `collisionShape` for the allowlisted blocks only (`*_door`: 0.1875 thick,
   `end_portal_frame` with eye); any other disagreement fails the generation.
-- `blockStates[].hash` (new field) only where BDS's runtime id is not the FNV-1a hash: `minecraft:unknown` → -2.
+- `blockStates[].hash` (new field): the BDS runtime id of every state (its FNV-1a hash, verified against
+  Cloudburst; `minecraft:unknown` → the reserved -2), so registries need not hash 22k states at `start_game`.
 - `items[].blockStateId` (new field): the block state a block item places (Cloudburst `creative_items.json`,
   else the default state of the same-named block).
 - New datasets: effects, foods, attributes, enchantments, entities, particles, sounds (see

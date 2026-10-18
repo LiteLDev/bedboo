@@ -15,8 +15,9 @@
  *   - a name in {@link FEATURES} → its value (same value types as minecraft-data: boolean, string, number);
  *   - any other name → `false`, after a one-time warning per name (an upstream name we have not decided on);
  *     with `strict` (default: env `BEDBOO_STRICT_FEATURES=1`) it throws instead, so tests catch new names.
- *   `registry` is accepted for symmetry with minecraft-data's `supportFeature` (the table is for
- *   bedrock_1.26.51, the only supported version).
+ *   `registry` is optional and unused, accepted for symmetry with minecraft-data's `supportFeature` (the
+ *   table is for bedrock_1.26.51, the only supported version). Test runners should set
+ *   `BEDBOO_STRICT_FEATURES=1` so a name missed by the static scan fails loudly.
  * U4 assigns it to `bot.supportFeature` (and may assign it to `bot.registry.supportFeature`: the table
  * agrees with minecraft-data on every Bedrock name, so prismarine-* keep working).
  */

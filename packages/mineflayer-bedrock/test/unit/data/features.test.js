@@ -82,19 +82,18 @@ describe('lib/bedrock/features.js', () => {
     for (const value of Object.values(FEATURES)) assert.ok(['boolean', 'string', 'number'].includes(typeof value))
   })
 
-  it('unknown names: strict mode throws, default mode warns once and returns false', async () => {
+  it('unknown names: strict mode throws, default mode warns once and returns false', () => {
     const strict = createSupportFeature(createRegistry(), { strict: true })
     assert.throws(() => strict('someFutureJavaFeature'), /unknown feature 'someFutureJavaFeature'/)
     const lenient = createSupportFeature(createRegistry(), { strict: false })
     const warnings = []
-    const onWarning = w => { if (w.code === 'BEDBOO_UNKNOWN_FEATURE') warnings.push(w.message) }
-    process.on('warning', onWarning)
+    const emitWarning = process.emitWarning
+    process.emitWarning = (message, options) => { if (options?.code === 'BEDBOO_UNKNOWN_FEATURE') warnings.push(message); else emitWarning.call(process, message, options) }
     try {
       assert.strictEqual(lenient('anotherFutureFeature'), false)
       assert.strictEqual(lenient('anotherFutureFeature'), false)
-      await new Promise(resolve => setImmediate(resolve))
     } finally {
-      process.removeListener('warning', onWarning)
+      process.emitWarning = emitWarning
     }
     assert.strictEqual(warnings.length, 1)
   })

@@ -131,6 +131,32 @@ describe('prismarine-chunk (bedboo patch) on BDS 1.26.51 chunks', () => {
     assert.ok((await section.encode(StorageType.Runtime, false, false)).equals(payload), 'the unknown id is written back')
   })
 
+  it('a placeholder is not confused with a real minecraft:unknown block', async () => {
+    const w = new Stream()
+    w.writeUInt8(9)
+    w.writeUInt8(1)
+    w.writeUInt8(0)
+    w.writeUInt8(1)
+    w.writeZigZagVarInt(123456789) // zero-bit section of an unknown block
+    const section = new SubChunk(registry, Block, { y: 0 })
+    section.decode(StorageType.Runtime, new Stream(w.getBuffer()))
+    section.setBlockStateId(0, 1, 2, 3, registry.blocksByName.unknown.defaultState)
+    const ids = section.palette[0].filter(e => e.count > 0).map(e => section.runtimeIdOf(e)).sort((a, b) => a - b)
+    assert.deepStrictEqual(ids, [-2, 123456789])
+  })
+
+  it('decoding before registry.handleStartGame fails loudly', () => {
+    const fresh = createRegistry()
+    const section = new SubChunk(fresh, require('prismarine-block')(fresh), { y: 0 })
+    const w = new Stream()
+    w.writeUInt8(9)
+    w.writeUInt8(1)
+    w.writeUInt8(0)
+    w.writeUInt8(1)
+    w.writeZigZagVarInt(1)
+    assert.throws(() => section.decode(StorageType.Runtime, new Stream(w.getBuffer())), /handleStartGame/)
+  })
+
   it('an unknown state id in setBlockStateId does not crash', () => {
     const column = new ChunkColumn({ x: 0, z: 0 })
     assert.doesNotThrow(() => column.setBlockStateId(new Vec3(1, 1, 1), 99999999))

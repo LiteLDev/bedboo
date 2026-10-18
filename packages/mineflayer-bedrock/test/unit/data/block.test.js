@@ -45,6 +45,12 @@ describe('prismarine-block (bedboo patch) on bedrock_1.26.51', () => {
     assert.notStrictEqual(log.hash, block('oak_log').hash)
     // what BDS sent for /setblock stone in the capture
     assert.strictEqual(block('stone').hash, -2144268767)
+    // a server without hashed ids: the runtime id is the state index
+    const plain = createRegistry()
+    plain.handleStartGame({ block_network_ids_are_hashes: false })
+    const PlainBlock = require('prismarine-block')(plain)
+    const stone = PlainBlock.fromStateId(plain.blocksByName.stone.defaultState, 0)
+    assert.strictEqual(stone.hash, stone.stateId)
   })
 
   it('stone: wooden pickaxe vs hand (canHarvest, digTime)', () => {
