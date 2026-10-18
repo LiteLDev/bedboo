@@ -287,6 +287,7 @@ function inject (bot, { physicsEnabled }) {
       bot._client.queue('request_ability', { ability: 'flying', value_type: 'bool', bool_value: pendingFlightRequest, float_val: 0 })
       pendingFlightRequest = null
     }
+    if (riding()) updateVehicleInput()
     const input = captureInput()
     pendingKnockback = null
     // BDS does not simulate the first input it processes after applying a teleport (it just takes the teleport
@@ -363,7 +364,7 @@ function inject (bot, { physicsEnabled }) {
       move_vector: { x: mv.x, z: mv.z },
       raw_move_vector: { x: raw.x, z: raw.z },
       analogue_move_vector: { x: 0, z: 0 },
-      input_data: buildFlags(prevInput, cur).concat(input.gliding && !prevInput?.gliding ? GLIDE_START_FLAGS : [])
+      input_data: buildFlags(prevInput, cur).concat(input.gliding && !prevInput?.gliding ? GLIDE_START_FLAGS : [], rideInput ? paddlingFlags() : [])
     }
   }
 
@@ -534,15 +535,30 @@ function inject (bot, { physicsEnabled }) {
   }
 
   /**
-   * upstream semantics: left/forward ∈ {-1, 0, 1} steer the ridden vehicle until changed. Bedrock: the rider's
-   * player_auth_input carries the move vector + `client_predicted_vehicle` with the vehicle id and rotation.
+   * upstream semantics: left/forward in {-1, 0, 1} steer the ridden vehicle until changed. Bedrock: while riding, every
+   * player_auth_input carries that move vector (+ boat paddling flags) and `client_predicted_vehicle` with the vehicle
+   * id and rotation (refreshed each tick by the provider).
    */
   function moveVehicle (left, forward) {
     vehicleInput = { left: Math.sign(left) || 0, forward: Math.sign(forward) || 0 }
+    updateVehicleInput()
+  }
+
+  function updateVehicleInput () {
     const vehicle = bot.vehicle
     if (!vehicle) return
     const rotation = { x: Math.fround(conv.toNotchianPitch(vehicle.pitch ?? 0)), z: Math.fround(conv.toNotchianYaw(vehicle.yaw ?? bot.entity.yaw)) }
     bot._bedrock.input.setVehicle(vehicleUniqueId(vehicle), rotation)
+  }
+
+  /** boat paddles: forward = both, turning left = right paddle, turning right = left paddle */
+  function paddlingFlags () {
+    if (!/boat/.test(bot.vehicle?.name ?? '')) return []
+    const { left, forward } = vehicleInput
+    const flags = []
+    if (forward > 0 || left < 0) flags.push('paddling_left')
+    if (forward > 0 || left > 0) flags.push('paddling_right')
+    return flags
   }
 
   if (bot._bedrock?.physics) {
@@ -555,6 +571,7 @@ function inject (bot, { physicsEnabled }) {
     bot._bedrock.physics.simulate = (state) => bot.physics.simulatePlayer(state, world)
   }
   if (!bot.moveVehicle || isStub(bot.moveVehicle)) bot.moveVehicle = moveVehicle
+  bot.on('mount', updateVehicleInput)
   bot.on('dismount', () => {
     vehicleInput = { left: 0, forward: 0 }
     bot._bedrock?.input?.setVehicle(null)
