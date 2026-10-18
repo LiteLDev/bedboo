@@ -213,6 +213,69 @@ on its fixed ports (see the e2e recipe).
 - No `set_time` packet on 1.26.51 — world time is in `sync_world_clocks`.
 - `/give`, `/replaceitem` → `inventory_content` (not `inventory_slot`).
 
+### As implemented by U4 (wave 2) — read before using these contracts
+
+Additions/precisions to the tables above; all live on `main` since PR #5.
+
+- **Lifecycle** (`bot._bedrock.lifecycle`): `state`, `markSpawned('join'|'respawn'|'dimension')`, `setState(s)`,
+  `waitFor(s, {timeout})` (rejects immediately if already `ended`), `events` (`state`, `spawned`, `dimensionChange`),
+  `sendLoadingScreenAck(id?)`, `beginDimensionChange(pkt)`, `completeDimensionChange()`. The input clock is suspended
+  in `connecting`/`loading`/`changing_dimension`/`ended`; it runs in `dead`/`respawning`.
+  - Join: `start_game` → `loading` (clock anchored) → `respawn` state 1 sets position (eye→feet, `forcedMove`) and
+    replies `respawn {state: 2}` → `play_status player_spawn` → `serverbound_loading_screen` 1,2 →
+    `markSpawned('join')`. Bot events: `login` → `game` → `spawn`.
+  - Dimension change (observed live): `change_dimension` position is **feet-level** (unlike `move_player`);
+    lifecycle emits `dimensionChange` (blocks.js resets world, game.js switches `bot.game.dimension` + emits `game`),
+    applies position, sends `player_action dimension_change_ack`; BDS answers with its own `dimension_change_ack`
+    → loading-screen acks (with `loading_screen_id`) → `markSpawned('dimension')` (→ `spawn`).
+  - Respawn (U9): `respawn` state 1 after a death only moves the bot. U9 drives `setState('dead')` →
+    `setState('respawning')` → `markSpawned('respawn')`. Until `bot.respawn` is real, the test harness answers deaths.
+- **Input queue** (`bot._bedrock.input`): `tick = anchorTick + round((now-anchorTime)/50)`; a 50 ms timer `pump()`s exactly
+  one packet per elapsed tick (catch-up capped at `maxCatchupTicks`=4, older ticks skipped). Extras: `setProvider(fn(tick)
+  → movement fields)` (**U5 replaces the provider**), `onSent(fn)`, `start`, `stop`, `pump`, `lastTick`,
+  `markTeleportHandled()`. Held flag `block_breaking_delay_enabled` is on by default; block actions add `block_action`,
+  ≤1 stack request per tick adds `item_stack_request`, vehicle adds `client_predicted_vehicle`.
+  Packet defaults: `play_mode normal`, `interaction_model crosshair`, `input_mode mouse`.
+- **Physics stub** (`lib/plugins/physics.js`, U5 replaces the engine): all 31 upstream `bot.physics` fields;
+  `simulatePlayer` no-op; `adjustPositionHeight` ground search; control states recorded; `look/lookAt` send the
+  rotation in the next input and resolve when sent (`force` resolves immediately); `waitForTicks`; `physicsTick` +
+  `physicTick` once per tick while the bot's column is loaded; `move` on position/look change; `forcedMove` on own
+  `move_player` (teleport/reset also set `handled_teleport`; rotation mode only turns the head) and on
+  `correct_player_move_prediction` (snap pos/vel/onGround); simple Java-style gravity; `bot._bedrock.physics.
+  setPosition(pos, {forced, handledTeleport = forced})`, `setFlying(on)`, `isFlying()`. **No** walking/collisions/
+  rewind/vehicles/elytra/flight movement yet → wave-3 tests place the bot with `/tp`.
+- **Local player**: `bot.entity` = prismarine-entity, `id = Number(runtimeId)`, `uniqueId`/`runtimeId` BigInt,
+  live `equipment` getter (U8 may redefine). Attributes keyed by Java resource name with `value` = **base** value
+  (modifier formula inverted); `minecraft:health` → `max_health`; Bedrock-only attributes keep their Bedrock key.
+  Effects keyed by Bedrock id. Metadata: Bedrock key names stored as named props on the metadata array; flags drive
+  `crouching/sprinting/swimming/onFire/elytraFlying` + sleep events. `bot._bedrock.ids`: `setSelf`, `selfRuntimeId()`,
+  `selfUniqueId()`, `isSelf(runtimeId)`, `isSelfUnique(uniqueId)` — **U7 skips `ids.isSelf(runtimeId)`**.
+- **Transactions**: `useItemOn(bot, {position, face, cursor?, hotbarSlot?, blockRuntimeId?, hand?, lifecycle = true,
+  stopDelay = 150})` = `player_action start_item_use_on` → `click_block` transaction → `stop_item_use_on`; `useItem`
+  (click_air), `release`, `useOnEntity` (attack/interact), `mouseOver`; `build*` variants return the packet.
+  Held-item provider mirrors `inventory_content/slot`, `player_hotbar`, own `mob_equipment`; exposes `.selectedSlot()`,
+  `.slot(i)`, `.slots` (U8 replaces it).
+- **Chat core**: `bot.chat('/x')` → `command_request` (fresh origin uuid), else authored `text` chat split like upstream.
+  Incoming `text` → player chat as `{translate:'chat.type.text'}` ("<name> msg", `sender` = uuid when known);
+  positions: chat-like → `chat`, raw/system/translation/json → `system`, tip/popup → `game_info`; `%key` / rawtext via
+  `registry.language`. Each `command_output` line → a `message` with `translate` = its message id.
+  **U6:** move the parser (`createTextParser()` in chat.js) into `lib/bedrock/text.js`, keep `emitMessage` the single
+  emitter. Hooks: `bot._bedrock.chat = {emitMessage, chatWithHeader, send, parser}`,
+  `bot._bedrock.commands.request(cmd) → Promise<command_output>`. `chat` event + patterns are U6's.
+- **World core**: one `subchunk_request` per column covering the dimension range (overworld -4..19, nether 0..7,
+  end 0..15); columns created with the dimension's `minY`/height. Waterlogging: `blockAt` returns layer 0 plus
+  `superimposed` (layer 1), `computedStates.waterlogged`, `isWaterlogged` when layer 1 is water.
+  `update_subchunk_blocks`: `blocks` = layer 0, `extra` = layer 1. Unload beyond publisher radius + 1 chunk.
+  **U9:** `bot._bedrock.world` = `{reset(dimension), dimension(), pendingColumns, paintings (U7), stateIdOf,
+  applyBlockUpdate}`.
+- **bedrock-protocol patch**: `client.holdResourcePacks(packet) → bool`, `client.respondToResourcePacks('completed' |
+  'have_all_packs' | 'refused')`.
+- **Test helpers** (U1 files, fixed by U4): raw join/respawn handling decided lazily per packet (`ctx.raw` getters);
+  `sayEverywhere('/x')` runs as the bot's own command; e2e runs with `BEDBOO_STRICT_FEATURES=1`
+  (`test/strict-features.js`).
+- **Known BDS facts**: `/op` from the bot is refused (op via console); same-name rejoin right after `quit()` in a new
+  process can hit `server_id_conflict`; BDS sends no server brand (`serverBrand` = 'vanilla').
+
 ## Ownership
 
 One owner per file and per patch **per wave**. A file not listed belongs to the unit that creates it. When a
