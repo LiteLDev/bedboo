@@ -4,8 +4,9 @@
  * Port of mineflayer 4.39.0 test/externalTests/consume.js. Bedrock: eating is one item_use click_air; after the
  * 32-tick use the server sends completed_using_item (Java: entity_status 9), then the shrunk stack.
  * The hunger is drained with `/effect @s hunger 1 255` (Bedrock syntax, feature effectAreNotPrefixed) and the
- * loop waits for U9's `health` event, so the part after "Food is full" needs U9's health plugin (skipped until
- * then). The golden-apple test is a Bedrock extra that needs no hunger (always consumable).
+ * loop waits for U9's `health` event (skipped if U9's health plugin were a stub). The server runs on difficulty easy:
+ * on peaceful Bedrock never lets the food level drop. The golden-apple test is a Bedrock extra that needs no hunger
+ * (always consumable).
  */
 const assert = require('assert')
 const { onceWithCleanup } = require('mineflayer/lib/promise_utils')
@@ -13,7 +14,8 @@ const { useBot, implemented } = require('./common')
 
 describe('consume', function () {
   this.timeout(120000)
-  const ctx = useBot({ server: { gamemode: 'creative' } })
+  // difficulty easy: on peaceful Bedrock never drains food (the hunger effect only empties the saturation)
+  const ctx = useBot({ server: { gamemode: 'creative', difficulty: 'easy' } })
   beforeEach(() => ctx.bot.test.resetState())
   afterEach(() => ctx.bot.test.becomeCreative())
 
