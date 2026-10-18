@@ -1,10 +1,12 @@
 // owner: U5 (physics & movement)
 // Adapted from prismarine-physics 1.11.1 lib/aabb.js (MIT, Copyright (c) 2020 PrismarineJS,
-// https://github.com/PrismarineJS/prismarine-physics). Bedrock change: the computeOffset* sweeps use a 1e-7 contact
+// https://github.com/PrismarineJS/prismarine-physics). Bedrock change: the computeOffset* sweeps use a 1e-4 contact
 // tolerance (see below); everything else is unchanged.
 'use strict'
 
-const EPSILON = 1e-7
+// float32 positions round by up to ~1e-6 near the origin (e.g. feet −22.8 + 1.8 = −20.99999924): penetrations below
+// this tolerance count as touching
+const EPSILON = 1e-4
 
 class AABB {
   constructor (x0, y0, z0, x1, y1, z1) {
@@ -72,8 +74,8 @@ class AABB {
     return this
   }
 
-  // The sweep tests treat penetrations up to EPSILON as touching (Bedrock clips with a 1e-7 tolerance): positions are
-  // float32, so a box resting against a face can end up a few 1e-8 inside it and must still collide with it.
+  // The sweep tests treat penetrations up to EPSILON as touching: positions are float32, so a box resting against a
+  // face can end up slightly inside it and must still collide with it.
   computeOffsetX (other, offsetX) {
     if (other.maxY > this.minY + EPSILON && other.minY < this.maxY - EPSILON && other.maxZ > this.minZ + EPSILON && other.minZ < this.maxZ - EPSILON) {
       if (offsetX > 0.0 && other.maxX <= this.minX + EPSILON) {

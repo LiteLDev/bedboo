@@ -36,8 +36,15 @@ const { createDoneTask, createTask } = require('mineflayer/lib/promise_utils')
 const CONTROLS = ['forward', 'back', 'left', 'right', 'jump', 'sprint', 'sneak']
 const DEFAULT_REWIND_HISTORY = 40
 const HISTORY_MARGIN = 20
-/** creative flyTo: blocks per tick (BDS accepts creative flight at this speed without corrections) */
-const FLY_TO_SPEED = 0.5
+/** creative flyTo: arrival tolerance (blocks), lookahead ticks, ticks without progress before giving up */
+const FLY_TO_TOLERANCE = 0.15
+const FLY_TO_LOOKAHEAD = 12
+const FLY_TO_STALL_TICKS = 60
+const FLY_TO_JUMP_REPRESS = 12
+/** BDS only starts gliding when start_gliding comes with a jump press (measured) */
+const GLIDE_START_FLAGS = ['jump_down', 'jumping', 'want_up', 'jump_current_raw', 'jump_pressed_raw', 'start_jumping']
+/** a glide the server has not confirmed after this many ticks is dropped */
+const GLIDE_CONFIRM_TICKS = 20
 
 module.exports = inject
 
@@ -59,12 +66,14 @@ function inject (bot, { physicsEnabled }) {
   }
   let flying = false
   let gliding = false // client-side elytra glide request/state (server confirms with the `gliding` actor flag)
+  let glideRequestTick = null // tick of the input that carried start_gliding (until the server confirms)
   let lastSent = null // { position: Vec3 (feet), yaw, pitch } of the last packet
   let lookingTask = createDoneTask()
   let prevInput = null // input record of the previous sent tick (edge flags)
   let pendingKnockback = null // Vec3 from set_entity_motion, applied at the start of the next tick
   let flyTarget = null // { destination: Vec3, resolve, reject }
   let vehicleInput = { left: 0, forward: 0 }
+  let pendingFlightRequest = null // request_ability flying value to send with the next input
   let skipNext = false // the next input is the first one after a teleport: not simulated (BDS does the same)
   const history = [] // [{ tick, input, state, simulated }] oldest first
 
@@ -147,10 +156,17 @@ function inject (bot, { physicsEnabled }) {
 
   /** snapshot of everything one engine step reads (for replay) */
   function captureInput () {
-    const control = effectiveControls()
+    let control = effectiveControls()
+    let rawControl = { ...controlState }
+    if (flyTarget && flying) {
+      const plan = flyToPlan()
+      bot.entity.yaw = plan.yaw
+      control = plan.control
+      rawControl = { ...plan.control }
+    }
     return {
       control,
-      rawControl: { ...controlState },
+      rawControl,
       yaw: bot.entity.yaw,
       pitch: bot.entity.pitch,
       flying,
@@ -162,7 +178,6 @@ function inject (bot, { physicsEnabled }) {
       knockback: pendingKnockback,
       flySpeed: flySpeed(),
       elytraEquipped: elytraEquipped(),
-      flyTarget: flyTarget ? flyTarget.destination.clone() : null,
       ...statusInputs()
     }
   }
@@ -184,8 +199,9 @@ function inject (bot, { physicsEnabled }) {
     }
   }
 
+  let serverFlySpeed = null
   function flySpeed () {
-    return bot.abilities?.flyingSpeed ?? bot.entity?.flyingSpeed ?? 0.05
+    return bot.abilities?.flyingSpeed ?? serverFlySpeed ?? 0.05
   }
 
   /** engine state from the bot (prismarine-physics PlayerState shape + Bedrock extras) */
@@ -203,7 +219,7 @@ function inject (bot, { physicsEnabled }) {
     state.flySpeed = input.flySpeed
     state.moveVector = input.moveVector
     state.elytraEquipped = input.elytraEquipped
-    state.elytraFlying = input.gliding || state.elytraFlying
+    state.elytraFlying = !!input.gliding
     state.jumpQueued = false
     if (input.effects) Object.assign(state, input.effects)
     if (input.speedAttribute) state.attributes = { [bot.physics.movementSpeedAttribute]: input.speedAttribute }
@@ -242,20 +258,8 @@ function inject (bot, { physicsEnabled }) {
     state.fireworkRocketDuration = snap.fireworkRocketDuration
   }
 
-  /** one tick of movement for `state` with `input` (engine step, or the creative flyTo path) */
+  /** one tick of movement for `state` with `input` */
   function step (state, input) {
-    if (input.flyTarget) {
-      const delta = input.flyTarget.minus(state.pos)
-      const dist = delta.norm()
-      const move = dist <= FLY_TO_SPEED ? delta : delta.scaled(FLY_TO_SPEED / dist)
-      state.pos = state.pos.plus(move)
-      state.vel = move.clone()
-      state.onGround = false
-      state.isCollidedHorizontally = false
-      state.isCollidedVertically = false
-      state.jumped = false
-      return state
-    }
     return bot.physics.simulatePlayer(state, world)
   }
 
@@ -279,6 +283,10 @@ function inject (bot, { physicsEnabled }) {
   function provider (tick) {
     const entity = bot.entity
     if (!entity) return null
+    if (pendingFlightRequest !== null) {
+      bot._client.queue('request_ability', { ability: 'flying', value_type: 'bool', bool_value: pendingFlightRequest, float_val: 0 })
+      pendingFlightRequest = null
+    }
     const input = captureInput()
     pendingKnockback = null
     // BDS does not simulate the first input it processes after applying a teleport (it just takes the teleport
@@ -301,7 +309,9 @@ function inject (bot, { physicsEnabled }) {
     }
     if (!simulated) restoreFromBot(state)
     gliding = !!entity.elytraFlying && gliding
+    if (input.gliding && !prevInput?.gliding) glideRequestTick = BigInt(tick)
     record(tick, input, state, simulated)
+    if (gliding && glideRequestTick !== null && BigInt(tick) - glideRequestTick > GLIDE_CONFIRM_TICKS) stopGliding(glideRequestTick - 1n)
 
     const fields = movementFields(input, state, simulated)
     prevInput = { ...input, jumped: simulated && !!state.jumped }
@@ -309,7 +319,7 @@ function inject (bot, { physicsEnabled }) {
       bot.emit('physicsTick')
       bot.emit('physicTick') // Deprecated, only exists to support old plugins. May be removed in the future
     }
-    if (flyTarget && entity.position.distanceTo(flyTarget.destination) < 1e-3) finishFlyTo()
+    if (flyTarget) checkFlyTo()
     return fields
   }
 
@@ -353,7 +363,7 @@ function inject (bot, { physicsEnabled }) {
       move_vector: { x: mv.x, z: mv.z },
       raw_move_vector: { x: raw.x, z: raw.z },
       analogue_move_vector: { x: 0, z: 0 },
-      input_data: buildFlags(prevInput, cur)
+      input_data: buildFlags(prevInput, cur).concat(input.gliding && !prevInput?.gliding ? GLIDE_START_FLAGS : [])
     }
   }
 
@@ -397,17 +407,101 @@ function inject (bot, { physicsEnabled }) {
     }
   }
 
-  function setFlying (on) {
-    flying = !!on
-    if (flying && bot.entity) bot.entity.velocity.y = 0
+  /**
+   * Creative / abilities flight on or off. A change requested by the client is sent to the server as
+   * `request_ability flying` (BDS ignores the auth-input start_flying flag alone; measured) plus the
+   * start_flying / stop_flying edge flags; the server confirms with update_abilities (handled below).
+   */
+  function setFlying (on, { request = true } = {}) {
+    const next = !!on
+    if (next === flying) return
+    flying = next
     if (!flying && flyTarget) cancelFlyTo(new Error('flight stopped'))
+    // sent right before the next player_auth_input (same batch): BDS applies the ability on receipt and the input
+    // that follows is the first one simulated with the new flight state, like ours
+    if (request) pendingFlightRequest = flying
   }
 
+  // the server's view of our flight (gamemode changes, /ability, confirmations of our requests)
+  bot._client.on('update_abilities', (packet) => {
+    if (!bot._bedrock?.ids?.isSelfUnique?.(packet.entity_unique_id)) return
+    const base = (packet.abilities ?? []).find((layer) => layer.type === 'base')
+    if (!base?.enabled) return
+    serverFlySpeed = typeof base.fly_speed === 'number' ? base.fly_speed : serverFlySpeed
+    const serverFlying = !!base.enabled.flying && base.enabled.may_fly !== false
+    if (serverFlying !== flying) setFlying(serverFlying, { request: false })
+  })
+
   // ---- creative flyTo ---------------------------------------------------------------------------------
+  // Bedrock movement is server-authoritative, so flyTo cannot move the bot by setting its position like upstream:
+  // every tick it picks the flight inputs (forward toward the destination × jump / sneak / nothing) whose outcome,
+  // simulated with the engine (this tick, then idle until stopped), ends closest to the destination. The server
+  // simulates the same inputs, so the path needs no corrections.
+  function flyToPlan () {
+    const entity = bot.entity
+    const target = flyTarget.destination
+    const dx = target.x - entity.position.x
+    const dz = target.z - entity.position.z
+    const yaw = Math.hypot(dx, dz) > 1e-3 ? Math.atan2(-dx, -dz) : entity.yaw
+    // BDS toggles flight on a double-tapped jump: never press jump again within FLY_TO_JUMP_REPRESS ticks
+    const jumpHeld = !!prevInput?.rawControl?.jump
+    const mayPressJump = jumpHeld || flyTarget.ticks - flyTarget.lastJumpPress >= FLY_TO_JUMP_REPRESS
+    let best = null
+    for (const forward of [false, true]) {
+      for (const vertical of [null, 'jump', 'sneak']) {
+        if (vertical === 'jump' && !mayPressJump) continue
+        const control = { forward, back: false, left: false, right: false, jump: vertical === 'jump', sprint: false, sneak: vertical === 'sneak' }
+        const score = predictFlight(control, yaw).distanceTo(target) + (forward ? 1e-9 : 0) + (vertical ? 1e-9 : 0)
+        if (!best || score < best.score) best = { score, control, yaw }
+      }
+    }
+    flyTarget.ticks++
+    if (best.control.jump && !jumpHeld) flyTarget.lastJumpPress = flyTarget.ticks
+    return best
+  }
+
+  const IDLE_CONTROL = { forward: false, back: false, left: false, right: false, jump: false, sprint: false, sneak: false }
+
+  function predictFlight (control, yaw) {
+    const entity = bot.entity
+    const state = {
+      pos: entity.position.clone(),
+      vel: entity.velocity.clone(),
+      onGround: entity.onGround,
+      control,
+      yaw,
+      pitch: entity.pitch,
+      flying: true,
+      flySpeed: flySpeed(),
+      jumpTicks: 0,
+      moveVector: moveVector(control, { flying: true })
+    }
+    bot.physics.simulatePlayer(state, world)
+    state.control = IDLE_CONTROL
+    state.moveVector = { x: 0, z: 0 }
+    for (let i = 0; i < FLY_TO_LOOKAHEAD; i++) bot.physics.simulatePlayer(state, world)
+    return state.pos
+  }
+
+  function checkFlyTo () {
+    const entity = bot.entity
+    const distance = entity.position.distanceTo(flyTarget.destination)
+    if (distance < flyTarget.best - 1e-3) {
+      flyTarget.best = distance
+      flyTarget.stalled = 0
+    } else {
+      flyTarget.stalled++
+    }
+    if (distance <= FLY_TO_TOLERANCE && entity.velocity.norm() < 0.01) return finishFlyTo()
+    if (flyTarget.stalled > FLY_TO_STALL_TICKS) {
+      if (distance <= FLY_TO_TOLERANCE * 2) return finishFlyTo()
+      cancelFlyTo(new Error(`flyTo: blocked ${distance.toFixed(2)} blocks from the destination`))
+    }
+  }
+
   function finishFlyTo () {
     const task = flyTarget
     flyTarget = null
-    if (bot.entity) bot.entity.velocity.set(0, 0, 0)
     task?.resolve()
   }
 
@@ -418,15 +512,16 @@ function inject (bot, { physicsEnabled }) {
   }
 
   /**
-   * Fly in a straight line to `destination` (feet position) at FLY_TO_SPEED blocks per tick, flying (no gravity)
-   * the whole way; resolves once the bot is there (upstream creative.flyTo semantics: the bot stays flying).
+   * Fly to `destination` (feet position) with creative flight (requests flight first) and resolve once the bot
+   * stopped within FLY_TO_TOLERANCE of it (upstream creative.flyTo semantics: the bot stays flying). Rejects when the
+   * flight is stopped, the bot is teleported, or an obstacle blocks the way.
    */
   function flyTo (destination) {
     if (!bot.entity) return Promise.reject(new Error('flyTo: no bot entity'))
     if (flyTarget) cancelFlyTo(new Error('flyTo: superseded by a new destination'))
     setFlying(true)
     return new Promise((resolve, reject) => {
-      flyTarget = { destination: new Vec3(destination.x, destination.y, destination.z), resolve, reject }
+      flyTarget = { destination: new Vec3(destination.x, destination.y, destination.z), resolve, reject, best: Infinity, stalled: 0, ticks: 0, lastJumpPress: -Infinity }
     })
   }
 
@@ -614,10 +709,32 @@ function inject (bot, { physicsEnabled }) {
     if ((packet.attributes ?? []).some((a) => a.name === 'minecraft:movement')) onStatusChange(packet)
   })
 
-  // the server's `gliding` actor flag (entity_data.js keeps bot.entity.elytraFlying in sync)
-  bot.on('entityElytraFlew', (entity) => {
-    if (entity === bot.entity) gliding = true
+  // the server's `gliding` actor flag decides: it confirms our start_gliding, or ends / refuses the glide (from the
+  // input after its `tick`; inputs already sent are re-simulated without gliding)
+  bot._client.on('set_entity_data', (packet) => {
+    if (!isSelf(packet.runtime_entity_id)) return
+    const flags = packet.metadata?.find((m) => m.key === 'flags')?.value
+    if (!flags || typeof flags !== 'object') return
+    const at = packet.tick !== undefined && packet.tick !== null && BigInt(packet.tick) > 0n ? BigInt(packet.tick) : null
+    if (flags.gliding) {
+      glideRequestTick = null
+      if (!gliding) gliding = true
+      return
+    }
+    if (!gliding) return
+    if (glideRequestTick !== null && (at === null || at < glideRequestTick)) return // our request is not processed yet
+    stopGliding(at)
   })
+
+  function stopGliding (afterTick) {
+    gliding = false
+    glideRequestTick = null
+    if (bot.entity) bot.entity.elytraFlying = false
+    const from = afterTick === null ? -1 : history.findIndex((h) => h.tick > afterTick)
+    if (from <= 0) return
+    for (let i = from; i < history.length; i++) history[i].input = { ...history[i].input, gliding: false }
+    resimulate(from)
+  }
 
   bot.look = async (yaw, pitch, force) => {
     if (!lookingTask.done) {

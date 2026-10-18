@@ -8,22 +8,25 @@
 // `bot.physics.simulatePlayer(state, world)`: the engine only reads the upstream PlayerState fields (Bedrock-only
 // inputs are optional extras with defaults) and never relies on the class.
 //
-// Bedrock deltas vs. the Java engine (behaviour of the Bedrock client / BDS 1.26.51 server-authoritative movement,
-// calibrated against BDS with recorded traces — see docs/differences/U5.md#engine):
-// - float32 positions/velocities, sin/cos from the 65536-entry table (lib/physics/math.js);
-// - update order: speed + friction from the PREVIOUS tick's onGround and the block at floor(pos − 0.5) →
-//   moveRelative → jump (vy = max(vy, 0.42 + 0.1 × jump boost), sprint-jump +0.2 in the facing direction,
-//   10-tick delay while held) → climb → cobweb → sneak edge avoidance → collide (Y, X, Z; auto-step 0.5625) →
-//   slime walk / landing bounce → gravity + drag → friction;
+// Bedrock deltas vs. the Java engine — measured against BDS 1.26.51.1 with recorded player_auth_input traces and the
+// server's correct_player_move_prediction states (docs/differences/U5.md#engine, test/fixtures/physics/):
+// - float32 positions/velocities; the yaw is the float32 degrees of the wire x float32(pi/180), precise sin/cos;
+// - update order: speed + friction from the PREVIOUS tick's onGround (block at floor(pos - 0.5), else the block
+//   supporting the box, else friction 0.6, never air's 0.9) -> moveRelative (move vector, normalized, +-0.3 while
+//   sneaking, x 0.98) -> jump (vy = max(vy, 0.42 + 0.1 x jump boost), sprint-jump +0.2 in the facing direction,
+//   10-tick delay while held) -> climb -> cobweb -> sneak edge avoidance -> collide (Y, X, Z; auto-step 0.5625) ->
+//   step-on slowdown / landing bounce -> gravity + drag -> friction;
 // - the reported `delta` (player_auth_input) is the velocity at the end of the tick;
-// - sneak edge avoidance shrinks the box by 0.025 and probes 1.01 × step height down;
-// - climbing: vy ≥ −0.2, vy = 0.2 when jump is held or after a horizontal collision, no horizontal clamp,
-//   sneaking holds (vy ≥ 0); climbables: ladder, vines, twisting/weeping/cave vines;
-// - cobweb: ×0.25 horizontal, ×0.05 vertical before the move, velocity reset after it;
-// - soul sand: ground speed × 0.543 (no velocity multiplier); slime: bounce −vy when landing unless sneaking,
-//   walking × (0.4 + |vy| × 0.2); bed: bounce min(1, −0.66 vy);
-// - liquids, bubble columns, powder snow, honey, berry bushes, levitation, slow falling, elytra gliding and creative
-//   flight: see the per-feature comments below.
+// - sneak edge avoidance shrinks the box by 0.025, probes 1.01 x step height down and clips the velocity itself;
+//   the sneaking box is 1.49 high;
+// - climbing: vy >= -0.2, vy = 0.2 when jump is held or after a horizontal collision and kept as the end velocity, no
+//   horizontal clamp, sneaking holds; ladders collide with a 3/16 box;
+// - cobweb x0.25/x0.05/x0.25 before the move, velocity reset after it; powder snow / berry bushes likewise (Java
+//   factors); soul sand: ground speed x 0.544; honey and slime: "step on" x (0.4 + |vy| x 0.2), honey jump x 0.6;
+//   slime bounce from the air; bed bounce;
+// - water gravity 0.005 (drag 0.8), lava 0.02 (drag 0.5), bubble columns per block (Java values);
+// - slow falling only while falling (vy < 0), levitation without drag;
+// - creative flight: see moveFlying; elytra: the Java formula (matches BDS).
 'use strict'
 const { Vec3 } = require('vec3')
 const AABB = require('./aabb')
@@ -46,9 +49,9 @@ function defaultPhysicsFields () {
     sneakSpeed: 0.3,
     stepHeight: 0.5625, // Bedrock: 9/16 (Java 0.6)
     negligeableVelocity: 1e-6, // Bedrock: the velocity is zeroed only when |v|² < 1e-12 (Java: per axis < 0.003)
-    soulsandSpeed: 0.543, // Bedrock: ground movement speed factor (Java: velocity × 0.4)
-    honeyblockSpeed: 0.4,
-    honeyblockJumpSpeed: 0.5,
+    soulsandSpeed: 0.544, // Bedrock: ground movement speed factor (Java: velocity × 0.4)
+    honeyblockSpeed: 0.4, // Bedrock: base of the slime/honey "step on" slowdown (0.4 + |vy| × 0.2)
+    honeyblockJumpSpeed: 0.6, // Bedrock: jump velocity factor on honey (measured; Java 0.5)
     ladderMaxSpeed: 0.2, // Bedrock: fall speed clamp on climbables (Java 0.15, also horizontal)
     ladderClimbSpeed: 0.2,
     playerHalfWidth: 0.3,
@@ -65,7 +68,7 @@ function defaultPhysicsFields () {
     bubbleColumnDrag: { down: 0.03, maxDown: -0.3, up: 0.06, maxUp: 0.7 },
     slowFalling: 0.125, // gravity multiplier (0.01 / 0.08)
     movementSpeedAttribute: 'minecraft:movement_speed',
-    sprintingUUID: '662a6b8d-da3e-4c1c-8813-96ea6097278d',
+    sprintingUUID: 'd208fc00-42aa-4aad-9276-d5446530de43', // Bedrock "Sprinting speed boost" modifier (update_attributes)
     waterGravity: 0.005, // gravity / 16
     lavaGravity: 0.02
   }
@@ -80,6 +83,7 @@ const BEDROCK = Object.freeze({
   groundAccelerationFactor: f32(0.16277136),
   sprintMultiplier: f32(1.3),
   usingItemImpulse: f32(0.1225),
+  sneakHeight: 1.49,
   impulseScale: f32(0.98),
   sneakEdgeMargin: 0.025,
   sneakEdgeStep: 0.05,
@@ -89,8 +93,10 @@ const BEDROCK = Object.freeze({
   cobweb: { x: 0.25, y: 0.05, z: 0.25 },
   powderSnow: { x: 0.9, y: 1.5, z: 0.9 },
   sweetBerryBush: { x: 0.8, y: 0.75, z: 0.8 },
-  flyVerticalFactor: 3, // vertical fly acceleration = flySpeed × 3 per tick of jump/sneak
+  flyAscendFactor: 3, // vertical fly acceleration: + 3 × flySpeed per tick of jump
+  flyDescendFactor: 4.4, // − 4.4 × flySpeed per tick of sneak
   flyVerticalDrag: f32(0.6),
+  flyStopDamping: f32(0.375), // extra damping of every axis on a tick without movement input
   defaultFlySpeed: 0.05,
   waterJump: f32(0.04),
   waterFlow: f32(0.014)
@@ -125,15 +131,18 @@ function Physics (registry, world) {
   const waterIds = idSet('water', 'flowing_water')
   const lavaIds = idSet('lava', 'flowing_lava')
   const climbableIds = idSet('ladder', 'vine', 'twisting_vines', 'weeping_vines', 'cave_vines',
-    'cave_vines_body_with_berries', 'cave_vines_head_with_berries', 'scaffolding')
+    'cave_vines_body_with_berries', 'cave_vines_head_with_berries')
   // blocks that are always water-filled (rendered depth 0)
   const waterLike = idSet('seagrass', 'kelp', 'bubble_column')
 
   const physics = defaultPhysicsFields()
 
+  // box height of the player being simulated (Bedrock: 1.49 while sneaking, measured on BDS)
+  let boxHeight = physics.playerHeight
+
   function getPlayerBB (pos) {
     const w = physics.playerHalfWidth
-    return new AABB(-w, 0, -w, w, physics.playerHeight, w).offset(pos.x, pos.y, pos.z)
+    return new AABB(-w, 0, -w, w, boxHeight, w).offset(pos.x, pos.y, pos.z)
   }
 
   function setPositionToBB (bb, pos) {
@@ -191,6 +200,7 @@ function Physics (registry, world) {
   }
 
   physics.adjustPositionHeight = (pos) => {
+    boxHeight = physics.playerHeight
     const playerBB = getPlayerBB(pos)
     const queryBB = playerBB.clone().extend(0, -1, 0)
     const surroundingBBs = getSurroundingBBs(world, queryBB)
@@ -293,32 +303,34 @@ function Physics (registry, world) {
     entity.isCollidedVertically = dy !== oldVelY
     entity.onGround = (entity.isCollidedVertically && oldVelY < 0) ||
       (wasOnGround && !entity.isCollidedVertically && Math.abs(oldVelY) <= 1e-5)
-    return { dx, dy, dz, oldVelX, oldVelY, oldVelZ }
+    return { dx, dy, dz, oldVelX, oldVelY, oldVelZ, wasOnGround }
   }
 
-  /** Velocity after the collision: blocked axes stop, landing bounces on slime/bed (unless sneaking). */
+  /**
+   * Velocity after the collision. Walking on slime or honey (Bedrock "step on", measured on BDS for honey) slows
+   * vx/vz × (0.4 + |vy| × 0.2), vy being the velocity of the move (−0.0784 when walking: × 0.41568; landing: × 0.4);
+   * then blocked axes stop and landing (from the air) bounces on slime or a bed (−0.66 vy, at most 1) unless sneaking.
+   */
   function postCollision (entity, world, move) {
     const vel = entity.vel
+    const below = world.getBlock(entity.pos.offset(0, -0.2, 0).floored())
+    if (entity.onGround && !entity.control.sneak && (below?.type === slimeId || below?.type === honeyblockId)) {
+      const k = f32(physics.honeyblockSpeed + (Math.abs(vel.y) < 0.1 ? Math.abs(vel.y) * 0.2 : 0))
+      vel.x = f32(vel.x * k)
+      vel.z = f32(vel.z * k)
+    }
     if (move.dx !== move.oldVelX) vel.x = 0
     if (move.dz !== move.oldVelZ) vel.z = 0
     if (move.dy !== move.oldVelY) {
-      const below = world.getBlock(entity.pos.offset(0, -0.2, 0).floored())
-      if (move.oldVelY < 0 && !entity.control.sneak && below?.type === slimeId) {
-        vel.y = f32(-vel.y)
+      if (move.oldVelY < 0 && !entity.control.sneak && below?.type === slimeId && !move.wasOnGround) {
+        // Bedrock slime bounce (fitted to BDS samples within 1e-3): the reflected velocity plus the gravity share of
+        // the part of the tick spent before the contact
+        vel.y = f32(-move.oldVelY + physics.gravity * (move.dy / move.oldVelY))
         if (vel.y < BEDROCK.slimeBounceMin) vel.y = 0
       } else if (move.oldVelY < 0 && !entity.control.sneak && below?.type === bedId) {
         vel.y = f32(Math.min(1, -BEDROCK.bedBounce * vel.y))
       } else {
         vel.y = 0
-      }
-    }
-    // slime walking (Bedrock: × (0.4 + |vy| × 0.2) while |vy| < 0.1)
-    if (entity.onGround && !entity.control.sneak) {
-      const below = world.getBlock(entity.pos.offset(0, -0.2, 0).floored())
-      if (below?.type === slimeId && Math.abs(vel.y) < 0.1) {
-        const k = f32(0.4 + Math.abs(vel.y) * 0.2)
-        vel.x = f32(vel.x * k)
-        vel.z = f32(vel.z * k)
       }
     }
   }
@@ -608,19 +620,27 @@ function Physics (registry, world) {
     if (entity.onGround) entity.elytraFlying = false
   }
 
-  /** Creative / abilities flight: no gravity, vertical input ± 3 × fly speed, vertical drag 0.6, air friction. */
+  /**
+   * Creative / abilities flight (BDS 1.26.51, measured with per-tick server samples): jump adds 3 × fly speed (0.15) and
+   * sneak removes 4.4 × fly speed (0.22) to the vertical velocity before the move, the horizontal acceleration is the
+   * fly speed (no sprint bonus), no gravity; after the move vy × 0.6 and vx/vz × 0.91. Without horizontal input vx/vz
+   * are damped × 0.375 more after the move, and without any input vy × 0.375 before it: flight stops within a few
+   * ticks.
+   */
   function moveFlying (entity, world, strafe, forward) {
     const vel = entity.vel
     const flySpeed = entity.flySpeed ?? BEDROCK.defaultFlySpeed
-    if (entity.control.jump) vel.y = f32(vel.y + flySpeed * BEDROCK.flyVerticalFactor)
-    if (entity.control.sneak) vel.y = f32(vel.y - flySpeed * BEDROCK.flyVerticalFactor)
-    const speed = f32(flySpeed * (entity.control.sprint ? 2 : 1))
-    applyHeading(entity, strafe, forward, speed)
+    const idle = strafe === 0 && forward === 0 && !entity.control.jump && !entity.control.sneak
+    if (idle) vel.y = f32(vel.y * BEDROCK.flyStopDamping)
+    if (entity.control.jump) vel.y = f32(vel.y + flySpeed * BEDROCK.flyAscendFactor)
+    if (entity.control.sneak) vel.y = f32(vel.y - flySpeed * BEDROCK.flyDescendFactor)
+    applyHeading(entity, strafe, forward, f32(flySpeed))
     const move = moveEntity(entity, world, vel.x, vel.y, vel.z)
     postCollisionLiquid(entity, move)
+    const horizontalStop = strafe === 0 && forward === 0 ? BEDROCK.flyStopDamping : 1
     vel.y = f32(vel.y * BEDROCK.flyVerticalDrag)
-    vel.x = f32(vel.x * physics.airborneInertia)
-    vel.z = f32(vel.z * physics.airborneInertia)
+    vel.x = f32(f32(vel.x * physics.airborneInertia) * horizontalStop)
+    vel.z = f32(f32(vel.z * physics.airborneInertia) * horizontalStop)
   }
 
   function moveOnLand (entity, world, strafe, forward) {
@@ -636,7 +656,6 @@ function Physics (registry, world) {
       inertia = f32(friction * physics.airborneInertia)
       let speed = movementSpeed(entity)
       if (blockUnder && blockUnder.type === soulsandId) speed = f32(speed * physics.soulsandSpeed)
-      else if (blockUnder && blockUnder.type === honeyblockId) speed = f32(speed * physics.honeyblockSpeed)
       acceleration = f32(speed * f32(BEDROCK.groundAccelerationFactor / f32(inertia * inertia * inertia)))
     } else {
       inertia = physics.airborneInertia
@@ -712,6 +731,7 @@ function Physics (registry, world) {
     const vel = entity.vel
     const pos = entity.pos
     entity.jumped = false
+    boxHeight = entity.control.sneak && !entity.flying && !entity.elytraFlying ? BEDROCK.sneakHeight : physics.playerHeight
 
     const waterBB = getPlayerBB(pos).contract(0.001, 0.401, 0.001)
     const lavaBB = getPlayerBB(pos).contract(0.1, 0.4, 0.1)
