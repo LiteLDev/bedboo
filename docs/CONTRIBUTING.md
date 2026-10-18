@@ -276,6 +276,59 @@ Additions/precisions to the tables above; all live on `main` since PR #5.
 - **Known BDS facts**: `/op` from the bot is refused (op via console); same-name rejoin right after `quit()` in a new
   process can hit `server_id_conflict`; BDS sends no server brand (`serverBrand` = 'vanilla').
 
+### As implemented in wave 3 (U6–U9) — read before building on them
+
+- **Chat / text (U6)**: parser lives in `lib/bedrock/text.js`; `bot._bedrock.chat.emitMessage` stays the single emitter
+  of `message`/`messagestr`. Patterns ported verbatim (default `chat`/`whisper` patterns take the sender from the
+  Bedrock packet). `tabComplete` is client-side from `available_commands` (`lib/bedrock/commands.js`), upstream
+  `[{match, tooltip}]` shape. `/tellraw` needs `{"rawtext":[…]}`; its messages arrive at position `system`.
+  Boss bars come only from summoned bosses (no `/bossbar`); teams/tab header are empty (documented).
+  `helpers/chat.js` makes `bot.test.tellAndListen` use the real `chat` event.
+- **Entities (U7)**: `entities.js` handles all non-self entities (self skipped via `ids.isSelf`). Wire positions verified
+  live: `add_player` **feet**; other players' `move_player` eye-level; `add_entity`/`add_item_entity`/`move_entity(_delta)`
+  feet + per-type offset (item 0.125, TNT/falling block 0.49, boat 0.375, minecart 0.35). `move_entity_delta` = absolute
+  optional coords + byte rotations. A killing blow emits `entityHurt` then `entityDead`. `attack/useOn/mount` look at the
+  target, `mouseOver`, then `item_use_on_entity` with `heldNetworkItem()`. `generic.armor`/`generic.armorToughness`
+  synthesized from equipment. prismarine-entity patch: Bedrock `getDroppedItem()` (from `add_item_entity`),
+  `getCustomName()`. Helpers: `summon` (spawn events, name tags, aliases e.g. `villager_v2`→`villager`), `killEntity`,
+  `botEvent`, `killAllEntities`.
+- **Inventory / windows (U8)** — wave-4 units build on this:
+  - `bot._bedrock.windows` is pre-filled for every container type; key = `container_open.window_type`, except chest-like
+    blocks (BDS sends `container`): use `windowKey(packet, {blockName, entityName})`. Spec: `javaType`, `size`,
+    `craftingResultSlot`, `content`, `slotMap` (`{container_id, slot, content, ui}` per Java slot), `quickMoveTargets`,
+    `slotLimits`; `register(type, spec)` refines one.
+  - Live-verified container ids/slots: chest/large/trapped/ender `container`; barrel `barrel`; shulker `shulker`;
+    dispenser/dropper/hopper/crafter `container`; furnace/blast/smoker slots 0–2; brewing ingredient 0, bottles 1–3,
+    fuel 4; crafting-table grid ui 32–40; anvil ui 1/2; enchanting 14/15; grindstone 16/17; stonecutter 3; loom 9–11;
+    cartography 12/13; smithing 51–53; beacon 27; off-hand = slot **1** in requests; armor 0–3; crafted results from
+    `creative_output` slot 50. Trading/horse/lectern maps are not yet live-verified (U13/U14 verify).
+  - `lib/bedrock/slots.js`: `resolve(window, javaSlot)`, `toJava`, `contentToJava`, `uiToJava`, `slotInfo`.
+  - `bot._bedrock.stackRequests`: `create(actions | (requestId) => actions, opts) → {request, response}`,
+    `write(request, {viaInput})`, `send(...)`, `observe(fn)` (outcomes ok/error/timeout/closed/late-ok/late-error).
+    Request ids -1, -3, -5…; `legacy_type_id` uses the **pre-1.26.40 numbering** filled automatically
+    (craft_creative 14, craft_recipe 12, results_deprecated 19 — a wrong value or a count of 0 gets the bot
+    disconnected). Errors roll back predictions; status 7 = no matching screen (retried once after reopening the
+    inventory screen), 49 = stack id mismatch, 50 = invalid slot/container.
+  - `bot._bedrock.inventoryModel.execute(window, steps)` accepts `raw`, `consume`, `{src: {created: item}}` steps for
+    craft requests (U12); clicking a crafting result slot throws. `inventoryModel.screen.close()` for a deterministic
+    state.
+  - Opening: `openBlock/openContainer/openEntity` send a plain `click_block` (no start/stop wrapper). Opening another
+    container waits for the close echo + 100 ms. `closeWindow` returns carried/station items to the inventory first.
+  - Item use: `activateItem(offHand)` = click_air (direction from that tick's input); eating finishes on
+    `completed_using_item`; `deactivateItem` = release; shield → hold sneak. No server cooldown packet exists.
+  - Creative: `creative.setInventorySlot` = `craft_creative` (entry id from `creative_content`, index at
+    `bot._bedrock.creativeItems`) + place from slot 50; **only items in the server's creative catalogue (incl. its NBT
+    variants, e.g. enchanted books) can be created** — arbitrary NBT is impossible (documented difference). Helper
+    `setInventorySlot` uses it in creative and falls back to console `replaceitem`.
+- **Player state / dimensions (U9)**: `health.js` drives death/respawn (death on own `death_animation` or health 0 in
+  `update_attributes`; `respawn()` sends client state 2 once per death after the server's state 0; `respawn: false`
+  supported); `lifecycle.markDead()` and a lifecycle `dimensionChanged` event exist; a `change_dimension` without
+  `loading_screen_id` (respawn into another dimension) must NOT be answered with `serverbound_loading_screen` (kick).
+  `game.js` acks `show_credits` (status 1) after the End exit. `bot.bedrock.gameRules` holds raw gamerules.
+  prismarine-chunk biomes fixed at every height; prismarine-block Bedrock signs read/write `FrontText`/`BackText`.
+  Vendored ray_trace fixes upstream's null-at-exact-0-pitch/yaw bug (documented). Emulated: abilities after gamemode
+  change, break-progress stages, `time` every 20 ticks, `spawnReset` from `tile.bed.notValid`.
+
 ## Ownership
 
 One owner per file and per patch **per wave**. A file not listed belongs to the unit that creates it. When a
