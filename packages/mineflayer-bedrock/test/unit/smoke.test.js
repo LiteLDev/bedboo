@@ -161,7 +161,6 @@ describe('mineflayer-bedrock skeleton (U0)', function () {
     const p = bot.craft(null, 1, null)
     assert.ok(p instanceof Promise, 'async stubs return a promise instead of throwing')
     await assert.rejects(p, (err) => err.notImplemented === true && err.unit === 'U12')
-    await assert.rejects(bot.fish(), (err) => err.unit === 'U14')
     assert.doesNotThrow(() => bot.stopDigging(), 'stopDigging is a no-op while idle, like upstream')
     assert.throws(() => bot.recipesAll(1, null, null), (err) => err.notImplemented === true && err.unit === 'U12')
   })

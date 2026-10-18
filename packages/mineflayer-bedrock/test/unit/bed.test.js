@@ -3,7 +3,6 @@
 const assert = require('assert')
 const { Vec3 } = require('vec3')
 const { createFakeBot, replayJoin } = require('./helpers/fake')
-const { implemented } = require('../external/common/helpers/base')
 
 /** upstream internalTest beds (facing 2 north, 3 east, 0 south, 1 west), on the flat world's surface (y -60) */
 const Y = -60
@@ -15,7 +14,7 @@ const BEDS = [
 ]
 
 async function bedWorld () {
-  const { bot, client } = await createFakeBot()
+  const { bot, client, clock } = await createFakeBot()
   await replayJoin(bot, client)
   const Block = require('prismarine-block')(bot.registry)
   const state = (direction, head) => Block.fromProperties('bed', { direction, head_piece_bit: head ? 1 : 0, occupied_bit: 0 }, 0).stateId
@@ -23,7 +22,7 @@ async function bedWorld () {
     bot.world.setBlockStateId(bed.foot, state(bed.facing, false))
     bot.world.setBlockStateId(bed.head, state(bed.facing, true))
   }
-  return { bot, client, Block }
+  return { bot, client, Block, clock }
 }
 
 describe('bed state (U9)', function () {
@@ -77,12 +76,83 @@ describe('bed state (U9)', function () {
     assert.deepStrictEqual(events, ['sleep', 'wake', 'spawnReset', 'spawnReset'])
   })
 
-  it('internalTest › bed: bot.sleep rejects a far bed / monsters nearby (U14, wave 4)', async function () {
-    const { bot } = await bedWorld()
-    if (!implemented(bot.sleep)) this.skip() // bot.sleep is U14's (wave 4)
+  it('internalTest › bed (sleep: a far bed / monsters nearby reject, the other beds are clicked and slept in) (U14)', async () => {
+    const { bot, client, clock } = await bedWorld()
     bot.time.timeOfDay = 18000
-    for (const bed of BEDS.filter(b => b.throws)) {
-      await assert.rejects(bot.sleep(bot.blockAt(bed.foot)), new RegExp(bed.error))
+    // upstream: the player at (10, 0, 0), a zombie at (0, 0, 0)
+    bot.entity.position.set(10.5, Y, 0.5)
+    client.receive('add_entity', {
+      unique_id: -800n,
+      runtime_id: 800n,
+      entity_type: 'minecraft:zombie',
+      position: { x: 0.5, y: Y, z: 0.5 },
+      velocity: { x: 0, y: 0, z: 0 },
+      pitch: 0,
+      yaw: 0,
+      head_yaw: 0,
+      body_yaw: 0,
+      attributes: [],
+      metadata: [],
+      properties: { ints: [], floats: [] },
+      links: []
+    })
+    assert.strictEqual(bot.entities[800].kind, 'Hostile mobs')
+    const sleeping = (on) => client.receive('set_entity_data', { runtime_entity_id: 91n, metadata: [{ key: 'player_flags', type: 'byte', value: on ? 2 : 0 }], tick: 0n })
+    for (const bed of BEDS) {
+      const bedBlock = bot.blockAt(bed.foot)
+      const metadata = bot.parseBedMetadata(bedBlock)
+      assert.strictEqual(metadata.facing, bed.facing, 'The facing property seems to be wrong')
+      assert.strictEqual(metadata.part, false, 'The part property seems to be wrong') // Is the foot
+      if (bed.throws) {
+        await assert.rejects(bot.sleep(bedBlock), (err) => err.message === bed.error)
+        continue
+      }
+      // the bed is clicked (item_use click_block once the look went out), BDS answers with the sleeping flag
+      client.clearSent()
+      const slept = bot.sleep(bedBlock)
+      for (let i = 0; i < 20 && client.sent('inventory_transaction').length === 0; i++) {
+        clock.advance(50)
+        bot._bedrock.input.pump()
+        await new Promise((resolve) => setImmediate(resolve))
+      }
+      const [click] = client.sent('inventory_transaction')
+      const data = click.transaction.transaction_data
+      assert.strictEqual(data.action_type, 'click_block')
+      // upstream's beds 0 and 3 have their "head" behind the foot (no head in front of it): sleep() clicks that part
+      assert.deepStrictEqual(data.block_position, { x: bed.head.x, y: bed.head.y, z: bed.head.z })
+      sleeping(true)
+      await slept
+      assert.strictEqual(bot.isSleeping, true)
+      await assert.rejects(bot.sleep(bedBlock), /already sleeping/)
+      sleeping(false)
+    }
+  })
+
+  it("sleep() checks in upstream's order: day, not a bed, occupied, half a bed; 'bot is not sleeping' without an answer (U14)", async function () {
+    this.timeout(10000)
+    const { bot, Block, clock } = await bedWorld()
+    bot.entity.position.set(10.5, Y, 0.5)
+    bot.time.timeOfDay = 1000
+    await assert.rejects(bot.sleep(bot.blockAt(BEDS[0].foot)), /it's not night and it's not a thunderstorm/)
+    bot.isRaining = true
+    bot.thunderState = 1
+    await assert.rejects(bot.sleep(bot.blockAt(new Vec3(10, Y - 1, 0))), /wrong block : not a bed block/) // a thunderstorm is fine
+    bot.isRaining = false
+    bot.thunderState = 0
+    bot.time.timeOfDay = 13000
+    const occupied = new Vec3(9, Y, -1)
+    bot.world.setBlockStateId(occupied, Block.fromProperties('bed', { direction: 0, head_piece_bit: 0, occupied_bit: 1 }, 0).stateId)
+    await assert.rejects(bot.sleep(bot.blockAt(occupied)), /the bed is occupied/)
+    const half = new Vec3(12, Y, -2)
+    bot.world.setBlockStateId(half, Block.fromProperties('bed', { direction: 0, head_piece_bit: 0, occupied_bit: 0 }, 0).stateId)
+    await assert.rejects(bot.sleep(bot.blockAt(half)), /there's only half bed/)
+    // a whole bed nobody answers for: rejected after 3 s like upstream
+    const pending = bot.sleep(bot.blockAt(BEDS[0].foot))
+    const pump = setInterval(() => { clock.advance(50); bot._bedrock.input.pump() }, 50)
+    try {
+      await assert.rejects(pending, /bot is not sleeping/)
+    } finally {
+      clearInterval(pump)
     }
   })
 })
