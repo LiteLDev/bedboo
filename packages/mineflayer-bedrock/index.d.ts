@@ -873,7 +873,8 @@ export class BossBar {
   title: ChatMessage
   health: number
   dividers: number
-  color: 'pink' | 'blue' | 'red' | 'green' | 'yellow' | 'purple' | 'white'
+  // Bedrock: + 'rebecca_purple' (the wither's bar colour, docs/differences/U6.md#boss-bars)
+  color: 'pink' | 'blue' | 'red' | 'green' | 'yellow' | 'purple' | 'rebecca_purple' | 'white'
   shouldDarkenSky: boolean
   isDragonBar: boolean
   createFog: boolean
@@ -890,7 +891,10 @@ export class BossBar {
 }
 
 export class Particle {
-  id: number
+  // Bedrock: a particle effect identifier ('minecraft:heart_particle') when it is not a registry particle type,
+  // then also its `name` (docs/differences/U6.md#particles)
+  id: number | string
+  name?: string
   position: Vec3
   offset: Vec3
   count: number
@@ -899,7 +903,7 @@ export class Particle {
   static fromNetwork(packet: Object): Particle
 
   constructor(
-    id: number,
+    id: number | string,
     position: Vec3,
     offset: Vec3,
     count?: number,
