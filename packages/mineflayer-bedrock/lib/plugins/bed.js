@@ -3,6 +3,14 @@
 //   parseBedMetadata (same result shape), isSleeping + 'sleep' / 'wake', 'spawnReset'.
 // Surface: bot.isSleeping, bot.isABed(block), bot.parseBedMetadata(bedBlock), bot.sleep(bedBlock) (U14),
 //   bot.wake() (U14)
+// U14 (wave 4): sleep / wake adapted from upstream (same checks, order and error messages):
+// - sleep: night (12541..23458) or thunderstorm, not already sleeping, a bed, not occupied, both halves, clickable
+//   (bot.canDigBlock, or upstream's reach check while digging.js is a stub), within the click range, no hostile mob
+//   in the monster range; then bot.activateBlock(bed) (item_use click_block) and resolve on 'sleep' (BDS:
+//   set_entity_data player_flags bit 1 + player_bed_position, the player is moved into the bed with a
+//   correct_player_move_prediction), 'bot is not sleeping' after 3 s.
+// - wake: player_action stop_sleeping (Java: entity_action leave_bed); BDS answers animate wake_up + player_flags 0
+//   → 'wake' (docs/differences/U14.md#beds).
 // Events: 'sleep', 'wake' (from entitySleep / entityWake of bot.entity, emitted from the sleeping metadata — BDS:
 //   player_flags bit 1 for players — by the entity data code), 'spawnReset'
 // Bedrock (docs/differences/U9.md#beds):
@@ -13,7 +21,7 @@
 //   `tile.bed.notValid` / `tile.respawn_anchor.notValid` message (Java: game event no_respawn_block_available).
 'use strict'
 const { Vec3 } = require('vec3')
-const { stubAsync } = require('../bedrock/errors')
+const { isStub } = require('../bedrock/errors')
 
 module.exports = inject
 
@@ -21,6 +29,9 @@ module.exports = inject
 const HEAD_OFFSETS = [new Vec3(0, 0, 1), new Vec3(-1, 0, 0), new Vec3(0, 0, -1), new Vec3(1, 0, 0)]
 const CARDINALS = { south: 0, west: 1, north: 2, east: 3 }
 const SPAWN_RESET = /^tile\.(bed|respawn_anchor)\.notValid$/
+const CARDINAL_DIRECTIONS = ['south', 'west', 'north', 'east']
+/** ms upstream waits for the 'sleep' event after clicking the bed */
+const SLEEP_TIMEOUT = 3000
 
 function inject (bot) {
   bot.isSleeping = false
@@ -86,8 +97,139 @@ function inject (bot) {
     }
   })
 
+  /** upstream canDigBlock (digging.js): a diggable block whose center is within 5.1 of the eyes */
+  function canClickBlock (block) {
+    if (typeof bot.canDigBlock === 'function' && !isStub(bot.canDigBlock)) return bot.canDigBlock(block)
+    return !!(
+      block &&
+      block.diggable &&
+      block.position.offset(0.5, 0.5, 0.5).distanceTo(bot.entity.position.offset(0, 1.65, 0)) <= 5.1
+    )
+  }
+
+  async function wake () {
+    if (!bot.isSleeping) {
+      throw new Error('already awake')
+    } else {
+      // Java: entity_action leave_bed; Bedrock: player_action stop_sleeping
+      bot._client.queue('player_action', {
+        runtime_entity_id: bot._bedrock?.ids?.selfRuntimeId?.() ?? bot.entity?.runtimeId ?? 0n,
+        action: 'stop_sleeping',
+        position: { x: 0, y: 0, z: 0 },
+        result_position: { x: 0, y: 0, z: 0 },
+        face: 0
+      })
+    }
+  }
+
+  async function sleep (bedBlock) {
+    const thunderstorm = bot.isRaining && (bot.thunderState > 0)
+    if (!thunderstorm && !(bot.time.timeOfDay >= 12541 && bot.time.timeOfDay <= 23458)) {
+      throw new Error("it's not night and it's not a thunderstorm")
+    } else if (bot.isSleeping) {
+      throw new Error('already sleeping')
+    } else if (!isABed(bedBlock)) {
+      throw new Error('wrong block : not a bed block')
+    } else {
+      const botPos = bot.entity.position.floored()
+      const metadata = parseBedMetadata(bedBlock)
+      let headPoint = bedBlock.position
+
+      if (metadata.occupied) {
+        throw new Error('the bed is occupied')
+      }
+
+      if (!metadata.part) { // Is foot
+        const upperBlock = bot.blockAt(bedBlock.position.plus(metadata.headOffset))
+
+        if (isABed(upperBlock)) {
+          headPoint = upperBlock.position
+        } else {
+          const lowerBlock = bot.blockAt(bedBlock.position.plus(metadata.headOffset.scaled(-1)))
+
+          if (isABed(lowerBlock)) {
+            // If there are 2 foot parts, minecraft only lets you sleep if you click on the lower one
+            headPoint = bedBlock.position
+            bedBlock = lowerBlock
+          } else {
+            throw new Error("there's only half bed")
+          }
+        }
+      }
+
+      if (!canClickBlock(bedBlock)) {
+        throw new Error('cant click the bed')
+      }
+
+      const clickRange = [2, -3, -3, 2] // [south, west, north, east]
+      const monsterRange = [7, -8, -8, 7]
+      const oppositeCardinal = (metadata.facing + 2) % CARDINAL_DIRECTIONS.length
+
+      if (clickRange[oppositeCardinal] < 0) {
+        clickRange[oppositeCardinal]--
+      } else {
+        clickRange[oppositeCardinal]++
+      }
+
+      const nwClickCorner = headPoint.offset(clickRange[1], -2, clickRange[2]) // North-West lower corner
+      const seClickCorner = headPoint.offset(clickRange[3], 2, clickRange[0]) // South-East upper corner
+      if (botPos.x > seClickCorner.x || botPos.x < nwClickCorner.x || botPos.y > seClickCorner.y || botPos.y < nwClickCorner.y || botPos.z > seClickCorner.z || botPos.z < nwClickCorner.z) {
+        throw new Error('the bed is too far')
+      }
+
+      if (bot.game.gameMode !== 'creative' || bot.supportFeature('creativeSleepNearMobs')) { // If in creative mode the bot should be able to sleep even if there are monster nearby (starting in 1.13)
+        const nwMonsterCorner = headPoint.offset(monsterRange[1], -6, monsterRange[2]) // North-West lower corner
+        const seMonsterCorner = headPoint.offset(monsterRange[3], 4, monsterRange[0]) // South-East upper corner
+
+        for (const key of Object.keys(bot.entities)) {
+          const entity = bot.entities[key]
+          if (entity.kind === 'Hostile mobs') {
+            const entityPos = entity.position.floored()
+            if (entityPos.x <= seMonsterCorner.x && entityPos.x >= nwMonsterCorner.x && entityPos.y <= seMonsterCorner.y && entityPos.y >= nwMonsterCorner.y && entityPos.z <= seMonsterCorner.z && entityPos.z >= nwMonsterCorner.z) {
+              throw new Error('there are monsters nearby')
+            }
+          }
+        }
+      }
+
+      // We need to register the listener before actually going to sleep to avoid race conditions
+      const waitingPromise = waitUntilSleep()
+      // Bedrock: activateBlock is async (it waits for the look and queues the click); the 3 s may run out meanwhile
+      waitingPromise.catch(() => {})
+      try {
+        await bot.activateBlock(bedBlock)
+      } catch (err) {
+        waitingPromise.cancel()
+        throw err
+      }
+      await waitingPromise
+    }
+  }
+
+  function waitUntilSleep () {
+    let cancel
+    const promise = new Promise((resolve, reject) => {
+      const timeoutForSleep = setTimeout(() => {
+        bot.removeListener('sleep', onSleep)
+        reject(new Error('bot is not sleeping'))
+      }, SLEEP_TIMEOUT)
+
+      function onSleep () {
+        clearTimeout(timeoutForSleep)
+        resolve()
+      }
+      cancel = () => {
+        clearTimeout(timeoutForSleep)
+        bot.removeListener('sleep', onSleep)
+      }
+      bot.once('sleep', onSleep)
+    })
+    promise.cancel = cancel
+    return promise
+  }
+
   bot.parseBedMetadata = parseBedMetadata
   bot.isABed = isABed
-  bot.sleep = stubAsync('U14', 'bot.sleep', 1)
-  bot.wake = stubAsync('U14', 'bot.wake', 0)
+  bot.sleep = sleep
+  bot.wake = wake
 }
