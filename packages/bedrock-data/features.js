@@ -111,6 +111,13 @@ const JAVA = {
   blockPlaceHasHandAndIntCursor: false,
   blockPlaceHasHeldItem: false,
   blockPlaceHasInsideBlock: false,
+  chainedChatWithHashing: false, // (this and the next names: mineflayer internalTest.js, a fake Java server)
+  consolidatedEntitySpawnPacket: false,
+  positionPacketHasBitflags: false,
+  signedChat: false, // Bedrock chat is not signed
+  unifiedPlayerAndEntitySpawnPacket: false,
+  useChatSessions: false,
+  usesLoginPacket: false,
   clientUpdateBookIdWhenSign: false,
   customChannelIdentifier: false,
   customChannelMCPrefixed: false,
