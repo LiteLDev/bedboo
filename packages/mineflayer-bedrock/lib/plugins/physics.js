@@ -23,7 +23,8 @@
 //     vehicles (client_predicted_vehicle via input.setVehicle).
 // Hooks (bot._bedrock.physics): setPosition(pos, { forced, handledTeleport = forced }), setFlying(on), isFlying(),
 //   flyTo(destination) → Promise (speed-limited flight path, used by bot.creative.flyTo), moveVehicle(left, forward),
-//   history() (recorded ticks, tests/debugging), simulate(state) (one engine step with this bot's world).
+//   history() (recorded ticks, tests/debugging), simulate(state) (one engine step with this bot's world),
+//   onCorrection(fn) / stats() (server corrections, tests and diagnostics).
 'use strict'
 const assert = require('assert')
 const { Vec3 } = require('vec3')
@@ -76,6 +77,8 @@ function inject (bot, { physicsEnabled }) {
   let pendingFlightRequest = null // request_ability flying value to send with the next input
   let skipNext = false // the next input is the first one after a teleport: not simulated (BDS does the same)
   const history = [] // [{ tick, input, state, simulated }] oldest first
+  const correctionListeners = new Set()
+  const stats = { corrections: 0, last: null }
 
   bot.setControlState = (control, state) => {
     assert.ok(control in controlState, `invalid control: ${control}`)
@@ -178,6 +181,7 @@ function inject (bot, { physicsEnabled }) {
       knockback: pendingKnockback,
       flySpeed: flySpeed(),
       elytraEquipped: elytraEquipped(),
+      usingItem: !!bot.usingHeldItem, // the move vector is clamped to ±0.1225 while using an item (eating, bow, …)
       ...statusInputs()
     }
   }
@@ -220,6 +224,7 @@ function inject (bot, { physicsEnabled }) {
     state.moveVector = input.moveVector
     state.elytraEquipped = input.elytraEquipped
     state.elytraFlying = !!input.gliding
+    state.usingItem = !!input.usingItem
     state.jumpQueued = false
     if (input.effects) Object.assign(state, input.effects)
     if (input.speedAttribute) state.attributes = { [bot.physics.movementSpeedAttribute]: input.speedAttribute }
@@ -568,6 +573,12 @@ function inject (bot, { physicsEnabled }) {
     bot._bedrock.physics.flyTo = flyTo
     bot._bedrock.physics.moveVehicle = moveVehicle
     bot._bedrock.physics.history = () => history.slice()
+    /** fn({ tick, position, velocity, onGround, predicted, error, replayed }) for every server correction; → unsubscribe */
+    bot._bedrock.physics.onCorrection = (fn) => {
+      correctionListeners.add(fn)
+      return () => correctionListeners.delete(fn)
+    }
+    bot._bedrock.physics.stats = () => ({ ...stats })
     bot._bedrock.physics.simulate = (state) => bot.physics.simulatePlayer(state, world)
   }
   if (!bot.moveVehicle || isStub(bot.moveVehicle)) bot.moveVehicle = moveVehicle
@@ -646,6 +657,7 @@ function inject (bot, { physicsEnabled }) {
     }
     const tick = packet.tick === undefined ? null : BigInt(packet.tick)
     const index = tick === null ? -1 : history.findIndex((h) => h.tick === tick)
+    const predicted = index >= 0 ? history[index].state.pos.clone() : null
     if (index >= 0 && index < history.length - 1) {
       replayFrom(index, corrected)
     } else {
@@ -654,7 +666,20 @@ function inject (bot, { physicsEnabled }) {
       entity.onGround = corrected.onGround
       if (index >= 0) Object.assign(history[index].state, { pos: corrected.pos.clone(), vel: corrected.vel.clone(), onGround: corrected.onGround })
     }
-    bot.emit('physicsCorrection', { tick, position: corrected.pos.clone(), velocity: corrected.vel.clone(), onGround: corrected.onGround, replayed: index >= 0 ? history.length - 1 - index : 0 })
+    const info = {
+      tick,
+      position: corrected.pos.clone(),
+      velocity: corrected.vel.clone(),
+      onGround: corrected.onGround,
+      predicted, // our position for that tick before the correction (null: not in the history)
+      error: predicted ? predicted.distanceTo(corrected.pos) : null,
+      replayed: index >= 0 ? history.length - 1 - index : 0
+    }
+    stats.corrections++
+    stats.last = info
+    for (const fn of correctionListeners) {
+      try { fn(info) } catch (err) { bot.emit('error', err) }
+    }
     emitForcedMove()
   })
 

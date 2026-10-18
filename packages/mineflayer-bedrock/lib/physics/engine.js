@@ -19,13 +19,13 @@
 // - the reported `delta` (player_auth_input) is the velocity at the end of the tick;
 // - sneak edge avoidance shrinks the box by 0.025, probes 1.01 x step height down and clips the velocity itself;
 //   the sneaking box is 1.49 high;
-// - climbing: vy >= -0.2, vy = 0.2 when jump is held or after a horizontal collision and kept as the end velocity, no
+// - climbing: vy >= -0.2; jump climbs 0.2 (then gravity), a horizontal collision sets 0.2 as the end velocity; no
 //   horizontal clamp, sneaking holds; ladders collide with a 3/16 box;
 // - cobweb x0.25/x0.05/x0.25 before the move, velocity reset after it; powder snow / berry bushes likewise (Java
 //   factors); soul sand: ground speed x 0.544; honey and slime: "step on" x (0.4 + |vy| x 0.2), honey jump x 0.6;
 //   slime bounce from the air; bed bounce;
 // - water gravity 0.005 (drag 0.8), lava 0.02 (drag 0.5), bubble columns per block (Java values);
-// - slow falling only while falling (vy < 0), levitation without drag;
+// - slow falling only while falling (vy < 0);
 // - creative flight: see moveFlying; elytra: the Java formula (matches BDS).
 'use strict'
 const { Vec3 } = require('vec3')
@@ -542,8 +542,7 @@ function Physics (registry, world) {
   function applyGravityAndFriction (entity, inertia) {
     const vel = entity.vel
     if (entity.levitation > 0) {
-      // levitation (Bedrock): no vertical drag
-      vel.y = f32(vel.y + (BEDROCK.levitationPerLevel * entity.levitation - vel.y) * 0.2)
+      vel.y = f32(f32(vel.y + (BEDROCK.levitationPerLevel * entity.levitation - vel.y) * 0.2) * physics.airdrag)
     } else {
       vel.y = f32(f32(vel.y - gravityOf(entity)) * physics.airdrag)
     }
@@ -665,15 +664,13 @@ function Physics (registry, world) {
     applyHeading(entity, strafe, forward, acceleration)
     jump(entity, world)
 
-    // climbing (Bedrock): falls at most 0.2/tick; jump or a horizontal collision climbs at 0.2/tick, and the climb
-    // speed is kept as the end-of-tick velocity (measured: delta 0.2 every tick while climbing); sneaking holds on
-    let climbing = false
-    if (isClimbable(world, pos)) {
+    // climbing (Bedrock, measured): falls at most 0.2/tick; holding jump climbs 0.2 this tick (gravity applies after:
+    // delta 0.1176); a horizontal collision while on the climbable sets 0.2 as the end-of-tick velocity (delta 0.2,
+    // next tick climbs 0.2); sneaking holds on
+    const onClimbable = isClimbable(world, pos)
+    if (onClimbable) {
       vel.y = f32(Math.max(vel.y, -physics.ladderMaxSpeed))
-      if (entity.control.jump || entity.isCollidedHorizontally) {
-        vel.y = physics.ladderClimbSpeed
-        climbing = true
-      }
+      if (entity.control.jump) vel.y = physics.ladderClimbSpeed
       if (entity.control.sneak && vel.y < 0) vel.y = 0
     }
 
@@ -693,7 +690,7 @@ function Physics (registry, world) {
     if (stuck) vel.set(0, 0, 0)
 
     applyGravityAndFriction(entity, inertia)
-    if (climbing && move.dy === move.oldVelY) vel.y = physics.ladderClimbSpeed
+    if (onClimbable && entity.isCollidedHorizontally && isClimbable(world, pos)) vel.y = physics.ladderClimbSpeed
   }
 
   function jump (entity, world) {

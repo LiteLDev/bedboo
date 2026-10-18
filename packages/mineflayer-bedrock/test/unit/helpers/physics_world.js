@@ -90,7 +90,16 @@ function createWorld ({ flat = true } = {}) {
         return world.fill(n[0], n[1], n[2], n[3], n[4], n[5], m[7], parseStates(m[8]))
       }
       m = /^(?:execute in \w+ run )?setblock (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (\w+)\s*(\[.*\])?/.exec(cmd)
-      if (m) world.set(Number(m[1]), Number(m[2]), Number(m[3]), m[4], parseStates(m[5]))
+      if (m) {
+        const [x, y, z] = [Number(m[1]), Number(m[2]), Number(m[3])]
+        world.set(x, y, z, m[4], parseStates(m[5]))
+        // BDS turns the water above soul sand / magma into a bubble column (up / down)
+        if (m[4] === 'soul_sand' || m[4] === 'magma') {
+          for (let cy = y + 1; ['water', 'bubble_column'].includes(world.getBlock(new Vec3(x, cy, z)).name); cy++) {
+            world.set(x, cy, z, 'bubble_column', { drag_down: m[4] === 'magma' ? 1 : 0 })
+          }
+        }
+      }
       return world
     },
     getBlock (pos) {

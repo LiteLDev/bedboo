@@ -141,7 +141,7 @@ describe('physics plugin (U5): Bedrock movement over player_auth_input', functio
     const before = bot.entity.position.clone()
     const shifted = at.state.pos.offset(0, 0, 1) // server says: 1 block further south at that tick
     let correction = null
-    bot.on('physicsCorrection', (c) => { correction = c })
+    bot._bedrock.physics.onCorrection((c) => { correction = c })
     client.receive('correct_player_move_prediction', { prediction_type: 'player', position: { x: shifted.x, y: shifted.y + EYE, z: shifted.z }, delta: { x: at.state.vel.x, y: at.state.vel.y, z: at.state.vel.z }, rotation: { x: 0, z: 0 }, on_ground: true, tick: at.tick })
     assert.strictEqual(correction.replayed, 5)
     close(bot.entity.position.z, before.z + 1, 1e-4, 'replayed from the corrected state')
@@ -174,7 +174,7 @@ describe('physics plugin (U5): Bedrock movement over player_auth_input', functio
     client.receive('set_entity_motion', { runtime_entity_id: selfRuntime(bot), velocity: { x: -0.4, y: 0.4, z: 0 }, tick: lastTick - 3n })
     // 3 inputs re-simulated with the motion applied at lastTick - 2: up 0.4, then 0.3136, then 0.228928
     close(bot.entity.position.y, -60 + 0.4 + 0.3136 + 0.228928, 1e-4)
-    close(bot.entity.position.x, 0.5 - 0.4 - 0.4 * 0.546 - 0.4 * 0.546 * 0.91, 1e-4, "ground friction on the knockback tick (BDS: delta -0.2184), then air")
+    close(bot.entity.position.x, 0.5 - 0.4 - 0.4 * 0.546 - 0.4 * 0.546 * 0.91, 1e-4, 'ground friction on the knockback tick (BDS: delta -0.2184), then air')
   })
 
   it('effects: mob_effect (tick) re-simulates the inputs after it with the new levels', async () => {
@@ -214,9 +214,9 @@ describe('physics plugin (U5): Bedrock movement over player_auth_input', functio
   it('flyTo: flies there with flight inputs (no teleports) and resolves when stopped at the destination', async () => {
     const { bot, tick, inputs } = await spawned()
     const target = new Vec3(4.5, -55, 3.5)
-    let done = false
-    const p = bot._bedrock.physics.flyTo(target).then(() => { done = true })
-    for (let i = 0; i < 200 && !done; i++) {
+    const state = { done: false }
+    const p = bot._bedrock.physics.flyTo(target).then(() => { state.done = true })
+    for (let i = 0; i < 200 && !state.done; i++) {
       tick()
       await Promise.resolve()
     }

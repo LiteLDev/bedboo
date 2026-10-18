@@ -118,4 +118,3 @@ class AABB {
 
 AABB.EPSILON = EPSILON
 module.exports = AABB
-

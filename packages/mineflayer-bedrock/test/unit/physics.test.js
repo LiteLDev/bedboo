@@ -177,7 +177,7 @@ describe('physics engine (U5): Bedrock movement', function () {
     close(lava.vel.y, -0.04, 2e-3, 'lava terminal (0.5 drag, 0.02 gravity)')
   })
 
-  it('soul sand ×0.544, honey and slime step-on (0.4 + |vy| × 0.2), honey jump × 0.6, slime bounce', () => {
+  it('soul sand ×0.544, honey and slime step-on slowdown (0.4 + 0.2 × vy), honey jump × 0.6, slime bounce', () => {
     world.fill(-5, -61, -1, 40, -61, 1, 'soul_sand')
     const ss = playerState(new Vec3(0.5, -60.125, 0.5), { forward: true })
     ss.yaw = YAW.east
@@ -218,7 +218,7 @@ describe('physics engine (U5): Bedrock movement', function () {
     close(up.vel.y, -0.3, 1e-6)
   })
 
-  it('slow falling only while falling (vy < 0), levitation without drag', () => {
+  it('slow falling only while falling (vy < 0); levitation approaches 0.05 × level (with drag)', () => {
     const st = playerState(new Vec3(0.5, -40, 0.5), {}, { slowFalling: 1 })
     st.onGround = false
     run(physics, world, st, 1)
@@ -228,7 +228,7 @@ describe('physics engine (U5): Bedrock movement', function () {
     const lev = playerState(new Vec3(0.5, -40, 0.5), {}, { levitation: 2 })
     lev.onGround = false
     run(physics, world, lev, 60)
-    close(lev.vel.y, 0.1, 1e-3)
+    close(lev.vel.y, 0.0196 / 0.216, 1e-3, 'BDS steady levitation II: 0.0907')
   })
 
   it('creative flight: +0.15 / −0.22 vertical, drag 0.6 / 0.91, idle damping 0.375 (BDS samples)', () => {
