@@ -303,8 +303,8 @@ describe('windows: container_open → windowOpen / windowClose (U8)', function (
     const Block = require('prismarine-block')(bot.registry)
     /** drive the manual tick clock (lookAt resolves once the next player_auth_input is sent) until `predicate` */
     async function until (predicate) {
-      for (let i = 0; i < 50 && !predicate(); i++) {
-        await tick()
+      for (let i = 0; i < 100 && !predicate(); i++) {
+        await new Promise(resolve => setTimeout(resolve, 5)) // also lets the 100 ms reopen delay pass
         clock.advance(50)
         bot._bedrock.input.pump()
       }

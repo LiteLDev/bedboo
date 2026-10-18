@@ -53,6 +53,9 @@ const CONSUME_TIMEOUT = 2500
 const WINDOW_TIMEOUT = 5000
 // milliseconds to wait for a container's inventory_content after its container_open
 const CONTENT_TIMEOUT = 1000
+// BDS drops a container activation that arrives in the tick its previous container closed (observed: no
+// container_open, no resync); activations wait this long after a close
+const REOPEN_DELAY = 100
 
 const ALWAYS_CONSUMABLES = [
   'potion',
@@ -74,6 +77,8 @@ function inject (bot) {
   let pendingOpen = null
   // echo of the last container_close we sent (openBlock waits for it before opening another container)
   let closing = Promise.resolve()
+  // when a container (or the inventory screen) last closed server side
+  let lastCloseAt = 0
   // activateItem(true/false) raised a shield by sneaking
   let shieldRaised = false
 
@@ -229,6 +234,8 @@ function inject (bot) {
   async function prepareInteraction () {
     await closing
     await model.screen.close()
+    const since = Date.now() - lastCloseAt
+    if (since < REOPEN_DELAY) await sleep(REOPEN_DELAY - since)
   }
 
   async function activateBlock (block, direction, cursorPos) {
@@ -611,6 +618,7 @@ function inject (bot) {
 
   bot._client.on('container_close', (packet) => {
     const id = windowIdOf(packet.window_id)
+    lastCloseAt = Date.now()
     model.screen.onClosed(id)
     if (pendingOpen && pendingOpen.id === id) pendingOpen = null
     const oldWindow = bot.currentWindow
