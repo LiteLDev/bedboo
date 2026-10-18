@@ -5,7 +5,14 @@
  * over the BDS console (`replaceitem`, `clear`, `give`); completion is observed through raw
  * `inventory_content` / `inventory_slot` packets (BDS 1.26.51 answers /give, /replaceitem and /clear
  * with `inventory_content`; armor replaceitem with `inventory_slot`).
+ *
+ * U8 (wave 3): `setInventorySlot` uses `bot.creative.setInventorySlot` like upstream testCommon when the bot is a
+ * mineflayer-bedrock bot in creative mode with no window open and the item is in the server's creative inventory
+ * (this also places the creative inventory's NBT variants, e.g. enchanted books); otherwise (raw bots, survival,
+ * an open window, items the creative inventory does not have, or a rejected creative request) it falls back to
+ * the console `replaceitem`. `resetState` additionally closes a window a failed test left open.
  */
+const { implemented } = require('./base')
 
 /**
  * Java player-inventory slot → Bedrock `replaceitem` slot type + index and the window that updates.
@@ -73,15 +80,32 @@ function install (bot, ctx) {
     return ctx.packet(['inventory_content', 'inventory_slot'], (p) => String(p.window_id) === window, timeout)
   }
 
+  /** whether bot.creative.setInventorySlot can place `item` into `targetSlot` right now (see the module comment) */
+  function creativeCanSet (targetSlot, item) {
+    if (bot._rawBot || !implemented(bot.creative?.setInventorySlot)) return false
+    if (bot.game?.gameMode !== 'creative' || bot.currentWindow) return false
+    if (!(targetSlot >= 1 && targetSlot <= 45)) return false
+    return !item || !!bot._bedrock?.creativeItems?.entryFor(item)
+  }
+
   /**
    * Upstream signature `setInventorySlot(targetSlot, item)` (Java slot numbers, prismarine Item or
-   * null). Bedrock: `replaceitem entity <bot> <slot type> <index> <name> <count> <metadata>` (works in
-   * any gamemode). `replaceitem` cannot set NBT (enchantments, names, book contents, …): such items are
-   * rejected instead of being placed without it (U8 switches this helper to bot.creative.setInventorySlot).
-   * A tool's Damage is set through the data value.
+   * null). Creative mode (mineflayer-bedrock bot): `bot.creative.setInventorySlot` like upstream testCommon.
+   * Fallback: `replaceitem entity <bot> <slot type> <index> <name> <count> <metadata>` (works in any gamemode).
+   * `replaceitem` cannot set NBT (enchantments, names, book contents, …): such items are rejected instead of
+   * being placed without it. A tool's Damage is set through the data value.
    */
   t.setInventorySlot = async (targetSlot, item) => {
     if (item && item.name === 'unknown') throw new Error(`item should not be unknown ${JSON.stringify(item)}`)
+    if (creativeCanSet(targetSlot, item)) {
+      try {
+        await bot.creative.setInventorySlot(targetSlot, item)
+        return
+      } catch (err) {
+        // e.g. a stale stack id right after a console command: the console can still place a plain item
+        if (item && unsupportedItemData(item, bot.registry)) throw err
+      }
+    }
     const registry = bot.registry ?? staticRegistry()
     const unsupported = item && unsupportedItemData(item, registry)
     if (unsupported) throw unsupportedItemError(item, unsupported)
@@ -151,6 +175,17 @@ function install (bot, ctx) {
 
   /** Items currently tracked from raw packets (debugging / raw-mode assertions). */
   t.rawInventory = () => state.inventory
+
+  // a window left open by a failed test would shadow bot.inventory in the next one
+  const baseReset = t.resetState
+  if (typeof baseReset === 'function') {
+    t.resetState = async () => {
+      if (bot.currentWindow && implemented(bot.closeWindow)) {
+        try { await bot.closeWindow(bot.currentWindow) } catch {}
+      }
+      return baseReset()
+    }
+  }
 }
 
 module.exports = install
