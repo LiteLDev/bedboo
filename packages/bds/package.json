@@ -1,0 +1,24 @@
+{
+  "name": "@bedboo/bds",
+  "version": "0.0.0",
+  "description": "Docker-based Bedrock Dedicated Server harness and CLI for bedboo tests",
+  "license": "MIT",
+  "main": "index.js",
+  "bin": {
+    "bds": "bin/bds.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LiteLDev/bedboo.git",
+    "directory": "packages/bds"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "test": "mocha"
+  },
+  "devDependencies": {
+    "mocha": "12.0.3"
+  }
+}

@@ -1,0 +1,5 @@
+{
+  "spec": ["test/external/**/*.test.js"],
+  "timeout": 120000,
+  "exit": true
+}

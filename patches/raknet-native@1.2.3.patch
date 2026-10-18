@@ -1,0 +1,40 @@
+diff --git a/binding.js b/binding.js
+index 7749ff794e5b446ca545cfac55d58c9bf8f13bb1..7854aaf9f86160beb50eb69c29959daa3d4b4637 100644
+--- a/binding.js
++++ b/binding.js
+@@ -1,5 +1,6 @@
+ const helper = require('./helpers/buildPath.js')
+ const fs = require('fs')
++const path = require('path')
+ const debug = require('debug')('raknet')
+ 
+ if (!process.versions.electron) {
+@@ -15,8 +16,18 @@ if (!process.versions.electron) {
+ }
+ 
+ let bindings
++// bedboo: the exact `${platform}-${kernelMajor}-${arch}` prebuild is only shipped for linux-5;
++// fall back to any bundled prebuild for this platform+arch (helper.getFallbackPath, which upstream
++// defines but never uses) before trying a local cmake build.
+ const pathsToSearch = [helper.getPath()]
++try {
++  const fallback = helper.getFallbackPath()
++  if (fallback && !pathsToSearch.includes(fallback)) pathsToSearch.push(fallback)
++} catch (e) {
++  debug('No fallback prebuild', e)
++}
+ for (const importPath of pathsToSearch) {
++  if (bindings) break
+   try {
+     bindings = require(importPath)
+   } catch (e) {
+@@ -26,7 +37,8 @@ for (const importPath of pathsToSearch) {
+ }
+ 
+ // We want to use the built release if available
+-if (!bindings || fs.existsSync('./build/Release')) {
++// bedboo: resolve build/Release relative to the package, not process.cwd()
++if (!bindings || fs.existsSync(path.join(__dirname, 'build/Release'))) {
+   bindings = require('bindings')('node-raknet.node')
+ }
+ 

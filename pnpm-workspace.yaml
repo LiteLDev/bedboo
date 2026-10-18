@@ -1,0 +1,43 @@
+# All pnpm settings live here (pnpm >= 11 ignores the `pnpm` field of package.json, and
+# pnpm 12 fails on unknown keys in this file). Ownership of every override / patch is listed
+# in docs/CONTRIBUTING.md.
+packages:
+  - packages/*
+
+# Exactly ONE copy of every package we patch (or plan to patch) plus the data/protocol
+# packages, so mineflayer, bedrock-protocol and the ecosystem plugins all resolve the same
+# (patched) module instance.
+overrides:
+  bedrock-protocol: 3.60.1
+  minecraft-data: 3.117.0
+  mineflayer: 4.39.0
+  prismarine-block: 1.23.0
+  prismarine-chat: 1.13.0
+  prismarine-chunk: 1.41.0
+  prismarine-entity: 2.6.0
+  prismarine-item: 1.18.0
+  prismarine-nbt: 2.8.0
+  prismarine-physics: 1.11.1
+  prismarine-recipe: 1.5.0
+  prismarine-registry: 1.12.0
+  prismarine-windows: 2.10.0
+  prismarine-world: 3.7.0
+  raknet-native: 1.2.3
+  mineflayer-pathfinder: 2.4.5
+  mineflayer-pvp: 1.3.2
+  mineflayer-collectblock: 1.6.0
+  mineflayer-tool: 1.2.0
+  mineflayer-armor-manager: 2.0.1
+  mineflayer-auto-eat: 5.0.3
+
+# bedrock-protocol 3.60.1 depends on `prismarine-xbox-services` via a pinned GitHub commit
+# (github:PrismarineJS/prismarine-xbox-services#052a9676...); it is not published to npm.
+blockExoticSubdeps: false
+
+# Dependency lifecycle scripts. raknet-native's install script would attempt a cmake build
+# (no C++ toolchain on the dev host); the patch makes it load its bundled prebuild instead.
+allowBuilds:
+  raknet-native: false
+
+patchedDependencies:
+  raknet-native@1.2.3: patches/raknet-native@1.2.3.patch
