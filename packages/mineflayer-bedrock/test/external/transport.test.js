@@ -1,15 +1,16 @@
-// owner: U0 (transport spike) → U1 (may port it onto the harness)
+// owner: U0 (transport spike) → U1 (ported onto the harness)
 'use strict'
 /**
  * smoke: raw transport against a real BDS (no mineflayer plugins involved).
  *
- * Uses an already-running server from BDS_HOST/BDS_PORT (see docs/testing.md for the manual
- * docker recipe); skipped when neither is set. Proves lib/client.js defaults (offline RakNet via the
- * patched raknet-native, version 1.26.51, skipPing) can join, spawn and receive chunks.
+ * The server comes from the harness (`startServer()`: isolated container in a slot) or from
+ * BDS_HOST/BDS_PORT. Proves lib/client.js defaults (offline RakNet via the patched raknet-native,
+ * version 1.26.51, skipPing) can join, spawn and receive chunks.
  */
 const assert = require('assert')
 require('@bedboo/bedrock-data').install()
 const { createClient } = require('../../lib/client')
+const { useServer } = require('./common')
 
 function waitFor (emitter, event, timeout, predicate = () => true) {
   return new Promise((resolve, reject) => {
@@ -29,11 +30,8 @@ function waitFor (emitter, event, timeout, predicate = () => true) {
 
 describe('smoke: raw bedrock-protocol transport (U0 spike)', function () {
   this.timeout(60000)
+  const env = useServer()
   let client
-
-  before(function () {
-    if (!process.env.BDS_HOST && !process.env.BDS_PORT) this.skip()
-  })
 
   afterEach(() => {
     if (client) {
@@ -45,8 +43,8 @@ describe('smoke: raw bedrock-protocol transport (U0 spike)', function () {
 
   it('joins, spawns, receives level_chunk and subchunk', async () => {
     client = createClient({
-      host: process.env.BDS_HOST || '127.0.0.1',
-      port: Number(process.env.BDS_PORT || 19132),
+      host: env.server.host,
+      port: env.server.port,
       username: 'SmokeT' + Math.floor(Math.random() * 1e4),
       conLog: null
     })
