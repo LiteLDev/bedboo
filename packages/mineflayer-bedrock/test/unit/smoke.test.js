@@ -157,12 +157,19 @@ describe('mineflayer-bedrock skeleton (U0)', function () {
 
   it('stubs throw (sync APIs) or reject (promise APIs) with NotImplementedError', async () => {
     const { bot } = await createInjectedBot()
-    assert.throws(() => bot.recipesFor(1, null, 1, null), (err) => err instanceof NotImplementedError && err.notImplemented && err.unit === 'U12')
-    const p = bot.craft(null, 1, null)
-    assert.ok(p instanceof Promise, 'async stubs return a promise instead of throwing')
-    await assert.rejects(p, (err) => err.notImplemented === true && err.unit === 'U12')
+    // whichever plugin APIs are still stubs (units replace them wave by wave)
+    for (const [name, fn] of pluginFunctions(bot).filter(([, f]) => isStub(f))) {
+      let result
+      try {
+        result = fn.call(bot)
+      } catch (err) {
+        assert.ok(err instanceof NotImplementedError && err.notImplemented && err.unit === fn.unit, `${name} throws NotImplementedError`)
+        continue
+      }
+      if (result instanceof Promise) await assert.rejects(result, (err) => err.notImplemented === true && err.unit === fn.unit, `${name} rejects`)
+      else assert.strictEqual(result, undefined, `${name}: a no-op stub returns nothing`)
+    }
     assert.doesNotThrow(() => bot.stopDigging(), 'stopDigging is a no-op while idle, like upstream')
-    assert.throws(() => bot.recipesAll(1, null, null), (err) => err.notImplemented === true && err.unit === 'U12')
   })
 
   it('end() closes the client and forwards end/error events', async () => {
