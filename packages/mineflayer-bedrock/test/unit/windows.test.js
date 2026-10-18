@@ -4,7 +4,7 @@
 const assert = require('assert')
 const { Vec3 } = require('vec3')
 const { createFakeBot, replayJoin } = require('./helpers/fake')
-const { serveInventory, wireItem, inventoryContent, tick } = require('./helpers/inventory_server')
+const { serveInventory, wireItem, inventoryContent } = require('./helpers/inventory_server')
 const { createWindowRegistry, windowKey, CONTAINER_SPECS, slotMapOf, javaTypeOf, containerSize } = require('../../lib/bedrock/windows')
 const slots = require('../../lib/bedrock/slots')
 const { normalizeAction } = require('../../lib/bedrock/stack_request')
