@@ -1,7 +1,7 @@
 // owner: U9 (player state, world extras & dimensions)
 // Adapted from mineflayer 4.39.0 lib/plugins/spawn_point.js (MIT, Copyright (c) 2013 Andrew Kelley)
 // Surface: bot.spawnPoint (Vec3): the world spawn ("where all compasses point to")
-// Events: 'game' (when the spawn point is received or changes, like upstream)
+// Events: 'game' (when the spawn point changes, like upstream)
 // Bedrock (docs/differences/U9.md#spawn-point):
 // - start_game.spawn_position: the world spawn at join (y = 32767 when the server has not fixed the height yet: it
 //   searches the highest safe block when a player spawns there).
@@ -24,9 +24,9 @@ function inject (bot) {
     return true
   }
 
-  // Java sends the spawn position right after the login ('game' again): same order here (after game.js' 'game')
+  // part of start_game: covered by game.js' 'game' of the login (set right after it, like Java's spawn_position)
   bot._client.on('start_game', (packet) => {
-    if (setSpawnPoint(packet.spawn_position)) bot.emit('game')
+    setSpawnPoint(packet.spawn_position)
   })
 
   bot._client.on('set_spawn_position', (packet) => {
