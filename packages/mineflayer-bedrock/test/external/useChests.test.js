@@ -1,14 +1,13 @@
-// owner: U8 → U11 (inventory, windows, creative & item use; U11 re-runs the verbatim placeBlock version)
+// owner: U8 → U11 (inventory, windows, creative & item use; U11 runs the verbatim placeBlock version)
 'use strict'
 /**
- * Port of mineflayer 4.39.0 test/externalTests/useChests.js, staged with /setblock instead of bot.placeBlock (U11
- * runs the verbatim placement version in wave 4). Adaptations (docs/differences/U8.md#use-chests):
- * - chests are set with the console: Bedrock pairs two adjacent chests that face the same way along the axis
- *   perpendicular to their facing, so the large trapped chest (along z) is set facing east;
- * - the chestLidMove assertions run when the event fires (U9's block_actions; not emitted before it lands);
- * - fillChest uses Bedrock's `/replaceitem block … slot.container <n> <item> <count>` (feature
- *   replaceItemSlotIsPrefixed) sent by the bot (bot.chat).
- * Bedrock extras: barrel, shulker box, dispenser, dropper and hopper windows (deposit / withdraw / click).
+ * Port of mineflayer 4.39.0 test/externalTests/useChests.js — VERBATIM (U11, wave 4): the chests are placed with the
+ * real bot.test.placeBlock (setQuickBarSlot + bot.placeBlock, survival: the items are used) so they face the bot and
+ * pair like on Java; chestLidMove fires once for the double chest. One adaptation: fillChest uses Bedrock's
+ * `/replaceitem block … slot.container <n> <item> <count>` (feature replaceItemSlotIsPrefixed: upstream's own branch
+ * builds `slot.container.<n>`, which BDS rejects) sent by the bot (bot.chat) — docs/differences/U8.md#use-chests.
+ * Bedrock extras: barrel, shulker boxes, dispenser, dropper, hopper and ender chest windows, each placed with
+ * bot.test.placeBlock (deposit / click / withdraw / close / reopen).
  */
 const assert = require('assert')
 const { Vec3 } = require('vec3')
@@ -92,17 +91,13 @@ describe('useChests', function () {
 
     await bot.test.becomeSurvival()
 
-    // place the chests around us (Bedrock: console /setblock, see the module comment)
-    const place = (pos, blockName) => bot.test.setBlock({ x: pos.x, y: pos.y, z: pos.z, blockName })
-    await place(largeChestLocations[0], 'chest')
-    await place(largeChestLocations[1], 'chest')
-    await place(smallChestLocation, 'chest')
-    await place(largeTrappedChestLocations[0], 'trapped_chest ["minecraft:cardinal_direction"="east"]')
-    await place(largeTrappedChestLocations[1], 'trapped_chest ["minecraft:cardinal_direction"="east"]')
-    await place(smallTrappedChestLocation, 'trapped_chest')
-    // the chests were set by the console, not taken from the inventory
-    await bot.test.setInventorySlot(chestSlot, null)
-    await bot.test.setInventorySlot(trappedChestSlot, null)
+    // place the chests around us
+    await bot.test.placeBlock(chestSlot, largeChestLocations[0])
+    await bot.test.placeBlock(chestSlot, largeChestLocations[1])
+    await bot.test.placeBlock(chestSlot, smallChestLocation)
+    await bot.test.placeBlock(trappedChestSlot, largeTrappedChestLocations[0])
+    await bot.test.placeBlock(trappedChestSlot, largeTrappedChestLocations[1])
+    await bot.test.placeBlock(trappedChestSlot, smallTrappedChestLocation)
 
     assert.strictEqual(bot.blockAt(largeChestLocations[0]).type, chestBlockId)
     assert.strictEqual(bot.blockAt(largeChestLocations[1]).type, chestBlockId)
@@ -127,16 +122,15 @@ describe('useChests', function () {
         }
         assert(blockAssert && block2Assert, new Error('The block instance emitted by chestLidMove is not part of the chest oppened'))
         assert.strictEqual(isOpen, 1, new Error('isOpen should be 1 when opened by one only player'))
+
+        await bot.test.wait(500)
+
+        bot.removeListener('chestLidMove', handler)
+        await chest.close()
       }
     }
     const chest = await bot.openContainer(bot.blockAt(largeChestLocations[0]))
-    assert.strictEqual(chest.inventoryStart, 54, 'a double chest')
-    assert.strictEqual(chest.type, 'minecraft:generic_9x6')
-    await bot.test.wait(500)
-    bot.removeListener('chestLidMove', handler)
-    const closed = once(chest, 'close')
-    chest.close()
-    await closed
+    await once(chest, 'close')
 
     await depositBones(smallChestLocation, 1)
     await depositBones(largeChestLocations[0], 2)
@@ -308,9 +302,14 @@ describe('useChests', function () {
       const Item = require('prismarine-item')(bot.registry)
       const boneId = bot.registry.itemsByName.bone.id
       await bot.test.setInventorySlot(36, new Item(boneId, 5, 0))
+      await bot.test.setInventorySlot(37, new Item(bot.registry.itemsByName[blockName].id, 1, 0))
       await bot.test.becomeSurvival()
       const pos = new Vec3(2, bot.test.groundY, 0)
-      await bot.test.setBlock({ x: pos.x, y: pos.y, z: pos.z, blockName })
+      // placed by the bot (U11): the item is used
+      await bot.test.placeBlock(37, pos)
+      assert.strictEqual(bot.blockAt(pos).name, blockName)
+      assert.strictEqual(bot.inventory.slots[37], null)
+      bot.setQuickBarSlot(0)
       const opened = once(bot, 'windowOpen')
       const container = await bot.openContainer(bot.blockAt(pos))
       const [announced] = await opened
