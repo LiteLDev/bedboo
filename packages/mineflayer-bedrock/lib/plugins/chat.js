@@ -1,207 +1,181 @@
 // owner: U4 (wave 2, core: bot.chat, message/messagestr) → U6 (wave 3, everything else)
-// Upstream: mineflayer 4.39.0 lib/plugins/chat.js (MIT, Copyright (c) 2013 Andrew Kelley) — chatWithHeader
-//   splitting kept verbatim.
+// Adapted from mineflayer 4.39.0 lib/plugins/chat.js (MIT, Copyright (c) 2013 Andrew Kelley,
+// https://github.com/PrismarineJS/mineflayer): chat patterns (addChatPattern / addChatPatternSet /
+// removeChatPattern / chatAddPattern, the messagestr matcher and the default patterns), chatWithHeader splitting,
+// whisper and awaitMessage are kept verbatim; the transport is Bedrock.
 // Surface: bot.chat(message), bot.whisper(username, message), bot.chatAddPattern(pattern, type),
 //   bot.addChatPattern(name, pattern, opts), bot.addChatPatternSet(name, patterns, opts),
 //   bot.removeChatPattern(name), bot.awaitMessage(...args) → Promise<string>,
-//   bot.tabComplete(text, assumeCommand, sendBlockInSight, timeout) → Promise<string[]>
+//   bot.tabComplete(text, assumeCommand, sendBlockInSight, timeout) → Promise<{ match, tooltip }[]>
 //   options: chatLengthLimit, defaultChatPatterns
 // Events: 'message' (jsonMsg, position, sender, verified), 'messagestr' (str, position, jsonMsg, sender, verified),
-//   'chat' / 'whisper' (username, message, translate, jsonMsg, matches), 'actionBar' (jsonMsg),
-//   'chat:<name>' (matches), 'unmatchedMessage'
+//   'chat' / 'whisper' (username, message, translate, jsonMsg), 'actionBar' (jsonMsg, verified),
+//   'chat:<name>' (matches), 'unmatchedMessage' (str, jsonMsg)
 //
-// U4 core (this file, wave 2):
+// Bedrock (docs/differences/U6.md):
 // - bot.chat(msg): '/'-prefixed → command_request { command, origin: { type: 'player', uuid: <fresh uuid>,
 //   request_id: '', player_entity_id: 0n }, internal: false, version: 'latest' }; BDS echoes the origin uuid in
 //   command_output, which correlates the answer (`bot._bedrock.commands`). Anything else → a `text` chat packet
 //   { type: 'chat', category: 'authored', source_name: <username>, … }, split at chatLengthLimit like upstream.
-// - incoming `text` packets → prismarine-chat ChatMessage (parseText below) → 'message' + 'messagestr' with
-//   mineflayer positions: chat / whisper / announcement / json_whisper / json_announcement → 'chat';
-//   raw / system / translation / json → 'system'; tip / popup / jukebox_popup → 'game_info'.
-//   Player chat is rendered like Java's vanilla chat ({ translate: 'chat.type.text', with: [name, message] } →
-//   "<name> message"); translation keys (`%key` in Bedrock strings, rawtext `translate`) are resolved through
-//   registry.language (formats normalized by lib/registry.js).
+// - incoming `text` packets → ChatMessage (lib/bedrock/text.js) → 'message' + 'messagestr' (positions: chat /
+//   whisper / announcement → 'chat', raw / system / translation / json* (tellraw) → 'system', tip / popup /
+//   jukebox_popup → 'game_info' + 'actionBar'); set_title action bar messages → 'game_info' + 'actionBar'.
 // - command_output → one 'message'/'messagestr' (position 'system') per output line: { translate: message_id,
-//   with: parameters } (e.g. commands.time.set, commands.clear.success, commands.op.success).
+//   with: parameters }.
+// - default chat patterns: Bedrock chat / whisper packets name their sender (`source_name`), so for those the
+//   default 'chat' / 'whisper' patterns take username and message from the packet (names with spaces work);
+//   every other message goes through upstream's regexes (e.g. /tellraw "<name> text", /say "[name] text").
+// - unmatchedMessage (declared in mineflayer's index.d.ts, never emitted by 4.39.0): emitted for every message no
+//   chat pattern matched.
+// - bot.tabComplete: client-side from available_commands (lib/bedrock/commands.js); same promise shape as
+//   upstream ([{ match, tooltip: undefined }], tabCompleteHasAToolTip).
 //
-// For U6 (wave 3): the text → ChatMessage conversion lives in `createTextParser()` below; move it to
-//   lib/bedrock/text.js (toChatMessage / fromRawText / fromFormattedString) and keep `emitMessage()` as the single
-//   place that emits 'message'/'messagestr' (add patterns, actionBar, whisper, unmatchedMessage around it).
-//   Internal hooks: `bot._bedrock.chat = { emitMessage, chatWithHeader, send, parser }`,
-//   `bot._bedrock.commands = { request(command, { timeout }) → Promise<command_output params>, pending }`.
+// Internal hooks: `bot._bedrock.chat = { emitMessage, chatWithHeader, send, parser }` (emitMessage is the single
+//   emitter of 'message'/'messagestr'), `bot._bedrock.commands = { request(command, { timeout }) →
+//   Promise<command_output params>, pending, tree }`.
 'use strict'
 const crypto = require('crypto')
-const { stubSync, stubAsync } = require('../bedrock/errors')
+const { onceWithCleanup } = require('mineflayer/lib/promise_utils')
+const { createTextParser, parserFor } = require('../bedrock/text')
+const { createCommandTree, quoteName } = require('../bedrock/commands')
+const { createPlayerNames } = require('../bedrock/player_list')
 
 module.exports = inject
 
-const POSITIONS = {
-  chat: 'chat',
-  whisper: 'chat',
-  announcement: 'chat',
-  json_whisper: 'chat',
-  json_announcement: 'chat',
-  raw: 'system',
-  system: 'system',
-  translation: 'system',
-  json: 'system',
-  tip: 'game_info',
-  popup: 'game_info',
-  jukebox_popup: 'game_info'
-}
+const USERNAME_REGEX = '(?:\\(.{1,15}\\)|\\[.{1,15}\\]|.){0,5}?(\\w+)'
+const LEGACY_VANILLA_CHAT_REGEX = new RegExp(`^${USERNAME_REGEX}\\s?[>:\\-»\\]\\)~]+\\s(.*)$`)
 
 const COMMAND_TIMEOUT_MS = 10000
 
-/**
- * Bedrock text → prismarine-chat ChatMessage (U4 core; U6 moves this to lib/bedrock/text.js).
- * @param {object} registry the bot registry (language normalized by lib/registry.js)
- * @param {Function} ChatMessage prismarine-chat class for the registry
- */
-function createTextParser (registry, ChatMessage) {
-  const language = registry.language ?? {}
-  const KEY_RE = /%([A-Za-z][\w.-]*[\w])/g
-
-  /** `§`-formatted string → chat component JSON */
-  function formatted (str) {
-    str = String(str ?? '')
-    if (str === '') return { text: '' }
-    return new ChatMessage(str).json
-  }
-
-  /** a string that is exactly one translation key reference ('%key') → { translate } component, else formatted text */
-  function parameter (str) {
-    str = String(str ?? '')
-    const m = /^%([A-Za-z][\w.-]*)$/.exec(str)
-    if (m && Object.hasOwn(language, m[1])) return { translate: m[1] }
-    return formatted(str)
-  }
-
-  /** the style (color, bold, …) of leading § codes, as component fields */
-  function leadingStyle (codes) {
-    if (!codes) return {}
-    const style = { ...formatted(codes + 'x') }
-    delete style.text
-    delete style.extra
-    return style
-  }
-
-  /**
-   * Bedrock string with embedded `%key` references (+ § codes) → component. A message that is a single key
-   * (after leading § codes) becomes { translate, with, ...style } so `msg.translate` is the key, like Java.
-   * Otherwise the leading § style applies to the whole message, text between keys keeps its own codes, and the
-   * parameters go to the first key (Bedrock messages carry one parameter list).
-   */
-  function translated (message, parameters = []) {
-    message = String(message ?? '')
-    const withArgs = parameters.map(parameter)
-    const lead = /^((?:§.)*)(.*)$/s.exec(message)
-    const style = leadingStyle(lead[1])
-    const body = lead[2]
-    const single = /^%([A-Za-z][\w.-]*[\w])$/.exec(body)
-    if (single && Object.hasOwn(language, single[1])) return { ...style, translate: single[1], with: withArgs }
-    if (Object.hasOwn(language, message)) return { translate: message, with: withArgs }
-    const extra = []
-    let last = 0
-    let first = true
-    for (const m of body.matchAll(KEY_RE)) {
-      if (!Object.hasOwn(language, m[1])) continue
-      if (m.index > last) extra.push(formatted(body.slice(last, m.index)))
-      extra.push({ translate: m[1], with: first ? withArgs : [] })
-      first = false
-      last = m.index + m[0].length
-    }
-    if (!extra.length) return formatted(message)
-    if (last < body.length) extra.push(formatted(body.slice(last)))
-    return { ...style, text: '', extra }
-  }
-
-  /** Bedrock rawtext ({ rawtext: [...] }) → component */
-  function rawText (json) {
-    if (typeof json === 'string') {
-      try {
-        json = JSON.parse(json)
-      } catch {
-        return formatted(json)
-      }
-    }
-    const parts = (json?.rawtext ?? []).map(rawPart)
-    if (parts.length === 1) return parts[0]
-    return { text: '', extra: parts }
-  }
-  function rawPart (part) {
-    if (part === null || typeof part !== 'object') return formatted(part)
-    if (part.rawtext) return rawText(part)
-    if (part.translate !== undefined) {
-      let withArgs = []
-      if (Array.isArray(part.with)) withArgs = part.with.map(parameter)
-      else if (part.with?.rawtext) withArgs = part.with.rawtext.map(rawPart)
-      return { translate: part.translate, with: withArgs }
-    }
-    if (part.selector !== undefined) return { selector: part.selector }
-    if (part.score !== undefined) return { score: { name: part.score.name, objective: part.score.objective } }
-    if (part.text !== undefined) return parameter(part.text)
-    return { text: '' }
-  }
-
-  /**
-   * @param {object} packet bedrock-protocol `text` params
-   * @returns {{ message: ChatMessage, position: string, sender: string|null, username: string|null }}
-   */
-  function parseText (packet) {
-    const type = packet.type
-    let json
-    let username = null
-    switch (type) {
-      case 'chat':
-        username = stripCodes(packet.source_name)
-        json = { translate: 'chat.type.text', with: [formatted(packet.source_name), messageComponent(packet)] }
-        break
-      case 'whisper':
-        username = stripCodes(packet.source_name)
-        json = { translate: 'commands.message.display.incoming', with: [formatted(packet.source_name), messageComponent(packet)] }
-        break
-      case 'json':
-      case 'json_whisper':
-      case 'json_announcement':
-        json = rawText(packet.message)
-        break
-      case 'translation':
-      case 'popup':
-      case 'jukebox_popup':
-        json = translated(packet.message, packet.parameters ?? [])
-        break
-      default: // raw, system, tip, announcement
-        json = messageComponent(packet)
-    }
-    return { message: new ChatMessage(json), position: POSITIONS[type] ?? 'system', username }
-  }
-
-  function messageComponent (packet) {
-    return packet.needs_translation ? translated(packet.message, packet.parameters ?? []) : formatted(packet.message)
-  }
-
-  /** command_output → one ChatMessage per output line */
-  function parseCommandOutput (packet) {
-    return (packet.output ?? []).map(line => new ChatMessage({ translate: line.message_id, with: (line.parameters ?? []).map(parameter) }))
-  }
-
-  return { parseText, parseCommandOutput, rawText, translated, formatted }
-}
-
-function stripCodes (str) {
-  return String(str ?? '').replace(/§./g, '')
-}
-
 function inject (bot, options) {
   const CHAT_LENGTH_LIMIT = options.chatLengthLimit ?? (bot.supportFeature('lessCharsInChat') ? 100 : 256)
-  const ChatMessage = require('prismarine-chat')(bot.registry)
-  const text = createTextParser(bot.registry, ChatMessage)
+  const defaultChatPatterns = options.defaultChatPatterns ?? true
 
-  /** the single emitter of 'message' / 'messagestr' (U6 adds patterns, actionBar, … around it) */
+  const text = parserFor(bot.registry)
+  const ChatMessage = text.ChatMessage
+  /** ChatMessage → { kind: 'chat'|'whisper', username, message } of a Bedrock chat/whisper packet with a sender */
+  const sources = new WeakMap()
+
+  /** the single emitter of 'message' / 'messagestr' */
   function emitMessage (message, position, sender = null, verified = null) {
     bot.emit('message', message, position, sender, verified)
     bot.emit('messagestr', message.toString(), position, message, sender, verified)
   }
+
+  // chat.pattern.type will emit an event for bot.on() of the same type, eg chatType = whisper will trigger bot.on('whisper')
+  const _patterns = {}
+  let _length = 0
+  // deprecated
+  bot.chatAddPattern = (patternValue, typeValue) => {
+    return bot.addChatPattern(typeValue, patternValue, { deprecated: true })
+  }
+
+  bot.addChatPatternSet = (name, patterns, opts = {}) => {
+    if (!patterns.every(p => p instanceof RegExp)) throw new Error('Pattern parameter should be of type RegExp')
+    const { repeat = true, parse = false } = opts
+    _patterns[_length++] = {
+      name,
+      patterns,
+      position: 0,
+      matches: [],
+      messages: [],
+      repeat,
+      parse
+    }
+    return _length
+  }
+
+  bot.addChatPattern = (name, pattern, opts = {}) => {
+    if (!(pattern instanceof RegExp)) throw new Error('Pattern parameter should be of type RegExp')
+    const { repeat = true, deprecated = false, parse = false } = opts
+    _patterns[_length] = {
+      name,
+      patterns: [pattern],
+      position: 0,
+      matches: [],
+      messages: [],
+      deprecated,
+      repeat,
+      parse
+    }
+    return _length++ // increment length after we give it back to the user
+  }
+
+  bot.removeChatPattern = name => {
+    if (typeof name === 'number') {
+      _patterns[name] = undefined
+    } else {
+      const matchingPatterns = Object.entries(_patterns).filter(pattern => pattern[1]?.name === name)
+      matchingPatterns.forEach(([indexString]) => {
+        _patterns[+indexString] = undefined
+      })
+    }
+  }
+
+  /**
+   * Bedrock: a default pattern (marked `bedrock: 'chat'|'whisper'`) matches a chat/whisper packet with a sender
+   * through the packet itself (the first default pattern of that kind only), and never through its regex.
+   */
+  function findMatchingPatterns (msg, source) {
+    const found = []
+    const claimed = new Set()
+    for (const [indexString, pattern] of Object.entries(_patterns)) {
+      if (!pattern) continue
+      const { position, patterns } = pattern
+      if (pattern.bedrock && source) {
+        if (pattern.bedrock === source.kind && !claimed.has(source.kind)) {
+          claimed.add(source.kind)
+          found.push(+indexString)
+        }
+        continue
+      }
+      if (patterns[position].test(msg)) {
+        found.push(+indexString)
+      }
+    }
+    return found
+  }
+
+  bot.on('messagestr', (msg, _, originalMsg) => {
+    const source = sources.get(originalMsg) ?? null
+    const foundPatterns = findMatchingPatterns(msg, source)
+    if (foundPatterns.length === 0) bot.emit('unmatchedMessage', msg, originalMsg)
+
+    for (const ix of foundPatterns) {
+      _patterns[ix].matches.push(msg)
+      _patterns[ix].messages.push(originalMsg)
+      _patterns[ix].position++
+
+      if (_patterns[ix].deprecated) {
+        const [, ...matches] = _patterns[ix].bedrock && source
+          ? [msg, source.username, source.message]
+          : _patterns[ix].matches[0].match(_patterns[ix].patterns[0])
+        bot.emit(_patterns[ix].name, ...matches, _patterns[ix].messages[0].translate, ..._patterns[ix].messages)
+        _patterns[ix].messages = [] // clear out old messages
+      } else { // regular parsing
+        // upstream returns from the whole listener here (later patterns are skipped for this message): kept as is
+        if (_patterns[ix].patterns.length > _patterns[ix].matches.length) return // we have all the matches, so we can emit the done event
+        if (_patterns[ix].parse) {
+          const matches = _patterns[ix].patterns.map((pattern, i) => {
+            const [, ...matches] = _patterns[ix].matches[i].match(pattern) // delete full message match
+            return matches
+          })
+          bot.emit(`chat:${_patterns[ix].name}`, matches)
+        } else {
+          bot.emit(`chat:${_patterns[ix].name}`, _patterns[ix].matches)
+        }
+        // these are possibly null-ish if the user deletes them as soon as the event for the match is emitted
+      }
+      if (_patterns[ix]?.repeat) {
+        _patterns[ix].position = 0
+        _patterns[ix].matches = []
+      } else {
+        _patterns[ix] = undefined
+      }
+    }
+  })
+
+  addDefaultPatterns()
 
   function senderUuid (username) {
     if (!username) return null
@@ -216,7 +190,23 @@ function inject (bot, options) {
       bot.emit('error', err)
       return
     }
+    if (parsed.source) sources.set(parsed.message, parsed.source)
     emitMessage(parsed.message, parsed.position, senderUuid(parsed.username))
+    if (parsed.position === 'game_info') bot.emit('actionBar', parsed.message, null)
+  })
+
+  // `/title <player> actionbar …` / `/titleraw … actionbar …`
+  bot._client.on('set_title', (packet) => {
+    if (packet.type !== 'action_bar_message' && packet.type !== 'action_bar_message_json') return
+    let message
+    try {
+      message = new ChatMessage(packet.type === 'action_bar_message_json' ? text.rawText(packet.text) : text.translated(packet.text))
+    } catch (err) {
+      bot.emit('error', err)
+      return
+    }
+    emitMessage(message, 'game_info')
+    bot.emit('actionBar', message, null)
   })
 
   // command_request / command_output correlation (origin uuid echoed by BDS)
@@ -261,7 +251,27 @@ function inject (bot, options) {
     })
     return promise
   }
-  if (bot._bedrock) bot._bedrock.commands = { request: requestCommand, pending: pendingCommands }
+
+  // the command tree for tabComplete (available_commands is re-sent when the permission level changes)
+  const commandTree = createCommandTree()
+  bot._client.on('available_commands', (packet) => {
+    try {
+      commandTree.update(packet)
+    } catch (err) {
+      bot.emit('error', err)
+    }
+  })
+  bot._client.on('update_soft_enum', (packet) => commandTree.updateSoftEnum(packet))
+  if (bot._bedrock) bot._bedrock.commands = { request: requestCommand, pending: pendingCommands, tree: commandTree }
+
+  // online player names for tab completion (player_list; bot.players is the entities plugin's)
+  const onlinePlayers = createPlayerNames(bot._client)
+  function playerNames () {
+    const names = new Set(onlinePlayers.names())
+    for (const name of Object.keys(bot.players ?? {})) names.add(name)
+    if (bot.username) names.add(bot.username)
+    return [...names]
+  }
 
   function send (message) {
     if (message.startsWith('/')) {
@@ -293,6 +303,8 @@ function inject (bot, options) {
     }
 
     const lengthLimit = CHAT_LENGTH_LIMIT - header.length
+    // upstream loops forever when the header fills the whole limit (e.g. a long whisper target name)
+    if (lengthLimit <= 0) throw new Error(`Chat header is longer than chatLengthLimit (${CHAT_LENGTH_LIMIT}): ${header}`)
     message.split('\n').forEach((subMessage) => {
       if (!subMessage) return
       let i
@@ -304,20 +316,59 @@ function inject (bot, options) {
     })
   }
 
+  /**
+   * Bedrock has no tab-complete packet: complete from the available_commands tree (like the vanilla client).
+   * `sendBlockInSight` is accepted for compatibility; Java only uses the looked-at block for block-position
+   * suggestions, Bedrock's coordinate suggestions are relative ('~').
+   */
+  async function tabComplete (text, assumeCommand = false, sendBlockInSight = true, timeout = 5000) {
+    if (!commandTree.ready) await onceWithCleanup(bot._client, 'available_commands', { timeout })
+    const matches = commandTree.complete(text, { assumeCommand, players: playerNames() })
+    return matches.map(match => ({ match, tooltip: undefined }))
+  }
+
+  bot.whisper = (username, message) => {
+    chatWithHeader(`/tell ${quoteName(username)} `, message)
+  }
   bot.chat = (message) => {
     chatWithHeader('', message)
   }
 
-  // internal hooks for U6 (wave 3)
-  if (bot._bedrock) bot._bedrock.chat = { emitMessage, chatWithHeader, send, parser: text }
+  bot.tabComplete = tabComplete
 
-  bot.whisper = stubSync('U6', 'bot.whisper', 2)
-  bot.chatAddPattern = stubSync('U6', 'bot.chatAddPattern', 2)
-  bot.addChatPattern = stubSync('U6', 'bot.addChatPattern', 2)
-  bot.addChatPatternSet = stubSync('U6', 'bot.addChatPatternSet', 2)
-  bot.removeChatPattern = stubSync('U6', 'bot.removeChatPattern', 1)
-  bot.awaitMessage = stubAsync('U6', 'bot.awaitMessage', 0)
-  bot.tabComplete = stubAsync('U6', 'bot.tabComplete', 1)
+  function addDefaultPatterns () {
+    // 1.19 changes the chat format to move <sender> prefix from message contents to a separate field.
+    // TODO: new chat lister to handle this
+    if (!defaultChatPatterns) return
+    // Bedrock: `bedrock` marks the packet kind these default patterns take from the packet (see findMatchingPatterns)
+    _patterns[bot.addChatPattern('whisper', new RegExp(`^${USERNAME_REGEX} whispers(?: to you)?:? (.*)$`), { deprecated: true })].bedrock = 'whisper'
+    _patterns[bot.addChatPattern('whisper', new RegExp(`^\\[${USERNAME_REGEX} -> \\w+\\s?\\] (.*)$`), { deprecated: true })].bedrock = 'whisper'
+    _patterns[bot.addChatPattern('chat', LEGACY_VANILLA_CHAT_REGEX, { deprecated: true })].bedrock = 'chat'
+  }
+
+  function awaitMessage (...args) {
+    const timeout = typeof args[args.length - 1] === 'number' ? args.pop() : 20000
+    return new Promise((resolve, reject) => {
+      const resolveMessages = args.flatMap(x => x)
+      const timeoutHandle = setTimeout(() => {
+        bot.off('messagestr', messageListener)
+        reject(new Error(`Timeout waiting for message after ${timeout}ms`))
+      }, timeout)
+
+      function messageListener (msg) {
+        if (resolveMessages.some(x => x instanceof RegExp ? x.test(msg) : msg === x)) {
+          clearTimeout(timeoutHandle)
+          resolve(msg)
+          bot.off('messagestr', messageListener)
+        }
+      }
+      bot.on('messagestr', messageListener)
+    })
+  }
+  bot.awaitMessage = awaitMessage
+
+  // internal hooks
+  if (bot._bedrock) bot._bedrock.chat = { emitMessage, chatWithHeader, send, parser: text }
 }
 
 module.exports.createTextParser = createTextParser

@@ -72,7 +72,7 @@ module.exports = {
   Painting: require('mineflayer/lib/painting'),
   ScoreBoard: require('mineflayer/lib/scoreboard'),
   BossBar: require('mineflayer/lib/bossbar'),
-  Particle: require('mineflayer/lib/particle'),
+  Particle: require('./bedrock/particle'), // U6: adapted to Bedrock packets (docs/differences/U6.md#particles)
   latestSupportedVersion,
   oldestSupportedVersion,
   testedVersions,

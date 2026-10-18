@@ -156,7 +156,7 @@ describe('mineflayer-bedrock skeleton (U0)', function () {
 
   it('stubs throw (sync APIs) or reject (promise APIs) with NotImplementedError', async () => {
     const { bot } = await createInjectedBot()
-    assert.throws(() => bot.whisper('someone', 'hi'), (err) => err instanceof NotImplementedError && err.notImplemented && err.unit === 'U6')
+    assert.throws(() => bot.recipesFor(1, null, 1, null), (err) => err instanceof NotImplementedError && err.notImplemented && err.unit === 'U12')
     const p = bot.equip(null, 'hand')
     assert.ok(p instanceof Promise, 'async stubs return a promise instead of throwing')
     await assert.rejects(p, (err) => err.notImplemented === true && err.unit === 'U8')

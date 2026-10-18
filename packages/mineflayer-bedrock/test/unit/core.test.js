@@ -53,9 +53,15 @@ describe('core runtime: client, exports, registry (U4)', function () {
     for (let i = 0; i < 2000; i++) mineflayerBedrock.supportFeature('tallWorld', '1.26.51')
     assert.ok(Date.now() - t0 < 200, 'no registry is built per call')
     assert.strictEqual(mineflayerBedrock.supportFeature('blockStateId', '1.8'), false, 'other versions: minecraft-data like upstream')
-    for (const cls of ['Location', 'Painting', 'ScoreBoard', 'BossBar', 'Particle']) {
+    for (const cls of ['Location', 'Painting', 'ScoreBoard', 'BossBar']) {
       assert.strictEqual(mineflayerBedrock[cls], require('mineflayer')[cls], cls)
     }
+    // U6: Particle is adapted to Bedrock packets; same loader shape, subclass of upstream's class
+    const { Vec3 } = require('vec3')
+    const Particle = mineflayerBedrock.Particle(require('../../lib/registry').createRegistry())
+    const particle = new Particle('heart', new Vec3(1, 2, 3), new Vec3(0, 0, 0))
+    assert.deepStrictEqual([particle.id, particle.name, particle.count, particle.movementSpeed], [19, 'heart', 1, 0], 'Particle')
+    assert.strictEqual(Object.getPrototypeOf(Particle).name, 'Particle', 'extends mineflayer\'s Particle')
   })
 
   it('bot.version / majorVersion / protocolVersion / supportFeature', async () => {
