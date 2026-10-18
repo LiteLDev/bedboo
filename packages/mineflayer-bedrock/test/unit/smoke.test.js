@@ -114,7 +114,8 @@ describe('mineflayer-bedrock skeleton (U0)', function () {
     assert.deepStrictEqual(bot.experience, { level: null, points: null, progress: null })
     assert.ok('clocks' in bot.time)
     assert.ok(bot.spawnPoint && typeof bot.spawnPoint.x === 'number')
-    assert.deepStrictEqual(bot.bedrock, {})
+    // Bedrock-only extras (types/bedrock.d.ts) are added by the plugins, e.g. U9's gameRules
+    assert.ok(bot.bedrock && typeof bot.bedrock === 'object' && !Array.isArray(bot.bedrock))
   })
 
   it('creates bot._bedrock with every contract namespace', async () => {

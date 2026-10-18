@@ -46,7 +46,10 @@ const { feetFromWire } = require('./conversions')
  *         'lifecycle' in 'connecting', 'loading', 'changing_dimension' and 'ended'.
  *
  * Lifecycle events (`lifecycle.events`, an EventEmitter; not bot events):
- *   'state' (state, previous), 'spawned' (reason), 'dimensionChange' ({ dimension, position, packet })
+ *   'state' (state, previous), 'spawned' (reason), 'dimensionChange' ({ dimension, position, packet }),
+ *   'dimensionChanged' ({ respawning: true }) — U9: a dimension change during a respawn completed without 'spawn'
+ *   (the respawn spawns); health.js emits 'respawn' ({ dimensionChange }) before the bot's 'respawn' event.
+ *   A change_dimension without loading_screen_id (respawn into another dimension) gets no loading screen acks.
  *
  * @typedef {object} Lifecycle
  * @property {string} state current state
@@ -57,6 +60,7 @@ const { feetFromWire } = require('./conversions')
  * @property {(loadingScreenId?: number) => void} sendLoadingScreenAck serverbound_loading_screen 1 then 2
  * @property {(packet: object) => void} beginDimensionChange
  * @property {() => void} completeDimensionChange
+ * @property {() => void} markDead U9: death (deferred to the end of a dimension change in progress)
  */
 
 const STATES = ['connecting', 'loading', 'spawned', 'dead', 'respawning', 'changing_dimension', 'ended']
@@ -69,6 +73,7 @@ function createLifecycle (bot) {
   events.setMaxListeners(0)
   let joined = false
   let dimensionLoadingScreenId
+  let resumeState = null // U9: lifecycle state to return to after a dimension change during a respawn
 
   const input = () => bot._bedrock?.input
   const physics = () => bot._bedrock?.physics
@@ -148,6 +153,10 @@ function createLifecycle (bot) {
      */
     beginDimensionChange (packet) {
       dimensionLoadingScreenId = packet.loading_screen_id ?? undefined
+      // U9: a respawn into another dimension (death in the nether → overworld spawn) changes the dimension while
+      // the player is dead: completing it resumes the respawn (health.js spawns once the player is alive)
+      if (lifecycle.state === 'dead' || lifecycle.state === 'respawning') resumeState = lifecycle.state
+      else if (lifecycle.state !== 'changing_dimension') resumeState = null
       lifecycle.setState('changing_dimension')
       const position = { x: packet.position.x, y: packet.position.y, z: packet.position.z } // FEET level (unlike move_player)
       events.emit('dimensionChange', { dimension: packet.dimension, position, packet })
@@ -161,11 +170,30 @@ function createLifecycle (bot) {
       })
     },
 
+    /**
+     * U9 (health.js): the player died. A dimension change in progress completes first — without 'spawn' — and then
+     * resumes 'dead'; otherwise the state becomes 'dead' at once.
+     */
+    markDead () {
+      if (lifecycle.state === 'changing_dimension') resumeState = 'dead'
+      else if (lifecycle.state === 'spawned' || lifecycle.state === 'respawning') lifecycle.setState('dead')
+    },
+
     /** End of a dimension change (the server's dimension_change_ack): loading screen acks, then 'spawn'. */
     completeDimensionChange () {
       if (lifecycle.state !== 'changing_dimension') return
-      lifecycle.sendLoadingScreenAck(dimensionLoadingScreenId)
+      // U9 (observed on BDS 1.26.51.1): only a change_dimension with a loading_screen_id shows a loading screen.
+      // The respawn-triggered one has none, and serverbound_loading_screen then gets the client disconnected
+      // ('unexpected_packet').
+      if (dimensionLoadingScreenId !== undefined) lifecycle.sendLoadingScreenAck(dimensionLoadingScreenId)
       dimensionLoadingScreenId = undefined
+      if (resumeState) {
+        const state = resumeState
+        resumeState = null
+        lifecycle.setState(state)
+        events.emit('dimensionChanged', { respawning: true })
+        return
+      }
       lifecycle.markSpawned('dimension')
     }
   }

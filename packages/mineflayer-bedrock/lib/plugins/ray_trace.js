@@ -1,17 +1,78 @@
 // owner: U9 (player state, world extras & dimensions)
-// Upstream: mineflayer 4.39.0 lib/plugins/ray_trace.js (reusable as-is once blockAt/entities work;
-//   vendor it with MIT attribution — never `pnpm patch mineflayer`)
+// Vendored from mineflayer 4.39.0 lib/plugins/ray_trace.js (MIT, Copyright (c) 2013 Andrew Kelley,
+//   https://github.com/PrismarineJS/mineflayer) — never `pnpm patch mineflayer`; one fix: a pitch or yaw of exactly 0
+//   no longer makes blockAtEntityCursor return null (docs/differences/U9.md#ray-trace). It only needs bot.world.raycast
+//   (prismarine-world), bot.entity (feet position, height, yaw/pitch in radians) and bot.entities, which keep the
+//   mineflayer conventions on Bedrock.
 // Surface: bot.blockInSight(maxSteps = 256, vectorLength = 5 / 16), bot.blockAtCursor(maxDistance = 256,
 //   matcher = null), bot.entityAtCursor(maxDistance = 3.5), bot.blockAtEntityCursor(entity = bot.entity,
 //   maxDistance = 256, matcher = null)
 'use strict'
-const { stubSync } = require('../bedrock/errors')
+const { Vec3 } = require('vec3')
+const { RaycastIterator } = require('prismarine-world').iterators
 
-module.exports = inject
+module.exports = (bot) => {
+  function getViewDirection (pitch, yaw) {
+    const csPitch = Math.cos(pitch)
+    const snPitch = Math.sin(pitch)
+    const csYaw = Math.cos(yaw)
+    const snYaw = Math.sin(yaw)
+    return new Vec3(-snYaw * csPitch, snPitch, -csYaw * csPitch)
+  }
 
-function inject (bot) {
-  bot.blockInSight = stubSync('U9', 'bot.blockInSight', 0)
-  bot.blockAtCursor = stubSync('U9', 'bot.blockAtCursor', 0)
-  bot.entityAtCursor = stubSync('U9', 'bot.entityAtCursor', 0)
-  bot.blockAtEntityCursor = stubSync('U9', 'bot.blockAtEntityCursor', 0)
+  bot.blockInSight = (maxSteps = 256, vectorLength = 5 / 16) => {
+    const block = bot.blockAtCursor(maxSteps * vectorLength)
+    if (block) return block
+  }
+
+  bot.blockAtCursor = (maxDistance = 256, matcher = null) => {
+    return bot.blockAtEntityCursor(bot.entity, maxDistance, matcher)
+  }
+
+  bot.entityAtCursor = (maxDistance = 3.5) => {
+    const block = bot.blockAtCursor(maxDistance)
+    maxDistance = block?.intersect.distanceTo(bot.entity.position) ?? maxDistance
+
+    const entities = Object.values(bot.entities)
+      .filter(entity => entity.type !== 'object' && entity.username !== bot.username && entity.position.distanceTo(bot.entity.position) <= maxDistance)
+
+    const dir = new Vec3(-Math.sin(bot.entity.yaw) * Math.cos(bot.entity.pitch), Math.sin(bot.entity.pitch), -Math.cos(bot.entity.yaw) * Math.cos(bot.entity.pitch))
+    const iterator = new RaycastIterator(bot.entity.position.offset(0, bot.entity.eyeHeight, 0), dir.normalize(), maxDistance)
+
+    let targetEntity = null
+    let targetDist = maxDistance
+
+    for (let i = 0; i < entities.length; i++) {
+      const entity = entities[i]
+      const w = entity.width / 2
+
+      const shapes = [[-w, 0, -w, w, entity.height, w]]
+      const intersect = iterator.intersect(shapes, entity.position)
+      if (intersect) {
+        const entityDir = entity.position.minus(bot.entity.position) // Can be combined into 1 line
+        const sign = Math.sign(entityDir.dot(dir))
+        if (sign !== -1) {
+          const dist = bot.entity.position.distanceTo(intersect.pos)
+          if (dist < targetDist) {
+            targetEntity = entity
+            targetDist = dist
+          }
+        }
+      }
+    }
+
+    return targetEntity
+  }
+
+  bot.blockAtEntityCursor = (entity = bot.entity, maxDistance = 256, matcher = null) => {
+    // bedboo: upstream tests `!entity.pitch || !entity.yaw`, which made a level look (pitch 0) or facing north
+    // (yaw 0) — the default orientation — return null; only missing values do here
+    if (!entity.position || !entity.height || typeof entity.pitch !== 'number' || typeof entity.yaw !== 'number') return null
+    const { position, height, pitch, yaw } = entity
+
+    const eyePosition = position.offset(0, height, 0)
+    const viewDirection = getViewDirection(pitch, yaw)
+
+    return bot.world.raycast(eyePosition, viewDirection, maxDistance, matcher)
+  }
 }

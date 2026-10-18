@@ -30,6 +30,24 @@ index 65e8a79eade6cc2895d4ab11c90a00bd5963cf79..eca633ef6174e4d1654551aa1333bac0
    }
  }
  
+diff --git a/src/bedrock/1.18/ProxyBiomeSection.js b/src/bedrock/1.18/ProxyBiomeSection.js
+index 0676ac9fbe10f8cd3dab9362e807d672ae3c9828..1413eb4f9325c0fd59d3a3d0666e1e13efad08c7 100644
+--- a/src/bedrock/1.18/ProxyBiomeSection.js
++++ b/src/bedrock/1.18/ProxyBiomeSection.js
+@@ -25,8 +25,11 @@ class ProxyBiomeSection {
+     return this.target.getBiome(pos)
+   }
+ 
+-  getBiomeId (pos) {
+-    return this.target.getBiomeId(pos)
++  // bedboo patch: same signature as BiomeSection#getBiomeId(x, y, z) — ChunkColumn calls it with three numbers;
++  // forwarding only the first one made every copied ("same as below", 0xff) section read biome undefined → 0
++  getBiomeId (x, y, z) {
++    if (typeof x === 'object' && x !== null) return this.target.getBiomeId(x.x, x.y, x.z)
++    return this.target.getBiomeId(x, y, z)
+   }
+ 
+   copy (other) {
 diff --git a/src/bedrock/1.18/SubChunk.js b/src/bedrock/1.18/SubChunk.js
 index 35cd85306027d1d27a5f0b50748ecd66d6f8fb03..1aec89b6d7b623bf5eca6425d48397829a3db103 100644
 --- a/src/bedrock/1.18/SubChunk.js
@@ -163,6 +181,21 @@ index 52b233e622669057afd12bc3c17a641100eff62e..554ceafbb397fad320a2914bb1787e26
      const minBits = neededBits(this.palette[l].length - 1)
      if (minBits > this.blocks[l].bitsPerBlock) {
        this.blocks[l] = this.blocks[l].resize(minBits)
+diff --git a/src/bedrock/common/CommonChunkColumn.js b/src/bedrock/common/CommonChunkColumn.js
+index 4084d7425a0bd91a9222219108ad468b486045bf..4193da506a9d750595e26b4e38a4b4dfe25a7696 100644
+--- a/src/bedrock/common/CommonChunkColumn.js
++++ b/src/bedrock/common/CommonChunkColumn.js
+@@ -45,7 +45,9 @@ class CommonChunkColumn {
+   getBlock (vec4, full = true) {
+     const Y = vec4.y >> 4
+     const sec = this.sections[this.co + Y]
+-    if (!sec) return this.Block.fromStateId(this.registry.blocksByName.air.defaultState, 0)
++    // bedboo patch: an all-air (missing) sub-chunk still has its biome (1.18+ biomes are per section, independent of
++    // the block sections): the air block carries the column's biome there, not 0 (ocean)
++    if (!sec) return this.Block.fromStateId(this.registry.blocksByName.air.defaultState, this.getBiomeId(vec4))
+     const block = sec.getBlock(vec4.l, vec4.x, vec4.y & 0xf, vec4.z, this.getBiomeId(vec4))
+     if (full) {
+       block.light = sec.blockLight.get(vec4.x, vec4.y & 0xf, vec4.z)
 diff --git a/src/bedrock/common/Stream.js b/src/bedrock/common/Stream.js
 index 92e34e23ec9a46b8ecea4e9c4f21fc92d2a4ff63..889bb7f4a9d4f8d1161c327bbfe33863baa796d8 100644
 --- a/src/bedrock/common/Stream.js
