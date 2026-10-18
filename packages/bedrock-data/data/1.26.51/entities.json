@@ -193,13 +193,11 @@
     "id": 29,
     "internalId": 29,
     "name": "llama",
-    "displayName": "Trader Llama",
+    "displayName": "Llama",
     "width": 0.9,
     "height": 1.87,
     "type": "animal",
-    "category": "Passive mobs",
-    "length": 0,
-    "offset": 0
+    "category": "Passive mobs"
   },
   {
     "id": 30,
@@ -225,7 +223,7 @@
     "id": 32,
     "internalId": 32,
     "name": "zombie",
-    "displayName": "Giant",
+    "displayName": "Zombie",
     "width": 0.6,
     "height": 1.9,
     "type": "hostile",
@@ -527,13 +525,11 @@
     "id": 61,
     "internalId": 61,
     "name": "armor_stand",
-    "displayName": "armor_stand",
+    "displayName": "Armor Stand",
     "width": 0.5,
     "height": 1.975,
     "type": "living",
-    "category": "Immobile",
-    "length": 0,
-    "offset": 0
+    "category": "Immobile"
   },
   {
     "id": 62,
@@ -707,13 +703,11 @@
     "id": 80,
     "internalId": 80,
     "name": "arrow",
-    "displayName": "Spectral Arrow",
+    "displayName": "Arrow",
     "width": 0.25,
     "height": 0.25,
     "type": "projectile",
-    "category": "Projectiles",
-    "length": 0.25,
-    "offset": 0
+    "category": "Projectiles"
   },
   {
     "id": 81,
@@ -751,7 +745,7 @@
     "id": 84,
     "internalId": 84,
     "name": "minecart",
-    "displayName": "minecart",
+    "displayName": "Minecart",
     "width": 0.98,
     "height": 0.7,
     "type": "other",
@@ -949,13 +943,13 @@
     "id": 104,
     "internalId": 104,
     "name": "evocation_illager",
-    "displayName": "Illusioner",
+    "displayName": "Evoker",
     "width": 0.6,
     "height": 1.9,
     "type": "hostile",
     "category": "Hostile mobs",
     "length": 0.6,
-    "offset": 1.62
+    "offset": 0
   },
   {
     "id": 105,

@@ -8,8 +8,11 @@
  *   - effect ids:      `/effect @s <name>` → mob_effect.effect_id
  *   - enchantment ids: `/enchant @s <name>` on a suitable item → `ench` NBT id (inventory_transaction)
  *   - entity sizes:    `/summon <id>` → add_entity metadata boundingbox_width / boundingbox_height
+ *   - biome order:     the vanilla biome names in the order `biome_definition_list` lists them (vanilla id
+ *                      order; their `biome_id` is 65535 = "vanilla id"), checked against the biome ids
  *
- *   node packages/bedrock-data/scripts/probe-bds.js --port 40110 [--host 127.0.0.1]
+ *   node packages/bedrock-data/scripts/probe-bds.js --port 40110 [--host 127.0.0.1] [--only biomes]
+ * `--only biomes` joins, records the biome order and updates just that key of the probe file.
  * The player must be an operator (DEFAULT_PLAYER_PERMISSION_LEVEL=operator in the docker recipe).
  */
 const fs = require('fs')
@@ -48,13 +51,42 @@ async function probeSize (bot, id) {
   return { width: r(md.boundingbox_width), height: r(md.boundingbox_height), baby: !!md.flags?.baby }
 }
 
+/** Vanilla biome names (no namespace) in biome_definition_list order; custom (data-driven) biomes are skipped. */
+function biomeOrder (packet) {
+  const names = []
+  for (const def of packet.biome_definitions) {
+    const name = packet.string_list[def.name_index]
+    if (!name.startsWith('minecraft:')) continue
+    if (def.biome_id !== 65535) throw new Error(`biome ${name} has biome_id ${def.biome_id} (expected 65535 for vanilla biomes)`)
+    names.push(name.slice('minecraft:'.length))
+  }
+  return names
+}
+
+function writeProbe (result) {
+  fs.mkdirSync(path.dirname(OUT), { recursive: true })
+  fs.writeFileSync(OUT, JSON.stringify(result, null, 2).replace(/\[\n\s+([\d.]+),\n\s+([\d.]+)\n\s+\]/g, '[$1, $2]') + '\n')
+}
+
 async function main () {
   const port = Number(arg('port', 40110))
   const bot = connect({ host: arg('host', '127.0.0.1'), port, username: 'U2Probe' })
+  const biomes = bot.waitFor('biome_definition_list', () => true, 30000)
   const nbt = bot.requireLib('prismarine-nbt')
   await bot.spawned
+  const biomePacket = await biomes
+  if (!biomePacket) throw new Error('no biome_definition_list during join')
+  if (arg('only') === 'biomes') {
+    const result = JSON.parse(fs.readFileSync(OUT, 'utf8'))
+    result.biomeOrder = biomeOrder(biomePacket)
+    bot.close()
+    writeProbe(result)
+    console.log('wrote', path.relative(process.cwd(), OUT), `(biomeOrder: ${result.biomeOrder.length} biomes)`)
+    setTimeout(() => process.exit(0), 200)
+    return
+  }
   await sleep(1500)
-  const result = { bds: '1.26.51.1', probedAt: new Date().toISOString().slice(0, 10), effects: {}, enchantments: {}, entities: {} }
+  const result = { bds: '1.26.51.1', probedAt: new Date().toISOString().slice(0, 10), effects: {}, enchantments: {}, entities: {}, biomeOrder: biomeOrder(biomePacket) }
 
   for (const [, , , , bedrockName] of tables.EFFECTS) {
     const got = bot.waitFor('mob_effect', p => p.event_id === 'add', 2000)
@@ -95,8 +127,7 @@ async function main () {
   await bot.command('/kill @e[type=!player]')
   bot.close()
 
-  fs.mkdirSync(path.dirname(OUT), { recursive: true })
-  fs.writeFileSync(OUT, JSON.stringify(result, null, 2).replace(/\[\n\s+([\d.]+),\n\s+([\d.]+)\n\s+\]/g, '[$1, $2]') + '\n')
+  writeProbe(result)
   const missing = [
     ...Object.entries(result.effects).filter(([, v]) => v == null).map(([k]) => 'effect ' + k),
     ...Object.entries(result.enchantments).filter(([, v]) => v == null).map(([k]) => 'enchantment ' + k),

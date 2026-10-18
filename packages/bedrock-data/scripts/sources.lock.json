@@ -9,5 +9,7 @@
   "cloudburst/item_components.nbt": "d7ae67c058b995f1e8baaa4177e0f8155d77e5a8b6742c5cfec6ca8332ae7674",
   "cloudburst/entity_identifiers.dat": "152a67ea826b1dba79040a61a91d256a04bc558eff9275341223b8d28505b782",
   "gophertunnel/level_sound_event.go": "6358c2f103b9d2e8f20b944678b4ddc01e4cc975c3e6615cd54498e556e54b1a",
-  "cloudburst/creative_items.json": "ebbb851dbaa18bbf89f0a1b3e0c4e2b0f6f47bd631076f60552b3eec2d2fa832"
+  "cloudburst/creative_items.json": "ebbb851dbaa18bbf89f0a1b3e0c4e2b0f6f47bd631076f60552b3eec2d2fa832",
+  "cloudburst/stripped_biome_definitions.json": "743f56178045cd79744a77494006c76fce8819ed15b8c366efe285e2fdbef7da",
+  "pmmp/biome_id_map.json": "4f27df3f1e58476fc65e337f7cf3e275f65a98b6c40ea46c31b24016b85e0052"
 }

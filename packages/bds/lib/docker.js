@@ -92,13 +92,18 @@ async function inspect (container) {
   }
 }
 
-/** Remove containers (force, ignore missing). */
+/**
+ * Remove containers: `docker rm -f -v`. A container that is already gone, or that another process (a concurrent
+ * reaper) is removing right now, is not an error; any other error line is.
+ */
 async function removeContainers (names) {
   if (!names.length) return
   try {
     await docker(['rm', '-f', '-v', ...names], { timeout: 120000 })
   } catch (err) {
-    if (!/No such container/i.test(err.stderr || err.message)) throw err
+    const lines = String(err.stderr || err.message).split('\n').map((l) => l.trim()).filter(Boolean)
+    const benign = (line) => /No such container|removal of container .* is already in progress/i.test(line)
+    if (!lines.length || !lines.every(benign)) throw err
   }
 }
 

@@ -7,7 +7,7 @@
  * mineflayer, its plugins and its tests branch on Java feature names (`supportFeature('tallWorld')`,
  * `'doesntHaveOffHandSlot'`, `'useItemWithOwnPacket'`, …). minecraft-data's Bedrock feature list does not
  * know those names, so @bedboo/bedrock-data ships an explicit Bedrock value for EVERY Java feature name used
- * in mineflayer 4.39.0 `lib/` + `test/`, the reused ecosystem plugins and the prismarine-* modules, plus
+ * in mineflayer 4.39.0 `lib/` + `examples/` + `test/`, the reused ecosystem plugins and the prismarine-* modules, plus
  * every minecraft-data Bedrock feature (packages/bedrock-data/features.js; choices documented in
  * docs/differences/U2.md#feature-table). A unit test fails on any name used upstream but missing here.
  *

@@ -6,7 +6,7 @@
  * source cache and verifies their sha256; `generate.js` builds `data/1.26.51/*` from them.
  *
  * Licenses: minecraft-data PR #1335 is MIT (PrismarineJS/minecraft-data, fork mc-zuri/minecraft-data);
- * CloudburstMC/Data is Apache-2.0; Sandertv/gophertunnel is MIT. See ../NOTICE.md.
+ * CloudburstMC/Data is Apache-2.0; Sandertv/gophertunnel is MIT; pmmp/BedrockData is CC0-1.0. See ../NOTICE.md.
  */
 const os = require('os')
 const path = require('path')
@@ -29,6 +29,12 @@ const GOPHERTUNNEL = {
   license: 'MIT'
 }
 
+const PMMP_BEDROCKDATA = {
+  repo: 'pmmp/BedrockData',
+  sha: 'bdb44a48fb6beffb6e9f6864f06d2232eb62b6a3', // "Updated from 1.26.30" (latest before BDS 1.26.51)
+  license: 'CC0-1.0'
+}
+
 const raw = (repo, sha, file) => `https://raw.githubusercontent.com/${repo}/${sha}/${file}`
 
 /** id → { url, repo, sha, license, sha256 } */
@@ -45,8 +51,12 @@ const SOURCES = {
   'cloudburst/item_components.nbt': { ...CLOUDBURST, file: 'item_components.nbt' },
   'cloudburst/entity_identifiers.dat': { ...CLOUDBURST, file: 'entity_identifiers.dat' },
   'cloudburst/creative_items.json': { ...CLOUDBURST, file: 'creative_items.json' },
+  // BDS biome definitions (climate, tags, water colour; no numeric ids: `id` is null for vanilla biomes)
+  'cloudburst/stripped_biome_definitions.json': { ...CLOUDBURST, file: 'stripped_biome_definitions.json' },
   // gophertunnel — level sound event identifiers (strings on the wire since 1.26.40)
-  'gophertunnel/level_sound_event.go': { ...GOPHERTUNNEL, file: 'minecraft/protocol/packet/level_sound_event.go' }
+  'gophertunnel/level_sound_event.go': { ...GOPHERTUNNEL, file: 'minecraft/protocol/packet/level_sound_event.go' },
+  // pmmp/BedrockData — vanilla numeric biome ids (what chunk biome palettes carry)
+  'pmmp/biome_id_map.json': { ...PMMP_BEDROCKDATA, file: 'biome_id_map.json' }
 }
 for (const [id, s] of Object.entries(SOURCES)) {
   s.id = id
@@ -64,4 +74,4 @@ function sourcePath (id) {
   return path.join(cacheDir(), s.sha.slice(0, 12), s.file)
 }
 
-module.exports = { SOURCES, MCDATA_PR, CLOUDBURST, GOPHERTUNNEL, cacheDir, sourcePath }
+module.exports = { SOURCES, MCDATA_PR, CLOUDBURST, GOPHERTUNNEL, PMMP_BEDROCKDATA, cacheDir, sourcePath }

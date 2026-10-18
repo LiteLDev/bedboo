@@ -129,6 +129,21 @@ const ENTITY_JAVA_NAMES = {
   lightning_bolt: 'lightning_bolt'
 }
 
+/**
+ * Bedrock identifiers that minecraft-data bedrock 1.21.80 lists more than once (Java-only variants filed under
+ * the identifier they map to, and placeholder rows): identifier → displayName of the entry describing the
+ * Bedrock entity itself. Giant, Trader Llama (Bedrock: trader_llama), Spectral Arrow and Illusioner are
+ * Java-only or have their own Bedrock identifier.
+ */
+const ENTITY_DUPLICATES = {
+  zombie: 'Zombie',
+  llama: 'Llama',
+  arrow: 'Arrow',
+  evocation_illager: 'Evoker',
+  armor_stand: 'Armor Stand',
+  minecart: 'Minecart'
+}
+
 /** Bedrock-only entities with no minecraft-data entry: display name, type, category (size from the probe). */
 const ENTITIES_MANUAL = {
   cushion: { displayName: 'Cushion', type: 'other', category: 'Immobile' },
@@ -148,4 +163,29 @@ const ENTITY_SIZES = {
   shulker: [1, 1]
 }
 
-module.exports = { EFFECTS, ENTITY_SIZES, ENCHANTMENTS_ADDED, ATTRIBUTES_JAVA, ATTRIBUTES_BEDROCK_ONLY, ENTITY_JAVA_NAMES, ENTITIES_MANUAL }
+/**
+ * Vanilla numeric biome ids missing from pmmp/BedrockData's biome_id_map.json (1.26.30): biomes added in
+ * 1.26.50. BDS 1.26.51.1 lists the vanilla biomes in `biome_definition_list` in id order (every entry has
+ * `biome_id` 65535, i.e. "use the vanilla id"); dappled_forest is the last entry, right after sulfur_caves
+ * (194). generate.js checks the whole order against the probe (probe-bds.js `biomeOrder`), and live-check.js
+ * `--biomes` reads the id from the chunk biome palette at the biome BDS locates.
+ */
+const BIOME_IDS_ADDED = {
+  dappled_forest: 195
+}
+
+/**
+ * Biomes not in minecraft-data bedrock 1.20.0 (the last minecraft-data Bedrock biome list keyed by vanilla
+ * ids): displayName and minecraft-data `category` (the Java-style categories 1.20.0 uses: cherry grove and
+ * pale garden as `forest` like Java's cherry_grove and Bedrock's roofed_forest, the cave biomes as
+ * `underground` like lush_caves / dripstone_caves). Display names are checked against minecraft-data pc 26.1
+ * where Java has the biome.
+ */
+const BIOMES_ADDED = {
+  cherry_grove: { displayName: 'Cherry Grove', category: 'forest' },
+  pale_garden: { displayName: 'Pale Garden', category: 'forest' },
+  sulfur_caves: { displayName: 'Sulfur Caves', category: 'underground' },
+  dappled_forest: { displayName: 'Dappled Forest', category: 'forest' }
+}
+
+module.exports = { BIOME_IDS_ADDED, BIOMES_ADDED, EFFECTS, ENTITY_SIZES, ENCHANTMENTS_ADDED, ATTRIBUTES_JAVA, ATTRIBUTES_BEDROCK_ONLY, ENTITY_JAVA_NAMES, ENTITY_DUPLICATES, ENTITIES_MANUAL }

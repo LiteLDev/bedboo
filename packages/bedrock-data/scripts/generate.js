@@ -283,16 +283,40 @@ function buildAttributes () {
   return out
 }
 
+/**
+ * minecraft-data bedrock 1.21.80 `entities.json` lists Java-only variants under the Bedrock identifier they
+ * map to (zombie: Zombie + Giant, llama: Llama + Trader Llama, arrow: Arrow + Spectral Arrow,
+ * evocation_illager: Evoker + Illusioner, armor_stand / minecart: extra placeholder rows). The entry of the
+ * Bedrock entity itself is named in tables.ENTITY_DUPLICATES (by displayName); an unlisted duplicate fails
+ * the generation, so a new one is decided explicitly instead of silently taking the last row.
+ */
+function pickBedrockEntity (name, rid, candidates, report) {
+  if (!candidates?.length) return undefined
+  if (candidates.length === 1) return candidates[0]
+  const listed = candidates.map(c => `${c.displayName} (internalId ${c.internalId})`).join(', ')
+  const wanted = tables.ENTITY_DUPLICATES[name]
+  if (!wanted) throw new Error(`entity ${name}: ${candidates.length} minecraft-data entries (${listed}); add the right one to tables.ENTITY_DUPLICATES`)
+  const chosen = candidates.filter(c => c.displayName === wanted)
+  if (chosen.length !== 1) throw new Error(`entity ${name}: ${chosen.length} minecraft-data entries named ${wanted} among ${listed}`)
+  if (chosen[0].internalId !== rid) report.push(`WARN entities: ${name} uses ${wanted} with internalId ${chosen[0].internalId}, BDS id ${rid}`)
+  report.push(`entities: ${name} has ${candidates.length} minecraft-data entries (${listed}), using ${wanted}`)
+  return chosen[0]
+}
+
 async function buildEntities (report) {
   const { idlist } = await readNbt('cloudburst/entity_identifiers.dat')
   const bedrock = mcdata('bedrock', 'entities') // minecraft-data bedrock 1.21.80
   const java = mcdata('pc', 'entities', '26.1')
-  const bedrockByName = new Map(bedrock.map(e => [e.name, e]))
+  const bedrockByName = new Map()
+  for (const e of bedrock) {
+    if (!bedrockByName.has(e.name)) bedrockByName.set(e.name, [])
+    bedrockByName.get(e.name).push(e)
+  }
   const javaByName = new Map(java.map(e => [e.name, e]))
   const out = []
   for (const e of idlist) {
     const name = e.id.replace('minecraft:', '')
-    const known = bedrockByName.get(name)
+    const known = pickBedrockEntity(name, e.rid, bedrockByName.get(name), report)
     const javaName = tables.ENTITY_JAVA_NAMES[name] ?? name
     const j = javaByName.get(javaName)
     const manual = tables.ENTITIES_MANUAL[name]
@@ -373,6 +397,70 @@ function buildSounds (report) {
 }
 
 // ---------------------------------------------------------------------------------------------------------
+// Biomes
+// ---------------------------------------------------------------------------------------------------------
+/**
+ * Biomes keyed by the vanilla numeric ids chunk biome palettes carry (`registry.biomes[id]`, prismarine-biome,
+ * `block.biome`). minecraft-data's bedrock 1.21.60 list (what bedrock_1.26.51 inherits) is numbered
+ * alphabetically and would turn plains (1) into bamboo_jungle_hills.
+ *   - the list and the climate (temperature, downfall → rainfall, rain → has_precipitation, depth, map water
+ *     colour → color, like minecraft-data bedrock 1.21.60): CloudburstMC stripped_biome_definitions.json (BDS)
+ *   - ids: pmmp/BedrockData biome_id_map.json + tables.BIOME_IDS_ADDED; cross-checked with minecraft-data
+ *     bedrock 1.20.0 and with the order BDS lists them in (probe `biomeOrder`)
+ *   - category, displayName: minecraft-data bedrock 1.20.0, tables.BIOMES_ADDED for newer biomes
+ *   - dimension: the definition's `nether` / `the_end` tag, else overworld (bedrock 1.21.60 spelling `the_end`)
+ */
+function buildBiomes (report) {
+  const definitions = readJson('cloudburst/stripped_biome_definitions.json')
+  const ids = { ...readJson('pmmp/biome_id_map.json') }
+  for (const [name, id] of Object.entries(tables.BIOME_IDS_ADDED)) {
+    if (name in ids) throw new Error(`biome ${name}: pmmp biome_id_map already has id ${ids[name]} (drop it from BIOME_IDS_ADDED)`)
+    ids[name] = id
+  }
+  const legacy = new Map(mcdata('bedrock', 'biomes', '1.20.0').map(b => [b.name, b]))
+  const java = new Map(mcdata('pc', 'biomes', '26.1').map(b => [b.name, b]))
+  const out = []
+  for (const [identifier, def] of Object.entries(definitions)) {
+    const name = identifier.replace(/^minecraft:/, '')
+    const id = ids[name]
+    if (!Number.isInteger(id)) throw new Error(`biome ${name}: no numeric id (pmmp biome_id_map.json / tables.BIOME_IDS_ADDED)`)
+    if (def.id !== null && def.id !== id) throw new Error(`biome ${name}: Cloudburst id ${def.id} vs ${id}`)
+    const old = legacy.get(name)
+    const added = tables.BIOMES_ADDED[name]
+    if (old && added) throw new Error(`biome ${name} is in minecraft-data bedrock 1.20.0: drop it from BIOMES_ADDED`)
+    if (!old && !added) throw new Error(`biome ${name} is new since minecraft-data bedrock 1.20.0: add it to tables.BIOMES_ADDED`)
+    if (old && old.id !== id) throw new Error(`biome ${name}: id ${id} vs minecraft-data bedrock 1.20.0 ${old.id}`)
+    const javaName = java.get(name)?.displayName
+    if (added && javaName && javaName !== added.displayName) throw new Error(`biome ${name}: displayName ${added.displayName} vs pc 26.1 ${javaName}`)
+    const tags = def.tags ?? []
+    const dimension = tags.includes('nether') ? 'nether' : tags.includes('the_end') ? 'the_end' : 'overworld'
+    if (old && (old.dimension === 'end' ? 'the_end' : old.dimension) !== dimension) throw new Error(`biome ${name}: dimension ${dimension} vs minecraft-data ${old.dimension}`)
+    const { r, g, b } = def.mapWaterColor
+    out.push({
+      id,
+      name,
+      category: old?.category ?? added.category,
+      temperature: def.temperature,
+      has_precipitation: def.rain,
+      dimension,
+      displayName: old?.displayName ?? added.displayName,
+      color: (r << 16) | (g << 8) | b,
+      rainfall: def.downfall,
+      depth: def.depth
+    })
+  }
+  for (const name of Object.keys(ids)) if (!definitions['minecraft:' + name]) throw new Error(`biome id map names ${name}, which BDS 1.26.51 does not define`)
+  out.sort((a, b) => a.id - b.id)
+  for (let i = 1; i < out.length; i++) if (out[i].id === out[i - 1].id) throw new Error(`biome id ${out[i].id} used twice`)
+  const order = out.map(b => b.name)
+  if (JSON.stringify(order) !== JSON.stringify(PROBE.biomeOrder)) {
+    throw new Error(`biome ids do not sort like BDS lists the biomes (probe biomeOrder):\n  ids:  ${order.join(' ')}\n  BDS:  ${PROBE.biomeOrder?.join(' ')}`)
+  }
+  report.push(`biomes: ${out.length} (ids ${out[0].id}..${out[out.length - 1].id}, order matches BDS biome_definition_list)`)
+  return out
+}
+
+// ---------------------------------------------------------------------------------------------------------
 // output
 // ---------------------------------------------------------------------------------------------------------
 function encode (name, value) {
@@ -400,7 +488,8 @@ async function main () {
     attributes: buildAttributes(),
     entities: await buildEntities(report),
     particles: buildParticles(),
-    sounds: buildSounds(report)
+    sounds: buildSounds(report),
+    biomes: buildBiomes(report)
   }
 
   const files = {}
