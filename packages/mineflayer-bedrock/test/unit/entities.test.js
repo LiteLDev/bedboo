@@ -297,7 +297,7 @@ describe('entities & players (U7)', function () {
     data([{ key: 'flags', type: 'long', value: flags({ sneaking: true, sprinting: true }) }])
     assert.strictEqual(p.crouching, true)
     assert.strictEqual(p.sprinting, true)
-    assert.strictEqual(p.height, 1.5)
+    assert.strictEqual(p.height, 1.49)
     assert.strictEqual(p.eyeHeight, 1.27)
     data([{ key: 'flags', type: 'long', value: flags({ gliding: true }) }])
     assert.strictEqual(p.crouching, false)

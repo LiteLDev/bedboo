@@ -73,14 +73,18 @@ describe('physics: liquids, climbables, special blocks, falls, knockback, effect
 
   it('lava (fire resistance): walk in, swim, walk out', async () => {
     const x = 20
-    await area(x, [`effect ${env.bot.username} fire_resistance 60 0 true`, `fill ${x + 3} -63 -3 ${x + 9} -61 3 lava`])
+    // a 4-block pool: the bot climbs out on the far side, so the comparison happens at rest (sinking through lava at
+    // −0.02/tick, the client is ahead of querytarget by the input latency)
+    await area(x, [`effect ${env.bot.username} fire_resistance 60 0 true`, `fill ${x + 3} -63 -3 ${x + 6} -61 3 lava`])
     await settle(new Vec3(x + 1.5, -60, 0.5))
     await walk(['forward'], 2000)
     assert.ok(env.bot.entity.isInLava, 'isInLava')
     await walk(['jump'], 1500)
-    await walk(['forward', 'jump'], 3500)
+    await walk(['forward', 'jump'], 4000)
+    await walk([], 500)
+    assert.ok(!env.bot.entity.isInLava, `out of the lava: ${env.bot.entity.position}`)
     await verify('lava')
-    await commands(env.server, [`fill ${x + 3} -63 -3 ${x + 9} -61 3 dirt`])
+    await commands(env.server, [`fill ${x + 3} -63 -3 ${x + 6} -61 3 dirt`])
   })
 
   it('ladder and vine: climb against them, jump-climb, sneak to hold, slide down', async () => {
@@ -142,15 +146,17 @@ describe('physics: liquids, climbables, special blocks, falls, knockback, effect
 
   it('bubble columns: carried up (soul sand), pulled down (magma)', async () => {
     const x = 100
-    // two columns: soul sand (x + 4) and magma (x + 8), base block first, then the water
+    // two columns: soul sand (x + 4) and magma (x + 8). BDS turns the water into bubble_column blocks when the
+    // base block is placed UNDER existing water (water poured over the base stays plain water)
     await area(x, [
       `fill ${x + 3} -63 -1 ${x + 9} -40 1 glass`,
-      `setblock ${x + 4} -63 0 soul_sand`,
-      `setblock ${x + 8} -63 0 magma`,
       `fill ${x + 4} -62 0 ${x + 4} -41 0 water`,
-      `fill ${x + 8} -62 0 ${x + 8} -41 0 water`
+      `fill ${x + 8} -62 0 ${x + 8} -41 0 water`,
+      `setblock ${x + 4} -63 0 soul_sand`,
+      `setblock ${x + 8} -63 0 magma`
     ])
-    await sleep(3000)
+    await sleep(2000)
+    assert.strictEqual(env.bot.blockAt(new Vec3(x + 4, -50, 0))?.name, 'bubble_column')
     await settle(new Vec3(x + 4.5, -62, 0.5))
     await sleep(3000)
     assert.ok(env.bot.entity.position.y > -50, `carried up: ${env.bot.entity.position}`)
@@ -164,13 +170,18 @@ describe('physics: liquids, climbables, special blocks, falls, knockback, effect
   it('falls: 3 blocks without damage, 10 blocks with damage; landing where the server lands', async () => {
     const { bot } = env
     const x = 120
-    await area(x)
-    // Bedrock reports health as the minecraft:health attribute (set_health is not sent for damage)
+    // full health first (the magma under the bubble column burns)
+    await area(x, [`effect ${bot.username} instant_health 1 10 true`])
+    await sleep(500)
+    // Bedrock reports health as the minecraft:health attribute (set_health is not sent for damage): record drops
     const hurt = []
+    let last = bot.health ?? 20
     const onHealth = (p) => {
       if (!bot._bedrock.ids.isSelf(p.runtime_entity_id)) return
       const health = p.attributes.find((a) => a.name === 'minecraft:health')
-      if (health && health.current < health.max) hurt.push(health.current)
+      if (!health) return
+      if (health.current < last) hurt.push(health.current)
+      last = health.current
     }
     bot._client.on('update_attributes', onHealth)
     await settle(new Vec3(x + 0.5, -57, 0.5))
@@ -179,7 +190,7 @@ describe('physics: liquids, climbables, special blocks, falls, knockback, effect
     assert.deepStrictEqual(hurt, [], 'no fall damage from 3 blocks')
     await bot.test.teleport(new Vec3(x + 0.5, -50, 0.5))
     await sleep(2500)
-    assert.ok(hurt.some((h) => h < 20), `fall damage from 10 blocks: ${hurt}`)
+    assert.ok(hurt.length > 0, 'fall damage from 10 blocks')
     await verify('10-block fall')
     bot._client.removeListener('update_attributes', onHealth)
     await commands(env.server, [`effect ${bot.username} instant_health 1 10 true`])

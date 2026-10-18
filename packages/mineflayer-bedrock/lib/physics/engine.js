@@ -33,6 +33,7 @@ const AABB = require('./aabb')
 const attribute = require('./attribute')
 const { f32, sin, cos, clamp } = require('./math')
 const { moveVector } = require('./input')
+const { SNEAK_HEIGHT } = require('../bedrock/constants')
 
 /**
  * Upstream prismarine-physics field names (31) with their Bedrock values. `bot.physics` exposes exactly these
@@ -83,7 +84,7 @@ const BEDROCK = Object.freeze({
   groundAccelerationFactor: f32(0.16277136),
   sprintMultiplier: f32(1.3),
   usingItemImpulse: f32(0.1225),
-  sneakHeight: 1.49,
+  sneakHeight: SNEAK_HEIGHT, // 1.49 (BDS)
   impulseScale: f32(0.98),
   sneakEdgeMargin: 0.025,
   sneakEdgeStep: 0.05,

@@ -135,8 +135,10 @@ describe('core: join, spawn, game, physics stub, dimensions (U4)', function () {
 
     let corrections = 0
     bot._client.on('correct_player_move_prediction', () => corrections++)
+    // move_player arrives before the console output: listen first (U5's physics makes no correction while falling)
+    const lifted = waitFor(bot, 'forcedMove')
     await server.commandOutput(`tp ${username} 3 ${GROUND + 10} 3`)
-    await waitFor(bot, 'forcedMove')
+    await lifted
     await new Promise(resolve => setTimeout(resolve, 3000))
     assert.ok(Math.abs(bot.entity.position.y - GROUND) < 0.01, `landed: ${bot.entity.position}`)
     assert.strictEqual(bot.entity.onGround, true)

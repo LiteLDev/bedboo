@@ -52,6 +52,12 @@ const FLIGHT_CONFIRM_TICKS = 20
 
 module.exports = inject
 
+/** li64 fields arrive as BigInt-like objects or plain [high, low] arrays */
+function int64 (v) {
+  if (Array.isArray(v)) return BigInt.asIntN(64, (BigInt(v[0]) << 32n) | BigInt(v[1] >>> 0))
+  return v === undefined || v === null ? v : BigInt(v)
+}
+
 function inject (bot, { physicsEnabled }) {
   const world = { getBlock: (pos) => bot.blockAt(pos, false) }
   bot.physics = Physics(bot.registry, world)
@@ -444,7 +450,7 @@ function inject (bot, { physicsEnabled }) {
 
   // the server's view of our flight (gamemode changes, /ability, confirmations of our requests)
   bot._client.on('update_abilities', (packet) => {
-    if (!bot._bedrock?.ids?.isSelfUnique?.(packet.entity_unique_id)) return
+    if (!bot._bedrock?.ids?.isSelfUnique?.(int64(packet.entity_unique_id))) return
     const base = (packet.abilities ?? []).find((layer) => layer.type === 'base')
     if (!base?.enabled) return
     serverFlySpeed = typeof base.fly_speed === 'number' ? base.fly_speed : serverFlySpeed
