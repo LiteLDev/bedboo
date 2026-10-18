@@ -1,0 +1,261 @@
+[
+  {
+    "id": 1,
+    "name": "Speed",
+    "displayName": "Speed",
+    "type": "good",
+    "bedrockName": "speed"
+  },
+  {
+    "id": 2,
+    "name": "Slowness",
+    "displayName": "Slowness",
+    "type": "bad",
+    "bedrockName": "slowness"
+  },
+  {
+    "id": 3,
+    "name": "Haste",
+    "displayName": "Haste",
+    "type": "good",
+    "bedrockName": "haste"
+  },
+  {
+    "id": 4,
+    "name": "MiningFatigue",
+    "displayName": "Mining Fatigue",
+    "type": "bad",
+    "bedrockName": "mining_fatigue"
+  },
+  {
+    "id": 5,
+    "name": "Strength",
+    "displayName": "Strength",
+    "type": "good",
+    "bedrockName": "strength"
+  },
+  {
+    "id": 6,
+    "name": "InstantHealth",
+    "displayName": "Instant Health",
+    "type": "good",
+    "bedrockName": "instant_health"
+  },
+  {
+    "id": 7,
+    "name": "InstantDamage",
+    "displayName": "Instant Damage",
+    "type": "bad",
+    "bedrockName": "instant_damage"
+  },
+  {
+    "id": 8,
+    "name": "JumpBoost",
+    "displayName": "Jump Boost",
+    "type": "good",
+    "bedrockName": "jump_boost"
+  },
+  {
+    "id": 9,
+    "name": "Nausea",
+    "displayName": "Nausea",
+    "type": "bad",
+    "bedrockName": "nausea"
+  },
+  {
+    "id": 10,
+    "name": "Regeneration",
+    "displayName": "Regeneration",
+    "type": "good",
+    "bedrockName": "regeneration"
+  },
+  {
+    "id": 11,
+    "name": "Resistance",
+    "displayName": "Resistance",
+    "type": "good",
+    "bedrockName": "resistance"
+  },
+  {
+    "id": 12,
+    "name": "FireResistance",
+    "displayName": "Fire Resistance",
+    "type": "good",
+    "bedrockName": "fire_resistance"
+  },
+  {
+    "id": 13,
+    "name": "WaterBreathing",
+    "displayName": "Water Breathing",
+    "type": "good",
+    "bedrockName": "water_breathing"
+  },
+  {
+    "id": 14,
+    "name": "Invisibility",
+    "displayName": "Invisibility",
+    "type": "good",
+    "bedrockName": "invisibility"
+  },
+  {
+    "id": 15,
+    "name": "Blindness",
+    "displayName": "Blindness",
+    "type": "bad",
+    "bedrockName": "blindness"
+  },
+  {
+    "id": 16,
+    "name": "NightVision",
+    "displayName": "Night Vision",
+    "type": "good",
+    "bedrockName": "night_vision"
+  },
+  {
+    "id": 17,
+    "name": "Hunger",
+    "displayName": "Hunger",
+    "type": "bad",
+    "bedrockName": "hunger"
+  },
+  {
+    "id": 18,
+    "name": "Weakness",
+    "displayName": "Weakness",
+    "type": "bad",
+    "bedrockName": "weakness"
+  },
+  {
+    "id": 19,
+    "name": "Poison",
+    "displayName": "Poison",
+    "type": "bad",
+    "bedrockName": "poison"
+  },
+  {
+    "id": 20,
+    "name": "Wither",
+    "displayName": "Wither",
+    "type": "bad",
+    "bedrockName": "wither"
+  },
+  {
+    "id": 21,
+    "name": "HealthBoost",
+    "displayName": "Health Boost",
+    "type": "good",
+    "bedrockName": "health_boost"
+  },
+  {
+    "id": 22,
+    "name": "Absorption",
+    "displayName": "Absorption",
+    "type": "good",
+    "bedrockName": "absorption"
+  },
+  {
+    "id": 23,
+    "name": "Saturation",
+    "displayName": "Saturation",
+    "type": "good",
+    "bedrockName": "saturation"
+  },
+  {
+    "id": 24,
+    "name": "Levitation",
+    "displayName": "Levitation",
+    "type": "bad",
+    "bedrockName": "levitation"
+  },
+  {
+    "id": 25,
+    "name": "FatalPoison",
+    "displayName": "Fatal Poison",
+    "type": "bad",
+    "bedrockName": "fatal_poison"
+  },
+  {
+    "id": 26,
+    "name": "ConduitPower",
+    "displayName": "Conduit Power",
+    "type": "good",
+    "bedrockName": "conduit_power"
+  },
+  {
+    "id": 27,
+    "name": "SlowFalling",
+    "displayName": "Slow Falling",
+    "type": "good",
+    "bedrockName": "slow_falling"
+  },
+  {
+    "id": 28,
+    "name": "BadOmen",
+    "displayName": "Bad Omen",
+    "type": "bad",
+    "bedrockName": "bad_omen"
+  },
+  {
+    "id": 29,
+    "name": "HeroOfTheVillage",
+    "displayName": "Hero of the Village",
+    "type": "good",
+    "bedrockName": "village_hero"
+  },
+  {
+    "id": 30,
+    "name": "Darkness",
+    "displayName": "Darkness",
+    "type": "bad",
+    "bedrockName": "darkness"
+  },
+  {
+    "id": 31,
+    "name": "TrialOmen",
+    "displayName": "Trial Omen",
+    "type": "bad",
+    "bedrockName": "trial_omen"
+  },
+  {
+    "id": 32,
+    "name": "WindCharged",
+    "displayName": "Wind Charged",
+    "type": "bad",
+    "bedrockName": "wind_charged"
+  },
+  {
+    "id": 33,
+    "name": "Weaving",
+    "displayName": "Weaving",
+    "type": "bad",
+    "bedrockName": "weaving"
+  },
+  {
+    "id": 34,
+    "name": "Oozing",
+    "displayName": "Oozing",
+    "type": "bad",
+    "bedrockName": "oozing"
+  },
+  {
+    "id": 35,
+    "name": "Infested",
+    "displayName": "Infested",
+    "type": "bad",
+    "bedrockName": "infested"
+  },
+  {
+    "id": 36,
+    "name": "RaidOmen",
+    "displayName": "Raid Omen",
+    "type": "bad",
+    "bedrockName": "raid_omen"
+  },
+  {
+    "id": 37,
+    "name": "BreathOfTheNautilus",
+    "displayName": "Breath of the Nautilus",
+    "type": "good",
+    "bedrockName": "breath_of_the_nautilus"
+  }
+]

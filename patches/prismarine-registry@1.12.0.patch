@@ -1,0 +1,185 @@
+diff --git a/lib/bedrock/index.js b/lib/bedrock/index.js
+index 8cb3970c70c82519e141ddcfccd966c3e9b884e9..b5e7b485c10d4c675e3a8ded6fc51b23234bf860 100644
+--- a/lib/bedrock/index.js
++++ b/lib/bedrock/index.js
+@@ -1,39 +1,116 @@
++const nbt = require('prismarine-nbt')
+ const buildIndexFromArray = require('../indexer')
+ 
++// bedboo patch (adapted from PrismarineJS/prismarine-registry#57, MIT): item_registry support, item id
++// re-keying of harvestTools/materials/foods/drops, blockStatesByStateId, hashed runtime ids.
++// Block state ids stay the sequential indexes into blockStates (contiguous minStateId..maxStateId, like
++// Java); network runtime ids (FNV-1a hashes when block_network_ids_are_hashes) are translated through
++// blocksByRuntimeId[runtimeId].stateId and runtimeIdByStateId[stateId].
+ module.exports = (data) => {
++  // The registry is a shallow copy of minecraft-data (lib/loader.js): its arrays and objects are shared with
++  // every other registry and must never be mutated. Blocks are copied once here (prismarine-block attaches
++  // collision shapes to them) so the item re-keying below can update this registry's blocks in place.
++  if (data.blocksArray) {
++    data.blocksArray = data.blocksArray.map(block => ({ ...block }))
++    data.blocks = buildIndexFromArray(data.blocksArray, 'id')
++    data.blocksByName = buildIndexFromArray(data.blocksArray, 'name')
++    data.blocksByStateId = {}
++    for (const block of data.blocksArray) {
++      for (let stateId = block.minStateId; stateId <= block.maxStateId; stateId++) data.blocksByStateId[stateId] = block
++    }
++  }
++  // state ids are indexes into blockStates
++  if (data.blockStates) data.blockStatesByStateId = data.blockStates
++
++  const sourceItemsByName = data.itemsByName
++  const sourceFoodsArray = data.foodsArray
++
++  // What the components of an item state tell about the item; minecraft-data has the vanilla items, these are
++  // for the others.
++  function itemFromComponents (itemState) {
++    const components = itemState.nbt && nbt.simplify(itemState.nbt).components
++    if (!components) return {}
++    const item = {}
++    const stackSize = components.item_properties?.max_stack_size ?? components['minecraft:max_stack_size']
++    if (stackSize !== undefined) item.stackSize = stackSize
++    const maxDurability = components['minecraft:durability']?.max_durability
++    if (maxDurability !== undefined) item.maxDurability = maxDurability
++    const displayName = components['minecraft:display_name']?.value
++    if (displayName !== undefined) item.displayName = data.language?.[displayName] ?? displayName
++    return item
++  }
++
+   function loadItemStates (itemStates) {
++    const previousIdByName = new Map((data.itemsArray || []).map(item => [item.name, item.id]))
+     const items = []
+     for (const item of itemStates) {
+       const name = item.name.replace('minecraft:', '')
+-      items.push({ ...data.itemsByName[name], name, id: item.runtime_id })
++      items.push({ ...itemFromComponents(item), ...sourceItemsByName[name], name, id: item.runtime_id, componentBased: item.component_based, nbt: item.nbt, version: item.version })
+     }
+     data.itemsArray = items
+     data.items = buildIndexFromArray(data.itemsArray, 'id')
+     data.itemsByName = buildIndexFromArray(data.itemsArray, 'name')
++
++    // Re-key everything that references items by id (minecraft-data ids → this palette's runtime ids).
++    const idMap = new Map()
++    let changed = false
++    for (const [name, oldId] of previousIdByName) {
++      const newId = data.itemsByName[name]?.id
++      idMap.set(oldId, newId)
++      if (newId !== oldId) changed = true
++    }
++    if (changed) remapItemIds(id => idMap.has(id) ? idMap.get(id) : id)
+   }
+-  function loadHashedRuntimeIds (registry) {
+-    data.blocksByRuntimeId = {}
+-    const Block = require('prismarine-block')(registry)
+-    for (let i = 0; i < data.blockStates.length; i++) {
+-      const { name, states } = data.blockStates[i]
+-      const hash = Block.getHash(name, states)
+-      data.blocksByRuntimeId[hash] = { stateId: i, ...data.blocksByStateId[i] }
++
++  function remapItemIds (map) {
++    const remapKeys = (object) => {
++      const out = {}
++      for (const [id, value] of Object.entries(object)) {
++        const newId = map(Number(id))
++        if (newId !== undefined) out[newId] = value
++      }
++      return out
++    }
++    for (const block of data.blocksArray || []) {
++      if (block.harvestTools) block.harvestTools = remapKeys(block.harvestTools)
++      if (Array.isArray(block.drops)) block.drops = block.drops.map(drop => typeof drop === 'number' ? map(drop) : drop).filter(drop => drop !== undefined)
++    }
++    if (data.materials) {
++      data.materials = Object.fromEntries(Object.entries(data.materials).map(([material, tools]) => [material, remapKeys(tools)]))
++    }
++    if (sourceFoodsArray) {
++      data.foodsArray = sourceFoodsArray
++        .map(food => ({ ...food, id: data.itemsByName[food.name]?.id }))
++        .filter(food => food.id !== undefined)
++      data.foods = buildIndexFromArray(data.foodsArray, 'id')
++      data.foodsByName = buildIndexFromArray(data.foodsArray, 'name')
+     }
+   }
+-  function loadRuntimeIds () {
++
++  function loadRuntimeIds (registry, useHashes) {
++    const Block = useHashes ? require('prismarine-block')(registry) : null
+     data.blocksByRuntimeId = {}
+-    for (let i = 0; i < data.blockStates.length; i++) {
+-      data.blocksByRuntimeId[i] = { stateId: i, ...data.blocksByStateId[i] }
++    data.runtimeIdByStateId = new Array(data.blockStates.length)
++    for (let stateId = 0; stateId < data.blockStates.length; stateId++) {
++      const { name, states, hash } = data.blockStates[stateId]
++      // `hash` overrides the computed hash for states BDS gives a reserved id (minecraft:unknown → -2)
++      const runtimeId = useHashes ? (hash ?? Block.getHash(name, states)) : stateId
++      data.runtimeIdByStateId[stateId] = runtimeId
++      data.blocksByRuntimeId[runtimeId] = { stateId, ...data.blocksByStateId[stateId] }
+     }
+   }
+ 
+   return {
+     handleStartGame (packet) {
+-      loadItemStates(packet.itemstates)
+-      if (this.supportFeature('blockHashes') && packet.block_network_ids_are_hashes) {
+-        loadHashedRuntimeIds(this)
+-      } else {
+-        loadRuntimeIds()
++      if (packet.itemstates) {
++        loadItemStates(packet.itemstates)
++      }
++      loadRuntimeIds(this, this.supportFeature('blockHashes') && !!packet.block_network_ids_are_hashes)
++    },
++
++    handleItemRegistry (packet) {
++      if (packet.itemstates) {
++        loadItemStates(packet.itemstates)
+       }
+     },
+ 
+@@ -47,7 +124,10 @@ module.exports = (data) => {
+           ns = 'minecraft'
+         }
+ 
+-        itemstates.push({ name: `${ns}:${name}`, runtime_id: item.id, component_based: ns !== 'minecraft' })
++        const itemState = { name: `${ns}:${name}`, runtime_id: item.id, component_based: item.componentBased ?? ns !== 'minecraft' }
++        if (item.version !== undefined) itemState.version = item.version
++        if (item.nbt !== undefined) itemState.nbt = item.nbt
++        itemstates.push(itemState)
+       }
+ 
+       return itemstates
+diff --git a/lib/index.d.ts b/lib/index.d.ts
+index d413b2030ebbe7c859db43cf9e4f5d8eeab3b912..9e073a9b7af94694cd8697237fb9de03a73eea01 100644
+--- a/lib/index.d.ts
++++ b/lib/index.d.ts
+@@ -9,15 +9,31 @@ declare namespace loader {
+   }
+   
+   export interface RegistryBedrock extends IndexedData {
++    /** block state by state id (state ids are indexes into blockStates) */
++    blockStatesByStateId: BlockState[];
++    /** network runtime id → { stateId, ...block } (built by handleStartGame) */
++    blocksByRuntimeId?: { [runtimeId: number]: { stateId: number } & IndexedData['blocksArray'][number] };
++    /** state id → network runtime id (built by handleStartGame) */
++    runtimeIdByStateId?: number[];
+     handleStartGame(packet: any): void;
++    handleItemRegistry(packet: any): void;
+     writeItemStates(): ItemState[];
+   }
+   
+   export type Registry = RegistryBedrock | RegistryPc
++  export type BlockState = {
++    name: string
++    states: { [name: string]: { type: string, value: unknown } }
++    version?: number
++    /** explicit network runtime id when it is not the state's FNV-1a hash */
++    hash?: number
++  }
+   export type ItemState = {
+     name: string
+     runtime_id: number
+     component_based: boolean
++    version?: 'legacy' | 'data_driven' | 'none'
++    nbt?: NBT
+   }
+ }
+ 

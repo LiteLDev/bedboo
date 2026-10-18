@@ -1,0 +1,29 @@
+diff --git a/index.js b/index.js
+index e91fb333b383a87d4a14300555ea0b5bfa8f9a28..0c89dc4362c6a2ce62f2cd653324bdfd28b22b3d 100644
+--- a/index.js
++++ b/index.js
+@@ -105,6 +105,8 @@ function provider (registry, { Biome, version }) {
+     }
+   }
+ 
++  const stateHashes = {} // bedboo patch: state id → network runtime id (blockHashes versions)
++
+   return class Block {
+     constructor (type, biomeId, metadata, stateId) {
+       this.type = type
+@@ -202,7 +204,14 @@ function provider (registry, { Biome, version }) {
+       }
+ 
+       if (blockEnum && registry.supportFeature('blockHashes')) {
+-        this.hash = Block.getHash(this.name, this._properties)
++        // bedboo patch: the network runtime id of this state. getHash needs the typed NBT states of the state
++        // (blockStates[stateId].states), not the simplified properties; `hash` overrides reserved ids.
++        // Cached per state id: blockAt() builds a Block per call.
++        if (!(this.stateId in stateHashes)) {
++          const blockState = registry.blockStatesByStateId?.[this.stateId] ?? registry.blockStates?.[this.stateId]
++          stateHashes[this.stateId] = blockState ? (blockState.hash ?? Block.getHash(this.name, blockState.states)) : undefined
++        }
++        this.hash = stateHashes[this.stateId]
+       }
+     }
+ 

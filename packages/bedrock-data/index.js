@@ -6,17 +6,21 @@
  *
  *   require('@bedboo/bedrock-data').install()   // see install.js for the injection contract
  *
- * Sources (U2): minecraft-data PR #1335 (MIT, head b34f7dfed829098a34f16046c9e3f2bd8632bcd6)
- * 1.26.51 blocks/blockStates/blockCollisionShapes/items/materials; CloudburstMC/Data (Apache-2.0,
- * 659ce1e2eee3a67045693f4fd5515c6ccf571953) blocks.json for per-state collision/friction; generated
- * effects/foods/attributes/enchantments/entities/particles/sounds; the Java feature-name table used by
- * mineflayer-bedrock's lib/bedrock/features.js. Attribution goes into this package's NOTICE/README.
+ * Datasets (data/1.26.51/, one file per dataset, auto-discovered by install()): blocks, blockStates,
+ * blockCollisionShapes, items, materials (minecraft-data PR #1335, MIT, b34f7dfed829098a34f16046c9e3f2bd8632bcd6,
+ * with CloudburstMC/Data 659ce1e2eee3a67045693f4fd5515c6ccf571953 (Apache-2.0) friction, collision and
+ * runtime-id fixes), foods, effects, enchantments, attributes, entities, particles, sounds (generated).
+ * Regenerate with `corepack pnpm --filter @bedboo/bedrock-data generate` (scripts/generate.js). Sources and
+ * attribution: NOTICE.md.
  */
 const { install, VERSION } = require('./install')
+const { FEATURES, BEDROCK_FEATURES } = require('./features')
 
 module.exports = {
   install,
   VERSION,
-  /** Java feature name → Bedrock value (U2). Empty in U0. */
-  features: {}
+  /** Java feature name → Bedrock value (see features.js; used by mineflayer-bedrock lib/bedrock/features.js) */
+  features: FEATURES,
+  /** minecraft-data's own Bedrock feature names with their 1.26.51 values */
+  bedrockFeatures: BEDROCK_FEATURES
 }

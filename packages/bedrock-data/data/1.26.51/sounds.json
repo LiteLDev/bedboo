@@ -1,0 +1,2310 @@
+[
+  {
+    "id": 0,
+    "name": "item.use.on"
+  },
+  {
+    "id": 1,
+    "name": "hit"
+  },
+  {
+    "id": 2,
+    "name": "step"
+  },
+  {
+    "id": 3,
+    "name": "fly"
+  },
+  {
+    "id": 4,
+    "name": "jump"
+  },
+  {
+    "id": 5,
+    "name": "break"
+  },
+  {
+    "id": 6,
+    "name": "place"
+  },
+  {
+    "id": 7,
+    "name": "heavy.step"
+  },
+  {
+    "id": 8,
+    "name": "gallop"
+  },
+  {
+    "id": 9,
+    "name": "fall"
+  },
+  {
+    "id": 10,
+    "name": "ambient"
+  },
+  {
+    "id": 11,
+    "name": "ambient.baby"
+  },
+  {
+    "id": 12,
+    "name": "ambient.in.water"
+  },
+  {
+    "id": 13,
+    "name": "breathe"
+  },
+  {
+    "id": 14,
+    "name": "death"
+  },
+  {
+    "id": 15,
+    "name": "death.in.water"
+  },
+  {
+    "id": 16,
+    "name": "death.to.zombie"
+  },
+  {
+    "id": 17,
+    "name": "hurt"
+  },
+  {
+    "id": 18,
+    "name": "hurt.in.water"
+  },
+  {
+    "id": 19,
+    "name": "mad"
+  },
+  {
+    "id": 20,
+    "name": "boost"
+  },
+  {
+    "id": 21,
+    "name": "bow"
+  },
+  {
+    "id": 22,
+    "name": "squish.big"
+  },
+  {
+    "id": 23,
+    "name": "squish.small"
+  },
+  {
+    "id": 24,
+    "name": "fall.big"
+  },
+  {
+    "id": 25,
+    "name": "fall.small"
+  },
+  {
+    "id": 26,
+    "name": "splash"
+  },
+  {
+    "id": 27,
+    "name": "fizz"
+  },
+  {
+    "id": 28,
+    "name": "flap"
+  },
+  {
+    "id": 29,
+    "name": "swim"
+  },
+  {
+    "id": 30,
+    "name": "drink"
+  },
+  {
+    "id": 31,
+    "name": "eat"
+  },
+  {
+    "id": 32,
+    "name": "takeoff"
+  },
+  {
+    "id": 33,
+    "name": "shake"
+  },
+  {
+    "id": 34,
+    "name": "plop"
+  },
+  {
+    "id": 35,
+    "name": "land"
+  },
+  {
+    "id": 36,
+    "name": "saddle"
+  },
+  {
+    "id": 37,
+    "name": "armor"
+  },
+  {
+    "id": 39,
+    "name": "add.chest"
+  },
+  {
+    "id": 40,
+    "name": "throw"
+  },
+  {
+    "id": 41,
+    "name": "attack"
+  },
+  {
+    "id": 42,
+    "name": "attack.nodamage"
+  },
+  {
+    "id": 43,
+    "name": "attack.strong"
+  },
+  {
+    "id": 44,
+    "name": "warn"
+  },
+  {
+    "id": 45,
+    "name": "shear"
+  },
+  {
+    "id": 46,
+    "name": "milk"
+  },
+  {
+    "id": 47,
+    "name": "thunder"
+  },
+  {
+    "id": 48,
+    "name": "explode"
+  },
+  {
+    "id": 49,
+    "name": "fire"
+  },
+  {
+    "id": 50,
+    "name": "ignite"
+  },
+  {
+    "id": 51,
+    "name": "fuse"
+  },
+  {
+    "id": 52,
+    "name": "stare"
+  },
+  {
+    "id": 53,
+    "name": "spawn"
+  },
+  {
+    "id": 54,
+    "name": "shoot"
+  },
+  {
+    "id": 55,
+    "name": "break.block"
+  },
+  {
+    "id": 56,
+    "name": "launch"
+  },
+  {
+    "id": 57,
+    "name": "blast"
+  },
+  {
+    "id": 58,
+    "name": "large.blast"
+  },
+  {
+    "id": 59,
+    "name": "twinkle"
+  },
+  {
+    "id": 60,
+    "name": "remedy"
+  },
+  {
+    "id": 61,
+    "name": "unfect"
+  },
+  {
+    "id": 62,
+    "name": "levelup"
+  },
+  {
+    "id": 63,
+    "name": "bow.hit"
+  },
+  {
+    "id": 64,
+    "name": "bullet.hit"
+  },
+  {
+    "id": 65,
+    "name": "extinguish.fire"
+  },
+  {
+    "id": 66,
+    "name": "item.fizz"
+  },
+  {
+    "id": 67,
+    "name": "chest.open"
+  },
+  {
+    "id": 68,
+    "name": "chest.closed"
+  },
+  {
+    "id": 69,
+    "name": "shulkerbox.open"
+  },
+  {
+    "id": 70,
+    "name": "shulkerbox.closed"
+  },
+  {
+    "id": 71,
+    "name": "enderchest.open"
+  },
+  {
+    "id": 72,
+    "name": "enderchest.closed"
+  },
+  {
+    "id": 73,
+    "name": "power.on"
+  },
+  {
+    "id": 74,
+    "name": "power.off"
+  },
+  {
+    "id": 75,
+    "name": "attach"
+  },
+  {
+    "id": 76,
+    "name": "detach"
+  },
+  {
+    "id": 77,
+    "name": "deny"
+  },
+  {
+    "id": 78,
+    "name": "tripod"
+  },
+  {
+    "id": 79,
+    "name": "pop"
+  },
+  {
+    "id": 80,
+    "name": "drop.slot"
+  },
+  {
+    "id": 81,
+    "name": "note"
+  },
+  {
+    "id": 82,
+    "name": "thorns"
+  },
+  {
+    "id": 83,
+    "name": "piston.in"
+  },
+  {
+    "id": 84,
+    "name": "piston.out"
+  },
+  {
+    "id": 85,
+    "name": "portal"
+  },
+  {
+    "id": 86,
+    "name": "water"
+  },
+  {
+    "id": 87,
+    "name": "lava.pop"
+  },
+  {
+    "id": 88,
+    "name": "lava"
+  },
+  {
+    "id": 89,
+    "name": "burp"
+  },
+  {
+    "id": 90,
+    "name": "bucket.fill.water"
+  },
+  {
+    "id": 91,
+    "name": "bucket.fill.lava"
+  },
+  {
+    "id": 92,
+    "name": "bucket.empty.water"
+  },
+  {
+    "id": 93,
+    "name": "bucket.empty.lava"
+  },
+  {
+    "id": 101,
+    "name": "record.13"
+  },
+  {
+    "id": 102,
+    "name": "record.cat"
+  },
+  {
+    "id": 103,
+    "name": "record.blocks"
+  },
+  {
+    "id": 104,
+    "name": "record.chirp"
+  },
+  {
+    "id": 105,
+    "name": "record.far"
+  },
+  {
+    "id": 106,
+    "name": "record.mall"
+  },
+  {
+    "id": 107,
+    "name": "record.mellohi"
+  },
+  {
+    "id": 108,
+    "name": "record.stal"
+  },
+  {
+    "id": 109,
+    "name": "record.strad"
+  },
+  {
+    "id": 110,
+    "name": "record.ward"
+  },
+  {
+    "id": 111,
+    "name": "record.11"
+  },
+  {
+    "id": 112,
+    "name": "record.wait"
+  },
+  {
+    "id": 114,
+    "name": "flop"
+  },
+  {
+    "id": 115,
+    "name": "elderguardian.curse"
+  },
+  {
+    "id": 116,
+    "name": "mob.warning"
+  },
+  {
+    "id": 117,
+    "name": "mob.warning.baby"
+  },
+  {
+    "id": 118,
+    "name": "teleport"
+  },
+  {
+    "id": 119,
+    "name": "shulker.open"
+  },
+  {
+    "id": 120,
+    "name": "shulker.close"
+  },
+  {
+    "id": 121,
+    "name": "haggle"
+  },
+  {
+    "id": 122,
+    "name": "haggle.yes"
+  },
+  {
+    "id": 123,
+    "name": "haggle.no"
+  },
+  {
+    "id": 124,
+    "name": "haggle.idle"
+  },
+  {
+    "id": 125,
+    "name": "chorusgrow"
+  },
+  {
+    "id": 126,
+    "name": "chorusdeath"
+  },
+  {
+    "id": 127,
+    "name": "glass"
+  },
+  {
+    "id": 128,
+    "name": "potion.brewed"
+  },
+  {
+    "id": 129,
+    "name": "cast.spell"
+  },
+  {
+    "id": 130,
+    "name": "prepare.attack"
+  },
+  {
+    "id": 131,
+    "name": "prepare.summon"
+  },
+  {
+    "id": 132,
+    "name": "prepare.wololo"
+  },
+  {
+    "id": 133,
+    "name": "fang"
+  },
+  {
+    "id": 134,
+    "name": "charge"
+  },
+  {
+    "id": 138,
+    "name": "growl"
+  },
+  {
+    "id": 139,
+    "name": "whine"
+  },
+  {
+    "id": 140,
+    "name": "pant"
+  },
+  {
+    "id": 141,
+    "name": "purr"
+  },
+  {
+    "id": 142,
+    "name": "purreow"
+  },
+  {
+    "id": 143,
+    "name": "death.min.volume"
+  },
+  {
+    "id": 144,
+    "name": "death.mid.volume"
+  },
+  {
+    "id": 145,
+    "name": "imitate.blaze"
+  },
+  {
+    "id": 146,
+    "name": "imitate.cave_spider"
+  },
+  {
+    "id": 147,
+    "name": "imitate.creeper"
+  },
+  {
+    "id": 148,
+    "name": "imitate.elder_guardian"
+  },
+  {
+    "id": 149,
+    "name": "imitate.ender_dragon"
+  },
+  {
+    "id": 150,
+    "name": "imitate.enderman"
+  },
+  {
+    "id": 151,
+    "name": "imitate.endermite"
+  },
+  {
+    "id": 152,
+    "name": "imitate.evocation_illager"
+  },
+  {
+    "id": 153,
+    "name": "imitate.ghast"
+  },
+  {
+    "id": 154,
+    "name": "imitate.husk"
+  },
+  {
+    "id": 155,
+    "name": "imitate.illusion_illager"
+  },
+  {
+    "id": 156,
+    "name": "imitate.magma_cube"
+  },
+  {
+    "id": 157,
+    "name": "imitate.polar_bear"
+  },
+  {
+    "id": 158,
+    "name": "imitate.shulker"
+  },
+  {
+    "id": 159,
+    "name": "imitate.silverfish"
+  },
+  {
+    "id": 160,
+    "name": "imitate.skeleton"
+  },
+  {
+    "id": 161,
+    "name": "imitate.slime"
+  },
+  {
+    "id": 162,
+    "name": "imitate.spider"
+  },
+  {
+    "id": 163,
+    "name": "imitate.stray"
+  },
+  {
+    "id": 164,
+    "name": "imitate.vex"
+  },
+  {
+    "id": 165,
+    "name": "imitate.vindication_illager"
+  },
+  {
+    "id": 166,
+    "name": "imitate.witch"
+  },
+  {
+    "id": 167,
+    "name": "imitate.wither"
+  },
+  {
+    "id": 168,
+    "name": "imitate.wither_skeleton"
+  },
+  {
+    "id": 169,
+    "name": "imitate.wolf"
+  },
+  {
+    "id": 170,
+    "name": "imitate.zombie"
+  },
+  {
+    "id": 171,
+    "name": "imitate.zombie_pigman"
+  },
+  {
+    "id": 172,
+    "name": "imitate.zombie_villager"
+  },
+  {
+    "id": 173,
+    "name": "block.end_portal_frame.fill"
+  },
+  {
+    "id": 174,
+    "name": "block.end_portal.spawn"
+  },
+  {
+    "id": 175,
+    "name": "random.anvil_use"
+  },
+  {
+    "id": 176,
+    "name": "bottle.dragonbreath"
+  },
+  {
+    "id": 177,
+    "name": "portal.travel"
+  },
+  {
+    "id": 178,
+    "name": "item.trident.hit"
+  },
+  {
+    "id": 179,
+    "name": "item.trident.return"
+  },
+  {
+    "id": 180,
+    "name": "item.trident.riptide_1"
+  },
+  {
+    "id": 181,
+    "name": "item.trident.riptide_2"
+  },
+  {
+    "id": 182,
+    "name": "item.trident.riptide_3"
+  },
+  {
+    "id": 183,
+    "name": "item.trident.throw"
+  },
+  {
+    "id": 184,
+    "name": "item.trident.thunder"
+  },
+  {
+    "id": 185,
+    "name": "item.trident.hit_ground"
+  },
+  {
+    "id": 186,
+    "name": "default"
+  },
+  {
+    "id": 187,
+    "name": "block.fletching_table.use"
+  },
+  {
+    "id": 188,
+    "name": "elemconstruct.open"
+  },
+  {
+    "id": 189,
+    "name": "icebomb.hit"
+  },
+  {
+    "id": 190,
+    "name": "balloonpop"
+  },
+  {
+    "id": 191,
+    "name": "lt.reaction.icebomb"
+  },
+  {
+    "id": 192,
+    "name": "lt.reaction.bleach"
+  },
+  {
+    "id": 193,
+    "name": "lt.reaction.epaste"
+  },
+  {
+    "id": 194,
+    "name": "lt.reaction.epaste2"
+  },
+  {
+    "id": 195,
+    "name": "lt.reaction.glow_stick"
+  },
+  {
+    "id": 196,
+    "name": "lt.reaction.glow_stick2"
+  },
+  {
+    "id": 197,
+    "name": "lt.reaction.luminol"
+  },
+  {
+    "id": 198,
+    "name": "lt.reaction.salt"
+  },
+  {
+    "id": 199,
+    "name": "lt.reaction.fertilizer"
+  },
+  {
+    "id": 200,
+    "name": "lt.reaction.fireball"
+  },
+  {
+    "id": 201,
+    "name": "lt.reaction.mgsalt"
+  },
+  {
+    "id": 202,
+    "name": "lt.reaction.miscfire"
+  },
+  {
+    "id": 203,
+    "name": "lt.reaction.fire"
+  },
+  {
+    "id": 204,
+    "name": "lt.reaction.miscexplosion"
+  },
+  {
+    "id": 205,
+    "name": "lt.reaction.miscmystical"
+  },
+  {
+    "id": 206,
+    "name": "lt.reaction.miscmystical2"
+  },
+  {
+    "id": 207,
+    "name": "lt.reaction.product"
+  },
+  {
+    "id": 208,
+    "name": "sparkler.use"
+  },
+  {
+    "id": 209,
+    "name": "glowstick.use"
+  },
+  {
+    "id": 210,
+    "name": "sparkler.active"
+  },
+  {
+    "id": 211,
+    "name": "convert_to_drowned"
+  },
+  {
+    "id": 212,
+    "name": "bucket.fill.fish"
+  },
+  {
+    "id": 213,
+    "name": "bucket.empty.fish"
+  },
+  {
+    "id": 214,
+    "name": "bubble.up"
+  },
+  {
+    "id": 215,
+    "name": "bubble.down"
+  },
+  {
+    "id": 216,
+    "name": "bubble.pop"
+  },
+  {
+    "id": 217,
+    "name": "bubble.upinside"
+  },
+  {
+    "id": 218,
+    "name": "bubble.downinside"
+  },
+  {
+    "id": 219,
+    "name": "hurt.baby"
+  },
+  {
+    "id": 220,
+    "name": "death.baby"
+  },
+  {
+    "id": 221,
+    "name": "step.baby"
+  },
+  {
+    "id": 222,
+    "name": "spawn.baby"
+  },
+  {
+    "id": 223,
+    "name": "born"
+  },
+  {
+    "id": 224,
+    "name": "block.turtle_egg.break"
+  },
+  {
+    "id": 225,
+    "name": "block.turtle_egg.crack"
+  },
+  {
+    "id": 226,
+    "name": "block.turtle_egg.hatch"
+  },
+  {
+    "id": 227,
+    "name": "lay_egg"
+  },
+  {
+    "id": 228,
+    "name": "block.turtle_egg.attack"
+  },
+  {
+    "id": 229,
+    "name": "beacon.activate"
+  },
+  {
+    "id": 230,
+    "name": "beacon.ambient"
+  },
+  {
+    "id": 231,
+    "name": "beacon.deactivate"
+  },
+  {
+    "id": 232,
+    "name": "beacon.power"
+  },
+  {
+    "id": 233,
+    "name": "conduit.activate"
+  },
+  {
+    "id": 234,
+    "name": "conduit.ambient"
+  },
+  {
+    "id": 235,
+    "name": "conduit.attack"
+  },
+  {
+    "id": 236,
+    "name": "conduit.deactivate"
+  },
+  {
+    "id": 237,
+    "name": "conduit.short"
+  },
+  {
+    "id": 238,
+    "name": "swoop"
+  },
+  {
+    "id": 239,
+    "name": "block.bamboo_sapling.place"
+  },
+  {
+    "id": 240,
+    "name": "presneeze"
+  },
+  {
+    "id": 241,
+    "name": "sneeze"
+  },
+  {
+    "id": 242,
+    "name": "ambient.tame"
+  },
+  {
+    "id": 243,
+    "name": "scared"
+  },
+  {
+    "id": 244,
+    "name": "block.scaffolding.climb"
+  },
+  {
+    "id": 245,
+    "name": "crossbow.loading.start"
+  },
+  {
+    "id": 246,
+    "name": "crossbow.loading.middle"
+  },
+  {
+    "id": 247,
+    "name": "crossbow.loading.end"
+  },
+  {
+    "id": 248,
+    "name": "crossbow.shoot"
+  },
+  {
+    "id": 249,
+    "name": "crossbow.quick_charge.start"
+  },
+  {
+    "id": 250,
+    "name": "crossbow.quick_charge.middle"
+  },
+  {
+    "id": 251,
+    "name": "crossbow.quick_charge.end"
+  },
+  {
+    "id": 252,
+    "name": "ambient.aggressive"
+  },
+  {
+    "id": 253,
+    "name": "ambient.worried"
+  },
+  {
+    "id": 254,
+    "name": "cant_breed"
+  },
+  {
+    "id": 255,
+    "name": "item.shield.block"
+  },
+  {
+    "id": 256,
+    "name": "item.book.put"
+  },
+  {
+    "id": 257,
+    "name": "block.grindstone.use"
+  },
+  {
+    "id": 258,
+    "name": "block.bell.hit"
+  },
+  {
+    "id": 259,
+    "name": "block.campfire.crackle"
+  },
+  {
+    "id": 260,
+    "name": "roar"
+  },
+  {
+    "id": 261,
+    "name": "stun"
+  },
+  {
+    "id": 262,
+    "name": "block.sweet_berry_bush.hurt"
+  },
+  {
+    "id": 263,
+    "name": "block.sweet_berry_bush.pick"
+  },
+  {
+    "id": 264,
+    "name": "block.cartography_table.use"
+  },
+  {
+    "id": 265,
+    "name": "block.stonecutter.use"
+  },
+  {
+    "id": 266,
+    "name": "block.composter.empty"
+  },
+  {
+    "id": 267,
+    "name": "block.composter.fill"
+  },
+  {
+    "id": 268,
+    "name": "block.composter.fill_success"
+  },
+  {
+    "id": 269,
+    "name": "block.composter.ready"
+  },
+  {
+    "id": 270,
+    "name": "block.barrel.open"
+  },
+  {
+    "id": 271,
+    "name": "block.barrel.close"
+  },
+  {
+    "id": 272,
+    "name": "raid.horn"
+  },
+  {
+    "id": 273,
+    "name": "block.loom.use"
+  },
+  {
+    "id": 274,
+    "name": "ambient.in.raid"
+  },
+  {
+    "id": 275,
+    "name": "ui.cartography_table.take_result"
+  },
+  {
+    "id": 276,
+    "name": "ui.stonecutter.take_result"
+  },
+  {
+    "id": 277,
+    "name": "ui.loom.take_result"
+  },
+  {
+    "id": 278,
+    "name": "block.smoker.smoke"
+  },
+  {
+    "id": 279,
+    "name": "block.blastfurnace.fire_crackle"
+  },
+  {
+    "id": 280,
+    "name": "block.smithing_table.use"
+  },
+  {
+    "id": 281,
+    "name": "screech"
+  },
+  {
+    "id": 282,
+    "name": "sleep"
+  },
+  {
+    "id": 283,
+    "name": "block.furnace.lit"
+  },
+  {
+    "id": 284,
+    "name": "convert_mooshroom"
+  },
+  {
+    "id": 285,
+    "name": "milk_suspiciously"
+  },
+  {
+    "id": 286,
+    "name": "celebrate"
+  },
+  {
+    "id": 287,
+    "name": "jump.prevent"
+  },
+  {
+    "id": 288,
+    "name": "ambient.pollinate"
+  },
+  {
+    "id": 289,
+    "name": "block.beehive.drip"
+  },
+  {
+    "id": 290,
+    "name": "block.beehive.enter"
+  },
+  {
+    "id": 291,
+    "name": "block.beehive.exit"
+  },
+  {
+    "id": 292,
+    "name": "block.beehive.work"
+  },
+  {
+    "id": 293,
+    "name": "block.beehive.shear"
+  },
+  {
+    "id": 294,
+    "name": "drink.honey"
+  },
+  {
+    "id": 295,
+    "name": "ambient.cave"
+  },
+  {
+    "id": 296,
+    "name": "retreat"
+  },
+  {
+    "id": 297,
+    "name": "converted_to_zombified"
+  },
+  {
+    "id": 298,
+    "name": "admire"
+  },
+  {
+    "id": 299,
+    "name": "step_lava"
+  },
+  {
+    "id": 300,
+    "name": "tempt"
+  },
+  {
+    "id": 301,
+    "name": "panic"
+  },
+  {
+    "id": 302,
+    "name": "angry"
+  },
+  {
+    "id": 303,
+    "name": "ambient.warped_forest.mood"
+  },
+  {
+    "id": 304,
+    "name": "ambient.soulsand_valley.mood"
+  },
+  {
+    "id": 305,
+    "name": "ambient.nether_wastes.mood"
+  },
+  {
+    "id": 306,
+    "name": "ambient.basalt_deltas.mood"
+  },
+  {
+    "id": 307,
+    "name": "ambient.crimson_forest.mood"
+  },
+  {
+    "id": 308,
+    "name": "respawn_anchor.charge"
+  },
+  {
+    "id": 309,
+    "name": "respawn_anchor.deplete"
+  },
+  {
+    "id": 310,
+    "name": "respawn_anchor.set_spawn"
+  },
+  {
+    "id": 311,
+    "name": "respawn_anchor.ambient"
+  },
+  {
+    "id": 312,
+    "name": "particle.soul_escape.quiet"
+  },
+  {
+    "id": 313,
+    "name": "particle.soul_escape.loud"
+  },
+  {
+    "id": 314,
+    "name": "record.pigstep"
+  },
+  {
+    "id": 315,
+    "name": "lodestone_compass.link_compass_to_lodestone"
+  },
+  {
+    "id": 316,
+    "name": "smithing_table.use"
+  },
+  {
+    "id": 317,
+    "name": "armor.equip_netherite"
+  },
+  {
+    "id": 318,
+    "name": "ambient.warped_forest.loop"
+  },
+  {
+    "id": 319,
+    "name": "ambient.soulsand_valley.loop"
+  },
+  {
+    "id": 320,
+    "name": "ambient.nether_wastes.loop"
+  },
+  {
+    "id": 321,
+    "name": "ambient.basalt_deltas.loop"
+  },
+  {
+    "id": 322,
+    "name": "ambient.crimson_forest.loop"
+  },
+  {
+    "id": 323,
+    "name": "ambient.warped_forest.additions"
+  },
+  {
+    "id": 324,
+    "name": "ambient.soulsand_valley.additions"
+  },
+  {
+    "id": 325,
+    "name": "ambient.nether_wastes.additions"
+  },
+  {
+    "id": 326,
+    "name": "ambient.basalt_deltas.additions"
+  },
+  {
+    "id": 327,
+    "name": "ambient.crimson_forest.additions"
+  },
+  {
+    "id": 328,
+    "name": "power.on.sculk_sensor"
+  },
+  {
+    "id": 329,
+    "name": "power.off.sculk_sensor"
+  },
+  {
+    "id": 330,
+    "name": "bucket.fill.powder_snow"
+  },
+  {
+    "id": 331,
+    "name": "bucket.empty.powder_snow"
+  },
+  {
+    "id": 332,
+    "name": "cauldron_drip.water.pointed_dripstone"
+  },
+  {
+    "id": 333,
+    "name": "cauldron_drip.lava.pointed_dripstone"
+  },
+  {
+    "id": 334,
+    "name": "drip.water.pointed_dripstone"
+  },
+  {
+    "id": 335,
+    "name": "drip.lava.pointed_dripstone"
+  },
+  {
+    "id": 336,
+    "name": "pick_berries.cave_vines"
+  },
+  {
+    "id": 337,
+    "name": "tilt_down.big_dripleaf"
+  },
+  {
+    "id": 338,
+    "name": "tilt_up.big_dripleaf"
+  },
+  {
+    "id": 339,
+    "name": "copper.wax.on"
+  },
+  {
+    "id": 340,
+    "name": "copper.wax.off"
+  },
+  {
+    "id": 341,
+    "name": "scrape"
+  },
+  {
+    "id": 342,
+    "name": "mob.player.hurt_drown"
+  },
+  {
+    "id": 343,
+    "name": "mob.player.hurt_on_fire"
+  },
+  {
+    "id": 344,
+    "name": "mob.player.hurt_freeze"
+  },
+  {
+    "id": 345,
+    "name": "item.spyglass.use"
+  },
+  {
+    "id": 346,
+    "name": "item.spyglass.stop_using"
+  },
+  {
+    "id": 347,
+    "name": "chime.amethyst_block"
+  },
+  {
+    "id": 348,
+    "name": "ambient.screamer"
+  },
+  {
+    "id": 349,
+    "name": "hurt.screamer"
+  },
+  {
+    "id": 350,
+    "name": "death.screamer"
+  },
+  {
+    "id": 351,
+    "name": "milk.screamer"
+  },
+  {
+    "id": 352,
+    "name": "jump_to_block"
+  },
+  {
+    "id": 353,
+    "name": "pre_ram"
+  },
+  {
+    "id": 354,
+    "name": "pre_ram.screamer"
+  },
+  {
+    "id": 355,
+    "name": "ram_impact"
+  },
+  {
+    "id": 356,
+    "name": "ram_impact.screamer"
+  },
+  {
+    "id": 357,
+    "name": "squid.ink_squirt"
+  },
+  {
+    "id": 358,
+    "name": "glow_squid.ink_squirt"
+  },
+  {
+    "id": 359,
+    "name": "convert_to_stray"
+  },
+  {
+    "id": 360,
+    "name": "cake.add_candle"
+  },
+  {
+    "id": 361,
+    "name": "extinguish.candle"
+  },
+  {
+    "id": 362,
+    "name": "ambient.candle"
+  },
+  {
+    "id": 363,
+    "name": "block.click"
+  },
+  {
+    "id": 364,
+    "name": "block.click.fail"
+  },
+  {
+    "id": 365,
+    "name": "block.sculk_catalyst.bloom"
+  },
+  {
+    "id": 366,
+    "name": "block.sculk_shrieker.shriek"
+  },
+  {
+    "id": 367,
+    "name": "nearby_close"
+  },
+  {
+    "id": 368,
+    "name": "nearby_closer"
+  },
+  {
+    "id": 369,
+    "name": "nearby_closest"
+  },
+  {
+    "id": 370,
+    "name": "agitated"
+  },
+  {
+    "id": 371,
+    "name": "record.otherside"
+  },
+  {
+    "id": 372,
+    "name": "tongue"
+  },
+  {
+    "id": 373,
+    "name": "irongolem.crack"
+  },
+  {
+    "id": 374,
+    "name": "irongolem.repair"
+  },
+  {
+    "id": 375,
+    "name": "listening"
+  },
+  {
+    "id": 376,
+    "name": "heartbeat"
+  },
+  {
+    "id": 377,
+    "name": "horn_break"
+  },
+  {
+    "id": 379,
+    "name": "block.sculk.spread"
+  },
+  {
+    "id": 380,
+    "name": "charge.sculk"
+  },
+  {
+    "id": 381,
+    "name": "block.sculk_sensor.place"
+  },
+  {
+    "id": 382,
+    "name": "block.sculk_shrieker.place"
+  },
+  {
+    "id": 383,
+    "name": "horn_call0"
+  },
+  {
+    "id": 384,
+    "name": "horn_call1"
+  },
+  {
+    "id": 385,
+    "name": "horn_call2"
+  },
+  {
+    "id": 386,
+    "name": "horn_call3"
+  },
+  {
+    "id": 387,
+    "name": "horn_call4"
+  },
+  {
+    "id": 388,
+    "name": "horn_call5"
+  },
+  {
+    "id": 389,
+    "name": "horn_call6"
+  },
+  {
+    "id": 390,
+    "name": "horn_call7"
+  },
+  {
+    "id": 426,
+    "name": "imitate.warden"
+  },
+  {
+    "id": 427,
+    "name": "listening_angry"
+  },
+  {
+    "id": 428,
+    "name": "item_given"
+  },
+  {
+    "id": 429,
+    "name": "item_taken"
+  },
+  {
+    "id": 430,
+    "name": "disappeared"
+  },
+  {
+    "id": 431,
+    "name": "reappeared"
+  },
+  {
+    "id": 432,
+    "name": "drink.milk"
+  },
+  {
+    "id": 433,
+    "name": "block.frog_spawn.hatch"
+  },
+  {
+    "id": 434,
+    "name": "lay_spawn"
+  },
+  {
+    "id": 435,
+    "name": "block.frog_spawn.break"
+  },
+  {
+    "id": 436,
+    "name": "sonic_boom"
+  },
+  {
+    "id": 437,
+    "name": "sonic_charge"
+  },
+  {
+    "id": 439,
+    "name": "record.5"
+  },
+  {
+    "id": 440,
+    "name": "convert_to_frog"
+  },
+  {
+    "id": 441,
+    "name": "record.playing"
+  },
+  {
+    "id": 442,
+    "name": "block.enchanting_table.use"
+  },
+  {
+    "id": 443,
+    "name": "step_sand"
+  },
+  {
+    "id": 444,
+    "name": "dash_ready"
+  },
+  {
+    "id": 445,
+    "name": "bundle.drop_contents"
+  },
+  {
+    "id": 446,
+    "name": "bundle.insert"
+  },
+  {
+    "id": 447,
+    "name": "bundle.remove_one"
+  },
+  {
+    "id": 448,
+    "name": "pressure_plate.click_off"
+  },
+  {
+    "id": 449,
+    "name": "pressure_plate.click_on"
+  },
+  {
+    "id": 450,
+    "name": "button.click_off"
+  },
+  {
+    "id": 451,
+    "name": "button.click_on"
+  },
+  {
+    "id": 452,
+    "name": "door.open"
+  },
+  {
+    "id": 453,
+    "name": "door.close"
+  },
+  {
+    "id": 454,
+    "name": "trapdoor.open"
+  },
+  {
+    "id": 455,
+    "name": "trapdoor.close"
+  },
+  {
+    "id": 456,
+    "name": "fence_gate.open"
+  },
+  {
+    "id": 457,
+    "name": "fence_gate.close"
+  },
+  {
+    "id": 458,
+    "name": "insert"
+  },
+  {
+    "id": 459,
+    "name": "pickup"
+  },
+  {
+    "id": 460,
+    "name": "insert_enchanted"
+  },
+  {
+    "id": 461,
+    "name": "pickup_enchanted"
+  },
+  {
+    "id": 462,
+    "name": "brush"
+  },
+  {
+    "id": 463,
+    "name": "brush_completed"
+  },
+  {
+    "id": 464,
+    "name": "shatter_pot"
+  },
+  {
+    "id": 465,
+    "name": "break_pot"
+  },
+  {
+    "id": 466,
+    "name": "block.sniffer_egg.crack"
+  },
+  {
+    "id": 467,
+    "name": "block.sniffer_egg.hatch"
+  },
+  {
+    "id": 468,
+    "name": "block.sign.waxed_interact_fail"
+  },
+  {
+    "id": 469,
+    "name": "record.relic"
+  },
+  {
+    "id": 470,
+    "name": "note.bass"
+  },
+  {
+    "id": 471,
+    "name": "pumpkin.carve"
+  },
+  {
+    "id": 472,
+    "name": "mob.husk.convert_to_zombie"
+  },
+  {
+    "id": 473,
+    "name": "mob.pig.death"
+  },
+  {
+    "id": 474,
+    "name": "mob.hoglin.converted_to_zombified"
+  },
+  {
+    "id": 475,
+    "name": "ambient.underwater.enter"
+  },
+  {
+    "id": 476,
+    "name": "ambient.underwater.exit"
+  },
+  {
+    "id": 477,
+    "name": "bottle.fill"
+  },
+  {
+    "id": 478,
+    "name": "bottle.empty"
+  },
+  {
+    "id": 479,
+    "name": "crafter.craft"
+  },
+  {
+    "id": 480,
+    "name": "crafter.fail"
+  },
+  {
+    "id": 481,
+    "name": "block.decorated_pot.insert"
+  },
+  {
+    "id": 482,
+    "name": "block.decorated_pot.insert_fail"
+  },
+  {
+    "id": 483,
+    "name": "crafter.disable_slot"
+  },
+  {
+    "id": 484,
+    "name": "trial_spawner.open_shutter"
+  },
+  {
+    "id": 485,
+    "name": "trial_spawner.eject_item"
+  },
+  {
+    "id": 486,
+    "name": "trial_spawner.detect_player"
+  },
+  {
+    "id": 487,
+    "name": "trial_spawner.spawn_mob"
+  },
+  {
+    "id": 488,
+    "name": "trial_spawner.close_shutter"
+  },
+  {
+    "id": 489,
+    "name": "trial_spawner.ambient"
+  },
+  {
+    "id": 490,
+    "name": "block.copper_bulb.turn_on"
+  },
+  {
+    "id": 491,
+    "name": "block.copper_bulb.turn_off"
+  },
+  {
+    "id": 492,
+    "name": "ambient.in.air"
+  },
+  {
+    "id": 493,
+    "name": "breeze_wind_charge.burst"
+  },
+  {
+    "id": 494,
+    "name": "imitate.breeze"
+  },
+  {
+    "id": 495,
+    "name": "mob.armadillo.brush"
+  },
+  {
+    "id": 496,
+    "name": "mob.armadillo.scute_drop"
+  },
+  {
+    "id": 497,
+    "name": "armor.equip_wolf"
+  },
+  {
+    "id": 498,
+    "name": "armor.unequip_wolf"
+  },
+  {
+    "id": 499,
+    "name": "reflect"
+  },
+  {
+    "id": 500,
+    "name": "vault.open_shutter"
+  },
+  {
+    "id": 501,
+    "name": "vault.close_shutter"
+  },
+  {
+    "id": 502,
+    "name": "vault.eject_item"
+  },
+  {
+    "id": 503,
+    "name": "vault.insert_item"
+  },
+  {
+    "id": 504,
+    "name": "vault.insert_item_fail"
+  },
+  {
+    "id": 505,
+    "name": "vault.ambient"
+  },
+  {
+    "id": 506,
+    "name": "vault.activate"
+  },
+  {
+    "id": 507,
+    "name": "vault.deactivate"
+  },
+  {
+    "id": 508,
+    "name": "hurt.reduced"
+  },
+  {
+    "id": 509,
+    "name": "wind_charge.burst"
+  },
+  {
+    "id": 510,
+    "name": "imitate.bogged"
+  },
+  {
+    "id": 511,
+    "name": "armor.crack_wolf"
+  },
+  {
+    "id": 512,
+    "name": "armor.break_wolf"
+  },
+  {
+    "id": 513,
+    "name": "armor.repair_wolf"
+  },
+  {
+    "id": 514,
+    "name": "mace.smash_air"
+  },
+  {
+    "id": 515,
+    "name": "mace.smash_ground"
+  },
+  {
+    "id": 516,
+    "name": "trial_spawner.charge_activate"
+  },
+  {
+    "id": 517,
+    "name": "trial_spawner.ambient_ominous"
+  },
+  {
+    "id": 518,
+    "name": "ominous_item_spawner.spawn_item"
+  },
+  {
+    "id": 519,
+    "name": "ominous_bottle.end_use"
+  },
+  {
+    "id": 520,
+    "name": "mace.heavy_smash_ground"
+  },
+  {
+    "id": 521,
+    "name": "ominous_item_spawner.spawn_item_begin"
+  },
+  {
+    "id": 523,
+    "name": "apply_effect.bad_omen"
+  },
+  {
+    "id": 524,
+    "name": "apply_effect.raid_omen"
+  },
+  {
+    "id": 525,
+    "name": "apply_effect.trial_omen"
+  },
+  {
+    "id": 526,
+    "name": "ominous_item_spawner.about_to_spawn_item"
+  },
+  {
+    "id": 527,
+    "name": "record.creator"
+  },
+  {
+    "id": 528,
+    "name": "record.creator_music_box"
+  },
+  {
+    "id": 529,
+    "name": "record.precipice"
+  },
+  {
+    "id": 530,
+    "name": "vault.reject_rewarded_player"
+  },
+  {
+    "id": 531,
+    "name": "imitate.drowned"
+  },
+  {
+    "id": 532,
+    "name": "imitate.creaking"
+  },
+  {
+    "id": 533,
+    "name": "bundle.insert_fail"
+  },
+  {
+    "id": 534,
+    "name": "sponge.absorb"
+  },
+  {
+    "id": 536,
+    "name": "block.creaking_heart.trail"
+  },
+  {
+    "id": 537,
+    "name": "creaking_heart_spawn"
+  },
+  {
+    "id": 538,
+    "name": "activate"
+  },
+  {
+    "id": 539,
+    "name": "deactivate"
+  },
+  {
+    "id": 540,
+    "name": "freeze"
+  },
+  {
+    "id": 541,
+    "name": "unfreeze"
+  },
+  {
+    "id": 542,
+    "name": "open"
+  },
+  {
+    "id": 543,
+    "name": "open_long"
+  },
+  {
+    "id": 544,
+    "name": "close"
+  },
+  {
+    "id": 545,
+    "name": "close_long"
+  },
+  {
+    "id": 546,
+    "name": "imitate.phantom"
+  },
+  {
+    "id": 547,
+    "name": "imitate.zoglin"
+  },
+  {
+    "id": 548,
+    "name": "imitate.guardian"
+  },
+  {
+    "id": 549,
+    "name": "imitate.ravager"
+  },
+  {
+    "id": 550,
+    "name": "imitate.pillager"
+  },
+  {
+    "id": 551,
+    "name": "place_in_water"
+  },
+  {
+    "id": 552,
+    "name": "state_change"
+  },
+  {
+    "id": 553,
+    "name": "imitate.happy_ghast"
+  },
+  {
+    "id": 554,
+    "name": "armor.unequip_generic"
+  },
+  {
+    "id": 555,
+    "name": "record.tears"
+  },
+  {
+    "id": 556,
+    "name": "ambient.weather.the_end_light_flash"
+  },
+  {
+    "id": 557,
+    "name": "lead.leash"
+  },
+  {
+    "id": 558,
+    "name": "lead.unleash"
+  },
+  {
+    "id": 559,
+    "name": "lead.break"
+  },
+  {
+    "id": 560,
+    "name": "unsaddle"
+  },
+  {
+    "id": 561,
+    "name": "armor.equip_copper"
+  },
+  {
+    "id": 562,
+    "name": "record.lava_chicken"
+  },
+  {
+    "id": 563,
+    "name": "place_item"
+  },
+  {
+    "id": 564,
+    "name": "single_swap"
+  },
+  {
+    "id": 565,
+    "name": "multi_swap"
+  },
+  {
+    "id": 566,
+    "name": "item.enchant.lunge1"
+  },
+  {
+    "id": 567,
+    "name": "item.enchant.lunge2"
+  },
+  {
+    "id": 568,
+    "name": "item.enchant.lunge3"
+  },
+  {
+    "id": 569,
+    "name": "attack.critical"
+  },
+  {
+    "id": 570,
+    "name": "item.spear.attack_hit"
+  },
+  {
+    "id": 571,
+    "name": "item.spear.attack_miss"
+  },
+  {
+    "id": 572,
+    "name": "item.wooden_spear.attack_hit"
+  },
+  {
+    "id": 573,
+    "name": "item.wooden_spear.attack_miss"
+  },
+  {
+    "id": 574,
+    "name": "imitate.parched"
+  },
+  {
+    "id": 575,
+    "name": "imitate.camel_husk"
+  },
+  {
+    "id": 576,
+    "name": "item.spear.use"
+  },
+  {
+    "id": 577,
+    "name": "item.wooden_spear.use"
+  },
+  {
+    "id": 578,
+    "name": "saddle_in_water"
+  },
+  {
+    "id": 579,
+    "name": "item.stone_spear.attack_hit"
+  },
+  {
+    "id": 580,
+    "name": "item.iron_spear.attack_hit"
+  },
+  {
+    "id": 581,
+    "name": "item.copper_spear.attack_hit"
+  },
+  {
+    "id": 582,
+    "name": "item.golden_spear.attack_hit"
+  },
+  {
+    "id": 583,
+    "name": "item.diamond_spear.attack_hit"
+  },
+  {
+    "id": 584,
+    "name": "item.netherite_spear.attack_hit"
+  },
+  {
+    "id": 585,
+    "name": "item.stone_spear.attack_miss"
+  },
+  {
+    "id": 586,
+    "name": "item.iron_spear.attack_miss"
+  },
+  {
+    "id": 587,
+    "name": "item.copper_spear.attack_miss"
+  },
+  {
+    "id": 588,
+    "name": "item.golden_spear.attack_miss"
+  },
+  {
+    "id": 589,
+    "name": "item.diamond_spear.attack_miss"
+  },
+  {
+    "id": 590,
+    "name": "item.netherite_spear.attack_miss"
+  },
+  {
+    "id": 591,
+    "name": "item.stone_spear.use"
+  },
+  {
+    "id": 592,
+    "name": "item.iron_spear.use"
+  },
+  {
+    "id": 593,
+    "name": "item.copper_spear.use"
+  },
+  {
+    "id": 594,
+    "name": "item.golden_spear.use"
+  },
+  {
+    "id": 595,
+    "name": "item.diamond_spear.use"
+  },
+  {
+    "id": 596,
+    "name": "item.netherite_spear.use"
+  },
+  {
+    "id": 597,
+    "name": "pause_growth"
+  },
+  {
+    "id": 598,
+    "name": "reset_growth"
+  },
+  {
+    "id": 599,
+    "name": "pushed_by_player"
+  },
+  {
+    "id": 600,
+    "name": "bounce"
+  },
+  {
+    "id": 601,
+    "name": "slime_landing"
+  },
+  {
+    "id": 602,
+    "name": "absorb_block"
+  },
+  {
+    "id": 603,
+    "name": "eject_block"
+  },
+  {
+    "id": 604,
+    "name": "geyser_eruption_start"
+  },
+  {
+    "id": 605,
+    "name": "geyser_eruption_active"
+  },
+  {
+    "id": 606,
+    "name": "record.bounce"
+  },
+  {
+    "id": 607,
+    "name": "bucket.fill.land_animal"
+  },
+  {
+    "id": 608,
+    "name": "bucket.empty.land_animal"
+  },
+  {
+    "id": 609,
+    "name": "geyser_continuous_eruption_start"
+  },
+  {
+    "id": 610,
+    "name": "geyser_continuous_eruption_active"
+  },
+  {
+    "id": 611,
+    "name": "mount"
+  },
+  {
+    "id": 612,
+    "name": "dismount"
+  },
+  {
+    "id": 613,
+    "name": "straw_bed.break_leave"
+  },
+  {
+    "id": 614,
+    "name": "undefined"
+  },
+  {
+    "id": 615,
+    "name": "mob.armor_stand.place"
+  },
+  {
+    "id": 616,
+    "name": "armor.equip_chain"
+  },
+  {
+    "id": 617,
+    "name": "armor.equip_diamond"
+  },
+  {
+    "id": 618,
+    "name": "armor.equip_generic"
+  },
+  {
+    "id": 619,
+    "name": "armor.equip_gold"
+  },
+  {
+    "id": 620,
+    "name": "armor.equip_iron"
+  },
+  {
+    "id": 621,
+    "name": "armor.equip_leather"
+  },
+  {
+    "id": 622,
+    "name": "armor.equip_elytra"
+  },
+  {
+    "id": 623,
+    "name": "record.null"
+  },
+  {
+    "id": 624,
+    "name": "camera.take_picture"
+  },
+  {
+    "id": 625,
+    "name": "leashknot.place"
+  },
+  {
+    "id": 626,
+    "name": "leashknot.break"
+  },
+  {
+    "id": 627,
+    "name": "item_thrown"
+  }
+]
