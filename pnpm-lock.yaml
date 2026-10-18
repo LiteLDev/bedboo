@@ -189,6 +189,7 @@ patchedDependencies:
   bedrock-protocol@3.60.1: 89b59c8f1237d4708af0b225d8ed737956cc6b426a5ef141b9894695922f70e1
   prismarine-block@1.23.0: 16ebe16a255b873918ab197965badd9d14248c2435d7ea03eddf86e1b76a2eff
   prismarine-chunk@1.41.0: 2905743817313fa662d1e1bb2d49ed0c1bb3a05bcf8301ff9377239e2269db4f
+  prismarine-entity@2.6.0: 4dda3a4e7e9f7e51f0c16c4eb1771c34b634e594a32cb0deee199b5232614474
   prismarine-item@1.18.0: 089fd0685eac5d9859be4cf766a3296436318555eda9b5a69693710fd3700632
   prismarine-registry@1.12.0: e2d9b1aa9e8c0ac704d87932fbb2105e38cf7c529dcdfdbe1d51ed9e2e011534
   raknet-native@1.2.3: 828f799493933cd1134cb7aa6eb3257e285ed05f930b30edf100d37a38bef1d4
@@ -291,7 +292,7 @@ importers:
         version: 1.41.0(patch_hash=2905743817313fa662d1e1bb2d49ed0c1bb3a05bcf8301ff9377239e2269db4f)(supports-color@8.1.1)
       prismarine-entity:
         specifier: 2.6.0
-        version: 2.6.0(supports-color@8.1.1)
+        version: 2.6.0(patch_hash=4dda3a4e7e9f7e51f0c16c4eb1771c34b634e594a32cb0deee199b5232614474)(supports-color@8.1.1)
       prismarine-item:
         specifier: 1.18.0
         version: 1.18.0(patch_hash=089fd0685eac5d9859be4cf766a3296436318555eda9b5a69693710fd3700632)
@@ -3923,7 +3924,7 @@ snapshots:
     dependencies:
       minecraft-data: 3.117.0
       prismarine-block: 1.23.0(patch_hash=16ebe16a255b873918ab197965badd9d14248c2435d7ea03eddf86e1b76a2eff)(supports-color@8.1.1)
-      prismarine-entity: 2.6.0(supports-color@8.1.1)
+      prismarine-entity: 2.6.0(patch_hash=4dda3a4e7e9f7e51f0c16c4eb1771c34b634e594a32cb0deee199b5232614474)(supports-color@8.1.1)
       prismarine-item: 1.18.0(patch_hash=089fd0685eac5d9859be4cf766a3296436318555eda9b5a69693710fd3700632)
       prismarine-nbt: 2.8.0
       prismarine-physics: 1.11.1
@@ -3953,7 +3954,7 @@ snapshots:
     dependencies:
       '@types/node': 14.18.63
       mineflayer: 4.39.0(supports-color@8.1.1)
-      prismarine-entity: 2.6.0(supports-color@8.1.1)
+      prismarine-entity: 2.6.0(patch_hash=4dda3a4e7e9f7e51f0c16c4eb1771c34b634e594a32cb0deee199b5232614474)(supports-color@8.1.1)
       require-self: 0.2.3
       typescript: 3.9.10
     transitivePeerDependencies:
@@ -3969,7 +3970,7 @@ snapshots:
       prismarine-block: 1.23.0(patch_hash=16ebe16a255b873918ab197965badd9d14248c2435d7ea03eddf86e1b76a2eff)(supports-color@8.1.1)
       prismarine-chat: 1.13.0(supports-color@8.1.1)
       prismarine-chunk: 1.41.0(patch_hash=2905743817313fa662d1e1bb2d49ed0c1bb3a05bcf8301ff9377239e2269db4f)(supports-color@8.1.1)
-      prismarine-entity: 2.6.0(supports-color@8.1.1)
+      prismarine-entity: 2.6.0(patch_hash=4dda3a4e7e9f7e51f0c16c4eb1771c34b634e594a32cb0deee199b5232614474)(supports-color@8.1.1)
       prismarine-item: 1.18.0(patch_hash=089fd0685eac5d9859be4cf766a3296436318555eda9b5a69693710fd3700632)
       prismarine-nbt: 2.8.0
       prismarine-physics: 1.11.1
@@ -4255,7 +4256,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  prismarine-entity@2.6.0(supports-color@8.1.1):
+  prismarine-entity@2.6.0(patch_hash=4dda3a4e7e9f7e51f0c16c4eb1771c34b634e594a32cb0deee199b5232614474)(supports-color@8.1.1):
     dependencies:
       prismarine-chat: 1.13.0(supports-color@8.1.1)
       prismarine-item: 1.18.0(patch_hash=089fd0685eac5d9859be4cf766a3296436318555eda9b5a69693710fd3700632)

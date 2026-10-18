@@ -162,7 +162,7 @@ describe('mineflayer-bedrock skeleton (U0)', function () {
     await assert.rejects(p, (err) => err.notImplemented === true && err.unit === 'U8')
     await assert.rejects(bot.creative.flyTo(null), (err) => err.unit === 'U8')
     assert.doesNotThrow(() => bot.stopDigging(), 'stopDigging is a no-op while idle, like upstream')
-    assert.throws(() => bot.swingArm(), (err) => err.notImplemented === true && err.unit === 'U7')
+    assert.throws(() => bot.recipesAll(1, null, null), (err) => err.notImplemented === true && err.unit === 'U12')
   })
 
   it('end() closes the client and forwards end/error events', async () => {

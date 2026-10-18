@@ -39,7 +39,8 @@ function target (name) {
   return /^[A-Za-z0-9_]+$/.test(name) ? name : `"${String(name).replace(/"/g, '\\"')}"`
 }
 
-const big = (v) => (v === undefined || v === null ? null : BigInt(v))
+// add_player.unique_id is an li64, which protodef reads as [high, low] (U7 fix)
+const big = (v) => (v === undefined || v === null ? null : Array.isArray(v) ? BigInt.asIntN(64, (BigInt(v[0]) << 32n) | BigInt(v[1] >>> 0)) : BigInt(v))
 
 /**
  * Packet tracker: everything the helpers need about the local player, from raw packets only.

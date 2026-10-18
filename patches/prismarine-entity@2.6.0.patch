@@ -1,0 +1,30 @@
+diff --git a/index.js b/index.js
+index 0cef74010b3fdb4489704d945bfc2772f46f0473..83875b70a430883889dc266dde9f9db0f019788a 100644
+--- a/index.js
++++ b/index.js
+@@ -54,6 +54,12 @@ module.exports = (registryOrVersion) => {
+     }
+ 
+     getCustomName () {
++      if (registry.type === 'bedrock') {
++        // bedboo patch: Bedrock metadata is keyed by name (bedrock-protocol); the custom name is `nametag`, a plain
++        // string with § codes ('' when unset), never a JSON text component
++        const nametag = this.metadata.nametag
++        return nametag === undefined || nametag === '' ? null : new ChatMessage(nametag)
++      }
+       const name = this.metadata[2]
+       if (name === undefined) {
+         return null
+@@ -65,6 +71,12 @@ module.exports = (registryOrVersion) => {
+       if (this.name !== 'item' && this.name !== 'Item' && this.name !== 'item_stack') {
+         return null // not a dropped item
+       }
++      if (registry.type === 'bedrock') {
++        // bedboo patch: Bedrock item entities carry the item in add_item_entity (not in the metadata);
++        // mineflayer-bedrock stores that wire item (ItemV4) as `metadata.item`
++        const networkItem = this.metadata.item
++        return networkItem ? Item.fromNotch(networkItem) : null
++      }
+       return Item.fromNotch(this.metadata[registry.supportFeature('metadataIxOfItem')])
+     }
+   }
