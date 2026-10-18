@@ -186,56 +186,89 @@ function createTracker (bot) {
 function installRawClientBehaviour (bot, ctx, opts) {
   const client = bot._client
   const state = ctx.state
-  const handlesJoin = implemented(bot._bedrock?.lifecycle?.markSpawned)
-  const handlesRespawn = implemented(bot.respawn)
-  ctx.raw = { join: !handlesJoin, respawn: !handlesRespawn && opts.autoRespawn !== false }
+  // Decided when the packets arrive, not at inject time: inject() runs synchronously in onCreate, before
+  // `inject_allowed` injects the plugins (bot.respawn does not exist yet at that point).
+  const handlesJoin = () => implemented(bot._bedrock?.lifecycle?.markSpawned)
+  const handlesRespawn = () => implemented(bot.respawn)
+  ctx.raw = {
+    get join () { return !handlesJoin() },
+    get respawn () { return !handlesRespawn() && opts.autoRespawn !== false }
+  }
 
-  if (ctx.raw.join) {
-    client.on('respawn', (p) => {
-      if (p.state === 1 && state.runtimeId !== null && !state.spawned) {
-        client.queue('respawn', { position: p.position, state: 2, runtime_entity_id: state.runtimeId })
-      }
-    })
-    client.on('spawn', () => {
-      client.queue('serverbound_loading_screen', { type: 1 })
-      client.queue('serverbound_loading_screen', { type: 2 })
-      state.spawned = true
-      state.events.emit('spawn')
-      if (bot._rawBot) bot.emit('spawn')
-    })
-  }
-  if (ctx.raw.respawn) {
-    // BDS 1.26.51.1 death: entity_event death_animation, then respawn state 0 (searching) at the
-    // death position. Client "Respawn" button: respawn state 2 (client_ready) → server respawn
-    // state 0 + state 1 (ready, eye-level spawn position) → client player_action respawn → server
-    // entity_event respawn + set_health 20. A state 2 sent before the server's state 0 is ignored.
-    let deathScreen = false
-    let respawning = false
-    const pressRespawn = () => {
-      if (respawning || !deathScreen || state.alive) return
-      respawning = true
-      deathScreen = false
-      client.queue('respawn', { position: { x: 0, y: 0, z: 0 }, state: 2, runtime_entity_id: state.runtimeId })
+  // BDS 1.26.51.1 death: entity_event death_animation, then respawn state 0 (searching) at the
+  // death position. Client "Respawn" button: respawn state 2 (client_ready) → server respawn
+  // state 0 + state 1 (ready, eye-level spawn position) → client player_action respawn → server
+  // entity_event respawn + set_health 20. A state 2 sent before the server's state 0 is ignored.
+  // The join also starts with respawn state 0 ×2 + state 1: only a state 0 after a death counts.
+  let deathScreen = false
+  let respawning = false
+  let state0WhileAlive = false
+  const resetRespawn = () => { deathScreen = false; respawning = false; state0WhileAlive = false }
+
+  // join handshake (raw bots / a bot whose lifecycle does not handle the join)
+  client.on('start_game', () => {
+    state.spawned = false
+    resetRespawn()
+  })
+  client.on('respawn', (p) => {
+    if (!ctx.raw.join) return
+    if (p.state === 1 && state.runtimeId !== null && !state.spawned) {
+      client.queue('respawn', { position: p.position, state: 2, runtime_entity_id: state.runtimeId })
     }
-    client.on('respawn', (p) => {
-      if (!state.spawned && ctx.raw.join) return // join handshake
-      if (p.state === 0 && !respawning) {
-        deathScreen = true
-        pressRespawn()
-      } else if (p.state === 1 && respawning) {
-        respawning = false
-        client.queue('player_action', {
-          runtime_entity_id: state.runtimeId,
-          action: 'respawn',
-          position: { x: 0, y: 0, z: 0 },
-          result_position: { x: 0, y: 0, z: 0 },
-          face: -1
-        })
-      }
+  })
+  client.on('spawn', () => {
+    if (!ctx.raw.join) return
+    client.queue('serverbound_loading_screen', { type: 1 })
+    client.queue('serverbound_loading_screen', { type: 2 })
+    state.spawned = true
+    resetRespawn()
+    state.events.emit('spawn')
+    if (bot._rawBot) bot.emit('spawn')
+  })
+  // a bot that spawns by itself (mineflayer-bedrock's lifecycle): track it
+  if (!bot._rawBot && typeof bot.on === 'function') {
+    bot.on('spawn', () => {
+      if (ctx.raw.join) return
+      state.spawned = true
+      resetRespawn()
     })
-    state.events.on('death', pressRespawn) // in case state 0 arrived before the death event
-    state.events.on('alive', () => { deathScreen = false; respawning = false })
   }
+
+  // respawn handshake after a death (until bot.respawn is implemented)
+  const pressRespawn = () => {
+    if (!ctx.raw.respawn || respawning || !deathScreen || state.alive) return
+    respawning = true
+    deathScreen = false
+    client.queue('respawn', { position: { x: 0, y: 0, z: 0 }, state: 2, runtime_entity_id: state.runtimeId })
+  }
+  client.on('respawn', (p) => {
+    if (!ctx.raw.respawn || !state.spawned) return // the join handshake is not a respawn
+    if (p.state === 0 && !respawning) {
+      if (state.alive) {
+        state0WhileAlive = true // arrived before the death event
+        return
+      }
+      deathScreen = true
+      pressRespawn()
+    } else if (p.state === 1 && respawning) {
+      respawning = false
+      client.queue('player_action', {
+        runtime_entity_id: state.runtimeId,
+        action: 'respawn',
+        position: { x: 0, y: 0, z: 0 },
+        result_position: { x: 0, y: 0, z: 0 },
+        face: -1
+      })
+    }
+  })
+  state.events.on('death', () => {
+    if (state0WhileAlive) {
+      state0WhileAlive = false
+      deathScreen = true
+    }
+    pressRespawn()
+  })
+  state.events.on('alive', resetRespawn)
 }
 
 /**
@@ -387,11 +420,15 @@ function install (bot, ctx) {
     if (process.env.BEDBOO_TRACE) console.log(`[trace ${new Date().toISOString()}] ${msg}`)
   }
 
-  /** console `say` (prints nothing in the server log) + local log, like upstream */
+  /** like upstream bot.chat(message) + local log: '/…' as the bot's own command, else a chat message */
   t.sayEverywhere = (message) => {
     t.dumpMarker(message)
     console.log(message)
-    return server.command(`say ${message}`).catch((err) => console.error(`sayEverywhere: ${err.message}`))
+    // upstream: bot.chat(message) — a '/command' runs as the bot (command_request), anything else is chat
+    const sent = String(message).startsWith('/')
+      ? ctx.botCommand(String(message))
+      : Promise.resolve().then(() => ctx.chat(String(message)))
+    return sent.then(() => {}, (err) => console.error(`sayEverywhere: ${err.message}`))
   }
   /** resolve once every console command written before has been executed */
   t.awaitCommandsProcessed = () => server.awaitCommandsProcessed()

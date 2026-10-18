@@ -38,6 +38,20 @@ const feetToWire = (v) => ({ x: v.x, y: v.y + EYE_HEIGHT, z: v.z })
  * to Bedrock `face` values in player_action / inventory_transaction / auth-input block actions.
  */
 const BLOCK_FACES = { BOTTOM: 0, TOP: 1, NORTH: 2, SOUTH: 3, WEST: 4, EAST: 5 }
+/** Unit offset of each block face (index = face number). */
+const FACE_VECTORS = Object.freeze([
+  new Vec3(0, -1, 0), new Vec3(0, 1, 0), new Vec3(0, 0, -1), new Vec3(0, 0, 1), new Vec3(-1, 0, 0), new Vec3(1, 0, 0)
+])
+
+/**
+ * Unit view direction for mineflayer yaw/pitch (radians), as mineflayer's ray_trace computes it. Used for
+ * player_auth_input.camera_orientation.
+ * @returns {{x:number,y:number,z:number}}
+ */
+function viewDirection (yaw, pitch) {
+  const cosPitch = Math.cos(pitch)
+  return { x: -Math.sin(yaw) * cosPitch, y: Math.sin(pitch), z: -Math.cos(yaw) * cosPitch }
+}
 
 module.exports = {
   ...conv,
@@ -49,5 +63,7 @@ module.exports = {
   vec3ToWire,
   feetFromWire,
   feetToWire,
-  BLOCK_FACES
+  BLOCK_FACES,
+  FACE_VECTORS,
+  viewDirection
 }

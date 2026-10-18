@@ -11,9 +11,15 @@ const { VERSION } = require('./bedrock/constants')
  * installed BEFORE bedrock-protocol / prismarine-* resolve any Bedrock data. `index.js` calls
  * `installDataOverlay()` as its very first statement; everything else calls it again (idempotent).
  *
- * U4 completes `createRegistry` with start_game + item_registry wiring:
- *   - item palette (`item_registry.itemstates`) → registry items by network id (prismarine-registry patch, U2)
- *   - `block_network_ids_are_hashes` → hashed block runtime ids
+ * Runtime wiring (`attachRegistry(bot)`, called by the loader right after the client is created, before any
+ * plugin listener): `start_game` → `registry.handleStartGame(packet)` (block runtime ids: FNV-1a hashes,
+ * `registry.blocksByRuntimeId` / `runtimeIdByStateId`) and `item_registry` → `registry.handleItemRegistry`
+ * (items keyed by the server's network ids) + `bot._bedrock.ids.loadItemRegistry`. Chunks can only be
+ * decoded after start_game (prismarine-chunk throws otherwise), which always precedes level_chunk.
+ *
+ * `registry.language` is the Bedrock en_US language with its printf formats (`%1$d`, `%d`, `%.2f`, `%1`)
+ * normalized to the `%s` / `%1$s` forms prismarine-chat substitutes, so `ChatMessage.toString()` renders Bedrock
+ * translation keys (docs/differences/U4.md#language-formats).
  */
 
 let overlayInstalled = false
@@ -25,13 +31,54 @@ function installDataOverlay () {
   require('@bedboo/bedrock-data').install()
 }
 
+/** Bedrock printf format → prismarine-chat format (`%s`, `%N$s`, `%%`). */
+function normalizeFormat (format) {
+  if (typeof format !== 'string' || !format.includes('%')) return format
+  return format.replace(/%(%|(\d+)\$(?:\.\d+)?[sdfi]|(?:\.\d+)?[sdfi]|(\d+))/g, (match, whole, positional, bare) => {
+    if (whole === '%') return '%%'
+    if (positional) return `%${positional}$s`
+    if (bare) return `%${bare}$s`
+    return '%s'
+  })
+}
+
+const normalizedLanguages = new WeakMap()
+function normalizeLanguage (language) {
+  if (!language || typeof language !== 'object') return language
+  let normalized = normalizedLanguages.get(language)
+  if (!normalized) {
+    normalized = {}
+    for (const [key, value] of Object.entries(language)) normalized[key] = normalizeFormat(value)
+    normalizedLanguages.set(language, normalized)
+  }
+  return normalized
+}
+
 /**
  * @param {string} [version] Bedrock version, default '1.26.51'
- * @returns {object} prismarine-registry instance for `bedrock_<version>`
+ * @returns {object} prismarine-registry instance for `bedrock_<version>` (a fresh one per call: start_game /
+ *   item_registry mutate it per connection)
  */
 function createRegistry (version = VERSION) {
   installDataOverlay()
-  return require('prismarine-registry')('bedrock_' + version)
+  const registry = require('prismarine-registry')('bedrock_' + version)
+  registry.language = normalizeLanguage(registry.language)
+  return registry
 }
 
-module.exports = { installDataOverlay, createRegistry }
+/**
+ * Feed start_game / item_registry into the bot's registry. Must run before the plugins' own listeners
+ * (the loader calls it right after creating the client).
+ */
+function attachRegistry (bot) {
+  bot._client.on('start_game', (packet) => {
+    bot.registry.handleStartGame(packet)
+    if (packet.itemstates?.length) bot._bedrock?.ids?.loadItemRegistry(packet)
+  })
+  bot._client.on('item_registry', (packet) => {
+    bot.registry.handleItemRegistry(packet)
+    bot._bedrock?.ids?.loadItemRegistry(packet)
+  })
+}
+
+module.exports = { installDataOverlay, createRegistry, attachRegistry, normalizeFormat, normalizeLanguage }

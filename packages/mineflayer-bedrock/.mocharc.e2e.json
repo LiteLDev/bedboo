@@ -1,5 +1,6 @@
 {
   "spec": ["test/external/**/*.test.js"],
   "timeout": 120000,
-  "exit": true
+  "exit": true,
+  "require": ["./test/strict-features.js"]
 }

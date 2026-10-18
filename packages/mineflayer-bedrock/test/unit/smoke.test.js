@@ -130,25 +130,39 @@ describe('mineflayer-bedrock skeleton (U0)', function () {
     assert.strictEqual(typeof bot._bedrock.windows.register, 'function')
   })
 
-  it('every plugin method is a stub flagged notImplemented with its owner unit', async () => {
+  // U4 (wave 2) implemented its members; every remaining stub still names its owner unit.
+  const U4_IMPLEMENTED = [
+    'bot.blockAt', 'bot.findBlocks', 'bot.findBlock', 'bot.canSeeBlock', 'bot.waitForChunksToLoad',
+    'bot._updateBlockState', 'bot._getDimensionName', 'bot.chat', 'bot.quit', 'bot.setControlState',
+    'bot.getControlState', 'bot.clearControlStates', 'bot.look', 'bot.lookAt', 'bot.waitForTicks',
+    'bot.acceptResourcePack', 'bot.denyResourcePack', 'bot.setSettings', 'bot.physics.simulatePlayer',
+    'bot.physics.adjustPositionHeight'
+  ]
+
+  it('every plugin method is implemented or a stub flagged notImplemented with its owner unit', async () => {
     const { bot } = await createInjectedBot()
     const fns = pluginFunctions(bot)
     assert.ok(fns.length > 90, `expected the full method surface, got ${fns.length}`)
     for (const [name, fn] of fns) {
-      assert.ok(isStub(fn), `${name} should be a notImplemented stub`)
+      if (U4_IMPLEMENTED.includes(name)) {
+        assert.ok(!isStub(fn), `${name} is implemented by U4`)
+        continue
+      }
+      if (!isStub(fn)) continue // implemented by a later unit
       assert.match(fn.unit, /^U\d+$/, `${name}.unit`)
     }
+    for (const name of U4_IMPLEMENTED) assert.ok(fns.some(([n]) => n === name), `${name} is part of the surface`)
   })
 
   it('stubs throw (sync APIs) or reject (promise APIs) with NotImplementedError', async () => {
     const { bot } = await createInjectedBot()
-    assert.throws(() => bot.chat('hi'), (err) => err instanceof NotImplementedError && err.notImplemented && err.unit === 'U4')
+    assert.throws(() => bot.whisper('someone', 'hi'), (err) => err instanceof NotImplementedError && err.notImplemented && err.unit === 'U6')
     const p = bot.equip(null, 'hand')
     assert.ok(p instanceof Promise, 'async stubs return a promise instead of throwing')
     await assert.rejects(p, (err) => err.notImplemented === true && err.unit === 'U8')
     await assert.rejects(bot.creative.flyTo(null), (err) => err.unit === 'U8')
     assert.doesNotThrow(() => bot.stopDigging(), 'stopDigging is a no-op while idle, like upstream')
-    assert.throws(() => { bot.controlState.forward = true }, (err) => err.notImplemented === true)
+    assert.throws(() => bot.swingArm(), (err) => err.notImplemented === true && err.unit === 'U7')
   })
 
   it('end() closes the client and forwards end/error events', async () => {

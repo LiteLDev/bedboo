@@ -25,6 +25,8 @@ export function createBot (options: BotOptions): Bot
 
 // bedrock-protocol's ClientOptions.viewDistance is `number`; mineflayer's (below) also accepts names.
 export interface BotOptions extends Omit<ClientOptions, 'viewDistance'> {
+  /** mineflayer auth: 'offline' (default) or 'microsoft' (Xbox Live via prismarine-auth); 'mojang' does not exist on Bedrock */
+  auth?: 'microsoft' | 'offline'
   logErrors?: boolean
   hideErrors?: boolean
   loadInternalPlugins?: boolean
