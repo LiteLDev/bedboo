@@ -30,6 +30,7 @@ const assert = require('assert')
 const { Vec3 } = require('vec3')
 const { isStub } = require('../bedrock/errors')
 const { Physics, PlayerState } = require('../physics')
+const { getEffectLevel: effectLevel } = require('../physics/engine')
 const { moveVector, rawMoveVector, buildFlags } = require('../physics/input')
 const conv = require('../bedrock/conversions')
 const { createDoneTask, createTask } = require('mineflayer/lib/promise_utils')
@@ -39,13 +40,15 @@ const DEFAULT_REWIND_HISTORY = 40
 const HISTORY_MARGIN = 20
 /** creative flyTo: arrival tolerance (blocks), lookahead ticks, ticks without progress before giving up */
 const FLY_TO_TOLERANCE = 0.15
-const FLY_TO_LOOKAHEAD = 12
+const FLY_TO_LOOKAHEAD = 6
 const FLY_TO_STALL_TICKS = 60
 const FLY_TO_JUMP_REPRESS = 12
 /** BDS only starts gliding when start_gliding comes with a jump press (measured) */
 const GLIDE_START_FLAGS = ['jump_down', 'jumping', 'want_up', 'jump_current_raw', 'jump_pressed_raw', 'start_jumping']
 /** a glide the server has not confirmed after this many ticks is dropped */
 const GLIDE_CONFIRM_TICKS = 20
+/** a flight request the server has not answered (update_abilities) after this many ticks is dropped */
+const FLIGHT_CONFIRM_TICKS = 20
 
 module.exports = inject
 
@@ -75,6 +78,8 @@ function inject (bot, { physicsEnabled }) {
   let flyTarget = null // { destination: Vec3, resolve, reject }
   let vehicleInput = { left: 0, forward: 0 }
   let pendingFlightRequest = null // request_ability flying value to send with the next input
+  let flightRequestTick = null // tick of the input after the last request_ability, until update_abilities answers
+  let serverMayFly = null // update_abilities may_fly
   let skipNext = false // the next input is the first one after a teleport: not simulated (BDS does the same)
   const history = [] // [{ tick, input, state, simulated }] oldest first
   const correctionListeners = new Set()
@@ -160,7 +165,7 @@ function inject (bot, { physicsEnabled }) {
   /** snapshot of everything one engine step reads (for replay) */
   function captureInput () {
     let control = effectiveControls()
-    let rawControl = { ...controlState }
+    let rawControl = { ...controlState, jump: controlState.jump || bot.jumpQueued }
     if (flyTarget && flying) {
       const plan = flyToPlan()
       bot.entity.yaw = plan.yaw
@@ -291,6 +296,11 @@ function inject (bot, { physicsEnabled }) {
     if (pendingFlightRequest !== null) {
       bot._client.queue('request_ability', { ability: 'flying', value_type: 'bool', bool_value: pendingFlightRequest, float_val: 0 })
       pendingFlightRequest = null
+      flightRequestTick = BigInt(tick)
+    } else if (flightRequestTick !== null && BigInt(tick) - flightRequestTick > FLIGHT_CONFIRM_TICKS) {
+      // no update_abilities answered the request: the server keeps the previous flight state
+      flightRequestTick = null
+      setFlying(!flying, { request: false })
     }
     if (riding()) updateVehicleInput()
     const input = captureInput()
@@ -390,11 +400,12 @@ function inject (bot, { physicsEnabled }) {
   }
 
   // ---- server-forced moves --------------------------------------------------------------------------
-  function emitForcedMove () {
+  /** `move` + `forcedMove`; teleports reset the jump cooldown like upstream, corrections keep the replayed one */
+  function emitForcedMove ({ resetJump = true } = {}) {
     const entity = bot.entity
     const oldPos = lastSent ? lastSent.position : entity.position.clone()
     lastSent = { position: entity.position.clone(), yaw: entity.yaw, pitch: entity.pitch }
-    bot.jumpTicks = 0
+    if (resetJump) bot.jumpTicks = 0
     bot.emit('move', oldPos)
     bot.emit('forcedMove')
   }
@@ -425,7 +436,10 @@ function inject (bot, { physicsEnabled }) {
     if (!flying && flyTarget) cancelFlyTo(new Error('flight stopped'))
     // sent right before the next player_auth_input (same batch): BDS applies the ability on receipt and the input
     // that follows is the first one simulated with the new flight state, like ours
-    if (request) pendingFlightRequest = flying
+    if (request) {
+      pendingFlightRequest = flying
+      flightRequestTick = null
+    }
   }
 
   // the server's view of our flight (gamemode changes, /ability, confirmations of our requests)
@@ -434,9 +448,17 @@ function inject (bot, { physicsEnabled }) {
     const base = (packet.abilities ?? []).find((layer) => layer.type === 'base')
     if (!base?.enabled) return
     serverFlySpeed = typeof base.fly_speed === 'number' ? base.fly_speed : serverFlySpeed
+    if (typeof base.enabled.may_fly === 'boolean') serverMayFly = base.enabled.may_fly
+    flightRequestTick = null
     const serverFlying = !!base.enabled.flying && base.enabled.may_fly !== false
     if (serverFlying !== flying) setFlying(serverFlying, { request: false })
   })
+
+  function mayFly () {
+    if (serverMayFly !== null) return serverMayFly
+    const mode = bot.game?.gameMode
+    return mode === undefined || mode === 'creative' || mode === 'spectator'
+  }
 
   // ---- creative flyTo ---------------------------------------------------------------------------------
   // Bedrock movement is server-authoritative, so flyTo cannot move the bot by setting its position like upstream:
@@ -524,6 +546,7 @@ function inject (bot, { physicsEnabled }) {
    */
   function flyTo (destination) {
     if (!bot.entity) return Promise.reject(new Error('flyTo: no bot entity'))
+    if (!mayFly()) return Promise.reject(new Error('flyTo: flying is not allowed (game mode)'))
     if (flyTarget) cancelFlyTo(new Error('flyTo: superseded by a new destination'))
     setFlying(true)
     return new Promise((resolve, reject) => {
@@ -680,7 +703,7 @@ function inject (bot, { physicsEnabled }) {
     for (const fn of correctionListeners) {
       try { fn(info) } catch (err) { bot.emit('error', err) }
     }
-    emitForcedMove()
+    emitForcedMove({ resetJump: false })
   })
 
   function replayFrom (index, corrected) {
@@ -838,11 +861,7 @@ function inject (bot, { physicsEnabled }) {
   }
 
   function getEffectLevel (effectName, effects) {
-    const effectDescriptor = bot.registry.effectsByName[effectName]
-    if (!effectDescriptor) return 0
-    const effectInfo = effects?.[effectDescriptor.id]
-    if (!effectInfo) return 0
-    return effectInfo.amplifier + 1
+    return effectLevel(bot.registry, effectName, effects)
   }
 
   bot.elytraFly = async () => {
@@ -864,8 +883,9 @@ function inject (bot, { physicsEnabled }) {
       throw new Error('Elytra must be equip to start flying')
     }
     // Bedrock: start_gliding in the next player_auth_input; the engine glides from that tick on (client prediction,
-    // the server confirms with the `gliding` actor flag)
+    // the server confirms with the `gliding` actor flag); actor data older than that input does not cancel it
     gliding = true
+    glideRequestTick = (bot._bedrock.input.lastTick ?? 0n) + 1n
     bot.entity.elytraFlying = true
   }
 

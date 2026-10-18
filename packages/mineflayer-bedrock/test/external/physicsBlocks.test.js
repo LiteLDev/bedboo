@@ -96,12 +96,13 @@ describe('physics: liquids, climbables, special blocks, falls, knockback, effect
     await walk(['sneak'], 800)
     await walk([], 600)
     await walk(['jump'], 800)
+    await walk([], 2500) // slide down to the ground: compare at rest
     await verify('ladder')
     await settle(new Vec3(x + 0.5, -60, 4.5))
     await walk(['forward', 'jump'], 1500)
     assert.ok(env.bot.entity.position.y > -58, `climbed the vine: ${env.bot.entity.position}`)
     await walk(['sneak'], 800)
-    await walk([], 1500)
+    await walk([], 2500)
     await verify('vine')
   })
 
@@ -140,16 +141,20 @@ describe('physics: liquids, climbables, special blocks, falls, knockback, effect
 
   it('bubble columns: carried up (soul sand), pulled down (magma)', async () => {
     const x = 100
-    await area(x, [`fill ${x + 3} -63 -1 ${x + 5} -40 1 glass`, `fill ${x + 4} -62 0 ${x + 4} -41 0 water`, `setblock ${x + 4} -63 0 soul_sand`])
-    await sleep(2500)
+    // two columns: soul sand (x + 4) and magma (x + 8), base block first, then the water
+    await area(x, [
+      `fill ${x + 3} -63 -1 ${x + 9} -40 1 glass`,
+      `setblock ${x + 4} -63 0 soul_sand`,
+      `setblock ${x + 8} -63 0 magma`,
+      `fill ${x + 4} -62 0 ${x + 4} -41 0 water`,
+      `fill ${x + 8} -62 0 ${x + 8} -41 0 water`
+    ])
+    await sleep(3000)
     await settle(new Vec3(x + 4.5, -62, 0.5))
     await sleep(3000)
     assert.ok(env.bot.entity.position.y > -50, `carried up: ${env.bot.entity.position}`)
     await verify('bubble up')
-    // a fresh column over magma (changing the base of an existing column converts it slowly)
-    await commands(env.server, [`fill ${x + 4} -62 0 ${x + 4} -41 0 air`, `setblock ${x + 4} -63 0 magma`, `fill ${x + 4} -62 0 ${x + 4} -41 0 water`])
-    await sleep(2500)
-    await settle(new Vec3(x + 4.5, -45, 0.5))
+    await settle(new Vec3(x + 8.5, -45, 0.5))
     await sleep(3000)
     assert.ok(env.bot.entity.position.y < -55, `pulled down: ${env.bot.entity.position}`)
     await verify('bubble down')

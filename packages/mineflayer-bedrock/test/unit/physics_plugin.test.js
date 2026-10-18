@@ -212,10 +212,14 @@ describe('physics plugin (U5): Bedrock movement over player_auth_input', functio
   })
 
   it('flyTo: flies there with flight inputs (no teleports) and resolves when stopped at the destination', async () => {
-    const { bot, tick, inputs } = await spawned()
+    const { bot, client, tick, inputs } = await spawned()
+    const abilities = (flying) => client.receive('update_abilities', { entity_unique_id: bot._bedrock.ids.selfUniqueId(), permission_level: 'operator', command_permission: 'operator', abilities: [{ type: 'base', allowed: {}, enabled: { flying, may_fly: true }, fly_speed: 0.05, vertical_fly_speed: 1, walk_speed: 0.1 }] })
+    abilities(false) // creative: may fly
     const target = new Vec3(4.5, -55, 3.5)
     const state = { done: false }
     const p = bot._bedrock.physics.flyTo(target).then(() => { state.done = true })
+    tick()
+    abilities(true) // the server grants the request
     for (let i = 0; i < 200 && !state.done; i++) {
       tick()
       await Promise.resolve()

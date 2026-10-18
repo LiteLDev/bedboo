@@ -20,7 +20,7 @@
 // - sneak edge avoidance shrinks the box by 0.025, probes 1.01 x step height down and clips the velocity itself;
 //   the sneaking box is 1.49 high;
 // - climbing: vy >= -0.2; jump climbs 0.2 (then gravity), a horizontal collision sets 0.2 as the end velocity; no
-//   horizontal clamp, sneaking holds; ladders collide with a 3/16 box;
+//   horizontal clamp, sneaking holds;
 // - cobweb x0.25/x0.05/x0.25 before the move, velocity reset after it; powder snow / berry bushes likewise (Java
 //   factors); soul sand: ground speed x 0.544; honey and slime: "step on" x (0.4 + |vy| x 0.2), honey jump x 0.6;
 //   slime bounce from the air; bed bounce;
@@ -173,23 +173,8 @@ function Physics (registry, world) {
     return surroundingBBs
   }
 
-  // Bedrock collision boxes missing from minecraft-data's blockCollisionShapes (measured on BDS 1.26.51): a ladder is
-  // a 3/16 thick box against the block it hangs on (facing_direction = the side it faces)
-  const LADDER_SHAPES = {
-    2: [[0, 0, 0.8125, 1, 1, 1]],
-    3: [[0, 0, 0, 1, 1, 0.1875]],
-    4: [[0.8125, 0, 0, 1, 1, 1]],
-    5: [[0, 0, 0, 0.1875, 1, 1]]
-  }
-  const ladderId = idOf('ladder')
-
   function collisionShapes (block) {
-    if (!block) return null
-    if (block.type === ladderId) {
-      const facing = (block.getProperties ? block.getProperties() : block._properties ?? {}).facing_direction
-      return LADDER_SHAPES[facing] ?? block.shapes
-    }
-    return block.shapes
+    return block ? block.shapes : null
   }
 
   function noCollision (world, bb) {
@@ -327,7 +312,7 @@ function Physics (registry, world) {
         // the part of the tick spent before the contact
         vel.y = f32(-move.oldVelY + physics.gravity * (move.dy / move.oldVelY))
         if (vel.y < BEDROCK.slimeBounceMin) vel.y = 0
-      } else if (move.oldVelY < 0 && !entity.control.sneak && below?.type === bedId) {
+      } else if (move.oldVelY < 0 && !entity.control.sneak && below?.type === bedId && !move.wasOnGround) {
         vel.y = f32(Math.min(1, -BEDROCK.bedBounce * vel.y))
       } else {
         vel.y = 0
@@ -457,7 +442,7 @@ function Physics (registry, world) {
         flow.z += dz * f
       }
     }
-    if (block.metadata >= 8) {
+    if (waterIds.has(block.type) && block.metadata >= 8) {
       for (const [dx, dz] of [[0, 1], [-1, 0], [0, -1], [1, 0]]) {
         const adjBlock = world.getBlock(block.position.offset(dx, 0, dz))
         const adjUpBlock = world.getBlock(block.position.offset(dx, 1, dz))

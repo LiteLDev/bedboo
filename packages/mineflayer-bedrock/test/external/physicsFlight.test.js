@@ -32,10 +32,12 @@ describe('physics: creative flight, flyTo, elytra (U5)', function () {
     const { bot, server } = env
     await bot.test.becomeCreative()
     await commands(server, ['fill -5 -60 -5 20 -40 20 air'])
-    await place(bot, new Vec3(0.5, -55, 0.5), 800)
+    // start flying in mid-air (taking off from the ground: see docs/differences/U5.md#residuals)
+    await place(bot, new Vec3(0.5, -55, 0.5), 50)
     const flying = waitFlying(bot, true)
     bot._bedrock.physics.setFlying(true)
     await flying
+    await sleep(1000)
     const rec = correctionRecorder(bot)
     const phases = { hover: String(bot._bedrock.input.lastTick) }
     try {
