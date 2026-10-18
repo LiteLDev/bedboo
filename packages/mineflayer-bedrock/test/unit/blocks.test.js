@@ -107,6 +107,97 @@ describe('world core (blocks.js) on the BDS 1.26.51.1 join capture', function ()
     assert.strictEqual(bot.blockAt(new Vec3(4, -60, 4)).superimposed.name, 'water')
   })
 
+  it('layer-0 updates apply Bedrock\'s liquid-layer rule (BDS sends layer 0 only), confirmed by re-requesting the sub-chunk', async () => {
+    const { bot, client } = await joined()
+    const reg = bot.registry
+    const Chunk = require('prismarine-chunk')(reg)
+    const Block = require('prismarine-block')(reg)
+    const rid = (name, props) => {
+      const state = props ? Block.fromProperties(name, props, 0).stateId : reg.blocksByName[name].defaultState
+      return reg.runtimeIdByStateId[state]
+    }
+    const layer0 = (x, z, name, props) => client.receive('update_block', { position: { x, y: -60, z }, block_runtime_id: rid(name, props), flags: { _value: 3 }, layer: 0 })
+    const view = (x, z) => {
+      const b = bot.blockAt(new Vec3(x, -60, z))
+      return `${b.name}${b.superimposed ? '+' + b.superimposed.name : ''}${b.isWaterlogged ? ' (wl)' : ''}`
+    }
+    const updates = []
+    bot.on('blockUpdate', (o, n) => updates.push(`${n.position}: ${o.name}${o.superimposed ? '+' + o.superimposed.name : ''} → ${n.name}${n.superimposed ? '+' + n.superimposed.name : ''}`))
+    /** the server's answer to a re-request: the sub-chunk with the given blocks (layer 0 [+ layer 1]) */
+    function answer (blocks) {
+      const column = new Chunk({ x: 0, z: 0, minY: -64, worldHeight: 384 })
+      for (const [x, z, name0, name1] of blocks) {
+        column.setBlockStateId(new Vec3(x, -60, z), reg.blocksByName[name0].defaultState)
+        if (name1) {
+          const pos = new Vec3(x, -60, z)
+          pos.l = 1
+          column.setBlockStateId(pos, reg.blocksByName[name1].defaultState)
+        }
+      }
+      const section = column.getSectionAtIndex(-4)
+      section.y = -4 & 0xff // prismarine-chunk writes the index as an unsigned byte (BDS sends -4 as 0xfc)
+      return column.networkEncodeSubChunkNoCache(-4).then(payload => client.receive('subchunk', { cache_enabled: false, dimension: 0, origin: { x: 0, y: 0, z: 0 }, entries: [{ dx: 0, dy: -4, dz: 0, result: 'success', payload, heightmap_type: 'no_data', render_heightmap_type: 'no_data' }] }))
+    }
+    const refreshes = () => client.sent('subchunk_request').filter(r => r.requests.length === 1)
+
+    // a water source replaced by a fence (live: update_subchunk_blocks, two layer-0 fence entries, `extra` empty):
+    // predicted waterlogged, then confirmed by the server
+    layer0(4, 4, 'water')
+    client.clearSent()
+    client.receive('update_subchunk_blocks', { x: 0, y: -4, z: 0, blocks: [0, 1].map(() => ({ position: { x: 4, y: -60, z: 4 }, runtime_id: rid('oak_fence'), flags: 3, entity_unique_id: 0n, transition_type: 'entity' })), extra: [] })
+    assert.strictEqual(view(4, 4), 'oak_fence+water (wl)')
+    assert.deepStrictEqual(refreshes(), [{ dimension: 0, requests: [{ x: 0, y: -4, z: 0 }], origin: { x: 0, y: 0, z: 0 } }], 'one request for the sub-chunk')
+    // the waterlogged fence replaced by stone: dry at once (a full cube: certain, nothing asked), one blockUpdate with
+    // both layers
+    updates.length = 0
+    layer0(4, 4, 'stone')
+    assert.strictEqual(view(4, 4), 'stone')
+    assert.deepStrictEqual(updates, ['(4, -60, 4): oak_fence+water → stone'])
+    assert.strictEqual(refreshes().length, 1)
+    // a water source replaced by a torch: predicted wet, the server says dry → corrected
+    layer0(6, 6, 'water')
+    layer0(6, 6, 'torch')
+    assert.strictEqual(view(6, 6), 'torch+water (wl)')
+    updates.length = 0
+    await answer([[4, 4, 'stone'], [6, 6, 'torch', 'water']]) // the answer to the first request (may predate the torch)
+    assert.deepStrictEqual(updates, [], 'the fence is now stone in both; the torch is asked for again')
+    assert.strictEqual(refreshes().length, 2)
+    await answer([[4, 4, 'stone'], [6, 6, 'torch']])
+    assert.deepStrictEqual(updates, ['(6, -60, 6): torch+water → torch'], 'only the changed block')
+    assert.deepStrictEqual([view(6, 6), view(4, 4)], ['torch', 'stone'])
+    // a waterlogged ladder replaced by a slab keeps the water; by air or water: the liquid layer empties (no request)
+    client.clearSent()
+    layer0(8, 8, 'water')
+    layer0(8, 8, 'ladder')
+    await answer([[8, 8, 'ladder', 'water']])
+    layer0(8, 8, 'oak_slab')
+    await answer([[8, 8, 'oak_slab', 'water']])
+    assert.strictEqual(view(8, 8), 'oak_slab+water (wl)')
+    assert.strictEqual(refreshes().length, 2)
+    // the same block in another state (a slab turned into a top slab, a trapdoor toggling): certain, no request
+    layer0(8, 8, 'oak_slab', { 'minecraft:vertical_half': 'top' })
+    assert.strictEqual(view(8, 8), 'oak_slab+water (wl)')
+    assert.strictEqual(refreshes().length, 2)
+    layer0(8, 8, 'air')
+    assert.strictEqual(view(8, 8), 'air')
+    layer0(9, 9, 'water')
+    layer0(9, 9, 'oak_fence')
+    layer0(9, 9, 'water')
+    assert.strictEqual(view(9, 9), 'water')
+    // flowing water (not a source) does not waterlog; neither does lava
+    layer0(10, 10, 'water', { liquid_depth: 1 })
+    layer0(10, 10, 'oak_fence')
+    layer0(11, 11, 'lava')
+    layer0(11, 11, 'oak_fence')
+    assert.deepStrictEqual([view(10, 10), view(11, 11)], ['oak_fence', 'oak_fence'])
+    assert.strictEqual(refreshes().length, 3, 'only the uncertain cases ask the server (the 9,9 fence)')
+    // an answer whose layer 0 is already outdated does not touch the block
+    updates.length = 0
+    await answer([[9, 9, 'oak_fence', 'water']])
+    assert.strictEqual(view(9, 9), 'water')
+    assert.deepStrictEqual(updates, [])
+  })
+
   it('network_chunk_publisher_update unloads columns outside the radius (chunkColumnUnload)', async () => {
     const { bot, client, loads } = await joined()
     const unloaded = []

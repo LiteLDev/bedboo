@@ -131,6 +131,55 @@ describe('chat core (U4 → U6)', function () {
     await assert.rejects(bot._bedrock.commands.request('/nothing', { timeout: 10 }), /timed out/)
   })
 
+  it('commands.request: a successful command without output (say, tellraw, feedback off) resolves after its command_executed event', async () => {
+    const { bot, client } = await joined()
+    // BDS 1.26.51.1: event { command_executed, event_data: 08 02 00 <len> <name> 00 } for every successful command,
+    // right before its command_output (same batch) when it has one; failed commands only get a command_output
+    const executed = (name) => client.receive('event', { runtime_id: 8589934589n, event_type: 'command_executed', use_player_id: 1, event_data: Buffer.concat([Buffer.from([8, 2, 0, name.length]), Buffer.from(name), Buffer.from([0])]) })
+    const output = (request, fields) => client.receive('command_output', { origin: request.origin, output_type: 'alloutput', success_count: 1, output: [], has_data: false, ...fields })
+    const sent = () => client.sent('command_request')
+    const t0 = Date.now()
+    const say = bot._bedrock.commands.request('/say hi', { timeout: 5000 })
+    const time = bot._bedrock.commands.request('/time set 5', { timeout: 5000 })
+    const bad = bot._bedrock.commands.request('/nosuchcmd', { timeout: 5000 })
+    const [sayReq, timeReq, badReq] = sent()
+    executed('say') // /say: the event only
+    executed('time') // /time: event, then its output
+    output(timeReq, { output: [{ message_id: 'commands.time.set', success: true, parameters: ['5'] }] })
+    output(badReq, { success_count: 0, output: [{ message_id: 'commands.generic.unknown', success: false, parameters: ['nosuchcmd'] }] })
+    const [sayOut, timeOut, badOut] = await Promise.all([say, time, bad])
+    assert.ok(Date.now() - t0 < 1000, 'well before the timeout')
+    assert.deepStrictEqual([sayOut.output_type, sayOut.success_count, sayOut.output, sayOut.origin.uuid], ['none', 1, [], sayReq.origin.uuid])
+    assert.strictEqual(timeOut.output[0].message_id, 'commands.time.set')
+    assert.strictEqual(badOut.success_count, 0)
+    // events are matched by command name, oldest request first
+    const a = bot._bedrock.commands.request('/tellraw @a {"rawtext":[{"text":"x"}]}', { timeout: 5000 })
+    const b = bot._bedrock.commands.request('/me waves', { timeout: 5000 })
+    executed('me')
+    executed('tellraw')
+    assert.strictEqual((await b).output_type, 'none')
+    assert.strictEqual((await a).output_type, 'none')
+    // an output that arrives before its event (not seen on BDS) does not make the next request of that name resolve
+    const c1 = bot._bedrock.commands.request('/time set 1', { timeout: 5000 })
+    const c2 = bot._bedrock.commands.request('/time set 2', { timeout: 5000 })
+    const [, , , , , c1Req, c2Req] = sent()
+    output(c1Req, { output: [{ message_id: 'commands.time.set', success: true, parameters: ['1'] }] })
+    executed('time') // c1's late event
+    await new Promise(resolve => setTimeout(resolve, 250))
+    executed('time')
+    output(c2Req, { output: [{ message_id: 'commands.time.set', success: true, parameters: ['2'] }] })
+    assert.deepStrictEqual([(await c1).output[0].parameters, (await c2).output[0].parameters], [['1'], ['2']])
+  })
+
+  it('bot.whisper: selectors verbatim (/tell @p …), player names quoted when needed', async () => {
+    const { bot, client } = await joined()
+    bot.whisper('@p', 'hi')
+    bot.whisper('@a[r=5]', 'all')
+    bot.whisper('Steve Builder', 'yo')
+    bot.whisper('gary', 'hey')
+    assert.deepStrictEqual(client.sent('command_request').map(r => r.command), ['/tell @p hi', '/tell @a[r=5] all', '/tell "Steve Builder" yo', '/tell gary hey'])
+  })
+
   it('bot.chat splits like upstream (chatLengthLimit, newlines), accepts numbers, rejects other types', async () => {
     const { bot, client } = await joined()
     bot.chat('a'.repeat(300))

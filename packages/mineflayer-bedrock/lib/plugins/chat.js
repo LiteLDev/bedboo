@@ -22,9 +22,9 @@
 //   jukebox_popup → 'game_info' + 'actionBar'); set_title action bar messages → 'game_info' + 'actionBar'.
 // - command_output → one 'message'/'messagestr' (position 'system') per output line: { translate: message_id,
 //   with: parameters }.
-// - default chat patterns: Bedrock chat / whisper packets name their sender (`source_name`), so for those the
-//   default 'chat' / 'whisper' patterns take username and message from the packet (names with spaces work);
-//   every other message goes through upstream's regexes (e.g. /tellraw "<name> text", /say "[name] text").
+// - default chat patterns: Bedrock chat / whisper / announcement (/say) packets name their sender (`source_name`), so
+//   for those the default 'chat' / 'whisper' patterns take username and message from the packet (names with spaces
+//   work); every other message goes through upstream's regexes (e.g. /tellraw "<name> text").
 // - unmatchedMessage (declared in mineflayer's index.d.ts, never emitted by 4.39.0): emitted for every message no
 //   chat pattern matched.
 // - bot.tabComplete: client-side from available_commands (lib/bedrock/commands.js); same promise shape as
@@ -32,12 +32,14 @@
 //
 // Internal hooks: `bot._bedrock.chat = { emitMessage, chatWithHeader, send, parser }` (emitMessage is the single
 //   emitter of 'message'/'messagestr'), `bot._bedrock.commands = { request(command, { timeout }) →
-//   Promise<command_output params>, pending, tree }`.
+//   Promise<command_output params>, pending, tree }` (a successful command without output — say, me, tellraw, any
+//   command with sendcommandfeedback off — resolves ~100 ms after its command_executed event with
+//   { output_type: 'none', success_count: 1, output: [] }; failed commands always have a command_output).
 'use strict'
 const crypto = require('crypto')
 const { onceWithCleanup } = require('mineflayer/lib/promise_utils')
 const { createTextParser, parserFor } = require('../bedrock/text')
-const { createCommandTree, quoteName } = require('../bedrock/commands')
+const { createCommandTree, quoteTarget, commandName, executedCommandName } = require('../bedrock/commands')
 const { createPlayerNames } = require('../bedrock/player_list')
 
 module.exports = inject
@@ -46,6 +48,8 @@ const USERNAME_REGEX = '(?:\\(.{1,15}\\)|\\[.{1,15}\\]|.){0,5}?(\\w+)'
 const LEGACY_VANILLA_CHAT_REGEX = new RegExp(`^${USERNAME_REGEX}\\s?[>:\\-»\\]\\)~]+\\s(.*)$`)
 
 const COMMAND_TIMEOUT_MS = 10000
+// how long a request waits for the command_output after its command_executed event (same batch on BDS)
+const SILENT_GRACE_MS = 100
 
 function inject (bot, options) {
   const CHAT_LENGTH_LIMIT = options.chatLengthLimit ?? (bot.supportFeature('lessCharsInChat') ? 100 : 256)
@@ -209,42 +213,95 @@ function inject (bot, options) {
     bot.emit('actionBar', message, null)
   })
 
-  // command_request / command_output correlation (origin uuid echoed by BDS)
-  const pendingCommands = new Map()
+  // command_request / command_output correlation (origin uuid echoed by BDS). A command that succeeds without any
+  // output (say, me, tellraw, …, or any command while the sendcommandfeedback gamerule is off) gets no
+  // command_output at all: BDS only sends `event { event_type: 'command_executed' }` for it. That event comes for
+  // every successful command, right BEFORE its command_output in the same batch (never for a failed one, which
+  // always gets a command_output), so a request whose event arrived and whose output did not follow within
+  // SILENT_GRACE_MS resolves with an empty command_output.
+  const pendingCommands = new Map() // uuid → { uuid, name, resolve, reject, timer, executed, grace }; send order
+  const answeredBeforeEvent = [] // { name, at }: successful outputs whose event was not seen (defensive: other order)
+  const pruneAnswered = () => {
+    while (answeredBeforeEvent.length && (answeredBeforeEvent.length > 32 || Date.now() - answeredBeforeEvent[0].at > SILENT_GRACE_MS * 10)) answeredBeforeEvent.shift()
+  }
+  function settleCommand (pending, packet) {
+    if (pendingCommands.get(pending.uuid) !== pending) return
+    pendingCommands.delete(pending.uuid)
+    clearTimeout(pending.timer)
+    clearTimeout(pending.grace)
+    if (!pending.executed && packet.success_count > 0) {
+      answeredBeforeEvent.push({ name: pending.name, at: Date.now() })
+      pruneAnswered()
+    }
+    pending.resolve(packet)
+  }
   bot._client.on('command_output', (packet) => {
     for (const message of text.parseCommandOutput(packet)) emitMessage(message, 'system')
     const uuid = packet.origin?.uuid
     const pending = uuid && pendingCommands.get(uuid)
-    if (pending) {
-      pendingCommands.delete(uuid)
-      clearTimeout(pending.timer)
-      pending.resolve(packet)
+    if (pending) settleCommand(pending, packet)
+  })
+  bot._client.on('event', (packet) => {
+    if (packet.event_type !== 'command_executed') return
+    const name = executedCommandName(packet.event_data)
+    // the event may name the command an alias stands for ('tp' → 'teleport', 'w' → 'tell')
+    const canonical = name === null ? null : commandTree.canonicalName(name)
+    const matches = (n) => name === null || n === name || commandTree.canonicalName(n) === canonical
+    pruneAnswered()
+    const early = answeredBeforeEvent.findIndex(a => matches(a.name))
+    if (early !== -1) {
+      answeredBeforeEvent.splice(early, 1)
+      return
+    }
+    // the oldest request of that command still waiting for its event (a Map iterates in insertion order)
+    for (const pending of pendingCommands.values()) {
+      if (pending.executed || !matches(pending.name)) continue
+      pending.executed = true
+      pending.grace = setTimeout(() => settleCommand(pending, silentOutput(pending)), SILENT_GRACE_MS)
+      pending.grace.unref?.()
+      return
     }
   })
+  /** the command_output params of a successful command without output */
+  function silentOutput (pending) {
+    return {
+      origin: { type: 'player', uuid: pending.uuid, request_id: '', player_entity_id: 0n },
+      output_type: 'none',
+      success_count: 1,
+      output: [],
+      has_data: false
+    }
+  }
   bot.on('end', () => {
-    for (const { reject, timer } of pendingCommands.values()) {
+    for (const { reject, timer, grace } of pendingCommands.values()) {
       clearTimeout(timer)
+      clearTimeout(grace)
       reject(new Error('bot ended before the command output arrived'))
     }
     pendingCommands.clear()
   })
 
   /**
-   * Run a command as the player (command_request) and resolve with its command_output params.
+   * Run a command as the player (command_request) and resolve with its command_output params; a successful command
+   * without output resolves with `{ output_type: 'none', success_count: 1, output: [] }` (see above). Rejects when
+   * neither arrives within `timeout`.
    * `bot._bedrock.commands.request('/time set 1000')`
    */
   function requestCommand (command, { timeout = COMMAND_TIMEOUT_MS } = {}) {
     const uuid = crypto.randomUUID()
+    const line = command.startsWith('/') ? command : `/${command}`
     const promise = new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
+      const pending = { uuid, name: commandName(line), resolve, reject, timer: null, executed: false, grace: null }
+      pending.timer = setTimeout(() => {
         pendingCommands.delete(uuid)
+        clearTimeout(pending.grace)
         reject(new Error(`timed out after ${timeout} ms waiting for the output of ${command}`))
       }, timeout)
-      timer.unref?.()
-      pendingCommands.set(uuid, { resolve, reject, timer })
+      pending.timer.unref?.()
+      pendingCommands.set(uuid, pending)
     })
     bot._client.queue('command_request', {
-      command: command.startsWith('/') ? command : `/${command}`,
+      command: line,
       origin: { type: 'player', uuid, request_id: '', player_entity_id: 0n },
       internal: false,
       version: 'latest'
@@ -328,7 +385,8 @@ function inject (bot, options) {
   }
 
   bot.whisper = (username, message) => {
-    chatWithHeader(`/tell ${quoteName(username)} `, message)
+    // selectors verbatim (`/tell @p hi`, like upstream); a quoted '"@p"' matches no target on BDS
+    chatWithHeader(`/tell ${quoteTarget(username)} `, message)
   }
   bot.chat = (message) => {
     chatWithHeader('', message)

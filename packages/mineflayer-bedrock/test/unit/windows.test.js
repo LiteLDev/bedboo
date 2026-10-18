@@ -329,4 +329,57 @@ describe('windows: container_open → windowOpen / windowClose (U8)', function (
       await window.close()
     }
   })
+
+  it('opening a container while another one is open closes it first (windowClose, close echo) like Java\'s server; a lever does not', async () => {
+    const { bot, client, clock } = await joined()
+    const Block = require('prismarine-block')(bot.registry)
+    async function until (predicate) {
+      for (let i = 0; i < 100 && !predicate(); i++) {
+        await new Promise(resolve => setTimeout(resolve, 5))
+        clock.advance(50)
+        bot._bedrock.input.pump()
+      }
+      assert.ok(predicate(), 'condition not reached')
+    }
+    const place = (name, x) => {
+      const block = Block.fromStateId(bot.registry.blocksByName[name].defaultState, 0)
+      block.position = new Vec3(x, -60, 0)
+      bot.world.setBlock(block.position, block)
+      return bot.blockAt(block.position)
+    }
+    const chest = place('chest', 1)
+    const barrel = place('barrel', 2)
+    const lever = place('lever', 3)
+    const log = []
+    bot.on('windowOpen', (w) => log.push(`open ${w.id}`))
+    bot.on('windowClose', (w) => log.push(`close ${w.id}`))
+    const serve = async (opening, id, x) => {
+      await until(() => client.sent('inventory_transaction').some(t => t.transaction.transaction_data.block_position.x === x))
+      client.receive('container_open', { window_id: id, window_type: 'container', coordinates: { x, y: -60, z: 0 }, runtime_entity_id: -1n })
+      client.receive('inventory_content', { window_id: id, input: Array(27).fill(wireItem(bot, null)), container: { container_id: 'anvil_input' }, storage_item: wireItem(bot, null) })
+      return opening
+    }
+    const a = await serve(bot.openChest(chest), 3, 1)
+    assert.strictEqual(bot.currentWindow, a)
+    // a lever with the chest open: no close (BDS toggles it and keeps the chest open, like Java)
+    client.clearSent()
+    const activated = bot.activateBlock(lever)
+    await until(() => client.sent('inventory_transaction').length > 0)
+    await activated
+    assert.strictEqual(client.sent('container_close').length, 0)
+    assert.strictEqual(bot.currentWindow, a)
+    // the barrel without closing the chest: the chest closes first (echoed by the server helper), then the click
+    client.clearSent()
+    const b = await serve(bot.openContainer(barrel), 4, 2)
+    assert.deepStrictEqual(log, ['open 3', 'close 3', 'open 4'])
+    const order = client.written.map(([, name, p]) => name === 'inventory_transaction' ? `click ${p.transaction.transaction_data.block_position.x}` : name).filter(n => n === 'container_close' || n.startsWith('click'))
+    assert.deepStrictEqual(order, ['container_close', 'click 2'], 'the close goes out before the activation')
+    assert.strictEqual(client.sent('container_close')[0].window_id, 3)
+    assert.strictEqual(bot.currentWindow, b)
+    // the same block again while it is open: closed and reopened
+    client.clearSent()
+    const c = await serve(bot.openContainer(barrel), 5, 2)
+    assert.deepStrictEqual(log.slice(3), ['close 4', 'open 5'])
+    assert.strictEqual(bot.currentWindow, c)
+  })
 })

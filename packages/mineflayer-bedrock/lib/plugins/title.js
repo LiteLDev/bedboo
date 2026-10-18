@@ -28,6 +28,15 @@ function inject (bot) {
   const rawTitle = (json) => fromRawText(bot.registry, json).toString()
 
   bot._client.on('set_title', (packet) => {
+    try {
+      onTitle(packet)
+    } catch (err) {
+      // malformed JSON text from a non-vanilla sender must not escape into the packet pipeline (like chat.js)
+      bot.emit('error', err)
+    }
+  })
+
+  function onTitle (packet) {
     switch (packet.type) {
       case 'set_title':
         bot.emit('title', parseTitle(packet.text), 'title')
@@ -52,5 +61,5 @@ function inject (bot) {
         break
       // action_bar_message / action_bar_message_json: chat plugin ('actionBar')
     }
-  })
+  }
 }

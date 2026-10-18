@@ -11,7 +11,7 @@
 // - interacting sends update_trade { window_id, window_type: 'trading', trade_tier, villager_unique_id, display_name,
 //   offers: NBT { Recipes: [{ buyA, buyCountA, buyB?, buyCountB, sell, uses, maxUses, tier, traderExp, demand,
 //   priceMultiplierA/B, netId, rewardExp }], TierExpRequirements } } and NO container_open: the trade screen is
-//   opened by that packet (this plugin hands it to the inventory plugin as the 'trading' container: ingredient 1 =
+//   opened by that packet (the inventory plugin opens it as the 'trading' container: ingredient 1 =
 //   ui slot 4 `trade2_ingredient1`, ingredient 2 = ui slot 5 `trade2_ingredient2`, verified).
 // - the offers list every tier; Java sends only the unlocked ones, so `trades` = the recipes with tier <= trade_tier.
 // - prices: buyA.Count is the price the server charges (discounts such as Hero of the Village are folded in,
@@ -30,29 +30,14 @@ module.exports = inject
 
 /** entities whose interaction opens a trade window (Bedrock names) */
 const TRADER_NAMES = ['villager_v2', 'villager', 'wandering_trader']
-/** ms a closed trade window's id stays reserved while its container_close echo is pending */
-const CLOSING_MS = 2000
 
 function inject (bot) {
   const { entitiesByName } = bot.registry
   const Item = require('prismarine-item')(bot.registry)
 
-  // BDS opens the trading screen with update_trade alone (no container_open): open the merchant window through the
-  // inventory plugin's container_open path (window type 'trading' → minecraft:merchant); a resend for the open
-  // window only refreshes the offers.
-  // A refresh for a window the bot is closing (container_close not echoed yet) or while another window is open (BDS
-  // ignores activations then) opens nothing.
-  const closing = new Map() // window id → when the bot closed it
-  bot.on('windowClose', (window) => {
-    if (window?.type === 'minecraft:merchant') closing.set(window.id, Date.now())
-  })
-  bot._client.on('container_close', (packet) => closing.delete(windowIdOf(packet.window_id)))
-  bot._client.on('update_trade', (packet) => {
-    const id = windowIdOf(packet.window_id)
-    if (bot.currentWindow) return // the open trade window (offers refreshed below) or another one
-    if (Date.now() - (closing.get(id) ?? -Infinity) < CLOSING_MS) return
-    bot._client.emit('container_open', { window_id: packet.window_id, window_type: 'trading', runtime_entity_id: packet.villager_unique_id })
-  })
+  // BDS opens the trading screen with update_trade alone (no container_open): the inventory plugin opens the merchant
+  // window from it (window type 'trading' → minecraft:merchant, W3-FIX-B); a resend for the open window only
+  // refreshes the offers (gotTrades below).
 
   async function openVillager (villagerEntity) {
     const traderTypes = TRADER_NAMES.map(name => entitiesByName[name]?.id).filter(id => id !== undefined)

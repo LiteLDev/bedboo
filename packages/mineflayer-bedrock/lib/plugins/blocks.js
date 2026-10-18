@@ -113,7 +113,14 @@ function inject (bot) {
       const key = `${x},${z}`
       const pending = pendingColumns.get(key)
       const column = pending?.column ?? bot.world.getColumn(x, z)
+      const refresh = liquidRefreshes.get(`${x},${y},${z}`)
       if (!column) continue
+      if (refresh && !pending) {
+        onLiquidRefreshAnswer(refresh, column, y, entry)
+        continue
+      }
+      // a column still loading takes the answer as the whole sub-chunk (below)
+      if (refresh) onLiquidRefreshAnswer(refresh, null, y, entry)
       if (entry.result === 'success' && entry.payload) {
         try {
           // async signature, synchronous body: the section is set when the call returns
@@ -194,30 +201,191 @@ function inject (bot) {
     bot.world._emitBlockUpdate(oldBlock, column.getBlock(local), point)
   }
 
+  // ---- the liquid layer of layer-0 updates -----------------------------------------------------------
+  // BDS sends a layer-0 update only (update_block layer 0, update_subchunk_blocks `blocks` with an empty `extra`)
+  // when a block replaces a water source or a waterlogged block; the Bedrock client applies the liquid-layer rule
+  // itself: a block that can contain liquid keeps / takes the water in layer 1, any other block (and air or a
+  // liquid in layer 0) leaves layer 1 empty. Clients have no can-contain-liquid table (carpets, ladders, chests …
+  // can, full cubes cannot; Bedrock's set differs from Java's `waterlogged` blocks), so the layer is predicted
+  // (air / liquid / full cube → dry, any other block → keeps or takes the water) and, when it was not certain,
+  // confirmed by requesting that sub-chunk again (`refreshLiquidLayer`): the server's answer decides.
+  const air = () => bot.registry.blocksByName.air.defaultState
+  const stateIdType = (stateId) => bot.registry.blocksByStateId[stateId]?.id
+  const isLiquidName = (name) => /^(?:flowing_)?(?:water|lava)$/.test(name ?? '')
+  const isWaterName = (name) => name === 'water' || name === 'flowing_water'
+  function layerStateId (column, local, l) {
+    const pos = new Vec3(local.x, local.y, local.z)
+    pos.l = l
+    return column.getBlockStateId(pos) ?? air()
+  }
+  function setLayerStateId (column, local, l, stateId) {
+    const pos = new Vec3(local.x, local.y, local.z)
+    pos.l = l
+    column.setBlockStateId(pos, stateId)
+  }
+  /** what a layer-0 change does to layer 1: { layer1: new layer-1 state (undefined: unchanged), confirm } */
+  function liquidLayerRule (old0, old1, new0) {
+    const before = bot.registry.blocksByStateId[old0]
+    const after = bot.registry.blocksByStateId[new0]
+    const old1Name = bot.registry.blocksByStateId[old1]?.name
+    const waterSource = isWaterName(before?.name) && Number(Block.fromStateId(old0, 0).getProperties().liquid_depth ?? 0) === 0
+    const hadLiquid = old1 !== air() && old1Name !== undefined && old1Name !== 'air'
+    if (!after || after.name === 'air' || isLiquidName(after.name)) return { layer1: hadLiquid ? air() : undefined, confirm: false }
+    if (!waterSource && !isWaterName(old1Name)) return { layer1: undefined, confirm: false }
+    // the same block in another state (a trapdoor toggling, kelp growing, a repeated entry): the layer stays
+    if (before?.id === after.id) return { layer1: undefined, confirm: false }
+    // a full cube (stone, ice, sand falling into water …) is predicted dry — and asked for: a few full cubes hold
+    // water on Bedrock (copper grates, mangrove roots, …)
+    const shapes = Block.fromStateId(new0, 0).shapes ?? []
+    if (shapes.length === 1 && shapes[0].join() === '0,0,0,1,1,1') return { layer1: hadLiquid ? air() : undefined, confirm: true }
+    // any other block: predicted to keep / take the water, asked for
+    const water = isWaterName(old1Name) ? old1 : bot.registry.blocksByName.water.defaultState
+    return { layer1: water === old1 ? undefined : water, confirm: true }
+  }
+
+  /**
+   * 'cx,sy,cz' → { key, cx, sy, cz, positions, again, outstanding, retries, timer }: sub-chunks re-requested to confirm
+   * the liquid layer of `positions` (Maps 'x,y,z' → Vec3). `outstanding` answers are expected (the request, a retry,
+   * the load answer of a sub-chunk still loading). Blocks changed while a request is out go to `again` (the answer may
+   * predate them) and get a new request once an answer arrived; a request without an answer is sent again after
+   * LIQUID_REFRESH_RETRY_MS, at most LIQUID_REFRESH_RETRIES times.
+   */
+  const liquidRefreshes = new Map()
+  const LIQUID_REFRESH_RETRY_MS = 5000
+  const LIQUID_REFRESH_RETRIES = 3
+  function sendLiquidRefresh (refresh) {
+    refresh.outstanding++
+    clearTimeout(refresh.timer)
+    refresh.timer = setTimeout(() => {
+      if (liquidRefreshes.get(refresh.key) !== refresh) return
+      if (refresh.retries++ >= LIQUID_REFRESH_RETRIES) {
+        liquidRefreshes.delete(refresh.key)
+        return
+      }
+      for (const [k, p] of refresh.again) refresh.positions.set(k, p)
+      refresh.again.clear()
+      sendLiquidRefresh(refresh)
+    }, LIQUID_REFRESH_RETRY_MS)
+    refresh.timer.unref?.()
+    bot._client.queue('subchunk_request', { dimension: dimensionId(dimension), requests: [{ x: 0, y: refresh.sy, z: 0 }], origin: { x: refresh.cx, y: 0, z: refresh.cz } })
+  }
+  /** ask for the sub-chunk of `points` (blocks of one sub-chunk) */
+  function refreshLiquidLayer (...points) {
+    const [point] = points
+    const cx = Math.floor(point.x / 16)
+    const cz = Math.floor(point.z / 16)
+    const sy = Math.floor(point.y / 16)
+    const key = `${cx},${sy},${cz}`
+    let refresh = liquidRefreshes.get(key)
+    if (refresh) {
+      for (const p of points) refresh.again.set(p.toString(), p)
+      return
+    }
+    refresh = { key, cx, sy, cz, positions: new Map(points.map(p => [p.toString(), p])), again: new Map(), outstanding: 0, retries: 0, timer: null }
+    liquidRefreshes.set(key, refresh)
+    if (pendingColumns.get(`${cx},${cz}`)?.remaining.has(sy)) refresh.outstanding++ // its load answer comes too
+    sendLiquidRefresh(refresh)
+  }
+  /** a block whose liquid layer is being asked for */
+  function liquidRefreshPending (point) {
+    const refresh = liquidRefreshes.get(`${Math.floor(point.x / 16)},${Math.floor(point.y / 16)},${Math.floor(point.z / 16)}`)
+    const key = point.toString()
+    return !!refresh && (refresh.positions.has(key) || refresh.again.has(key))
+  }
+  function dropLiquidRefresh (refresh) {
+    clearTimeout(refresh.timer)
+    if (liquidRefreshes.get(refresh.key) === refresh) liquidRefreshes.delete(refresh.key)
+  }
+  /** an answer for a re-requested sub-chunk (`column`: loaded; null: the column is still loading and decodes it) */
+  function onLiquidRefreshAnswer (refresh, column, y, entry) {
+    refresh.outstanding--
+    if (column) applyLiquidRefresh(column, y, entry, refresh.positions)
+    if (refresh.again.size) {
+      refresh.positions = refresh.again
+      refresh.again = new Map()
+      refresh.retries = 0
+      sendLiquidRefresh(refresh)
+    } else if (refresh.outstanding <= 0) {
+      dropLiquidRefresh(refresh)
+    }
+  }
+  bot.world.on('chunkColumnUnload', (corner) => {
+    const prefix = `${corner.x >> 4},`
+    const suffix = `,${corner.z >> 4}`
+    for (const [key, refresh] of liquidRefreshes) if (key.startsWith(prefix) && key.endsWith(suffix)) dropLiquidRefresh(refresh)
+  })
+  /** a re-requested sub-chunk: the server's layer 1 of the blocks that asked for it (one blockUpdate per change) */
+  function applyLiquidRefresh (column, y, entry, positions) {
+    const fresh = newColumn(column.x, column.z)
+    if (entry.result === 'success' && entry.payload) {
+      try {
+        fresh.networkDecodeSubChunkNoCache(y, entry.payload).catch(err => bot.emit('error', err))
+      } catch (err) {
+        bot.emit('error', err)
+        return
+      }
+    } else if (entry.result !== 'success_all_air') {
+      return
+    }
+    for (const point of positions.values()) {
+      const local = new Vec3(point.x & 15, point.y, point.z & 15)
+      // layer 0 changed again since (its update is on the way): that update decides
+      if ((layerStateId(fresh, local, 0)) !== (column.getBlockStateId(local) ?? air())) continue
+      const server1 = layerStateId(fresh, local, 1)
+      if (server1 === layerStateId(column, local, 1)) continue
+      const oldBlock = column.getBlock(local)
+      setLayerStateId(column, local, 1, server1)
+      bot.world._emitBlockUpdate(oldBlock, column.getBlock(local), point)
+    }
+  }
+
   function applyBlockUpdate (position, runtimeId, layer) {
     const point = new Vec3(position.x, position.y, position.z)
     const stateId = stateIdOf(runtimeId)
+    const local = new Vec3(point.x & 15, point.y, point.z & 15)
     if (!bot.world.getColumnAt(point)) {
       // column still waiting for its sub-chunks: keep the change, without events
       const pending = pendingColumns.get(`${Math.floor(point.x / 16)},${Math.floor(point.z / 16)}`)
       if (pending) {
-        const local = new Vec3(point.x & 15, point.y, point.z & 15)
-        if (layer === 1) local.l = 1
-        const stale = layer !== 1 && staleBlockEntity(pending.column, local, stateId)
+        if (layer === 1) {
+          setLayerStateId(pending.column, local, 1, stateId)
+          return
+        }
+        const old0 = pending.column.getBlockStateId(local) ?? air()
+        const rule = liquidLayerRule(old0, layerStateId(pending.column, local, 1), stateId)
+        const { layer1 } = rule
+        const confirm = rule.confirm || liquidRefreshPending(point.floored())
+        const stale = staleBlockEntity(pending.column, local, stateId)
         pending.column.setBlockStateId(local, stateId)
+        if (layer1 !== undefined) setLayerStateId(pending.column, local, 1, layer1)
         if (stale) pending.column.removeBlockEntity(local)
+        // the answer decodes into the pending column (the server's whole sub-chunk), or is applied once it loaded
+        if (confirm) refreshLiquidLayer(point.floored())
       }
       return
     }
     if (layer === 1) {
       updateLiquidLayer(point, stateId)
-    } else {
-      const column = bot.world.getColumnAt(point)
-      const local = new Vec3(point.x & 15, point.y, point.z & 15)
-      const stale = staleBlockEntity(column, local, stateId)
-      updateBlockState(point, stateId) // 'blockUpdate' with the old block still carrying its block entity
-      if (stale) column.removeBlockEntity(local)
+      return
     }
+    const column = bot.world.getColumnAt(point)
+    const stale = staleBlockEntity(column, local, stateId)
+    const rule = liquidLayerRule(column.getBlockStateId(local) ?? air(), layerStateId(column, local, 1), stateId)
+    const { layer1 } = rule
+    // a block whose check is out changed again: its answer may predate the change, ask again
+    const confirm = rule.confirm || liquidRefreshPending(point.floored())
+    if (layer1 === undefined) {
+      updateBlockState(point, stateId) // 'blockUpdate' with the old block still carrying its block entity
+    } else {
+      // both layers change: one blockUpdate with the combined old and new block (like updateBlockState)
+      const oldBlock = blockAt(point)
+      column.setBlockStateId(local, stateId)
+      setLayerStateId(column, local, 1, layer1)
+      if (oldBlock.type !== stateIdType(stateId) && paintingsByPos[point.floored()]) deletePainting(paintingsByPos[point.floored()])
+      bot.world._emitBlockUpdate(oldBlock, column.getBlock(local), point)
+    }
+    if (stale) column.removeBlockEntity(local)
+    if (confirm) refreshLiquidLayer(point.floored())
   }
 
   // ---- block entities (U9) -----------------------------------------------------------------------------
@@ -450,6 +618,7 @@ function inject (bot) {
       bot.world.unloadColumn(x, z)
     }
     pendingColumns.clear()
+    for (const refresh of [...liquidRefreshes.values()]) dropLiquidRefresh(refresh)
     dimension = dimensionName(newDimension)
   }
 

@@ -106,8 +106,8 @@ function resultSteps (model, window, item) {
  * @param {{ what: string, customNames?: string[], cause?: string|number, timeout?: number }} opts
  */
 async function runStation (bot, window, steps, { what, customNames, cause, timeout = STATION_TIMEOUT_MS } = {}) {
-  const restore = customNames || cause !== undefined ? requestOptions(bot, window, { customNames, cause }) : () => {}
   try {
+    // the model forwards the request-level custom_names / cause to the stack request manager (W3-FIX-B)
     return await bot._bedrock.inventoryModel.execute(window, steps, { timeout, customNames, cause })
   } catch (err) {
     if (err.name !== 'StackRequestError') throw err
@@ -115,32 +115,7 @@ async function runStation (bot, window, steps, { what, customNames, cause, timeo
     const wrapped = new Error(`${what} ${reason}`)
     wrapped.cause = err
     throw wrapped
-  } finally {
-    restore()
   }
-}
-
-/**
- * The inventory model (U8, lib/bedrock/inventory_model.js) does not pass request-level options to the stack request
- * manager: give the next request created for `window` the anvil's `custom_names` / filter cause. One-shot: the
- * manager's `create` is restored by that request or by the returned function.
- * TODO(W3-FIX-B): replace with `execute(window, steps, { customNames, cause })` once the model forwards them.
- */
-function requestOptions (bot, window, { customNames, cause }) {
-  const mgr = bot._bedrock.stackRequests
-  const original = mgr.create
-  if (original.stationWrapper) return () => {}
-  const restore = () => { if (mgr.create === wrapper) mgr.create = original }
-  function wrapper (actions, opts = {}) {
-    if (opts.meta?.window !== window || opts.customNames) return original.call(mgr, actions, opts)
-    restore()
-    const extra = { customNames: customNames ?? opts.customNames }
-    if (cause !== undefined) extra.cause = cause
-    return original.call(mgr, actions, { ...opts, ...extra })
-  }
-  wrapper.stationWrapper = true
-  mgr.create = wrapper
-  return restore
 }
 
 /**

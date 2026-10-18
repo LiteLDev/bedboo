@@ -44,6 +44,18 @@ describe('HUD plugins: title, boss bars, scoreboards, sounds, particles, teams (
     assert.deepStrictEqual(titles.at(-1), ['Hello', 'title'])
   })
 
+  it('title: malformed *_json text never throws out of the packet handler (non-array rawtext; a failing parse → error event)', async () => {
+    const { bot, client, errors } = await joined()
+    const titles = record(bot, 'title')
+    assert.doesNotThrow(() => client.receive('set_title', setTitle('set_title_json', '{"rawtext":{"text":"x"}}')))
+    assert.doesNotThrow(() => client.receive('set_title', setTitle('set_subtitle_json', '{"rawtext":[{"rawtext":{"score":null}}]}')))
+    assert.deepStrictEqual(titles, [['x', 'title'], ['', 'subtitle']])
+    // anything a listener or the parser throws is reported as 'error' (like the chat plugin's text handler)
+    bot.once('title', () => { throw new Error('listener failure') })
+    assert.doesNotThrow(() => client.receive('set_title', setTitle('set_title', 'y')))
+    assert.match(errors.at(-1).message, /listener failure/)
+  })
+
   it('boss bars: show_bar creates then updates, remove_entity / hide_bar / dimension change delete; Bedrock colours, overlay → dividers', async () => {
     const { bot, client } = await joined()
     const created = record(bot, 'bossBarCreated')

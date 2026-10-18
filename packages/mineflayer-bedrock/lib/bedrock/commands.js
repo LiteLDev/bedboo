@@ -280,10 +280,16 @@ function createCommandTree () {
     return sortSuggestions(suggestions)
   }
 
+  /** the command's own name for a name or alias ('tp' → 'teleport'; unknown names unchanged, lower case) */
+  function canonicalName (name) {
+    return lower(commands.get(lower(name))?.name ?? name)
+  }
+
   return {
     update,
     updateSoftEnum,
     complete,
+    canonicalName,
     get ready () { return ready },
     commands,
     softEnums: () => softEnums,
@@ -295,4 +301,50 @@ function quoteName (name) {
   return /^[A-Za-z0-9_]+$/.test(name) ? name : `"${String(name).replace(/"/g, '\\"')}"`
 }
 
-module.exports = { createCommandTree, tokenize, quoteName, SELECTORS }
+/**
+ * A command target as typed: a selector (`@p`, `@a[r=5]`, …; no gamertag starts with '@') verbatim, like upstream's
+ * `/tell ${username}`, a player name quoted when it needs it (gamertags may contain spaces).
+ */
+function quoteTarget (name) {
+  name = String(name)
+  return name.startsWith('@') ? name : quoteName(name)
+}
+
+/** the command name ('/time set 1' → 'time', '/minecraft:say x' → 'say') */
+function commandName (command) {
+  const m = /^\/?\s*(?:minecraft:)?([^\s]+)/.exec(String(command ?? ''))
+  return m ? m[1].toLowerCase() : null
+}
+
+/**
+ * The command name of an `event { event_type: 'command_executed' }` packet's `event_data` (bedrock-protocol leaves
+ * it raw). BDS 1.26.51 sends three varints, then the name as a varint-length string (e.g. 08 02 00 03 'say' 00).
+ * @returns {string|null} null when the data has another shape
+ */
+function executedCommandName (data) {
+  try {
+    const buf = Buffer.isBuffer(data) ? data : Buffer.from(data ?? [])
+    let i = 0
+    const varint = () => {
+      let value = 0
+      for (let shift = 0; shift < 35; shift += 7) {
+        if (i >= buf.length) throw new RangeError('truncated')
+        const byte = buf[i++]
+        value |= (byte & 0x7f) << shift
+        if (!(byte & 0x80)) return value >>> 0
+      }
+      throw new RangeError('varint too long')
+    }
+    varint()
+    varint()
+    varint()
+    const length = varint()
+    if (length < 1 || i + length > buf.length) return null
+    const name = buf.subarray(i, i + length).toString('utf8').toLowerCase().replace(/^minecraft:/, '')
+    return /^[a-z0-9_.:-]+$/.test(name) ? name : null
+  } catch {
+    return null
+  }
+}
+
+module.exports = { createCommandTree, tokenize, quoteName, quoteTarget, commandName, executedCommandName, SELECTORS }

@@ -21,6 +21,9 @@
 //   predicts it, sends one item_stack_request (lib/bedrock/stack_request.js) and waits for the response
 //   (rejected → rolled back + "Server rejected transaction …"). Clicks on bot.inventory open the player's
 //   inventory screen (interact open_inventory) and close it again when idle (BDS rejects cursor moves without it).
+// - opening a window (openBlock / openEntity, or activating a container / station block or a trading / storage
+//   entity) while a container window is open closes that one first (windowClose), like Java's server: BDS would
+//   ignore the activation.
 // - container_open { window_id, window_type, coordinates, runtime_entity_id } + inventory_content → a window built
 //   from the registry (lib/bedrock/windows.js, `bot._bedrock.windows`) → windowOpen; container_close
 //   { window_id, window_type, server: false } closes (the server echoes it; a carried item is first put back
@@ -56,6 +59,22 @@ const CONTENT_TIMEOUT = 1000
 // BDS drops a container activation that arrives in the tick its previous container closed (observed: no
 // container_open, no resync); activations wait this long after a close
 const REOPEN_DELAY = 100
+
+/** Bedrock blocks whose activation opens a window (containers and stations) */
+const WINDOW_BLOCKS = /(?:^|_)(?:chest|barrel|shulker_box|furnace|smoker|crafting_table|anvil|enchanting_table|brewing_stand|hopper|dispenser|dropper|beacon|grindstone|stonecutter_block|loom|cartography_table|smithing_table|crafter|lectern)$/
+/** Bedrock entities whose interaction opens a window (trading, storage minecarts and boats) */
+const WINDOW_ENTITIES = /^(?:villager|villager_v2|wandering_trader|chest_minecart|minecart_chest|hopper_minecart|chest_boat|\w+_chest_boat)$/
+
+/**
+ * the activation of `target` (a Block or an Entity) opens a window — not a sneaking click with an item in hand (that is
+ * a placement / item use)
+ */
+function opensWindow (bot, target) {
+  const name = String(target?.name ?? '').replace(/^minecraft:/, '')
+  if (target?.position === undefined || !(WINDOW_BLOCKS.test(name) || WINDOW_ENTITIES.test(name))) return false
+  const sneaking = typeof bot.getControlState === 'function' && bot.getControlState('sneak')
+  return !(sneaking && (bot.heldItem || bot.inventory?.slots[45]))
+}
 
 const ALWAYS_CONSUMABLES = [
   'potion',
@@ -183,6 +202,8 @@ function inject (bot) {
       raiseShield(true)
       return
     }
+    // BDS ignores click_air for buckets and boats: the vanilla client clicks the looked-at block / liquid (U11)
+    if (bot._bedrock.placement?.useOnLookedAtBlock(item, offHand)) return
     const packet = tx.buildUseItem(bot, { hand: offHand ? 'off_hand' : 'main_hand' })
     if (offHand) packet.transaction.transaction_data.held_item = heldNetworkItem.offhand()
     bot._client.queue('inventory_transaction', packet)
@@ -231,7 +252,16 @@ function inject (bot) {
     }
   }
 
-  async function prepareInteraction () {
+  /**
+   * Before an activation: wait for our own pending close, close the player's inventory screen and keep BDS's
+   * reopen delay. `opening` (the activation opens a window): an open container window is closed first, like Java's
+   * server does in ServerPlayer.openMenu (close_window → 'windowClose', then the new window). BDS ignores an
+   * activation that would open a container while another one is open (no container_open: the opener would wait for
+   * once()'s 20 s), while other activations (levers, doors, …) work with a window open — on both servers.
+   */
+  async function prepareInteraction (opening = false) {
+    const open = opening ? bot.currentWindow : null
+    if (open && !slots.isPlayerInventory(open)) await closeWindow(open)
     await closing
     await model.screen.close()
     const since = Date.now() - lastCloseAt
@@ -242,7 +272,7 @@ function inject (bot) {
     direction = direction ?? new Vec3(0, 1, 0)
     const directionNum = vectorToDirection(direction) // The packet needs a number as the direction
     cursorPos = cursorPos ?? new Vec3(0.5, 0.5, 0.5)
-    await prepareInteraction()
+    await prepareInteraction(opensWindow(bot, block))
     // TODO: tell the server that we are not sneaking while doing this
     await bot.lookAt(block.position.offset(0.5, 0.5, 0.5), false)
     // Bedrock: item_use click_block (no start/stop_item_use_on: that wraps placements only)
@@ -258,7 +288,7 @@ function inject (bot) {
   }
 
   async function activateEntity (entity) {
-    await prepareInteraction()
+    await prepareInteraction(opensWindow(bot, entity))
     // TODO: tell the server that we are not sneaking while doing this
     await bot.lookAt(entity.position.offset(0, 1, 0), false)
     tx.mouseOver(bot, entity)
@@ -266,7 +296,7 @@ function inject (bot) {
   }
 
   async function activateEntityAt (entity, position) {
-    await prepareInteraction()
+    await prepareInteraction(opensWindow(bot, entity))
     // TODO: tell the server that we are not sneaking while doing this
     await bot.lookAt(position, false)
     const at = position.minus(entity.position)
@@ -414,13 +444,13 @@ function inject (bot) {
 
   async function openBlock (block, direction, cursorPos) {
     const opened = once(bot, 'windowOpen')
-    await prepareInteraction()
+    await prepareInteraction(true)
     return awaitWindowOpen(opened, bot.activateBlock(block, direction, cursorPos))
   }
 
   async function openEntity (entity) {
     const opened = once(bot, 'windowOpen')
-    await prepareInteraction()
+    await prepareInteraction(true)
     return awaitWindowOpen(opened, bot.activateEntity(entity))
   }
 
@@ -483,12 +513,12 @@ function inject (bot) {
     const window = bot.currentWindow || bot.inventory
 
     assert.ok(mode >= 0 && mode <= 6)
-    const planned = planClick(window, slot, mouseButton, mode, model.clickOptions(window))
-    if (planned.length === 0) return
     const key = (s) => s === undefined ? undefined : model.keyOf(window, s)
-    const steps = planned.map(step => ({ ...step, src: key(step.src), dst: key(step.dst) }))
+    // planned on the window as it is when the request is built (the model commits each prediction synchronously, so
+    // clicks issued without awaiting the previous one build on its prediction, like Java's client-side click)
+    const plan = () => planClick(window, slot, mouseButton, mode, model.clickOptions(window)).map(step => ({ ...step, src: key(step.src), dst: key(step.dst) }))
     try {
-      await model.execute(window, steps, { timeout: WINDOW_TIMEOUT })
+      await model.execute(window, plan, { timeout: WINDOW_TIMEOUT })
     } catch (err) {
       if (err.name !== 'StackRequestError') throw err
       if (err.outcome === 'error') {
@@ -575,7 +605,8 @@ function inject (bot) {
     bot.emit('windowOpen', window)
   }
 
-  bot._client.on('container_open', (packet) => {
+  bot._client.on('container_open', onContainerOpen)
+  function onContainerOpen (packet) {
     const id = windowIdOf(packet.window_id)
     if (packet.window_type === 'inventory') {
       model.screen.onOpen(id, packet.window_id)
@@ -610,6 +641,15 @@ function inject (bot) {
     }
     // BDS sends the contents in the same batch; never leave an opener hanging if they do not come
     setTimeout(() => { if (pendingOpen === pending) openWindow(pending, null) }, CONTENT_TIMEOUT).unref?.()
+  }
+  // BDS opens the trading screen with update_trade alone (no container_open): the 'trading' window
+  // (minecraft:merchant; the offers are the villager plugin's). A resend for the open window refreshes the offers
+  // only; one for a window the bot is closing (its container_close not echoed yet) opens nothing.
+  bot._client.on('update_trade', (packet) => {
+    const id = windowIdOf(packet.window_id)
+    if (bot.currentWindow || pendingOpen) return
+    if (model.closingWindow?.id === id || model.screen.closeWaiters.has(id)) return // being closed / not echoed yet
+    onContainerOpen({ window_id: packet.window_id, window_type: 'trading', runtime_entity_id: packet.villager_unique_id })
   })
   // inventory_content for a window that is not open yet (container_open first, contents right after)
   bot.on('_bedrockWindowContent', (id) => {
@@ -661,8 +701,9 @@ function inject (bot) {
     }
   })
 
-  // Java 1.17.1+ resyncs a window on an impossible click; Bedrock has no client-initiated resync (the server
-  // resends the inventory itself after a rejected transaction), so there is nothing to wait for.
+  // Java 1.17.1+ resyncs a window on an impossible click; Bedrock has no client-initiated resync and BDS does not
+  // resend anything after a rejected item stack request: the model rolls its prediction back (inventory_model.js),
+  // so there is nothing to wait for.
   async function syncWindow (window) {}
   bot._syncWindow = syncWindow
 

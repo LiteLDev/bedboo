@@ -201,7 +201,10 @@ function createTextParser (registry, ChatMessage = require('prismarine-chat')(re
   }
   function rawPart (part) {
     if (part === null || typeof part !== 'object') return formatted(part)
-    if (part.rawtext) return rawText(part)
+    // only an array is a rawtext list; BDS refuses anything else, other senders get it read as a single part (the
+    // part itself again would recurse forever)
+    if (Array.isArray(part.rawtext)) return rawText(part)
+    if (part.rawtext !== undefined && part.rawtext !== null) return rawPart(part.rawtext)
     if (part.translate !== undefined) {
       let withArgs = []
       if (Array.isArray(part.with)) withArgs = part.with.map(parameter)
@@ -213,8 +216,11 @@ function createTextParser (registry, ChatMessage = require('prismarine-chat')(re
       // a literal format ("Hello %%s", "%1 and %2"): Bedrock placeholders → prismarine-chat's %s / %N$s
       return { translate: normalizeFormat(key.replace(/%%(?=s|\d)/g, '%')), with: withArgs }
     }
-    if (part.selector !== undefined) return { selector: part.selector }
-    if (part.score !== undefined) return { score: { name: part.score.name, objective: part.score.objective } }
+    if (part.selector !== undefined) return { selector: String(part.selector) }
+    if (part.score !== undefined) {
+      if (!part.score || typeof part.score !== 'object') return { text: '' }
+      return { score: { name: String(part.score.name ?? ''), objective: String(part.score.objective ?? '') } }
+    }
     if (part.text !== undefined) return parameter(part.text)
     return { text: '' }
   }
@@ -228,7 +234,8 @@ function createTextParser (registry, ChatMessage = require('prismarine-chat')(re
    * @returns {{ message: ChatMessage, position: string, username: string|null,
    *   source: { kind: 'chat'|'whisper', username: string, message: string }|null }}
    *   `username`: the sender's name (§ stripped) when the packet names one; `source`: set for player chat /
-   *   whispers with a sender — the chat plugin's default patterns use it instead of a regex.
+   *   whispers / announcements (/say, kind 'chat') with a sender — the chat plugin's default patterns use it
+   *   instead of a regex.
    */
   function parseText (packet) {
     const type = packet.type
@@ -252,10 +259,28 @@ function createTextParser (registry, ChatMessage = require('prismarine-chat')(re
         }
         break
       }
-      case 'announcement': // /say: the message already reads "[name] text"
-        username = sender || null
-        json = messageComponent(packet)
+      case 'announcement': { // /say: { source_name: name, message: '[name] text' }
+        if (!sender) {
+          json = messageComponent(packet)
+          break
+        }
+        // like Java's say_command chat type: { translate: 'chat.type.announcement', with: [name, text] } ("[name]
+        // text"); the default 'chat' pattern takes the sender from the packet (names with spaces work)
+        username = sender
+        const message = String(packet.message ?? '')
+        // the leading "[name] " (the name possibly formatted differently than source_name, maybe containing "] ")
+        let cut = 0
+        for (let i = message.indexOf('] '); message.startsWith('[') && i !== -1; i = message.indexOf('] ', i + 1)) {
+          if (stripCodes(message.slice(1, i)) === sender) {
+            cut = i + 2
+            break
+          }
+        }
+        const body = messageComponent({ ...packet, message: message.slice(cut) })
+        json = { translate: 'chat.type.announcement', with: [formatted(packet.source_name), body] }
+        source = { kind: 'chat', username: sender, message: new ChatMessage(body).toString() }
         break
+      }
       case 'json':
       case 'json_whisper':
       case 'json_announcement':
