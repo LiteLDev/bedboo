@@ -45,6 +45,14 @@ describe('overworld milestones (U17)', function () {
     })
   }
 
+  it('final chain M1→M5 → nether → End in one world (AGENT_FINAL_CHAIN=1)', async function () {
+    if (process.env.AGENT_FINAL_CHAIN !== '1') this.skip()
+    const { finalChain } = require('./final-chain')
+    const r = await finalChain({ cfg, log: (line) => { if (cfg.log || line.startsWith('==')) console.log(`      ${line}`) } })
+    console.log(`      final chain: ${r.ok ? 'PASS' : 'FAIL'} in ${(r.ms / 60000).toFixed(1)} min — ${r.phases.map((p) => `${p.name} ${(p.ms / 1000).toFixed(0)}s${p.ok ? '' : ' FAILED'}`).join(', ')}; report ${r.report}`)
+    assert.ok(r.ok, r.phases.filter((p) => !p.ok).map((p) => `${p.name}: ${p.error}`).join('; '))
+  })
+
   it('full run M1→M5 in one world (AGENT_FULL_RUN=1)', async function () {
     if (process.env.AGENT_FULL_RUN !== '1') this.skip()
     const { fullRun } = require('./full-run')
