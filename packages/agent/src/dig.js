@@ -117,6 +117,13 @@ async function collectBlocks (bot, { item = null, count = 1, blocks, maxDistance
       }
     } catch (err) {
       if (isAbort(err) || err.code === 'DIED' || err.code === 'MISSING') throw err
+      const safety = agentOf(bot)?.safety
+      if (safety?.busy || safety?.recentlyBusy?.(3000)) {
+        // a fight / flight took the controls mid-way (pathfinder stopped, "Digging aborted"): try the same block again
+        log(bot, `mining ${name} interrupted (${err.message}); resuming`)
+        await safety.idle(signal)
+        continue
+      }
       // the same pocket of ore is just as unreachable: skip its neighbours too
       for (let dx = -2; dx <= 2; dx++) for (let dy = -2; dy <= 2; dy++) for (let dz = -2; dz <= 2; dz++) tried.add(key(pos.offset(dx, dy, dz)))
       failures++

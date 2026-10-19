@@ -115,11 +115,13 @@ function sourcesFor (bot, item, { failures, maxDistance = 128 } = {}) {
     const natural = g.blocks.map((b) => data.NATURAL[b]).filter(Boolean)
     // a block that does not generate (stripped logs, walls, …) only counts when it is right here: searching the whole
     // loaded world for something that is not there is what makes findBlocks slow
-    const radius = !natural.length ? 16 : g.kind === 'mine' ? maxDistance : Math.min(maxDistance, 64)
+    const radius = !natural.length ? 16 : g.kind === 'mine' ? maxDistance : Math.min(maxDistance, 96)
     const found = nearestBlocks(bot, g.blocks, radius)
     let cost
     if (found.length) cost = Math.min(...found.map((p) => blockCost(bot, p, g.hardness)))
-    else cost = !natural.length ? Infinity : natural.every((n) => n.rare) ? 300 : 150
+    else if (!natural.length) cost = Infinity
+    // out of sight: rare ones (diamonds) and those of particular biomes (acacia in savannas) are far to look for
+    else cost = (natural.every((n) => n.rare) ? 300 : 150) + (natural.every((n) => n.biomes) ? 450 : 0)
     const n = failures?.get(`${g.kind}:${item}`) ?? 0
     if (n >= 3) cost = Infinity
     else cost *= 1 + 2 * n

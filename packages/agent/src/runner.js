@@ -285,6 +285,8 @@ class Agent extends EventEmitter {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(new Error('recover timeout')), 120000)
     try {
+      // far below (died in a mine): a shaft down next to the spot, like the miner reaches deep ores
+      if (bot.entity.position.y - at.y > 12) await require('./dig').shaftTo(bot, at.floored(), { signal: controller.signal })
       await navigate.goto(bot, new goals.GoalNear(at.x, at.y, at.z, 2), { signal: controller.signal, timeout: 110000 })
       await require('./dig').pickupNear(bot, at.offset(0.5, 0.5, 0.5), { signal: controller.signal, radius: 8, wait: 2000, timeout: 30000 })
     } catch (err) {

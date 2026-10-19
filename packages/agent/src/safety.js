@@ -30,7 +30,9 @@ class Safety extends EventEmitter {
   constructor (bot, opts = {}) {
     super()
     this.bot = bot
-    this.opts = { engageRadius: 5, alertRadius: 12, fleeHealth: 4, fightTimeout: 40000, ...opts }
+    this.opts = { engageRadius: 5, alertRadius: 12, fleeHealth: 4, fightTimeout: 25000, ignoreMs: 20000, ...opts }
+    this.ignored = new Map() // entity id → until (fights that timed out: the mob cannot get at the bot either)
+    this.lastBusyEnd = 0
     this.log = opts.log ?? (() => {})
     this.busy = null // { type, since }
     this.interventions = []
@@ -85,9 +87,15 @@ class Safety extends EventEmitter {
     return true
   }
 
+  /** whether a behaviour had the controls within the last `ms` */
+  recentlyBusy (ms) {
+    return !!this.busy || Date.now() - this.lastBusyEnd < ms
+  }
+
   release (type) {
     if (!this.busy || (type && this.busy.type !== type)) return
     this.busy = null
+    this.lastBusyEnd = Date.now()
     this.emit('idle')
     const waiters = this._waiters
     this._waiters = []
@@ -118,7 +126,8 @@ class Safety extends EventEmitter {
     const combat = require('./skills/combat')
     const recentlyHurt = Date.now() - this.lastHurt < 4000
     const radius = recentlyHurt ? this.opts.alertRadius : this.opts.engageRadius
-    const target = combat.nearestHostile(bot, { radius: Math.max(radius, 6) })
+    const now = Date.now()
+    const target = combat.nearestHostile(bot, { radius: Math.max(radius, 6), exclude: (e) => !hurt && (this.ignored.get(e.id) ?? 0) > now })
     if (!target) return
     const d = target.position.distanceTo(bot.entity.position)
     const engage = d <= radius || (target.name === 'creeper' && d <= 6) || (hurt && d <= this.opts.alertRadius)
@@ -157,6 +166,7 @@ class Safety extends EventEmitter {
     const combat = require('./skills/combat')
     await combat.equipForCombat(this.bot, { shield: true }).catch(() => {})
     const r = await combat.fight(this.bot, target, { timeout: this.opts.fightTimeout, log: this.log })
+    if (r.outcome === 'timeout') this.ignored.set(target.id, Date.now() + this.opts.ignoreMs)
     return r.outcome
   }
 

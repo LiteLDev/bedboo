@@ -11,7 +11,7 @@
  */
 const { Vec3 } = require('vec3')
 const { SkillError, checkAbort, isAbort } = require('../errors')
-const { defineSkill, log, progress, waitTicks } = require('../skill')
+const { defineSkill, log, progress, waitTicks, agentOf } = require('../skill')
 const inventory = require('../inventory')
 const world = require('../world')
 const data = require('../data')
@@ -227,12 +227,14 @@ async function pillarStep (bot, signal) {
   if (!world.isSolid(ref)) throw new SkillError('nothing solid under the feet', { code: 'FAILED' })
   // the hitbox must fit the 1×1 column, or the jump hits the neighbouring ceiling
   await navigate.stepTo(bot, feet, signal, { tolerance: 0.15, sneak: true, ticks: 40 })
+  await agentOf(bot)?.safety?.idle(signal)
   await inventory.equip(bot, fill)
   bot.setControlState('jump', true)
   try {
     const wait = inWater(bot) ? 40 : 12 // swimming up is slower than a jump
     for (let t = 0; t < wait && bot.entity.position.y < feet.y + 1.05; t++) await waitTicks(bot, 1, signal)
     if (bot.entity.position.y < feet.y + 1) throw new SkillError('the jump did not clear the block', { code: 'FAILED' })
+    if (bot.heldItem?.name !== fill.name) throw new SkillError(`holding ${bot.heldItem?.name ?? 'nothing'} instead of ${fill.name}`, { code: 'FAILED' })
     await bot.placeBlock(ref, new Vec3(0, 1, 0)).catch((err) => log(bot, `pillar: ${err.message}`))
   } finally {
     bot.setControlState('jump', false)
