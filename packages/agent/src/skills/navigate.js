@@ -358,7 +358,9 @@ const navigate = defineSkill('navigate', async (bot, args) => {
   // `spawn: true`: the world spawn (bot.spawnPoint) instead of a position
   const position = args.spawn ? bot.spawnPoint : args.position
   if (!position) throw new SkillError('navigate needs args.position (or spawn: true)', { code: 'FAILED' })
-  const goal = goalFor({ ...args, position }, bot)
+  // BDS's spawn search height (y 32767, not resolved yet because the column is not loaded): only x / z mean anything
+  const xzOnly = position.y >= 32767
+  const goal = goalFor({ ...args, position, goal: xzOnly && args.goal !== 'xz' ? 'xz' : args.goal, range: xzOnly ? Math.max(args.range ?? 1, 2) : args.range }, bot)
   const r = await goto(bot, goal, { timeout: args.timeout ?? 120000, signal: args.signal })
   const p = bot.entity.position
   return { reached: true, position: { x: p.x, y: p.y, z: p.z }, ms: r.ms }
