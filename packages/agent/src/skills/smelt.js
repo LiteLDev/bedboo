@@ -105,7 +105,8 @@ async function smeltItem (bot, { item, count = 1, input, fuel, signal, keepFurna
     }
   } finally {
     try { furnace?.close() } catch {}
-    if (st.placed && !keepFurnace) await stations.pickUp(bot, st.block)
+    // an aborted / timed-out smelt leaves the furnace: the next task must not fight over the controls
+    if (st.placed && !keepFurnace && !signal?.aborted) await stations.pickUp(bot, st.block, { signal })
   }
   const smelted = inventory.count(bot, item) - start
   progress(bot, 'smelt', { item, count: smelted, input: source.input, fuel: fuelName })

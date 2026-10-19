@@ -120,12 +120,22 @@ const M5 = {
     { skill: 'mine', name: 'emerald (mountains)', args: { item: 'emerald', count: 1 } },
     { skill: 'mine', name: 'deep ores', args: { all: [{ item: 'lapis_lazuli' }, { item: 'raw_gold' }, { item: 'redstone' }, { item: 'diamond' }] } }
   ],
-  verify (agent, start) {
-    const have = inventory.counts(agent.bot)
-    const short = ORE_DROPS.filter((d) => (have[d] ?? 0) <= (start[d] ?? 0))
-    if (short.length) throw new Error(`no new ${short.join(', ')}`)
-    const mined = [...new Set(eventsOf(agent, 'mine').map((e) => e.block).filter((b) => /_ore$/.test(b)))]
-    return { mined, gained: Object.fromEntries(ORE_DROPS.map((d) => [d, (have[d] ?? 0) - (start[d] ?? 0)])) }
+  verify (agent) {
+    // what the mine steps picked up (the inventory alone can mislead: coal may have been burnt to cook food since)
+    const gained = Object.fromEntries(ORE_DROPS.map((d) => [d, 0]))
+    for (const t of agent.tasks.filter((t) => t.skill === 'mine' && t.ok)) {
+      const parts = t.result?.results ? Object.values(t.result.results) : [t.result]
+      for (const r of parts) for (const [item, n] of Object.entries(r?.collected ?? {})) if (item in gained) gained[item] += n
+    }
+    const short = ORE_DROPS.filter((d) => gained[d] <= 0)
+    if (short.length) throw new Error(`no ${short.join(', ')} mined`)
+    // this run of the scenario only (a chained run's event log holds the earlier milestones' digs too)
+    const since = agent.events.filter((e) => e.type === 'scenario-start' && e.scenario === M5.name).at(-1)?.t ?? 0
+    const ores = new Set(eventsOf(agent, 'mine').filter((e) => e.t >= since).map((e) => e.block).filter((b) => /_ore$/.test(b)))
+    for (const kind of ['coal', 'copper', 'iron', 'gold', 'redstone', 'lapis', 'diamond', 'emerald']) {
+      if (![...ores].some((b) => b.replace(/^(deepslate_|lit_)+/, '') === `${kind}_ore`)) throw new Error(`no ${kind} ore dug`)
+    }
+    return { mined: [...ores], gained }
   }
 }
 

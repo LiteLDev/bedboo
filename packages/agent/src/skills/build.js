@@ -51,13 +51,17 @@ function findSite (bot, size, { radius = 24, avoid = () => false } = {}) {
         }
       }
       if (bad) continue
-      const counts = {}
-      for (const h of hs) counts[h] = (counts[h] ?? 0) + 1
-      const y0 = Number(Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0])
-      if (hs.some((h) => Math.abs(h - y0) > 1)) continue
+      // the floor level costing the least: a dip (ground lower than the floor) costs far more than a bump (dug away)
+      let y0 = null
+      let cost = Infinity
+      for (let y = Math.min(...hs); y <= Math.max(...hs); y++) {
+        if (hs.some((h) => Math.abs(h - y) > 1)) continue
+        const c = hs.reduce((s, h) => s + (h < y ? 12 : h > y ? 2 : 0), 0)
+        if (c < cost) { cost = c; y0 = y }
+      }
+      if (y0 === null) continue
       const origin = new Vec3(x0, y0, z0)
       if (avoid(origin)) continue
-      let cost = hs.reduce((s, h) => s + Math.abs(h - y0) * 2, 0)
       // things in the volume to dig (trees, tall plants are passable and cheap)
       for (let x = x0; x < x0 + size.x; x++) {
         for (let z = z0; z < z0 + size.z; z++) {
@@ -126,6 +130,85 @@ function buildMovements (bot, compiled) {
   return moves
 }
 
+/**
+ * In a dip under the floor level inside the footprint (floor blocks all around, too high to jump out, and the build
+ * movements may neither dig nor scaffold there): pillar one block up, which fills the dip with a filler block.
+ */
+async function outOfDip (bot, compiled, signal) {
+  const feet = bot.entity.position
+  // half a block of margin: a dirt path / farmland / slab at floor level is no dip
+  if (!insideFootprint(compiled, feet) || feet.y >= compiled.bounds.min.y - 0.5) return
+  const survive = require('./survive')
+  const exclude = compiled.materials.flatMap((m) => m.names)
+  log(bot, `build: in a dip under the floor at ${navigate.fmt(feet)}; pillaring out`)
+  for (let i = 0; i < 3 && bot.entity.position.y < compiled.bounds.min.y - 0.5; i++) {
+    await survive.pillarStep(bot, signal, { exclude }).catch((err) => { if (isAbort(err)) throw err; log(bot, `build: ${err.message}`) })
+  }
+}
+
+/** whether a position (feet) is within the structure's x/z footprint */
+function insideFootprint (compiled, p) {
+  const { min, max } = compiled.bounds
+  return p.x >= min.x && p.x < max.x + 1 && p.z >= min.z && p.z < max.z + 1
+}
+
+/** the outward direction (unit, dominant axis) of the wall a door sits in */
+function outward (compiled, pos) {
+  const { min, max } = compiled.bounds
+  const dx = pos.x + 0.5 - (min.x + max.x + 1) / 2
+  const dz = pos.z + 0.5 - (min.z + max.z + 1) / 2
+  return Math.abs(dx) >= Math.abs(dz) ? new Vec3(Math.sign(dx), 0, 0) : new Vec3(0, 0, Math.sign(dz))
+}
+
+/** in front of the door at `pos`: outside the footprint, on the door's side (Bedrock turns a door by the yaw) */
+function inFrontOf (compiled, pos, p) {
+  const dir = outward(compiled, pos)
+  const ahead = (p.x - (pos.x + 0.5)) * dir.x + (p.z - (pos.z + 0.5)) * dir.z
+  const aside = Math.abs((p.x - (pos.x + 0.5)) * dir.z) + Math.abs((p.z - (pos.z + 0.5)) * dir.x)
+  return !insideFootprint(compiled, p) && ahead >= 0.5 && aside <= ahead + 0.5
+}
+
+/** a pathfinder goal: any node in front of the door at `pos` */
+function frontGoal (compiled, pos) {
+  return {
+    heuristic: () => 0,
+    isEnd: (node) => inFrontOf(compiled, pos, { x: node.x + 0.5, z: node.z + 0.5 }),
+    hasChanged: () => false,
+    isValid: () => true
+  }
+}
+
+/**
+ * Inside the finished structure (a repair pass, a fight): open the door and step out of it (pathfinder's door
+ * opening is not relied on for the bot's own fresh door).
+ */
+async function leave (bot, compiled, { signal }) {
+  const { min, max } = compiled.bounds
+  const p = bot.entity.position
+  // the interior only (on the roof or under the floor is not "inside")
+  if (!insideFootprint(compiled, p) || p.y < min.y + 0.5 || p.y >= max.y) return
+  const door = compiled.placements.find((pl) => pl.tall)
+  if (!door || !door.names.includes(bot.blockAt(door.pos)?.name)) return
+  // out through the door: the direction from the footprint centre to the door, on its dominant axis
+  const dir = outward(compiled, door.pos)
+  const inside = door.pos.minus(dir)
+  const outside = door.pos.plus(dir).offset(0, -1, 0) // the ground level outside
+  try {
+    await navigate.goto(bot, new (goals().GoalBlock)(inside.x, inside.y, inside.z), { signal, timeout: 20000, attempts: 1, movements: buildMovements(bot, compiled) })
+    const block = bot.blockAt(door.pos)
+    if (block && !block.getProperties?.().open_bit) await bot.activateBlock(block)
+    await waitTicks(bot, 5, signal)
+    const out = (await navigate.stepTo(bot, door.pos, signal, { ticks: 30 })) && (await navigate.stepTo(bot, outside, signal, { ticks: 30 }))
+    // shut the door behind (mobs stay out of the finished house)
+    const after = bot.blockAt(door.pos)
+    if (out && after?.getProperties?.().open_bit) await bot.activateBlock(after).catch(() => {})
+    log(bot, out ? `build: left ${compiled.name} through its door` : `build: could not walk out of ${compiled.name}`)
+  } catch (err) {
+    if (isAbort(err)) throw err
+    log(bot, `build: could not leave through the door: ${err.message}`)
+  }
+}
+
 /** solid neighbour to click for placing at `pos`: { ref, face } (below first), or null */
 function referenceFor (bot, pos) {
   for (const dir of FACE_ORDER) {
@@ -154,6 +237,7 @@ async function placeCell (bot, placement, compiled, { signal }) {
   for (let attempt = 0; attempt < 4; attempt++) {
     checkAbort(signal)
     await agentOf(bot)?.safety?.idle(signal)
+    await outOfDip(bot, compiled, signal)
     const current = bot.blockAt(pos)
     if (current && names.includes(current.name)) return true
     if (current && !world.isPassable(current)) {
@@ -165,13 +249,15 @@ async function placeCell (bot, placement, compiled, { signal }) {
     if (!stack) throw new SkillError(`out of ${names.join('/')}`, { code: 'MISSING' })
     const r = referenceFor(bot, pos)
     if (!r) throw new SkillError(`nothing to place ${names[0]} against at ${navigate.fmt(pos)}`, { code: 'FAILED' })
-    if (!inPlaceRange(bot, pos, r.ref, r.face, tall)) {
+    // a door is placed from outside the footprint: the bot must not lock itself in
+    const outsideNeeded = tall && !inFrontOf(compiled, pos, bot.entity.position)
+    if (!inPlaceRange(bot, pos, r.ref, r.face, tall) || outsideNeeded) {
       // within reach of the face, and never standing in (or overlapping) the cell itself
       const g = goals()
       const goal = new g.GoalCompositeAll([
         new g.GoalPlaceBlock(pos, bot.world, { range: 4, LOS: false }),
         new g.GoalInvert(new g.GoalNear(pos.x, pos.y, pos.z, 1.1)),
-        ...(tall ? [new g.GoalInvert(new g.GoalNear(pos.x, pos.y + 1, pos.z, 1.1))] : [])
+        ...(tall ? [new g.GoalInvert(new g.GoalNear(pos.x, pos.y + 1, pos.z, 1.1)), frontGoal(compiled, pos)] : [])
       ])
       try {
         await navigate.goto(bot, goal, { signal, timeout: 45000, attempts: 2, movements: buildMovements(bot, compiled) })
@@ -179,7 +265,7 @@ async function placeCell (bot, placement, compiled, { signal }) {
         if (isAbort(err)) throw err
         log(bot, `build: no spot to place ${navigate.fmt(pos)} from: ${err.message}`)
       }
-      if (!inPlaceRange(bot, pos, r.ref, r.face, tall, 5)) {
+      if (!inPlaceRange(bot, pos, r.ref, r.face, tall, 5) || (tall && !inFrontOf(compiled, pos, bot.entity.position))) {
         log(bot, `build: still out of range / in the way of ${navigate.fmt(pos)} at ${navigate.fmt(bot.entity.position)}`)
         continue
       }
@@ -289,6 +375,7 @@ async function build (bot, args) {
     v = verify(compiled, (pos) => bot.blockAt(pos))
   }
   progress(bot, 'build-verified', { ok: v.ok, checked: v.checked, mismatches: v.mismatches.length })
+  await leave(bot, compiled, { signal })
   const result = {
     blueprint: compiled.name,
     origin: { x: origin.x, y: origin.y, z: origin.z },
@@ -326,4 +413,4 @@ async function fillUnder (bot, compiled, { signal }) {
 
 const skill = defineSkill('build', build, { description: 'build a blueprint (materials obtained, verified block by block)' })
 
-module.exports = Object.assign(skill, { build, findSite, placeCell, clearVolume, fillUnder, referenceFor, obtainAny })
+module.exports = Object.assign(skill, { build, findSite, placeCell, clearVolume, fillUnder, referenceFor, obtainAny, leave, insideFootprint })

@@ -45,7 +45,7 @@ function movements (bot, overrides) {
   moves.allowParkour = false // a missed jump in survival costs health; the gaps it saves are small
   moves.allowSprinting = true
   moves.maxDropDown = 3 // fall damage starts above 3 blocks
-  moves.liquidCost = 4
+  moves.liquidCost = 10 // swimming is slow and long underwater stretches drown the bot
   moves.allowFreeMotion = false
   for (const name of ['crafting_table', 'furnace', 'lit_furnace', 'chest', 'trapped_chest', 'barrel', 'bed', 'wooden_door', 'spruce_door', 'birch_door', 'jungle_door', 'acacia_door', 'dark_oak_door', 'mangrove_door', 'cherry_door', 'pale_oak_door', 'poplar_door']) {
     const b = bot.registry.blocksByName[name]
@@ -105,9 +105,14 @@ async function goto (bot, goal, { timeout = 90000, attempts = 4, signal, movemen
   ensurePathfinder(bot)
   const started = Date.now()
   const agent = agentOf(bot)
-  // far away: walk there in legs (one A* search over 100+ blocks of hills runs out of think time)
+  // far away: walk there in legs (one A* search over 100+ blocks of hills runs out of think time), on the surface
+  // (from deep underground pathfinder tunnels or swims through flooded caves)
   const center = goalCenter(goal)
   if (legs && center && distXZ(center, bot.entity.position) > LEG * 1.5) {
+    const survive = require('./survive')
+    if (!survive.underOpenSky(bot) && (center.y === undefined || center.y > bot.entity.position.y + 8)) {
+      await survive.surface(bot, { signal }).catch((err) => { if (isAbort(err)) throw err; log(bot, `goto: could not surface first: ${err.message}`) })
+    }
     await travel(bot, center, { signal, timeout: timeout * 0.8, movements: moves })
   }
   let failures = 0
@@ -249,18 +254,33 @@ function runOnce (bot, goal, { ms, signal, stuckMs, noProgressMs = 30000 }) {
 async function unstick (bot, { signal, toward } = {}) {
   progress(bot, 'unstick', { at: fmt(bot.entity.position) })
   const pos = bot.entity.position.floored()
+  // a closed door right next to the bot (its own house): open it and walk through (when that leads towards the goal)
+  if (await throughDoor(bot, pos, signal, toward)) return
   const head = bot.blockAt(pos.offset(0, 1, 0))
   // something solid in the head cell (a placed block, gravel): dig it
   if (head && !world.isPassable(head) && world.safeToDig(bot, head.position) && bot.canDigBlock(head)) {
     await digSafe(bot, head, signal)
     return
   }
-  // walled in: open the side towards the goal (or any safe side) at feet + head height
   const dirs = world.HORIZONTAL.slice()
   if (toward) {
     const d = world.cardinalTowards(pos, toward)
     dirs.sort((a, b) => (b.equals(d) ? 1 : 0) - (a.equals(d) ? 1 : 0))
   }
+  // in water at a shore (land one block up): swim-jump onto it, towards the goal first — pathfinder's move out of the
+  // water stalls there at times (the bot stays put, the search keeps restarting)
+  if (world.isWater(bot.blockAt(pos))) {
+    for (const d of dirs) {
+      // the nearest dry cell 1–3 blocks along d, up to two above the feet (swimming up a submerged bank on the way)
+      let landing = null
+      for (let k = 1; k <= 3 && !landing; k++) {
+        const c = pos.plus(d.scaled(k))
+        landing = [c, c.offset(0, 1, 0), c.offset(0, 2, 0)].find((p) => world.standable(bot, p) && !world.isWater(bot.blockAt(p))) ?? null
+      }
+      if (landing && await climbOnto(bot, landing, signal)) return
+    }
+  }
+  // walled in: open the side towards the goal (or any safe side) at feet + head height
   for (const d of dirs) {
     const feet = pos.plus(d)
     const cells = [feet.offset(0, 1, 0), feet]
@@ -276,6 +296,60 @@ async function unstick (bot, { signal, toward } = {}) {
   // last resort: jump in place a few ticks
   bot.setControlState('jump', true)
   await waitTicks(bot, 10, signal).finally(() => bot.setControlState('jump', false))
+}
+
+/** out of the water onto the land cell `landing` (feet) close by: forward + jump (3 s at most); whether it worked */
+async function climbOnto (bot, landing, signal) {
+  const target = landing.offset(0.5, 0, 0.5)
+  try {
+    for (let i = 0; i < 60; i++) {
+      checkAbort(signal)
+      const here = bot.entity.position
+      if (here.y >= landing.y - 0.01 && Math.hypot(here.x - target.x, here.z - target.z) < 0.5 && bot.entity.onGround) break
+      await bot.lookAt(target.offset(0, bot.entity.eyeHeight ?? 1.62, 0), true)
+      bot.setControlState('forward', true)
+      bot.setControlState('jump', true)
+      await waitTicks(bot, 1, signal)
+    }
+  } finally {
+    bot.setControlState('forward', false)
+    bot.setControlState('jump', false)
+  }
+  const ok = bot.entity.position.floored().equals(landing)
+  log(bot, ok ? `unstick: climbed out of the water onto ${fmt(landing)}` : `unstick: could not climb out of the water onto ${fmt(landing)}`)
+  return ok
+}
+
+/** a wooden door / fence gate beside the feet: open it if closed, step into it and out the other side */
+async function throughDoor (bot, pos, signal, toward) {
+  for (const d of world.HORIZONTAL) {
+    const cell = pos.plus(d)
+    const door = bot.blockAt(cell)
+    if (!door || !isDoorName(door.name)) continue
+    const beyond = cell.plus(d)
+    const landing = [beyond, beyond.offset(0, -1, 0)].find((c) => world.standable(bot, c))
+    if (!landing) continue
+    if (toward && world.distXZ(landing, toward) >= world.distXZ(pos, toward)) continue // leads away from the goal
+    try {
+      if (!door.getProperties?.().open_bit) await bot.activateBlock(door)
+      await waitTicks(bot, 5, signal)
+      if (!(await stepTo(bot, cell, signal, { ticks: 25 })) || !(await stepTo(bot, landing, signal, { ticks: 25 }))) {
+        log(bot, `unstick: could not get through the ${door.name} at ${fmt(cell)}`)
+        continue
+      }
+      log(bot, `unstick: went through the ${door.name} at ${fmt(cell)}`)
+      return true
+    } catch (err) {
+      if (isAbort(err)) throw err
+      log(bot, `unstick: door at ${fmt(cell)}: ${err.message}`)
+    }
+  }
+  return false
+}
+
+/** hand-openable doors and fence gates (never iron ones) */
+function isDoorName (name) {
+  return !name.includes('iron') && !name.endsWith('trapdoor') && (name.endsWith('_door') || name.endsWith('fence_gate'))
 }
 
 /** dig `block` with the best tool (no-op when it is gone) */
@@ -324,10 +398,12 @@ const navigate = defineSkill('navigate', async (bot, args) => {
   // `spawn: true`: the world spawn (bot.spawnPoint) instead of a position
   const position = args.spawn ? bot.spawnPoint : args.position
   if (!position) throw new SkillError('navigate needs args.position (or spawn: true)', { code: 'FAILED' })
-  const goal = goalFor({ ...args, position }, bot)
+  // BDS's spawn search height (y 32767, not resolved yet because the column is not loaded): only x / z mean anything
+  const xzOnly = position.y >= 32767
+  const goal = goalFor({ ...args, position, goal: xzOnly && args.goal !== 'xz' ? 'xz' : args.goal, range: xzOnly ? Math.max(args.range ?? 1, 2) : args.range }, bot)
   const r = await goto(bot, goal, { timeout: args.timeout ?? 120000, signal: args.signal })
   const p = bot.entity.position
   return { reached: true, position: { x: p.x, y: p.y, z: p.z }, ms: r.ms }
 }, { description: 'walk to a position with mineflayer-pathfinder (re-plans, unsticks)' })
 
-module.exports = Object.assign(navigate, { goto, travel, movements, goalFor, ensurePathfinder, unstick, digSafe, stepTo, stopPathfinder, fmt })
+module.exports = Object.assign(navigate, { goto, travel, throughDoor, isDoorName, movements, goalFor, ensurePathfinder, unstick, digSafe, stepTo, stopPathfinder, fmt })

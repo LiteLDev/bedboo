@@ -30,7 +30,7 @@ class Safety extends EventEmitter {
   constructor (bot, opts = {}) {
     super()
     this.bot = bot
-    this.opts = { engageRadius: 5, alertRadius: 12, fleeHealth: 4, fightTimeout: 25000, ignoreMs: 20000, ...opts }
+    this.opts = { engageRadius: 5, alertRadius: 12, fleeHealth: 4, fightTimeout: 15000, ignoreMs: 60000, ...opts }
     this.ignored = new Map() // entity id → until (fights that timed out: the mob cannot get at the bot either)
     this.lastBusyEnd = 0
     this.log = opts.log ?? (() => {})
@@ -119,6 +119,13 @@ class Safety extends EventEmitter {
     // lava first
     const feet = bot.blockAt(bot.entity.position.floored())
     if (bot.entity.isInLava || world.isLava(feet)) { this.run('lava', () => this.escapeLava()); return }
+    // suffocating: gravel / sand fell into the head cell
+    const head = bot.blockAt(bot.entity.position.offset(0, bot.entity.eyeHeight ?? 1.62, 0).floored())
+    const fullCube = (b) => b.shapes?.length === 1 && b.shapes[0].join(',') === '0,0,0,1,1,1'
+    if (head && head.boundingBox === 'block' && fullCube(head) && !world.isLiquid(head) && head.diggable && !world.isProtected(bot, head.position) && !(this.headBlockedUntil > Date.now())) {
+      this.run('suffocating', () => this.digOut())
+      return
+    }
     if ((bot.oxygenLevel ?? 20) < 8 && (bot.entity.isInWater || world.isWater(bot.blockAt(bot.entity.position.offset(0, 1.62, 0).floored())))) {
       this.run('drowning', () => this.swimUp())
       return
@@ -127,7 +134,10 @@ class Safety extends EventEmitter {
     const recentlyHurt = Date.now() - this.lastHurt < 4000
     const radius = recentlyHurt ? this.opts.alertRadius : this.opts.engageRadius
     const now = Date.now()
-    const target = combat.nearestHostile(bot, { radius: Math.max(radius, 6), exclude: (e) => !hurt && (this.ignored.get(e.id) ?? 0) > now })
+    const target = combat.nearestHostile(bot, {
+      radius: Math.max(radius, 6),
+      exclude: (e) => !hurt && (this.ignored.get(e.id) ?? 0) > now && e.position.distanceTo(bot.entity.position) > 4
+    })
     if (!target) return
     const d = target.position.distanceTo(bot.entity.position)
     const engage = d <= radius || (target.name === 'creeper' && d <= 6) || (hurt && d <= this.opts.alertRadius)
@@ -165,9 +175,30 @@ class Safety extends EventEmitter {
   async fight (target) {
     const combat = require('./skills/combat')
     await combat.equipForCombat(this.bot, { shield: true }).catch(() => {})
-    const r = await combat.fight(this.bot, target, { timeout: this.opts.fightTimeout, log: this.log })
+    // safe: the fight's own moves (approach, strafe, retreat) never step into lava / fire or off a ledge over 3 blocks
+    const r = await combat.fight(this.bot, target, { timeout: this.opts.fightTimeout, safe: true, log: this.log })
     if (r.outcome === 'timeout') this.ignored.set(target.id, Date.now() + this.opts.ignoreMs)
     return r.outcome
+  }
+
+  /** dig the block (and whatever keeps falling) out of the head cell — never when lava would flow in */
+  async digOut () {
+    const bot = this.bot
+    const navigate = require('./skills/navigate')
+    for (let i = 0; i < 8; i++) {
+      const cell = bot.entity.position.offset(0, bot.entity.eyeHeight ?? 1.62, 0).floored()
+      const b = bot.blockAt(cell)
+      if (!b || b.boundingBox !== 'block' || world.isLiquid(b)) return 'clear'
+      if (world.FACES.some((f) => f.y !== -1 && world.isLava(bot.blockAt(cell.plus(f))))) break
+      try {
+        await navigate.digSafe(bot, b)
+      } catch {
+        break
+      }
+      await bot.waitForTicks(3).catch(() => {}) // a falling block lands before the next look
+    }
+    this.headBlockedUntil = Date.now() + 5000 // do not retry every 4 ticks
+    return 'still blocked'
   }
 
   /** run away from `target` for a few seconds */
@@ -218,14 +249,48 @@ class Safety extends EventEmitter {
     const bot = this.bot
     // centred in the cell: rubbing on the wall of a 1×1 water shaft keeps the bot down
     await require('./skills/navigate').stepTo(bot, bot.entity.position.floored(), undefined, { tolerance: 0.15, ticks: 20 }).catch(() => {})
+    let lastY = bot.entity.position.y
+    let still = 0
     for (let i = 0; i < 80 && bot.health > 0; i++) {
       const head = bot.blockAt(bot.entity.position.offset(0, 1.62, 0).floored())
       if (!world.isWater(head) && (bot.oxygenLevel ?? 20) >= 15) break
       bot.setControlState('jump', true)
       await bot.waitForTicks(1).catch(() => {})
+      still = bot.entity.position.y > lastY + 0.01 ? 0 : still + 1
+      lastY = bot.entity.position.y
+      if (still > 10) break // a ceiling over the water (flooded cave)
     }
     bot.clearControlStates()
-    return 'surfaced'
+    const head = bot.blockAt(bot.entity.position.offset(0, 1.62, 0).floored())
+    if (!world.isWater(head)) return 'surfaced'
+    // no air above: swim to the nearest pocket of air instead
+    const pocket = this.airPocket(6)
+    if (!pocket) return 'no air'
+    const { goals } = require('mineflayer-pathfinder')
+    await require('./skills/navigate').goto(bot, new goals.GoalBlock(pocket.x, pocket.y, pocket.z), { timeout: 8000, attempts: 1, legs: false }).catch(() => {})
+    return world.isWater(bot.blockAt(bot.entity.position.offset(0, 1.62, 0).floored())) ? 'no air' : 'air pocket'
+  }
+
+  /** the nearest cell (≤ radius) with air at the feet and the head, on something to stand / float on */
+  airPocket (radius) {
+    const bot = this.bot
+    const here = bot.entity.position.floored()
+    let best = null
+    for (let dx = -radius; dx <= radius; dx++) {
+      for (let dz = -radius; dz <= radius; dz++) {
+        for (let dy = -2; dy <= radius; dy++) {
+          const p = here.offset(dx, dy, dz)
+          const feet = bot.blockAt(p)
+          const head = bot.blockAt(p.offset(0, 1, 0))
+          if (!feet || !head || !world.isPassable(feet) || !world.isPassable(head)) continue
+          const below = bot.blockAt(p.offset(0, -1, 0))
+          if (!below || !(world.isSolid(below) || world.isWater(below))) continue
+          const d = Math.abs(dx) + Math.abs(dy) + Math.abs(dz)
+          if (!best || d < best.d) best = { p, d }
+        }
+      }
+    }
+    return best?.p ?? null
   }
 }
 

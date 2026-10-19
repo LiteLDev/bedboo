@@ -3,8 +3,9 @@
 /**
  * Survival chores.
  *
- * Skill `food` — args: { min?: 8 }: make sure the bot carries food worth `min` hunger points (hunts passive animals
- *   in sight — exploring a little for them — and picks up the meat; mineflayer-auto-eat eats it when hungry).
+ * Skill `food` — args: { min?: 8, stock?: false }: make sure the bot carries food worth `min` hunger points (hunts
+ *   passive animals in sight — exploring a little for them — picks up the meat and cooks it when there is time;
+ *   mineflayer-auto-eat eats it when hungry). A well-fed bot is done unless `stock` (provisions for a long trip).
  *   result: { foodPoints, hunted: { [mob]: n } }
  * Skill `surface` — args: {}: get out of a mine to the open sky above (pathfinder towers / digs up; the shaft the
  *   bot came down is fine). result: { position }
@@ -30,37 +31,77 @@ function foodPoints (bot) {
 
 const PREY = ['cow', 'pig', 'sheep', 'mooshroom', 'chicken', 'rabbit']
 
-function nearestPrey (bot, radius = 64) {
-  return bot.nearestEntity((e) => PREY.includes(e.name) && e.position.distanceTo(bot.entity.position) <= radius) ?? null
+function nearestPrey (bot, radius = 64, filter = () => true) {
+  const { preyOk } = require('./obtain')
+  return bot.nearestEntity((e) => PREY.includes(e.name) && preyOk(bot, e) && e.position.distanceTo(bot.entity.position) <= radius && filter(e)) ?? null
 }
 
-async function food (bot, { min = 8, signal, timeout = 150000, explore: mayExplore = true, radius = 64 } = {}) {
+const COOKED = { beef: 'cooked_beef', porkchop: 'cooked_porkchop', mutton: 'cooked_mutton', chicken: 'cooked_chicken', rabbit: 'cooked_rabbit' }
+
+/** raw meat → cooked (more than twice the food) when a furnace and fuel are at hand and there is time */
+async function cook (bot, { signal, deadline }) {
+  const smelt = require('./smelt')
+  const stations = require('../stations')
+  for (const [raw, cooked] of Object.entries(COOKED)) {
+    const n = inventory.count(bot, raw)
+    // 10 s per item in the furnace + placing / opening / taking the furnace back
+    if (!n || Date.now() + 10000 * n + 15000 > deadline) continue
+    if (!inventory.count(bot, 'furnace') && !stations.stationNear(bot, 'furnace')) return
+    if (!smelt.chooseFuel(bot, { input: raw, inputCount: n })) return
+    try {
+      await smelt.smeltItem(bot, { item: cooked, count: n, input: raw, signal })
+    } catch (err) {
+      if (isAbort(err)) throw err
+      log(bot, `food: cooking ${raw}: ${err.message}`)
+      return
+    }
+  }
+}
+
+async function food (bot, { min = 8, stock = false, signal, timeout = 150000, explore: mayExplore = true, radius = 64 } = {}) {
   const started = Date.now()
   const hunted = {}
   const explore = require('./explore')
   const { hunt } = require('./obtain')
-  // mineflayer-auto-eat eats what the hunt brings while the bot is hungry: a well-fed bot counts as done
-  while (foodPoints(bot) < min && bot.food < 18) {
+  const stations = require('../stations')
+  // raw chicken is not eaten (food poisoning): it only counts — and chickens are only worth hunting — when it can be
+  // cooked afterwards (a furnace carried or nearby)
+  const canCook = () => inventory.count(bot, 'furnace') > 0 || !!stations.stationNear(bot, 'furnace')
+  const carried = () => foodPoints(bot) + (canCook() ? 2 * inventory.count(bot, 'chicken') : 0)
+  // mineflayer-auto-eat eats what the hunt brings while the bot is hungry: a well-fed bot counts as done (unless it is
+  // stocking up for a long trip)
+  const enough = () => carried() >= min || (!stock && bot.food >= 18)
+  while (!enough()) {
     checkAbort(signal)
     if (Date.now() - started > timeout) break
-    let prey = nearestPrey(bot, radius)
+    // from a mine, the animals on the surface far above are out of reach (the chase does not dig)
+    let open = underOpenSky(bot)
+    const cooking = canCook()
+    const inReach = (e) => (cooking || e.name !== 'chicken') && (open || Math.abs(e.position.y - bot.entity.position.y) < 8)
+    let prey = nearestPrey(bot, radius, inReach)
     log(bot, `food: ${foodPoints(bot)} points carried; prey ${prey ? `${prey.name} at ${prey.position.distanceTo(bot.entity.position).toFixed(0)}` : 'none in sight'}`)
     if (!prey) {
       if (!mayExplore) break
       await surface(bot, { signal }).catch((err) => { if (isAbort(err)) throw err })
-      const r = await explore.explore(bot, { until: () => nearestPrey(bot, 48), maxDistance: 160, signal, timeout: Math.max(20000, timeout - (Date.now() - started)) })
-      prey = r.found ? nearestPrey(bot) : null
+      const until = () => {
+        open = underOpenSky(bot)
+        return nearestPrey(bot, 48, inReach)
+      }
+      const r = await explore.explore(bot, { until, maxDistance: 160, signal, timeout: Math.max(20000, timeout - (Date.now() - started)) })
+      open = underOpenSky(bot)
+      prey = r.found ? nearestPrey(bot, radius, inReach) : null
       if (!prey) break
     }
     const drop = prey.name === 'sheep' ? 'mutton' : prey.name === 'pig' ? 'porkchop' : prey.name === 'chicken' ? 'chicken' : prey.name === 'rabbit' ? 'rabbit' : 'beef'
     try {
-      await hunt(bot, { mobs: [prey.name], item: drop, count: 1, signal, radius })
+      await hunt(bot, { mobs: [prey.name], item: drop, count: 1, signal, radius, filter: inReach })
       hunted[prey.name] = (hunted[prey.name] ?? 0) + 1
     } catch (err) {
       if (isAbort(err) || err.code === 'DIED') throw err
       log(bot, `food: hunting ${prey.name} failed: ${err.message}`)
     }
   }
+  await cook(bot, { signal, deadline: started + timeout })
   const points = foodPoints(bot)
   progress(bot, 'food', { points, hunted })
   if (points === 0 && bot.food < 18 && !Object.keys(hunted).length) throw new SkillError('no food found', { code: 'NOT_FOUND', details: { hunted } })
@@ -105,13 +146,20 @@ async function surface (bot, { signal, timeout = 240000 } = {}) {
         feet = bot.entity.position.floored()
       }
     }
-    const top = world.surfaceY(bot, feet.x, feet.z, { top: 319, bottom: feet.y, ground: (b) => world.isSolid(b) && !/leaves/.test(b.name) })
-    progress(bot, 'surface', { from: feet.y, to: top })
     try {
-      await climbUp(bot, { targetY: top ?? feet.y + 64, signal, timeout })
+      // staircase steps move the bot to other columns: aim again at the surface of the column it is in
+      for (let i = 0; i < 6 && !underOpenSky(bot) && Date.now() - started < timeout; i++) {
+        const f = bot.entity.position.floored()
+        const top = world.surfaceY(bot, f.x, f.z, { top: 319, bottom: f.y, ground: (b) => world.isSolid(b) && !/leaves/.test(b.name) })
+        progress(bot, 'surface', { from: f.y, to: top })
+        await climbUp(bot, { targetY: top ?? f.y + 64, signal, timeout: timeout - (Date.now() - started) })
+      }
     } catch (err) {
       if (isAbort(err)) throw err
-      log(bot, `surface: ${err.message}; pathfinder`)
+      log(bot, `surface: ${err.message}`)
+    }
+    if (!underOpenSky(bot)) {
+      log(bot, 'surface: climbing did not get out; pathfinder')
       const { goals } = require('mineflayer-pathfinder')
       for (let i = 0; i < 4 && !underOpenSky(bot) && Date.now() - started < timeout; i++) {
         const f = bot.entity.position.floored()
@@ -225,10 +273,10 @@ async function clearCell (bot, pos, signal) {
 }
 
 /** one pillar step: clear the cell over the head, centre, jump, place a filler block under the feet */
-async function pillarStep (bot, signal) {
+async function pillarStep (bot, signal, { exclude = [] } = {}) {
   const feet = bot.entity.position.floored()
   await clearCell(bot, feet.offset(0, 2, 0), signal)
-  const fill = inventory.filler(bot)
+  const fill = inventory.FILLER.filter((n) => !exclude.includes(n)).map((n) => inventory.find(bot, n)).find(Boolean) ?? null
   if (!fill) throw new SkillError('no blocks to pillar with', { code: 'MISSING' })
   const ref = bot.blockAt(feet.offset(0, -1, 0))
   if (!world.isSolid(ref)) throw new SkillError('nothing solid under the feet', { code: 'FAILED' })

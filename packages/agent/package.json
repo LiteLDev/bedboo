@@ -17,7 +17,8 @@
     "test": "mocha",
     "test:e2e": "mocha --config .mocharc.e2e.json",
     "scout": "node scripts/scout-seed.js",
-    "full-run": "node scenarios/overworld/full-run.js"
+    "full-run": "node scenarios/overworld/full-run.js",
+    "final-chain": "node scenarios/overworld/final-chain.js"
   },
   "dependencies": {
     "mineflayer-armor-manager": "2.0.1",

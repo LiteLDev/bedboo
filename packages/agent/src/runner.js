@@ -49,9 +49,10 @@ async function runSkill (bot, name, args = {}, { skills = defaultSkills, timeout
   const onAbort = () => controller.abort(signal.reason)
   signal?.addEventListener('abort', onAbort, { once: true })
   let timer
+  const running = (async () => skill(bot, { ...args, signal: controller.signal }))()
   try {
     return await Promise.race([
-      skill(bot, { ...args, signal: controller.signal }),
+      running,
       new Promise((resolve, reject) => {
         timer = setTimeout(() => {
           controller.abort(new Error('timeout'))
@@ -59,6 +60,15 @@ async function runSkill (bot, name, args = {}, { skills = defaultSkills, timeout
         }, timeout)
       })
     ])
+  } catch (err) {
+    // the skill saw the abort: let it unwind (it may be mid-dig / mid-path) so it cannot fight the next task over the
+    // controls; at most a few seconds
+    if (controller.signal.aborted) {
+      let wait
+      await Promise.race([running.catch(() => {}), new Promise((resolve) => { wait = setTimeout(resolve, 5000) })])
+      clearTimeout(wait)
+    }
+    throw err
   } finally {
     clearTimeout(timer)
     signal?.removeEventListener('abort', onAbort)
@@ -112,8 +122,8 @@ async function loadPlugins (bot, { autoEat = true, pvp = true, armor = true } = 
     bot.autoEat.setOpts({
       minHunger: 16,
       minHealth: 0, // auto-eat's default 14 tries to eat whenever hurt, even when full (Bedrock refuses): hunger only
-      priority: 'foodPoints',
-      bannedFood: ['rotten_flesh', 'spider_eye', 'poisonous_potato', 'pufferfish', 'chicken', 'golden_apple', 'enchanted_golden_apple', 'chorus_fruit', 'suspicious_stew']
+      priority: 'saturation', // cooked > raw meat > rotten flesh (eaten only when nothing better is carried)
+      bannedFood: ['spider_eye', 'poisonous_potato', 'pufferfish', 'chicken', 'golden_apple', 'enchanted_golden_apple', 'chorus_fruit', 'suspicious_stew']
     })
     if (autoEat) bot.autoEat.enableAuto()
   }
@@ -228,7 +238,9 @@ class Agent extends EventEmitter {
 
   onDeath () {
     const bot = this.bot
-    const death = { at: posOf(bot), dimension: bot.game?.dimension, t: Date.now() - (this.startedAt ?? Date.now()), inventory: this._lastInventory ?? {} }
+    let feet = null
+    try { feet = bot.blockAt(bot.entity.position.floored())?.name ?? null } catch {}
+    const death = { at: posOf(bot), feet, dimension: bot.game?.dimension, t: Date.now() - (this.startedAt ?? Date.now()), inventory: this._lastInventory ?? {} }
     this.deaths.push(death)
     this.state.lastDeath = death
     this.event('death', death)
@@ -252,8 +264,8 @@ class Agent extends EventEmitter {
       this._abortTask = (reason) => controller.abort(reason)
       try {
         const left = Math.max(1000, timeout - (Date.now() - started))
-        const result = await withTimeout(runSkill(this.bot, skill, args, { skills: this.skills, timeout: left, signal: controller.signal }), left + 2000, {
-          signal: controller.signal,
+        // runSkill handles the abort (death) and its own timeout, and lets the skill wind down; this is the last guard
+        const result = await withTimeout(runSkill(this.bot, skill, args, { skills: this.skills, timeout: left, signal: controller.signal }), left + 10000, {
           message: `task ${task.name} timed out`
         })
         task.ok = true
@@ -296,25 +308,56 @@ class Agent extends EventEmitter {
     if (!bot.isAlive) await new Promise((resolve) => { bot.once('spawn', resolve); setTimeout(resolve, 15000) })
     await new Promise((resolve) => setTimeout(resolve, 1000))
     this.event('respawned', { position: posOf(bot), inventory: inventory.counts(bot) })
+    // died again while recovering (getting a pickaxe): that recovery goes on with what is left
+    if (this._recovering) return
     if (!this.opts.recoverItems || !death?.at || death.dimension !== bot.game?.dimension) return
     const at = new Vec3(death.at.x, death.at.y, death.at.z)
     if (at.distanceTo(bot.entity.position) > 400) return
     const lost = Object.keys(death.inventory ?? {}).length
     if (!lost) return
+    // died in (or burning next to) lava: the drops burnt, and walking back there kills the bot again
+    const lavaNear = () => {
+      for (let dx = -1; dx <= 1; dx++) {
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dz = -1; dz <= 1; dz++) if (/lava/.test(bot.blockAt(at.floored().offset(dx, dy, dz))?.name ?? '')) return true
+        }
+      }
+      return false
+    }
+    if (/lava/.test(death.feet ?? '') || lavaNear()) {
+      this.event('log', { msg: `recover: died in / next to lava at ${at.floored()}; the drops are gone` })
+      return
+    }
     this.event('recover', { to: death.at })
     const navigate = require('./skills/navigate')
     const { goals } = require('mineflayer-pathfinder')
+    // far below (died in a mine): a shaft down next to the spot, like the miner reaches deep ores; it needs a pickaxe
+    // (a wooden one is quick to make and digs stone; the drops despawn 5 minutes after the death)
+    let deep = bot.entity.position.y - at.y > 12
+    if (deep && !bot.inventory.items().some((i) => /_pickaxe$/.test(i.name))) {
+      const depth = Math.round(bot.entity.position.y - at.y)
+      if (!this.skills.obtain) {
+        this.event('log', { msg: `recover: ${at.y} is ${depth} blocks down and no pickaxe is left; giving the drops up` })
+        return
+      }
+      this.event('log', { msg: `recover: ${at.y} is ${depth} blocks down and no pickaxe is left; making one first` })
+      this._recovering = true
+      try {
+        await this.run('obtain', { item: 'wooden_pickaxe', count: 1 }, { name: 'recover: a pickaxe', timeout: 120000, retries: 0 })
+      } catch (err) {
+        this.event('log', { msg: `recover: no pickaxe (${err.message}); giving the drops up` })
+        return
+      } finally {
+        this._recovering = false
+      }
+      // the trees may have been anywhere: where the bot stands now decides
+      if (at.distanceTo(bot.entity.position) > 400) return
+      deep = bot.entity.position.y - at.y > 12
+    }
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(new Error('recover timeout')), 120000)
     try {
-      // far below (died in a mine): a shaft down next to the spot, like the miner reaches deep ores
-      if (bot.entity.position.y - at.y > 12) {
-        if (!bot.inventory.items().some((i) => /_pickaxe$/.test(i.name))) {
-          this.event('log', { msg: `recover: ${at.y} is ${Math.round(bot.entity.position.y - at.y)} blocks down and no pickaxe is left; giving the drops up` })
-          return
-        }
-        await require('./dig').shaftTo(bot, at.floored(), { signal: controller.signal })
-      }
+      if (deep) await require('./dig').shaftTo(bot, at.floored(), { signal: controller.signal })
       await navigate.goto(bot, new goals.GoalNear(at.x, at.y, at.z, 2), { signal: controller.signal, timeout: 110000 })
       await require('./dig').pickupNear(bot, at.offset(0.5, 0.5, 0.5), { signal: controller.signal, radius: 8, wait: 2000, timeout: 30000 })
     } catch (err) {
@@ -335,7 +378,8 @@ class Agent extends EventEmitter {
     const { foodPoints } = require('./skills/survive')
     if (bot.food > 12 || foodPoints(bot) >= 6) return
     this.event('maintain', { food: bot.food, carried: foodPoints(bot) })
-    await this.run('food', { min: 8, explore: false, radius: 40 }, { name: 'food (maintenance)', timeout, retries: 0 }).catch((err) => this.event('log', { msg: `maintenance: ${err.message}` }))
+    // the skill knows its budget (it decides whether cooking still fits)
+    await this.run('food', { min: 8, explore: false, radius: 40, timeout: timeout - 5000 }, { name: 'food (maintenance)', timeout, retries: 0 }).catch((err) => this.event('log', { msg: `maintenance: ${err.message}` }))
   }
 
   /**
@@ -353,7 +397,7 @@ class Agent extends EventEmitter {
     for (const step of scenario.steps) {
       const left = deadline - Date.now()
       if (left <= 0) { ok = false; error = { code: 'TIMEOUT', message: `${scenario.name} ran out of time` }; break }
-      await this.maintain({ timeout: Math.min(60000, left / 5) })
+      await this.maintain({ timeout: Math.min(75000, left / 4) })
       try {
         await this.run(step.skill, step.args ?? {}, { name: step.name, timeout: Math.min(step.timeout ?? DEFAULT_STEP_TIMEOUT, left), retries: step.retries ?? 1 })
       } catch (err) {

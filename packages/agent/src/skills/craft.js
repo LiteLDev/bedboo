@@ -79,7 +79,7 @@ async function craftItem (bot, item, count = 1, { signal, keepTable = false } = 
       await bot.craft(recipe, times, useTable ? table : null)
     }
   } finally {
-    if (placed && !keepTable) await stations.pickUp(bot, placed, { signal: undefined })
+    if (placed && !keepTable && !signal?.aborted) await stations.pickUp(bot, placed, { signal })
   }
   const crafted = inventory.count(bot, item) - start
   progress(bot, 'craft', { item, count: crafted })

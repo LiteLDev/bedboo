@@ -134,7 +134,8 @@ function sourcesFor (bot, item, { failures, maxDistance = 128 } = {}) {
 function mobsFor (bot, item, { failures } = {}) {
   const out = []
   for (const s of data.mobSources(item)) {
-    const e = bot.nearestEntity((x) => x.name === s.mob && x.position.distanceTo(bot.entity.position) < 48)
+    const { preyOk } = require('./skills/obtain')
+    const e = bot.nearestEntity((x) => x.name === s.mob && preyOk(bot, x) && x.position.distanceTo(bot.entity.position) < 48)
     if (!e) continue
     const n = failures?.get(`kill:${item}`) ?? 0
     if (n >= 3) continue

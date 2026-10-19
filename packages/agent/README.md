@@ -71,7 +71,7 @@ A skill is `async (bot, args) => result` (`args.signal` is the runner's AbortSig
 | `craft` | `{ item, count }` | `bot.recipesFor` / `bot.craft`, 2×2 or a crafting table (placed and taken back) |
 | `smelt` | `{ item, count, input?, fuel? }` | `bot.openFurnace`; the furnace is placed and taken back |
 | `build` | `{ blueprint, origin?, radius? }` | builds a blueprint near the bot, verifies it block by block |
-| `navigate` | `{ position \| spawn: true, goal?, range? }` | pathfinder with re-planning, legs for far goals, unsticking |
+| `navigate` | `{ position \| spawn: true, goal?, range? }` | pathfinder with re-planning, legs for far goals, unsticking (own door, head block, out of the water onto a bank, a side dug open) |
 | `explore` | `{ blocks?, biomes?, maxDistance? }` | spiral walk until a block / biome is loaded |
 | `surface` | `{}` | out of a mine: pillar up (staircase where liquid is above, around lakes) |
 | `food` | `{ min }` | hunt passive animals for food |
@@ -101,13 +101,20 @@ dropped after 3 failures.
 src/safety.js runs during every task. When it takes over, pathfinder and digging stop and the task waits:
 
 - a hostile that hurt the bot or comes close (creepers from 6 blocks) is fought with skills/combat.js `fight`
-  (melee, bow when available, retreat when low) — or fled from without a weapon at low health;
-- in lava: jump towards the nearest solid ground; low on air: swim up (centred in the water column);
-- mineflayer-auto-eat eats when the food level drops below 16; between tasks the agent hunts when hungry and out of
-  food;
-- a death aborts the task; after the respawn the agent walks back, picks up its drops and retries the task;
+  (melee, bow when available, retreat when low) — or fled from without a weapon at low health; a mob it could not get
+  at within 15 s is left alone for a minute;
+- in lava: jump towards the nearest solid ground; low on air: swim up (centred in the water column); a falling
+  block in the head cell (gravel, sand): dig it out (never towards lava);
+- mineflayer-auto-eat eats when the food level drops below 16 (rotten flesh too when starving); between tasks the
+  agent hunts passive animals in sight when hungry and out of food (chased with the pathfinder around fences and
+  ledges), and cooks the meat in its furnace;
+- a death aborts the task; after the respawn the agent walks back (a shaft for a death deep underground, after making
+  a wooden pickaxe if none is left), picks up its drops and retries the task; a lost tool is obtained again by the mine
+  step that needs it;
 - digging never opens a cell next to lava or water, never drops into a cave deeper than 3 blocks, never digs what the
-  agent built (protected zones), and pathfinder never breaks stations / chests / doors.
+  agent built (protected zones), and pathfinder never breaks stations / chests / doors;
+- the event log records every damage taken (health, food, the blocks at the feet and the head, the nearest hostile)
+  and the server's death messages, so a failed run says what killed the bot.
 
 ## Blueprints
 
@@ -134,6 +141,7 @@ corepack pnpm --filter @bedboo/agent test:e2e -- --grep M1            # one run 
 AGENT_RUNS=5 corepack pnpm --filter @bedboo/agent test:e2e -- --grep M3 # the gate: ≥ 4 of 5
 AGENT_FULL_RUN=1 corepack pnpm --filter @bedboo/agent test:e2e -- --grep "full run"
 node packages/agent/scenarios/overworld/full-run.js --log             # the same chained run as a script
+node packages/agent/scenarios/overworld/final-chain.js --log          # M1→M5 → Nether → End, one world (below)
 ```
 
 | | from | steps | verified |
@@ -145,15 +153,15 @@ node packages/agent/scenarios/overworld/full-run.js --log             # the same
 | M5 | M4's end | coal, copper, iron; emerald (mountains); lapis, gold, redstone, diamond | one new item from each of the 8 ores |
 
 Gate on BDS 1.26.51.1 (2026-10-19, seed 1234, easy, 5 runs each from the previous milestone's snapshot; failure
-reasons and timings in `$AGENT_REPORT_DIR/runs.jsonl`):
+reasons and timings in `$AGENT_REPORT_DIR/runs.jsonl`; this code minus the later climb-out of the water in `unstick`):
 
 | | passed | wall time per run (s) | notes |
 |---|---|---|---|
-| M1 | 5/5 | 91, 86, 80, 93, 88 | |
-| M2 | 5/5 | 220, 252, 227, 195, 223 | night falls: zombies fought |
-| M3 | 5/5 | 159, 90, 121, 120, 121 | diamonds at y 3–4 (deepslate diamond ore) |
-| M4 | 5/5 | 185, 176, 200, 188, 172 | 125 cells verified; spiders, zombies, creepers fought |
-| M5 | 5/5 | 361, 327, 424, 316, 506 | two runs survived a death (respawn, walk back, drops recovered) |
+| M1 | 5/5 | 101, 113, 88, 100, 97 | |
+| M2 | 5/5 | 217, 222, 218, 261, 230 | night falls: zombies fought; run 5 re-run (the first try got no BDS slot) |
+| M3 | 5/5 | 92, 100, 94, 115, 91 | diamonds at y 3–4 (deepslate diamond ore) |
+| M4 | 5/5 | 180, 295, 253, 206, 182 | 125 cells verified; two runs survived a death at night |
+| M5 | 4/5 | 459, 358, 600 ✗, 307, 352 | deaths survived in 3 runs (drops recovered); ✗: stuck at the lake west of the spawn on the way to the emerald, out of time |
 
 World: the scouted seed in `scenarios/overworld/seed.json` (default generator), survival, difficulty
 `AGENT_DIFFICULTY` (default `easy`), vanilla gamerules (mobs spawn, day and night pass). Each milestone runs on a
@@ -165,6 +173,31 @@ Nothing in a milestone is cheated: the harness only starts servers and takes sna
 Env: `AGENT_RUNS` (runs per milestone), `AGENT_DIFFICULTY`, `AGENT_REPORT_DIR` (reports + `runs.jsonl`; default
 `~/.cache/bedboo/agent-reports`), `AGENT_REFRESH=1` (rebuild the snapshots), `AGENT_LOG=1` (print the event stream),
 `AGENT_SNAPSHOT_TAG`.
+
+### The final chain
+
+`scenarios/overworld/final-chain.js` (`corepack pnpm --filter @bedboo/agent final-chain`, or
+`AGENT_FINAL_CHAIN=1 … test:e2e -- --grep "final chain"`) runs everything in one world with one bot and no reconnects:
+M1 → M5, provisions (back to the spawn, meat hunted and cooked for the trip, best effort), U18's N1M3 (second
+bucket, iron ingot, back to the spawn, bucket-cast obsidian portal, into the Nether), back home through the bot's own
+portal (`--nether-ores`: N2's quartz, nether gold and ancient debris on the way), then U18's End part — the stronghold
+portal room is reached with cheats (locate + teleport, eyes of ender given; see docs/differences/U18.md), the bot
+fills the frames, enters the End, the dragon is killed by `/kill` (cheat), the bot fights two endermen and leaves
+through the exit portal. Every phase's time is printed; the report goes to `$AGENT_REPORT_DIR/final-chain-<time>.json`.
+
+Runs so far (2026-10-19, seed 1234, easy): **no run has passed every phase yet.** M1 → M5 passed in 4 of 5 chained
+runs (14.1–16.3 min); N1M3 failed in all 4 runs that reached it:
+
+| run | M1 → M5 (s) | then |
+|---|---|---|
+| 1 | 77, 207, 107, 173, 298 | N1M3: drowned in a flooded cave going back to the spawn, the diamond pickaxe lost |
+| 2 | 87, 233, 128, 163, 366 | N1M3 (17 min): no food (the hunts failed), the portal skill searched water / lava from a mineshaft for 13 min, a starving bot fell to its death, recovery gave up without a pickaxe |
+| 3 | 102, 201, 96, 166, 315 | provisions found no animals in the mountains; N1M3 "back to the spawn" stuck 2 min in the water at a lake shore 44 blocks west of the spawn |
+| 4 | 94, 202, 132, 175, 244 | provisions: killed by a spider at night (health low); N1M3 got its buckets and walked back, cast 2 of 10 obsidian, then the portal skill's cast loop waited at the mold for 12 min |
+| 5 | 75, 200, 102, 176, — | M5: stuck 8 min in its own copper pit under a lake shore on the way to the emerald |
+
+Fixed after the runs that found them: hunting (run 2), recovery without a pickaxe (2), provisions start at the spawn
+(3), climbing out of the water at a shore (3; only run 5 had it). Runs 2 and 4 stalled in U18's portal skill.
 
 ## Seed scouting
 

@@ -100,7 +100,9 @@ describe('player state (U9)', function () {
   it('spawn point: start_game world spawn, set_spawn_position world → spawnPoint + game; the player spawn type is not it', async () => {
     const { bot, client } = await createFakeBot()
     await replayJoin(bot, client)
-    assert.ok(bot.spawnPoint.equals(new Vec3(0, 32767, 0)), `start_game.spawn_position ${bot.spawnPoint}`)
+    // start_game.spawn_position (0, 32767, 0): the spawn search height, resolved (U17) to the spawn column's ground once
+    // the column is loaded — the flat world's grass at y -61 → -60
+    assert.ok(bot.spawnPoint.equals(new Vec3(0, -60, 0)), `start_game.spawn_position ${bot.spawnPoint}`)
     let games = 0
     bot.on('game', () => games++)
     client.receive('set_spawn_position', { spawn_type: 'world', player_position: { x: 1, y: -60, z: 2 }, dimension: 0, world_position: { x: -2147483648, y: -2147483648, z: -2147483648 } })
