@@ -122,8 +122,8 @@ class Safety extends EventEmitter {
     // suffocating: gravel / sand fell into the head cell
     const head = bot.blockAt(bot.entity.position.offset(0, bot.entity.eyeHeight ?? 1.62, 0).floored())
     const fullCube = (b) => b.shapes?.length === 1 && b.shapes[0].join(',') === '0,0,0,1,1,1'
-    if (head && head.boundingBox === 'block' && fullCube(head) && !world.isLiquid(head) && head.diggable && !world.isProtected(bot, head.position)) {
-      this.run('suffocating', () => this.digOut(head))
+    if (head && head.boundingBox === 'block' && fullCube(head) && !world.isLiquid(head) && head.diggable && !world.isProtected(bot, head.position) && !(this.headBlockedUntil > Date.now())) {
+      this.run('suffocating', () => this.digOut())
       return
     }
     if ((bot.oxygenLevel ?? 20) < 8 && (bot.entity.isInWater || world.isWater(bot.blockAt(bot.entity.position.offset(0, 1.62, 0).floored())))) {
@@ -177,15 +177,23 @@ class Safety extends EventEmitter {
     return r.outcome
   }
 
-  /** dig the block (and whatever keeps falling) out of the head cell */
-  async digOut (block) {
+  /** dig the block (and whatever keeps falling) out of the head cell — never when lava would flow in */
+  async digOut () {
     const bot = this.bot
     const navigate = require('./skills/navigate')
     for (let i = 0; i < 8; i++) {
-      const b = bot.blockAt(block.position)
+      const cell = bot.entity.position.offset(0, bot.entity.eyeHeight ?? 1.62, 0).floored()
+      const b = bot.blockAt(cell)
       if (!b || b.boundingBox !== 'block' || world.isLiquid(b)) return 'clear'
-      await navigate.digSafe(bot, b).catch(() => {})
+      if (world.FACES.some((f) => f.y !== -1 && world.isLava(bot.blockAt(cell.plus(f))))) break
+      try {
+        await navigate.digSafe(bot, b)
+      } catch {
+        break
+      }
+      await bot.waitForTicks(3).catch(() => {}) // a falling block lands before the next look
     }
+    this.headBlockedUntil = Date.now() + 5000 // do not retry every 4 ticks
     return 'still blocked'
   }
 

@@ -249,8 +249,8 @@ function runOnce (bot, goal, { ms, signal, stuckMs, noProgressMs = 30000 }) {
 async function unstick (bot, { signal, toward } = {}) {
   progress(bot, 'unstick', { at: fmt(bot.entity.position) })
   const pos = bot.entity.position.floored()
-  // a closed door right next to the bot (its own house): open it and walk through
-  if (await throughDoor(bot, pos, signal)) return
+  // a closed door right next to the bot (its own house): open it and walk through (when that leads towards the goal)
+  if (await throughDoor(bot, pos, signal, toward)) return
   const head = bot.blockAt(pos.offset(0, 1, 0))
   // something solid in the head cell (a placed block, gravel): dig it
   if (head && !world.isPassable(head) && world.safeToDig(bot, head.position) && bot.canDigBlock(head)) {
@@ -281,19 +281,22 @@ async function unstick (bot, { signal, toward } = {}) {
 }
 
 /** a wooden door / fence gate beside the feet: open it if closed, step into it and out the other side */
-async function throughDoor (bot, pos, signal) {
+async function throughDoor (bot, pos, signal, toward) {
   for (const d of world.HORIZONTAL) {
     const cell = pos.plus(d)
     const door = bot.blockAt(cell)
-    if (!door || !/(_door|^wooden_door|fence_gate)$/.test(door.name) || /iron/.test(door.name)) continue
+    if (!door || !isDoorName(door.name)) continue
     const beyond = cell.plus(d)
     const landing = [beyond, beyond.offset(0, -1, 0)].find((c) => world.standable(bot, c))
     if (!landing) continue
+    if (toward && world.distXZ(landing, toward) >= world.distXZ(pos, toward)) continue // leads away from the goal
     try {
       if (!door.getProperties?.().open_bit) await bot.activateBlock(door)
       await waitTicks(bot, 5, signal)
-      await stepTo(bot, cell, signal, { ticks: 25 })
-      await stepTo(bot, landing, signal, { ticks: 25 })
+      if (!(await stepTo(bot, cell, signal, { ticks: 25 })) || !(await stepTo(bot, landing, signal, { ticks: 25 }))) {
+        log(bot, `unstick: could not get through the ${door.name} at ${fmt(cell)}`)
+        continue
+      }
       log(bot, `unstick: went through the ${door.name} at ${fmt(cell)}`)
       return true
     } catch (err) {
@@ -302,6 +305,11 @@ async function throughDoor (bot, pos, signal) {
     }
   }
   return false
+}
+
+/** hand-openable doors and fence gates (never iron ones) */
+function isDoorName (name) {
+  return !name.includes('iron') && !name.endsWith('trapdoor') && (name.endsWith('_door') || name.endsWith('fence_gate'))
 }
 
 /** dig `block` with the best tool (no-op when it is gone) */
@@ -356,4 +364,4 @@ const navigate = defineSkill('navigate', async (bot, args) => {
   return { reached: true, position: { x: p.x, y: p.y, z: p.z }, ms: r.ms }
 }, { description: 'walk to a position with mineflayer-pathfinder (re-plans, unsticks)' })
 
-module.exports = Object.assign(navigate, { goto, travel, movements, goalFor, ensurePathfinder, unstick, digSafe, stepTo, stopPathfinder, fmt })
+module.exports = Object.assign(navigate, { goto, travel, throughDoor, isDoorName, movements, goalFor, ensurePathfinder, unstick, digSafe, stepTo, stopPathfinder, fmt })

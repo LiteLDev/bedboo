@@ -115,7 +115,10 @@ async function surface (bot, { signal, timeout = 240000 } = {}) {
       }
     } catch (err) {
       if (isAbort(err)) throw err
-      log(bot, `surface: ${err.message}; pathfinder`)
+      log(bot, `surface: ${err.message}`)
+    }
+    if (!underOpenSky(bot)) {
+      log(bot, 'surface: climbing did not get out; pathfinder')
       const { goals } = require('mineflayer-pathfinder')
       for (let i = 0; i < 4 && !underOpenSky(bot) && Date.now() - started < timeout; i++) {
         const f = bot.entity.position.floored()
@@ -229,10 +232,10 @@ async function clearCell (bot, pos, signal) {
 }
 
 /** one pillar step: clear the cell over the head, centre, jump, place a filler block under the feet */
-async function pillarStep (bot, signal) {
+async function pillarStep (bot, signal, { exclude = [] } = {}) {
   const feet = bot.entity.position.floored()
   await clearCell(bot, feet.offset(0, 2, 0), signal)
-  const fill = inventory.filler(bot)
+  const fill = inventory.FILLER.filter((n) => !exclude.includes(n)).map((n) => inventory.find(bot, n)).find(Boolean) ?? null
   if (!fill) throw new SkillError('no blocks to pillar with', { code: 'MISSING' })
   const ref = bot.blockAt(feet.offset(0, -1, 0))
   if (!world.isSolid(ref)) throw new SkillError('nothing solid under the feet', { code: 'FAILED' })
