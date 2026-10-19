@@ -119,6 +119,13 @@ class Safety extends EventEmitter {
     // lava first
     const feet = bot.blockAt(bot.entity.position.floored())
     if (bot.entity.isInLava || world.isLava(feet)) { this.run('lava', () => this.escapeLava()); return }
+    // suffocating: gravel / sand fell into the head cell
+    const head = bot.blockAt(bot.entity.position.offset(0, bot.entity.eyeHeight ?? 1.62, 0).floored())
+    const fullCube = (b) => b.shapes?.length === 1 && b.shapes[0].join(',') === '0,0,0,1,1,1'
+    if (head && head.boundingBox === 'block' && fullCube(head) && !world.isLiquid(head) && head.diggable && !world.isProtected(bot, head.position)) {
+      this.run('suffocating', () => this.digOut(head))
+      return
+    }
     if ((bot.oxygenLevel ?? 20) < 8 && (bot.entity.isInWater || world.isWater(bot.blockAt(bot.entity.position.offset(0, 1.62, 0).floored())))) {
       this.run('drowning', () => this.swimUp())
       return
@@ -168,6 +175,18 @@ class Safety extends EventEmitter {
     const r = await combat.fight(this.bot, target, { timeout: this.opts.fightTimeout, log: this.log })
     if (r.outcome === 'timeout') this.ignored.set(target.id, Date.now() + this.opts.ignoreMs)
     return r.outcome
+  }
+
+  /** dig the block (and whatever keeps falling) out of the head cell */
+  async digOut (block) {
+    const bot = this.bot
+    const navigate = require('./skills/navigate')
+    for (let i = 0; i < 8; i++) {
+      const b = bot.blockAt(block.position)
+      if (!b || b.boundingBox !== 'block' || world.isLiquid(b)) return 'clear'
+      await navigate.digSafe(bot, b).catch(() => {})
+    }
+    return 'still blocked'
   }
 
   /** run away from `target` for a few seconds */

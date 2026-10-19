@@ -105,10 +105,14 @@ async function surface (bot, { signal, timeout = 240000 } = {}) {
         feet = bot.entity.position.floored()
       }
     }
-    const top = world.surfaceY(bot, feet.x, feet.z, { top: 319, bottom: feet.y, ground: (b) => world.isSolid(b) && !/leaves/.test(b.name) })
-    progress(bot, 'surface', { from: feet.y, to: top })
     try {
-      await climbUp(bot, { targetY: top ?? feet.y + 64, signal, timeout })
+      // staircase steps move the bot to other columns: aim again at the surface of the column it is in
+      for (let i = 0; i < 6 && !underOpenSky(bot) && Date.now() - started < timeout; i++) {
+        const f = bot.entity.position.floored()
+        const top = world.surfaceY(bot, f.x, f.z, { top: 319, bottom: f.y, ground: (b) => world.isSolid(b) && !/leaves/.test(b.name) })
+        progress(bot, 'surface', { from: f.y, to: top })
+        await climbUp(bot, { targetY: top ?? f.y + 64, signal, timeout: timeout - (Date.now() - started) })
+      }
     } catch (err) {
       if (isAbort(err)) throw err
       log(bot, `surface: ${err.message}; pathfinder`)
