@@ -303,11 +303,14 @@ function lavaPools (blockAt, lava) {
  * Rank pools for bucket casting (best first): enough reachable sources for the casts still needed, under the open sky
  * (a cave pool needs a way down and back), close to `from`; `bad` pool keys are left out. Pure.
  */
-function rankPools (pools, { from, need = 1, bad = new Set(), minSources = 2 } = {}) {
+function rankPools (pools, { from, need = 1, bad = new Set(), minSources = 2, minY = 40 } = {}) {
   const f = u.vec(from)
   const nearest = (pool) => Math.min(...pool.reachable.map((p) => p.distanceTo(f)))
   return pools
     .filter((p) => !bad.has(p.key) && p.reachable.length >= Math.min(minSources, need))
+    // deep lava lakes (below y 40): in caves minutes of walking for no flat ground for a mold (N1M5 #3); at the bottom of
+    // a ravine — open to the sky — the walk down ended in the lava (N1M5 #1, a ravine pool at y -31)
+    .filter((p) => p.center.y >= minY)
     .map((p) => ({ pool: p, score: nearest(p) + (p.sky > 0 ? 0 : 96) + (p.reachable.length < need ? 24 : 0) }))
     .sort((a, b) => a.score - b.score)
     .map((x) => x.pool)
@@ -444,11 +447,17 @@ async function fillBucket (bot, liquid, { signal, guard, maxDistance = 128, near
   // reachable from above: air (or a plant) right above
   const usable = (p) => !skip.has(p.toString()) && isSource(bot.blockAt(p)) && u.isClear(bot.blockAt(p.offset(0, 1, 0)))
   // many: in a lake the nearest thousands of water blocks can all be under water (only the top layer is reachable)
-  const candidates = only
+  let candidates = only
     ? only.map((p) => u.vec(p))
     : u.findBlocks(bot, names, { maxDistance, count: 32768, point: near, filter: (b) => usable(b.position) }).map((b) => b.position)
+  // water: a lake under the open sky first (a cave's water is a walk through the dark, next to its lava)
+  if (!only && liquid === 'water') {
+    const sky = candidates.slice(0, 2000).filter((p) => openSky(worldOf(bot), p))
+    if (sky.length) candidates = sky
+  }
   const started = Date.now()
   const failed = []
+  const skipped = []
   let lastErr = null
   let walks = 0
   while (walks < tries && Date.now() - started < timeout) {
@@ -463,12 +472,22 @@ async function fillBucket (bot, liquid, { signal, guard, maxDistance = 128, near
     try {
       // lava: from a cell with no lava beside or under it (a bot at the pool's rim walked into it: N1M3 #1, "tried to
       // swim in lava" at 8 hp)
-      const goal = liquid === 'lava' ? lavaSafeGoal(bot, p, goals) : new goals.GoalNear(p.x, p.y + 1, p.z, 2.5)
+      const goal = liquid === 'lava' ? lavaSafeGoal(bot, p, goals) : reachGoal(p, goals)
       await u.goto(bot, goal, { signal, timeout: Math.max(5000, Math.min(45000, timeout - (Date.now() - started))), retries: 1 })
       const block = bot.blockAt(p)
-      if (!isSource(block)) { skip.add(p.toString()); continue }
-      const eye = bot.entity.position.offset(0, bot.entity.eyeHeight, 0)
-      if (eye.distanceTo(p.offset(0.5, 0.5, 0.5)) > 4.5) { skip.add(p.toString()); continue }
+      if (!isSource(block)) {
+        skip.add(p.toString())
+        skipped.push(`${p} gone (${block?.name})`)
+        continue
+      }
+      const eye = bot.entity.position.offset(0, bot.entity.eyeHeight ?? 1.62, 0)
+      const reach = eye.distanceTo(p.offset(0.5, 0.5, 0.5))
+      if (reach > 5.0) {
+        skip.add(p.toString())
+        skipped.push(`${p} out of reach (${reach.toFixed(1)} from ${bot.entity.position.floored()})`)
+        u.log(bot, `${liquid} source ${p}: out of reach after the walk (${reach.toFixed(1)} blocks from ${bot.entity.position.floored()})`)
+        continue
+      }
       const before = u.count(bot, filled)
       const others = { water_bucket: u.count(bot, 'water_bucket'), lava_bucket: u.count(bot, 'lava_bucket') }
       await holdBucket(bot, 'bucket', { guard, signal })
@@ -491,7 +510,7 @@ async function fillBucket (bot, liquid, { signal, guard, maxDistance = 128, near
     }
   }
   if (!walks) throw new Error(`no reachable ${liquid} source ${only ? 'left in the pool' : `within ${maxDistance} blocks`}`)
-  throw new Error(`could not fill a bucket with ${liquid} (${walks} sources tried in ${Math.round((Date.now() - started) / 1000)} s): ${lastErr?.message ?? 'none in reach'}`)
+  throw new Error(`could not fill a bucket with ${liquid} (${walks} sources tried in ${Math.round((Date.now() - started) / 1000)} s): ${lastErr?.message ?? skipped.slice(0, 3).join(', ') ?? 'none in reach'}`)
 }
 
 /** whether lava is next to (or under) a feet cell, diagonals included */
@@ -504,11 +523,25 @@ function lavaAround (bot, feet) {
   return false
 }
 
-/** a pathfinder goal: within bucket reach of the lava source `p`, standing on a cell with no lava around it */
-function lavaSafeGoal (bot, p, goals) {
-  const goal = new goals.GoalNear(p.x, p.y + 1, p.z, 3)
-  const near = goal.isEnd.bind(goal)
-  goal.isEnd = (node) => near(node) && !lavaAround(bot, new Vec3(node.x, node.y, node.z))
+/**
+ * A pathfinder goal: the source `p` within bucket reach of the eyes (≤ `reach` to its centre) — not just near the cell
+ * above it: a pool in a dip has banks 3–4 blocks higher, and "within 2.5–3 of the cell above" stood the bot on the bank
+ * 4.8–5.5 blocks from every source (N1M5 #1 / #3, N1M3 #1: "none in reach") — on a cell with no lava around it (a bot
+ * at the rim walked into the pool at 8 hp: N1M3 #1).
+ */
+function lavaSafeGoal (bot, p, goals, { reach = 4.0 } = {}) {
+  const target = u.vec(p).offset(0.5, 0.5, 0.5)
+  const goal = new goals.GoalNear(p.x, p.y + 1, p.z, 4) // its heuristic: the distance to the cell above the source
+  goal.isEnd = (node) => new Vec3(node.x + 0.5, node.y + 1.62, node.z + 0.5).distanceTo(target) <= reach &&
+    !lavaAround(bot, new Vec3(node.x, node.y, node.z))
+  return goal
+}
+
+/** the same reach test for water (a lake's bank) */
+function reachGoal (p, goals, { reach = 4.0 } = {}) {
+  const target = u.vec(p).offset(0.5, 0.5, 0.5)
+  const goal = new goals.GoalNear(p.x, p.y + 1, p.z, 4)
+  goal.isEnd = (node) => new Vec3(node.x + 0.5, node.y + 1.62, node.z + 0.5).distanceTo(target) <= reach
   return goal
 }
 
@@ -739,9 +772,14 @@ async function lowHealthPause (bot, { guard, signal, below = 10, until = 14, max
   }
   // hurt at night without armor: out of the mobs' reach until the morning (U17's shelter or a pocket / pit)
   if (nightMs > 0 && shelter.ticksToNight(bot) === 0 && shelter.armorWorn(bot) < 2) {
-    await shelter.untilDay(bot, { signal, guard, maxMs: nightMs, why: `health ${bot.health} at night` })
-      .catch((err) => { if (signal?.aborted) throw err; u.log(bot, `portal: shelter: ${err.message}`) })
-    return { ms: Date.now() - t, healed: bot.health >= from + 2, sheltered: true }
+    return shelterPause()
+  }
+  // nothing to eat and too hungry to regenerate: waiting heals nothing (N1M3: 30 s before each of ten casts)
+  const ae = bot.autoEat
+  const edible = typeof ae?.findBestChoices === 'function' ? ae.findBestChoices(bot.inventory.items(), ae.opts?.priority ?? 'foodPoints').length > 0 : !!u.findItem(bot, u.FOODS)
+  if (bot.food < 18 && !edible) {
+    u.log(bot, `portal: health ${bot.health}, food ${bot.food}, nothing to eat: going on`)
+    return { ms: Date.now() - t, healed: false, sheltered: false }
   }
   while (bot.health < until && Date.now() - t < maxMs) {
     // health only comes back with a (nearly) full food bar: eat up to 18
@@ -750,6 +788,12 @@ async function lowHealthPause (bot, { guard, signal, below = 10, until = 14, max
     await u.sleep(1000, signal)
   }
   return { ms: Date.now() - t, healed: bot.health >= from + 2, sheltered: false }
+
+  async function shelterPause () {
+    await shelter.untilDay(bot, { signal, guard, maxMs: nightMs, why: `health ${bot.health} at night` })
+      .catch((err) => { if (signal?.aborted) throw err; u.log(bot, `portal: shelter: ${err.message}`) })
+    return { ms: Date.now() - t, healed: bot.health >= from + 2, sheltered: true }
+  }
 }
 
 /** a water bucket again after a cast lost it; @returns {Promise<string|null>} why not (the pool loop gives up) */
@@ -1455,6 +1499,7 @@ module.exports = Object.assign(portalSkill, {
   holdBucket,
   lowHealthPause,
   lavaSafeGoal,
+  reachGoal,
   ensureWaterBucket,
   fillBucket,
   obtainFlint,

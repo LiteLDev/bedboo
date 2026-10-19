@@ -47,9 +47,11 @@ async function runOnce (scenario, { username = 'u18bot', onLog } = {}) {
   const report = { name: scenario.name, ok: false, reason: null, ms: 0, steps: [], logs }
   let server = null
   let bot = null
-  const deadline = started + (scenario.timeout ?? 20 * 60 * 1000)
+  // the scenario's time starts once its server runs (queueing for a BDS slot is not the scenario's time)
+  let deadline = Infinity
   try {
     server = await bds.startServer(scenario.server)
+    deadline = Date.now() + (scenario.timeout ?? 20 * 60 * 1000)
     ;({ bot } = await createTestBot({ server, username, botOptions: { viewDistance: scenario.viewDistance ?? 8 } }))
     bot.on('agent_log', (m) => log(m))
     bot.on('death', () => log(`DEATH at ${bot.entity?.position?.floored()} in ${bot.game?.dimension}`))

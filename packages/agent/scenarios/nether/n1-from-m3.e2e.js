@@ -4,9 +4,10 @@
 // AGENT_FULL_RUN=1); BEDBOO_U18_RUNS=5 for the ≥ 4/5 gate:
 //   BEDBOO_U18_FROM_M3=1 BEDBOO_U18_RUNS=5 corepack pnpm --filter @bedboo/agent test:e2e -- --grep N1M3
 //   BEDBOO_U18_FROM_M5=1 BEDBOO_U18_RUNS=5 corepack pnpm --filter @bedboo/agent test:e2e -- --grep N1M5
+//   BEDBOO_U18_FROM_M5_HOME=1 … --grep N1M5H     (N1M5 + the chain's "back home"; BEDBOO_U18_NETHER_ORES=1: + N2's ores)
 const assert = require('assert')
 const { runMilestone, ensureStart, snapshotName, MILESTONES, config } = require('../overworld/harness')
-const { N1M3, N1M5 } = require('./n1-from-m3')
+const { N1M3, N1M5, N1M5H } = require('./n1-from-m3')
 
 const RUNS = Math.max(1, Number(process.env.BEDBOO_U18_RUNS) || 1)
 const log = (m) => console.log(`      ${m}`)
@@ -32,7 +33,7 @@ async function snapshotAfter (milestoneId) {
 
 function gate (scenario, from) {
   const required = RUNS === 1 ? 1 : Math.ceil(RUNS * 0.8)
-  it(`${scenario.id}: second bucket, iron ingot, portal → the nether (${required}/${RUNS} runs must pass)`, async function () {
+  it(`${scenario.id}: ${scenario.name} (${required}/${RUNS} runs must pass)`, async function () {
     const start = await snapshotAfter(from)
     const results = []
     for (let i = 1; i <= RUNS; i++) {
@@ -65,5 +66,12 @@ if (process.env.BEDBOO_U18_FROM_M5 === '1' || process.env.AGENT_FULL_RUN === '1'
   describe('U18 scenario N1M5 (from U17\'s M5 snapshot: far from the spawn, underground; U17\'s Agent)', function () {
     this.timeout(0)
     gate(N1M5, 'M5')
+  })
+}
+
+if (process.env.BEDBOO_U18_FROM_M5_HOME === '1') {
+  describe('U18 scenario N1M5H (N1M5, then back home through the bot\'s own portal; U17\'s Agent)', function () {
+    this.timeout(0)
+    gate(N1M5H, 'M5')
   })
 }

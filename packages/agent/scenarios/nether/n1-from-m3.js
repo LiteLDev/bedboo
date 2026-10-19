@@ -50,4 +50,23 @@ function n1From (id, name) {
 const N1M3 = n1From('N1M3', 'N1 nether entry from M3')
 const N1M5 = n1From('N1M5', 'N1 nether entry from M5')
 
-module.exports = { N1M3, N1M5, PORTAL_STEP, n1From }
+/**
+ * N1M5H: N1M5, then the chain's "back home" phase — the nether skill under the Agent (`targets`: the chain's
+ * `--nether-ores` set with BEDBOO_U18_NETHER_ORES=1, else nothing to mine), back through the bot's own portal.
+ */
+function n1HomeFrom (id, name, targets = {}) {
+  const base = n1From(id, name)
+  return {
+    ...base,
+    steps: [...base.steps, { skill: 'nether', name: 'back home', args: { targets, returnHome: true }, timeout: 14 * 60 * 1000, retries: 1 }],
+    timeout: 60 * 60 * 1000,
+    verify (agent) {
+      const bot = agent.bot
+      if (bot.game.dimension !== 'overworld') throw new Error(`not back in the overworld: ${bot.game.dimension}`)
+      return { dimension: bot.game.dimension }
+    }
+  }
+}
+const N1M5H = n1HomeFrom('N1M5H', 'N1 from M5 and back home', process.env.BEDBOO_U18_NETHER_ORES === '1' ? { quartz_ore: 3, nether_gold_ore: 3, ancient_debris: 1 } : {})
+
+module.exports = { N1M3, N1M5, N1M5H, PORTAL_STEP, n1From, n1HomeFrom }

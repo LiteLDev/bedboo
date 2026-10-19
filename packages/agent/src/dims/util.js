@@ -347,7 +347,10 @@ async function goto (bot, goal, { signal, timeout = 90000, retries = 3, movement
           }, 1000)
         })
       ])
-      return
+      // pathfinder resolved: trust it at the goal (or a rounding away from it); short of it is a failed attempt
+      if (goal.isEnd(bot.entity.position.floored()) || !(distance() > 1.5)) return
+      lastErr = new Error(`pathfinder stopped ${distance().toFixed(1)} short of the goal (at ${bot.entity.position.floored()})`)
+      log(bot, `goto: ${lastErr.message}`)
     } catch (err) {
       lastErr = err
       if (signal?.aborted) throw new AbortedError()
@@ -379,7 +382,7 @@ async function goto (bot, goal, { signal, timeout = 90000, retries = 3, movement
       bot.removeListener('path_update', onUpdate)
     }
   }
-  throw lastErr
+  throw lastErr ?? new Error(`goto: out of time before the goal (at ${bot.entity.position.floored()})`)
 }
 
 /** BEDBOO_AGENT_DEBUG: why a goto failed — the searches and the blocks around the bot */
