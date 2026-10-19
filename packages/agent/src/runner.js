@@ -492,16 +492,24 @@ class Agent extends EventEmitter {
       deep = bot.entity.position.y - at.y > 12
     }
     const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(new Error('recover timeout')), 120000)
-    try {
-      if (deep) await require('./dig').shaftTo(bot, at.floored(), { signal: controller.signal })
-      await navigate.goto(bot, new goals.GoalNear(at.x, at.y, at.z, 2), { signal: controller.signal, timeout: 110000 })
-      await require('./dig').pickupNear(bot, at.offset(0.5, 0.5, 0.5), { signal: controller.signal, radius: 8, wait: 2000, timeout: 30000 })
-    } catch (err) {
-      if (!isAbort(err)) this.event('log', { msg: `recover: ${err.message}` })
-    } finally {
-      clearTimeout(timer)
+    const timer = setTimeout(() => controller.abort(new Error('recover timeout')), 150000)
+    // a fight on the way (a skeleton at the shaft, "Digging aborted") is no reason to leave the drops: again (≤ 4)
+    for (let attempt = 0; attempt < 4 && !controller.signal.aborted; attempt++) {
+      const interventions = this.safety?.interventions.length ?? 0
+      try {
+        if (deep && bot.entity.position.y - at.y > 12) await require('./dig').shaftTo(bot, at.floored(), { signal: controller.signal })
+        await navigate.goto(bot, new goals.GoalNear(at.x, at.y, at.z, 2), { signal: controller.signal, timeout: 110000 })
+        await require('./dig').pickupNear(bot, at.offset(0.5, 0.5, 0.5), { signal: controller.signal, radius: 8, wait: 2000, timeout: 30000 })
+        break
+      } catch (err) {
+        if (isAbort(err)) break
+        this.event('log', { msg: `recover: ${err.message}` })
+        const fought = (this.safety?.interventions.length ?? 0) > interventions || this.safety?.busy
+        if (!fought) break
+        await this.safety?.idle(controller.signal).catch(() => {})
+      }
     }
+    clearTimeout(timer)
     // the armor and the shield came back as items: wear them again
     await require('./skills/combat').equipForCombat(bot, { shield: true }).catch(() => {})
     this.event('recovered', { inventory: inventory.counts(bot) })
