@@ -129,6 +129,17 @@ describe('final fix (agent): safety under U18 guards', () => {
     assert.strictEqual(safety.guards.length, 0)
     const g2 = combat.guardFor(bot, { radius: 12 })
     assert.strictEqual(safety.effective().radius, 12)
+    // a meal stops nothing: not a busy guard (a skill would treat it as a fight and retry forever)
+    let busyEvents = 0
+    g2.on('busy', () => busyEvents++)
+    safety.claim('eat')
+    assert.strictEqual(g2.busy, false)
+    await g2.idle()
+    safety.release('eat')
+    safety.claim('fight')
+    assert.strictEqual(g2.busy, true)
+    safety.release('fight')
+    assert.strictEqual(busyEvents, 1)
     await g2.stop()
     await g2.stop() // twice is fine
     assert.strictEqual(safety.effective().radius, 5)
