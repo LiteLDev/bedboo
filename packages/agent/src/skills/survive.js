@@ -405,6 +405,7 @@ async function climbUp (bot, { targetY, signal, timeout = 240000, maxSteps = 400
   // eat before the climb (standing still), not in the middle of a jump
   await require('../skill').eatNow(bot, { below: 18 })
   let interrupted = 0
+  let sideSteps = 0
   for (let i = 0; i < maxSteps; i++) {
     checkAbort(signal)
     if (Date.now() - started > timeout) throw new SkillError(`still underground at ${navigate.fmt(bot.entity.position)}`, { code: 'TIMEOUT' })
@@ -413,6 +414,14 @@ async function climbUp (bot, { targetY, signal, timeout = 240000, maxSteps = 400
     if (inWater(bot)) {
       await swimUp(bot, signal)
       if (bot.entity.position.floored().y > feet.y) continue
+    }
+    // gravel over the head: not straight up under it (it falls onto the bot: suffocated in a wall) — the next column
+    if (gravelOver(bot, feet) && sideSteps < 8) {
+      sideSteps++
+      if (await sideStep(bot, signal)) {
+        log(bot, `climb: gravel over ${navigate.fmt(feet)}; over to ${navigate.fmt(bot.entity.position)}`)
+        continue
+      }
     }
     try {
       await pillarStep(bot, signal)
@@ -469,10 +478,7 @@ async function swimUp (bot, signal) {
 async function clearCell (bot, pos, signal) {
   for (let k = 0; k < 10; k++) {
     const b = bot.blockAt(pos)
-    // gravel / sand on its way down into the cell (still a block over it, or a falling block entity): let it land
-    // and dig it too — a bot that jumps into the cell gets it on the head (suffocated in a wall: the server's block)
-    if ((!b || world.isPassable(b) || world.isWater(b)) && !(await fallingInto(bot, pos, signal))) return
-    if (!b || world.isPassable(b) || world.isWater(b)) continue
+    if (!b || world.isPassable(b) || world.isWater(b)) return
     const lavaNear = world.FACES.some((f) => f.y !== -1 && world.isLava(bot.blockAt(pos.plus(f))))
     if (!b.diggable || world.isLava(b) || lavaNear || world.isProtected(bot, pos)) throw new SkillError(`unsafe to dig ${b.name} at ${navigate.fmt(pos)}`, { code: 'UNSAFE' })
     await navigate.digSafe(bot, b, signal)
@@ -482,19 +488,32 @@ async function clearCell (bot, pos, signal) {
   if (!world.isPassable(after) && !world.isWater(after)) throw new SkillError(`${navigate.fmt(pos)} keeps filling up`, { code: 'FAILED' })
 }
 
+/** gravel / sand over the bot's head (the next 2 cells): digging straight up brings it down onto the bot */
+function gravelOver (bot, feet) {
+  return world.isFalling(bot.blockAt(feet.offset(0, 2, 0))) || world.isFalling(bot.blockAt(feet.offset(0, 3, 0)))
+}
+
 /**
- * Whether something falls into the empty cell `pos`: a gravity block right over it (it falls within a few ticks) or a
- * falling block entity in the column above. Waits (≤ 2 s) until it landed; true → look at the cell again.
+ * Over to a neighbouring column with no gravel / sand over it (cleared at feet and head height, ground under it, no
+ * liquid): the climb goes on there. @returns {Promise<boolean>}
  */
-async function fallingInto (bot, pos, signal) {
-  const inColumn = () => Object.values(bot.entities ?? {}).some((e) => e.name === 'falling_block' &&
-    Math.abs(e.position.x - (pos.x + 0.5)) < 0.9 && Math.abs(e.position.z - (pos.z + 0.5)) < 0.9 && e.position.y > pos.y - 0.5 && e.position.y < pos.y + 12)
-  const over = () => world.isFalling(bot.blockAt(pos.offset(0, 1, 0)))
-  const empty = () => { const c = bot.blockAt(pos); return !c || world.isPassable(c) || world.isWater(c) }
-  if (!over() && !inColumn()) return false
-  for (let t = 0; t < 40 && (over() || inColumn()) && empty(); t++) await waitTicks(bot, 1, signal)
-  await waitTicks(bot, 2, signal)
-  return !empty()
+async function sideStep (bot, signal) {
+  const feet = bot.entity.position.floored()
+  for (const d of world.HORIZONTAL) {
+    const low = feet.plus(d)
+    const cells = [low, low.offset(0, 1, 0)]
+    if (!world.isSolid(bot.blockAt(low.offset(0, -1, 0)))) continue
+    if ([...cells, low.offset(0, 2, 0), low.offset(0, 3, 0)].some((c) => world.isFalling(bot.blockAt(c)) || world.isLiquid(bot.blockAt(c)) || world.lavaAround(bot, c))) continue
+    if (cells.some((c) => world.isProtected(bot, c))) continue
+    try {
+      for (const c of cells) await clearCell(bot, c, signal)
+    } catch (err) {
+      if (isAbort(err)) throw err
+      continue
+    }
+    if (await navigate.stepTo(bot, low, signal, { ticks: 30 })) return true
+  }
+  return false
 }
 
 /** one pillar step: clear the cell over the head, centre, jump, place a filler block under the feet */
