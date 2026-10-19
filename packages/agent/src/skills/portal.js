@@ -295,7 +295,7 @@ function lavaPools (blockAt, lava) {
     const c = blocks.reduce((a, p) => a.plus(p), new Vec3(0, 0, 0)).scaled(1 / blocks.length)
     const center = new Vec3(Math.round(c.x), Math.round(c.y), Math.round(c.z))
     const min = blocks.reduce((a, p) => (p.x < a.x || (p.x === a.x && (p.y < a.y || (p.y === a.y && p.z < a.z))) ? p : a))
-    return { key: min.toString(), center, sources, reachable, sky, size: blocks.length }
+    return { key: min.toString(), center, sources, reachable, sky, size: blocks.length, blocks }
   })
 }
 
@@ -437,9 +437,11 @@ async function holdBucket (bot, name, { guard, signal } = {}) {
 /**
  * Fill one empty bucket from a reachable source of `liquid` ('water' | 'lava'): one of `sources` (a pool's) or the
  * nearest loaded ones. Bounded: at most `tries` walks and `timeout` ms; a walk that failed slowly (stalled / timed out:
- * the bot cannot get to that edge) takes the sources within `spread` blocks of it out too. @returns {Promise<Vec3>}
+ * the bot cannot get to that edge) takes the sources within `spread` blocks of it out too. `avoid`: cell keys of the
+ * pool's footprint (its sources taken since are dry holes the lava flows back into) — never a fill spot next to one.
+ * @returns {Promise<Vec3>}
  */
-async function fillBucket (bot, liquid, { signal, guard, maxDistance = 128, near, skip = new Set(), sources: only, tries = 6, timeout = 150000, spread = 4 } = {}) {
+async function fillBucket (bot, liquid, { signal, guard, maxDistance = 128, near, skip = new Set(), sources: only, tries = 6, timeout = 150000, spread = 4, avoid = null } = {}) {
   const { goals } = u.ensurePathfinder(bot)
   const filled = `${liquid}_bucket`
   const isSource = liquid === 'lava' ? u.isLavaSource : u.isWaterSource
@@ -470,10 +472,11 @@ async function fillBucket (bot, liquid, { signal, guard, maxDistance = 128, near
     walks++
     const t = Date.now()
     try {
-      // lava: from a cell with no lava beside or under it (a bot at the pool's rim walked into it: N1M3 #1, "tried to
-      // swim in lava" at 8 hp)
-      const goal = liquid === 'lava' ? lavaSafeGoal(bot, p, goals) : reachGoal(p, goals)
+      // lava: from a cell with no lava, no hole of the pool and no drop beside it (N1M3 #1 walked into the pool at 8 hp;
+      // N1 seed 35 slid off a rim into a taken source's hole)
+      const goal = liquid === 'lava' ? lavaSafeGoal(bot, p, goals, { avoid }) : reachGoal(p, goals)
       await u.goto(bot, goal, { signal, timeout: Math.max(5000, Math.min(45000, timeout - (Date.now() - started))), retries: 1 })
+      await settle(bot, { signal })
       const block = bot.blockAt(p)
       if (!isSource(block)) {
         skip.add(p.toString())
@@ -497,7 +500,7 @@ async function fillBucket (bot, liquid, { signal, guard, maxDistance = 128, near
         for (const [k, n] of Object.entries(others)) if (u.count(bot, k) < n) u.log(bot, `bucket desync: a ${k} was used on ${p} instead of the empty bucket`)
         throw err
       })
-      u.log(bot, `filled a ${filled} at ${p}`)
+      u.log(bot, `filled a ${filled} at ${p} from ${bot.entity.position.floored()}`)
       return p
     } catch (err) {
       if (signal?.aborted) throw err
@@ -510,7 +513,7 @@ async function fillBucket (bot, liquid, { signal, guard, maxDistance = 128, near
     }
   }
   if (!walks) throw new Error(`no reachable ${liquid} source ${only ? 'left in the pool' : `within ${maxDistance} blocks`}`)
-  throw new Error(`could not fill a bucket with ${liquid} (${walks} sources tried in ${Math.round((Date.now() - started) / 1000)} s): ${lastErr?.message ?? skipped.slice(0, 3).join(', ') ?? 'none in reach'}`)
+  throw new Error(`could not fill a bucket with ${liquid} (${walks} sources tried in ${Math.round((Date.now() - started) / 1000)} s): ${lastErr?.message ?? (skipped.slice(0, 3).join(', ') || 'none in reach')}`)
 }
 
 /** whether lava is next to (or under) a feet cell, diagonals included */
@@ -529,12 +532,46 @@ function lavaAround (bot, feet) {
  * 4.8–5.5 blocks from every source (N1M5 #1 / #3, N1M3 #1: "none in reach") — on a cell with no lava around it (a bot
  * at the rim walked into the pool at 8 hp: N1M3 #1).
  */
-function lavaSafeGoal (bot, p, goals, { reach = 4.0 } = {}) {
+function lavaSafeGoal (bot, p, goals, { reach = 4.0, avoid = null } = {}) {
   const target = u.vec(p).offset(0.5, 0.5, 0.5)
   const goal = new goals.GoalNear(p.x, p.y + 1, p.z, 4) // its heuristic: the distance to the cell above the source
-  goal.isEnd = (node) => new Vec3(node.x + 0.5, node.y + 1.62, node.z + 0.5).distanceTo(target) <= reach &&
-    !lavaAround(bot, new Vec3(node.x, node.y, node.z))
+  goal.isEnd = (node) => {
+    const n = new Vec3(node.x, node.y, node.z)
+    return n.offset(0.5, 1.62, 0.5).distanceTo(target) <= reach && !lavaAround(bot, n) && !dropBeside(bot, n) &&
+      !(avoid && nearCells(avoid, n))
+  }
   return goal
+}
+
+/** a cell of `cells` (keys "(x, y, z)") at or next to the feet cell `n` or under them (diagonals included) */
+function nearCells (cells, n) {
+  for (let dx = -1; dx <= 1; dx++) {
+    for (let dz = -1; dz <= 1; dz++) {
+      for (const dy of [-2, -1, 0]) if (cells.has(n.offset(dx, dy, dz).toString())) return true
+    }
+  }
+  return false
+}
+
+/**
+ * A drop of 2+ blocks next to the feet cell `n` (diagonals included): the bot's momentum at the end of a walk carried
+ * it off such a rim into the hole a taken source left, and lava flowed in (N1 seed 35, every run at 90 s)
+ */
+function dropBeside (bot, n) {
+  for (let dx = -1; dx <= 1; dx++) {
+    for (let dz = -1; dz <= 1; dz++) {
+      if (!dx && !dz) continue
+      const c = n.offset(dx, 0, dz)
+      if (u.isClear(bot.blockAt(c)) && !u.isSolid(bot.blockAt(c.offset(0, -1, 0))) && !u.isSolid(bot.blockAt(c.offset(0, -2, 0)))) return true
+    }
+  }
+  return false
+}
+
+/** stop and let the bot come to rest (its momentum at the end of a walk) — at most `ms` */
+async function settle (bot, { signal, ms = 600 } = {}) {
+  try { bot.clearControlStates() } catch {}
+  await u.waitFor(() => bot.entity.onGround && Math.hypot(bot.entity.velocity?.x ?? 0, bot.entity.velocity?.z ?? 0) < 0.02, { timeout: ms, interval: 50, signal }).catch((err) => { if (signal?.aborted) throw err })
 }
 
 /** the same reach test for water (a lake's bank) */
@@ -648,104 +685,234 @@ async function castAtPool (bot, pool, n, ctx) {
   let lastLava = null
   let mold = null
   const done = (reason) => ({ progress, reason })
-  // far away (a scouted pool, the other side of a hill): there first
-  const nearest = pool.reachable.slice().sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position))[0]
-  if (nearest && bot.entity.position.distanceTo(nearest) > 24) {
-    u.log(bot, `portal: to the lava pool at ${nearest}`)
-    try {
-      await u.fightGuarded(guard, () => travelTo(bot, nearest, 6, { signal, timeout: Math.max(10000, Math.min(180000, ctx.deadline - Date.now())) }), { deadline: ctx.deadline })
-    } catch (err) {
-      if (signal?.aborted) throw err
-      return done(`could not get to it: ${err.message}`)
-    }
+  // every walk at this pool keeps off its cells and its rim: a source taken with a bucket leaves a dry dip — walkable to
+  // the pathfinder, with no lava next to it once its neighbours are taken too — until the pool's lava flows back in
+  // (N1 seed 35 #1 / #2 and N1M5 #5: "tried to swim in lava" walking between two fills)
+  const cells = poolCells(pool)
+  const offPool = poolExclusion(bot, pool, cells)
+  const stopLavaWatch = lavaWatch(bot, guard, cells)
+  // BEDBOO_PORTAL_TRACE=1: where the bot stands every 500 ms while casting (debugging walks near the pool)
+  const trace = process.env.BEDBOO_PORTAL_TRACE
+    ? setInterval(() => { const f = bot.entity?.position?.floored(); if (f) u.log(bot, `trace ${bot.entity.position.x.toFixed(2)},${bot.entity.position.y.toFixed(2)},${bot.entity.position.z.toFixed(2)} feet ${bot.blockAt(f)?.name} below ${bot.blockAt(f.offset(0, -1, 0))?.name} goal ${bot.pathfinder?.goal ? 'set' : '-'}`) }, 500)
+    : null
+  try {
+    return await castLoop()
+  } finally {
+    clearInterval(trace)
+    stopLavaWatch()
+    offPool.remove()
   }
-  while (have() < n) {
-    u.throwIfAborted(signal)
-    if (Date.now() > ctx.deadline) return done('out of time')
-    if (Date.now() - lastProgress > stallMs) return done(`no new obsidian for ${Math.round(stallMs / 1000)} s`)
-    await feed(bot, { signal })
-    if (guard) await guard.idle()
-    const paused = await lowHealthPause(bot, { guard, signal, nightMs: ctx.nightWaitLeft() })
-    if (paused.healed || paused.sheltered) lastProgress += paused.ms // healing / the night is not a stalled pool
-    if (paused.sheltered) ctx.extend(paused.ms)
-    // a trip: fill every empty bucket with lava (one bucket carries the water)
-    if (u.count(bot, 'lava_bucket') === 0) {
-      if (u.count(bot, 'bucket') === 0) {
-        // a second water bucket (a refill while the first was out): empty it next to the bot
-        if (u.count(bot, 'water_bucket') < 2 || !await pourOut(bot, { signal, guard })) {
-          state.broken = 'no empty bucket left for lava (every bucket holds water)'
-          return done(state.broken)
-        }
-      }
-      const wanted = Math.max(1, Math.min(u.count(bot, 'bucket'), n - have()))
-      for (let i = 0; i < wanted && u.count(bot, 'bucket') > 0; i++) {
-        try {
-          lastLava = await u.fightGuarded(guard, () => fillBucket(bot, 'lava', { signal, guard, sources: pool.sources, skip: state.skip, tries: 4, timeout: Math.max(10000, Math.min(120000, ctx.deadline - Date.now())) }), { deadline: ctx.deadline })
-        } catch (err) {
-          if (signal?.aborted) throw err
-          if (i === 0) return done(`lava: ${err.message}`)
-          break
-        }
-      }
-      result.trips++
-    }
-    if (!mold) {
-      const lava = u.findBlocks(bot, ['lava', 'flowing_lava'], { maxDistance: 24, count: 1024, point: lastLava ?? bot.entity.position }).map((b) => b.position)
-      mold = planMold(worldOf(bot), lava, { near: lastLava ?? bot.entity.position, exclude: state.badMolds })
-      if (!mold) return done(`no flat ground for a mold near the lava at ${lastLava}`)
-      result.mold = { mold: u.plain(mold.mold), water: u.plain(mold.water), stand: u.plain(mold.stand) }
-      u.log(bot, `mold at ${mold.mold} (lava ${mold.lavaDistance.toFixed(1)} blocks away), water at ${mold.water}`)
-    }
-    while (u.count(bot, 'lava_bucket') > 0 && have() < n) {
-      if (Date.now() - lastProgress > stallMs || Date.now() > ctx.deadline) break
-      let fought = false
-      const onBusy = () => { if (u.busyKind(guard) !== 'eat') fought = true }
-      guard?.on('busy', onBusy)
-      const cast = u.deadlineSignal(signal, castMs)
+
+  async function castLoop () {
+  // far away (a scouted pool, the other side of a hill): there first
+    const nearest = pool.reachable.slice().sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position))[0]
+    if (nearest && bot.entity.position.distanceTo(nearest) > 24) {
+      u.log(bot, `portal: to the lava pool at ${nearest}`)
       try {
-        if (guard) await guard.idle()
-        await feed(bot, { signal })
-        await castOne(bot, mold, { signal: cast.signal, goals, guard })
-        result.cast++
-        progress++
-        lastProgress = Date.now()
-        failures = 0
-        u.log(bot, `obsidian ${have()}/${n}`)
+        await u.fightGuarded(guard, () => travelTo(bot, nearest, 6, { signal, timeout: Math.max(10000, Math.min(180000, ctx.deadline - Date.now())) }), { deadline: ctx.deadline })
       } catch (err) {
         if (signal?.aborted) throw err
-        const msg = cast.timedOut ? `the cast took over ${Math.round(castMs / 1000)} s` : err.message
-        if ((fought || u.busyKind(guard) === 'fight') && interruptions < 8) {
-          // a fight interrupted the cast: not the mold's fault (bounded: a guard that is never idle is a failure)
-          interruptions++
-          u.log(bot, `cast interrupted by a fight (${interruptions}): ${msg}`)
-          await guard.idle()
-          const water = await refillWater(bot, { signal, guard, waterHints })
-          if (water) return done(water)
-          continue
-        }
-        failures++
-        result.failures++
-        u.log(bot, `cast failed (${failures} at ${mold.mold}): ${msg}`)
-        if (result.failures >= 12) {
-          state.broken = `bucket casting failed ${result.failures} times (last: ${msg})`
-          return done(state.broken)
-        }
-        // the water may be gone (flowed into the hole, picked up elsewhere): refill before the next try
-        const water = await refillWater(bot, { signal, guard, waterHints })
-        if (water) return done(water)
-        if (failures >= 2) {
-          // another spot (a hole left with lava in it stays behind: it is in the ground, it cannot spread)
-          state.badMolds.add(mold.mold.toString())
-          mold = null
-          break
-        }
-      } finally {
-        cast.done()
-        guard?.removeListener('busy', onBusy)
+        return done(`could not get to it: ${err.message}`)
       }
     }
+    while (have() < n) {
+      u.throwIfAborted(signal)
+      if (Date.now() > ctx.deadline) return done('out of time')
+      if (Date.now() - lastProgress > stallMs) return done(`no new obsidian for ${Math.round(stallMs / 1000)} s`)
+      await feed(bot, { signal })
+      if (guard) await guard.idle()
+      const paused = await lowHealthPause(bot, { guard, signal, nightMs: ctx.nightWaitLeft() })
+      if (paused.healed || paused.sheltered) lastProgress += paused.ms // healing / the night is not a stalled pool
+      if (paused.sheltered) ctx.extend(paused.ms)
+      // a trip: fill every empty bucket with lava (one bucket carries the water)
+      if (u.count(bot, 'lava_bucket') === 0) {
+        if (u.count(bot, 'bucket') === 0) {
+        // a second water bucket (a refill while the first was out): empty it next to the bot
+          if (u.count(bot, 'water_bucket') < 2 || !await pourOut(bot, { signal, guard })) {
+            state.broken = 'no empty bucket left for lava (every bucket holds water)'
+            return done(state.broken)
+          }
+        }
+        const wanted = Math.max(1, Math.min(u.count(bot, 'bucket'), n - have()))
+        for (let i = 0; i < wanted && u.count(bot, 'bucket') > 0; i++) {
+          try {
+            try {
+              lastLava = await u.fightGuarded(guard, () => fillBucket(bot, 'lava', { signal, guard, sources: pool.sources, skip: state.skip, tries: 4, avoid: cells, timeout: Math.max(10000, Math.min(120000, ctx.deadline - Date.now())) }), { deadline: ctx.deadline })
+            } finally {
+              // standing down in the pool's footprint (a hole a taken source left): out of it before the pool's lava
+              // flows back in — after a failed fill too
+              await leavePoolLevel(bot, cells, { signal })
+            }
+          } catch (err) {
+            if (signal?.aborted) throw err
+            if (i === 0) return done(`lava: ${err.message}`)
+            break
+          }
+        }
+        result.trips++
+      }
+      if (!mold) {
+        const lava = u.findBlocks(bot, ['lava', 'flowing_lava'], { maxDistance: 24, count: 1024, point: lastLava ?? bot.entity.position }).map((b) => b.position)
+        mold = planMold(worldOf(bot), lava, { near: lastLava ?? bot.entity.position, exclude: state.badMolds })
+        if (!mold) return done(`no flat ground for a mold near the lava at ${lastLava}`)
+        result.mold = { mold: u.plain(mold.mold), water: u.plain(mold.water), stand: u.plain(mold.stand) }
+        u.log(bot, `mold at ${mold.mold} (lava ${mold.lavaDistance.toFixed(1)} blocks away), water at ${mold.water}`)
+      }
+      while (u.count(bot, 'lava_bucket') > 0 && have() < n) {
+        if (Date.now() - lastProgress > stallMs || Date.now() > ctx.deadline) break
+        let fought = false
+        const onBusy = () => { if (u.busyKind(guard) !== 'eat') fought = true }
+        guard?.on('busy', onBusy)
+        const cast = u.deadlineSignal(signal, castMs)
+        try {
+          if (guard) await guard.idle()
+          await feed(bot, { signal })
+          await castOne(bot, mold, { signal: cast.signal, goals, guard })
+          result.cast++
+          progress++
+          lastProgress = Date.now()
+          failures = 0
+          u.log(bot, `obsidian ${have()}/${n}`)
+        } catch (err) {
+          if (signal?.aborted) throw err
+          const msg = cast.timedOut ? `the cast took over ${Math.round(castMs / 1000)} s` : err.message
+          if ((fought || u.busyKind(guard) === 'fight') && interruptions < 8) {
+          // a fight interrupted the cast: not the mold's fault (bounded: a guard that is never idle is a failure)
+            interruptions++
+            u.log(bot, `cast interrupted by a fight (${interruptions}): ${msg}`)
+            await guard.idle()
+            const water = await refillWater(bot, { signal, guard, waterHints })
+            if (water) return done(water)
+            continue
+          }
+          failures++
+          result.failures++
+          u.log(bot, `cast failed (${failures} at ${mold.mold}): ${msg}`)
+          if (result.failures >= 12) {
+            state.broken = `bucket casting failed ${result.failures} times (last: ${msg})`
+            return done(state.broken)
+          }
+          // the water may be gone (flowed into the hole, picked up elsewhere): refill before the next try
+          const water = await refillWater(bot, { signal, guard, waterHints })
+          if (water) return done(water)
+          if (failures >= 2) {
+          // another spot (a hole left with lava in it stays behind: it is in the ground, it cannot spread)
+            state.badMolds.add(mold.mold.toString())
+            mold = null
+            break
+          }
+        } finally {
+          cast.done()
+          guard?.removeListener('busy', onBusy)
+        }
+      }
+    }
+    return done(null)
   }
-  return done(null)
+}
+
+/**
+ * Out of lava when nothing else gets the bot out: the Agent's safety does it ('lava'); without an Agent (U18's harness,
+ * combat.defend's guard) nobody did — N1 seed 35 stood 4 s in the lava retrying its fills. Every 100 ms: in lava →
+ * stop, jump towards the nearest standable cell with no lava. @returns {() => void} stop
+ */
+function lavaWatch (bot, guard, cells = new Set()) {
+  if (guard?.delegated) return () => {}
+  let escaping = false
+  let stopped = false
+  const live = () => !stopped
+  // U18's own guard (combat.defend) is marked busy while the bot escapes: every walk waits for it (u.goto) instead of
+  // re-planning over the escape's controls
+  const hold = (on) => { try { if (typeof guard?._setBusy === 'function') guard._setBusy(on) } catch {} }
+  const timer = setInterval(async () => {
+    if (stopped || escaping || !bot.entity || bot.health <= 0) return
+    const feet = bot.blockAt(bot.entity.position.floored())
+    if (!bot.entity.isInLava && !u.isLava(feet)) return
+    escaping = true
+    hold(true)
+    try {
+      u.log(bot, `portal: in lava at ${bot.entity.position.floored()}: getting out`)
+      u.stopMoving(bot)
+      const here = bot.entity.position.floored()
+      let best = null
+      for (let dx = -4; dx <= 4; dx++) {
+        for (let dz = -4; dz <= 4; dz++) {
+          for (let dy = -1; dy <= 2; dy++) {
+            const p = here.offset(dx, dy, dz)
+            if (!u.isClear(bot.blockAt(p)) || !u.isClear(bot.blockAt(p.offset(0, 1, 0))) || !u.isStandable(bot.blockAt(p.offset(0, -1, 0)))) continue
+            // never into another hole of the pool / next to its lava (it flows back in)
+            const d = Math.hypot(dx, dz) + Math.abs(dy) + (nearCells(cells, p) || lavaAround(bot, p) ? 20 : 0)
+            if (!best || d < best.d) best = { p, d }
+          }
+        }
+      }
+      for (let i = 0; i < 60 && live() && bot.health > 0; i++) {
+        const f = bot.blockAt(bot.entity.position.floored())
+        if (!bot.entity.isInLava && !u.isLava(f)) break
+        try { bot.pathfinder?.setGoal(null) } catch {}
+        if (best) await bot.lookAt(best.p.offset(0.5, 1.6, 0.5), true)
+        bot.setControlState('forward', !!best)
+        bot.setControlState('jump', true)
+        await u.tick(bot)
+      }
+    } catch {} finally {
+      if (!stopped) { try { bot.clearControlStates() } catch {} }
+      hold(false)
+      escaping = false
+    }
+  }, 100)
+  return () => {
+    stopped = true
+    clearInterval(timer)
+  }
+}
+
+/** feet at / below the lava's level inside the pool's footprint (a taken source's hole): to a cell off the pool */
+async function leavePoolLevel (bot, cells, { signal } = {}) {
+  if (!bot.entity || bot.health <= 0) return
+  const feet = bot.entity.position.floored()
+  const inPool = [0, -1].some((dy) => cells.has(feet.offset(0, dy, 0).toString()))
+  if (!inPool) return
+  const { goals } = u.ensurePathfinder(bot)
+  const goal = new goals.GoalNear(feet.x, feet.y + 1, feet.z, 5)
+  goal.isEnd = (node) => {
+    const n = new Vec3(node.x, node.y, node.z)
+    return !nearCells(cells, n) && !lavaAround(bot, n) && !dropBeside(bot, n)
+  }
+  u.log(bot, `portal: standing in the pool's footprint at ${feet}: stepping out`)
+  await u.goto(bot, goal, { signal, timeout: 15000, retries: 1 }).catch((err) => { if (signal?.aborted) throw err; u.log(bot, `portal: out of the pool: ${err.message}`) })
+  await settle(bot, { signal })
+}
+
+/** the pool's footprint: its lava blocks when it was ranked (sources taken since included), as cell keys */
+function poolCells (pool) {
+  return new Set((pool.blocks ?? pool.sources ?? []).map((p) => u.vec(p).floored().toString()))
+}
+
+/**
+ * A pathfinder step cost (1000) for the cells of `pool` (its lava when it was ranked, sources taken since included) and
+ * the cells next to / above them, and for any cell with lava beside or under it. @returns {{ remove: () => void }}
+ */
+function poolExclusion (bot, pool, cells = poolCells(pool)) {
+  const { movements } = u.ensurePathfinder(bot)
+  // the footprint's box, 3 blocks around: everything outside costs nothing (the long walks to and from the pool)
+  const pts = [...(pool.blocks ?? pool.sources ?? [])].map((p) => u.vec(p))
+  const box = pts.length
+    ? pts.reduce((b, p) => ({ x0: Math.min(b.x0, p.x - 3), x1: Math.max(b.x1, p.x + 3), y0: Math.min(b.y0, p.y - 3), y1: Math.max(b.y1, p.y + 3), z0: Math.min(b.z0, p.z - 3), z1: Math.max(b.z1, p.z + 3) }), { x0: Infinity, x1: -Infinity, y0: Infinity, y1: -Infinity, z0: Infinity, z1: -Infinity })
+    : null
+  const cost = (block) => {
+    const p = block?.position
+    if (!p || !box) return 0
+    if (p.x < box.x0 || p.x > box.x1 || p.y < box.y0 || p.y > box.y1 || p.z < box.z0 || p.z > box.z1) return 0
+    return nearCells(cells, p) || lavaAround(bot, p) ? 1000 : 0
+  }
+  if (movements?.exclusionAreasStep) movements.exclusionAreasStep.push(cost)
+  return {
+    remove () {
+      const i = movements?.exclusionAreasStep?.indexOf(cost) ?? -1
+      if (i >= 0) movements.exclusionAreasStep.splice(i, 1)
+    }
+  }
 }
 
 /**
@@ -1106,7 +1273,11 @@ async function obtainFlint (bot, { signal, maxTries = 60, timeout = 240000 } = {
           !u.isWater(bot.blockAt(b.position.offset(0, 1, 0))) && !/gravel|sand/.test(bot.blockAt(b.position.offset(0, 1, 0))?.name ?? '')
       })
       if (!found.length) throw new Error('no gravel within 96 blocks')
-      target = found[0]
+      // near the bot's level first: gravel deep below is a pit to dig and to climb out of (N1 seed 35 #2: flint from
+      // 15 blocks down, then the walk back up to the frame stalled)
+      const y = bot.entity.position.y
+      const cost = (b) => b.position.distanceTo(bot.entity.position) + 3 * Math.max(0, y - b.position.y - 3)
+      target = found.slice().sort((a, b) => cost(a) - cost(b))[0]
       u.log(bot, `flint: gravel at ${target.position} (bot at ${bot.entity.position.floored()})`)
       try {
         await u.goto(bot, new goals.GoalGetToBlock(target.position.x, target.position.y, target.position.z), { signal, timeout: Math.max(5000, Math.min(90000, timeout - (Date.now() - started))) })
@@ -1238,7 +1409,9 @@ async function lightPortal (bot, frame, { signal } = {}) {
   }
   const crafted = await ensureFlintAndSteel(bot, { signal })
   const spot = frame.spot ?? frame.stand[0]
-  await u.goto(bot, new goals.GoalBlock(spot.x, spot.y, spot.z), { signal, timeout: 60000 })
+  // down in a gravel pit after the flint: up first (a straight walk out of a 1×1 shaft stalls)
+  if (bot.entity.position.y < spot.y - 4) await toSurface(bot, { signal })
+  await u.goto(bot, new goals.GoalBlock(spot.x, spot.y, spot.z), { signal, timeout: 120000 })
   await u.equipItem(bot, 'flint_and_steel')
   await bot.placeBlock(bot.blockAt(frame.light.ref), frame.light.face)
   for (const p of frame.interior) await u.waitForBlock(bot, p, (b) => b.name === 'portal', { timeout: 5000, signal })
@@ -1499,7 +1672,11 @@ module.exports = Object.assign(portalSkill, {
   holdBucket,
   lowHealthPause,
   lavaSafeGoal,
+  dropBeside,
   reachGoal,
+  poolExclusion,
+  poolCells,
+  nearCells,
   ensureWaterBucket,
   fillBucket,
   obtainFlint,
