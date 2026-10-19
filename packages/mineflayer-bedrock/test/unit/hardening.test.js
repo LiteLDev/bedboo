@@ -390,6 +390,25 @@ describe('wave-4 review fixes (U16a)', function () {
       assert.strictEqual(clicks().length, 1)
     })
 
+    it('a bucket use while a placement holds the turn goes out after it, with the slot of the call', async () => {
+      const { bot, client, give, setBlock, clicks } = await placing()
+      setBlock(new Vec3(0, G, -2), 'water')
+      give({ 0: ['bucket', 1], 1: ['dirt', 5] }, 28)
+      await bot.lookAt(new Vec3(0.5, G + 0.5, -1.5), true)
+      const placer = bot._bedrock.placement
+      const release = await placer.acquire() // a placement waiting for its clearance / sneak acknowledgement
+      assert.strictEqual(placer.useOnLookedAtBlock(bot.heldItem), true)
+      assert.strictEqual(clicks().length, 0, 'deferred behind the held turn')
+      bot.setQuickBarSlot(1) // the caller switches slots right away
+      release()
+      await until(() => clicks().length === 1, 'the deferred bucket click')
+      const d = clicks()[0]
+      assert.strictEqual(d.hotbar_slot, 0)
+      assert.strictEqual(bot.registry.items[d.held_item.network_id].name, 'bucket')
+      assert.deepStrictEqual(d.block_position, { x: 0, y: G, z: -2 })
+      assert.ok(client.sent('inventory_transaction').length >= 1)
+    })
+
     it('a refusal of a click with a stale block state (farmland that just turned into dirt) is retried with the fresh block', async () => {
       const { bot, give, setBlock, clicks, ticking } = await placing()
       const ref = new Vec3(2, G, 0)

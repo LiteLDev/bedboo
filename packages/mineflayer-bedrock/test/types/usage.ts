@@ -45,6 +45,8 @@ bot.on('kicked', (reason: string, loggedIn: boolean) => console.log(reason, logg
 // bedrock-protocol client is exposed as bot._client
 bot._client.queue('text', {})
 const extras: BedrockExtras = bot.bedrock
+const furnaceIds: number[] = bot.bedrock.blockVariants('furnace')
+console.log(bot.findBlock({ matching: furnaceIds }), bot.bedrock.gameRules.doDayLightCycle)
 
 const loc = new Location(new Vec3(1, 2, 3))
 const painting = new Painting(1, new Vec3(0, 0, 0), 'kebab', new Vec3(0, 0, 1))
