@@ -133,18 +133,24 @@ function filler (bot, { keep = {} } = {}) {
 const JUNK = /^(leaf_litter|.*_sapling|wheat_seeds|beetroot_seeds|pumpkin_seeds|melon_seeds|torchflower_seeds|rail|.*_fence|.*_carpet|poisonous_potato|spider_eye|gunpowder|bone|feather|dandelion|poppy|.*_tulip|azure_bluet|oxeye_daisy|cornflower|lily_of_the_valley|allium|blue_orchid|short_grass|tall_grass|fern|dead_bush|vine|glow_lichen|moss_carpet|pointed_dripstone|calcite|smooth_basalt|amethyst_shard|clay_ball|seagrass|egg|ink_sac|leather|rabbit_hide|name_tag|lead|saddle|book|paper)$/
 /** blocks kept up to a number (the rest is tossed when the inventory is full): pillars, the house, scaffolding */
 const KEEP = { cobblestone: 128, cobbled_deepslate: 64, dirt: 32, stone: 32, deepslate: 16, andesite: 16, diorite: 16, granite: 16, tuff: 16, gravel: 8, sand: 8, rotten_flesh: 8, stick: 16, arrow: 64 }
+/**
+ * `late` (the overworld's work is done, the Nether / the End ahead): building stone for pillars and bridges only, the
+ * ores the milestones wanted are no longer needed
+ */
+const KEEP_LATE = { ...KEEP, cobblestone: 64, cobbled_deepslate: 0, dirt: 0, andesite: 0, diorite: 0, granite: 0, tuff: 0, deepslate: 0, stone: 0, rotten_flesh: 0, raw_copper: 0, raw_iron: 0, raw_gold: 0, redstone: 0, lapis_lazuli: 0, emerald: 0, coal: 8 }
 
 /**
  * What can go when the inventory is full: junk, blocks above their KEEP amount, tools a better one of the same kind
  * replaces (a wooden / stone pickaxe next to an iron one), arrows without a bow. @returns {Array<{ name, count }>}
  */
-function junk (bot) {
+function junk (bot, { late = false } = {}) {
   const have = counts(bot)
+  const keep = late ? KEEP_LATE : KEEP
   const out = []
   for (const [name, n] of Object.entries(have)) {
     if (JUNK.test(name)) { out.push({ name, count: n }); continue }
     if (name === 'arrow' && !have.bow) { out.push({ name, count: n }); continue }
-    if (Object.hasOwn(KEEP, name) && n > KEEP[name]) { out.push({ name, count: n - KEEP[name] }); continue }
+    if (Object.hasOwn(keep, name) && n > keep[name]) { out.push({ name, count: n - keep[name] }); continue }
     const kind = toolKind(name)
     if (kind && kind !== 'hoe') {
       // a better tool of this kind is carried: this one is dead weight (golden ones are only kept for the Nether's
@@ -170,12 +176,12 @@ function unwanted (bot, name) {
  * ahead; the bot does not pick them up again (it is busy elsewhere, and drops are only collected around a dug block).
  * @returns {Promise<Record<string, number>>} what was tossed
  */
-async function declutter (bot, { minFree = 4, keep = null } = {}) {
+async function declutter (bot, { minFree = 4, keep = null, late = false } = {}) {
   const tossed = {}
   if (freeSlots(bot) >= minFree || typeof bot.toss !== 'function') return tossed
   try { if (bot.currentWindow) bot.closeWindow(bot.currentWindow) } catch {}
   // whole stacks first (junk), then the surplus of the blocks
-  const list = junk(bot).filter((j) => j.name !== keep).sort((a, b) => (JUNK.test(b.name) ? 1 : 0) - (JUNK.test(a.name) ? 1 : 0))
+  const list = junk(bot, { late }).filter((j) => j.name !== keep).sort((a, b) => (JUNK.test(b.name) ? 1 : 0) - (JUNK.test(a.name) ? 1 : 0))
   for (const { name, count: n } of list) {
     if (freeSlots(bot) >= minFree) break
     const def = bot.registry.itemsByName[name]
@@ -188,4 +194,4 @@ async function declutter (bot, { minFree = 4, keep = null } = {}) {
   return tossed
 }
 
-module.exports = { allItems, count, counts, find, findAny, toolTier, toolKind, toolKindsFor, harvestToolNames, canHarvest, bestToolFor, equip, freeSlots, FILLER, filler, TIERS, junk, unwanted, declutter, JUNK, KEEP }
+module.exports = { allItems, count, counts, find, findAny, toolTier, toolKind, toolKindsFor, harvestToolNames, canHarvest, bestToolFor, equip, freeSlots, FILLER, filler, TIERS, junk, unwanted, declutter, JUNK, KEEP, KEEP_LATE }

@@ -178,8 +178,12 @@ async function fish (bot, { count = 3, timeout = 180000, signal, obtainRod = fal
   const { heartbeat } = require('../skill')
   if (!inventory.count(bot, 'fishing_rod')) {
     if (!obtainRod) throw new SkillError('no fishing rod', { code: 'MISSING' })
-    // only when the string is already there: string comes from spiders / cobwebs, not worth a trip of its own
-    if (inventory.count(bot, 'string') < 2) throw new SkillError(`no fishing rod and ${inventory.count(bot, 'string')} string`, { code: 'MISSING' })
+    // string: carried (spiders' drops), or cobwebs in sight (a mineshaft) cut with a sword — not worth a trip of its own
+    if (inventory.count(bot, 'string') < 2) {
+      const web = world.findBlocks(bot, ['web'], { maxDistance: 48, count: 1 })[0]
+      if (!web) throw new SkillError(`no fishing rod, ${inventory.count(bot, 'string')} string and no cobweb in sight`, { code: 'MISSING' })
+      await require('./obtain').obtain(bot, { item: 'string', count: 2, signal })
+    }
     await require('./obtain').obtain(bot, { item: 'fishing_rod', count: 1, signal })
   }
   let spot = fishingSpot(bot, { maxDistance })

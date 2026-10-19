@@ -148,7 +148,8 @@ async function finalChain ({ log = () => {}, cfg = config(), netherOres = false,
           await task('gather', { item: 'log', count: 8 - logs() }, { name: 'camp: logs', timeout: 90000, retries: 0 }).catch((err) => { out.logs = err.message })
         }
         // meat for later (cooked in the gear phase): the animals in sight
-        await task('food', { min: 0, items: 6, stock: true, radius: 48, explore: false, fishing: false, timeout: 55000 }, { name: 'camp: meat', timeout: 60000, retries: 0 })
+        // (the flocks around the spawn are thinnest late in the chain: what the camp takes now is what provisions miss)
+        await task('food', { min: 0, items: 10, stock: true, radius: 48, explore: false, fishing: false, timeout: 75000 }, { name: 'camp: meat', timeout: 80000, retries: 0 })
           .then((r) => { out.food = r }, (err) => { out.food = err.message })
         // back to the spawn: M2 and the gear phase mine the iron around it (the hunt may have led far away)
         await task('navigate', { spawn: true, range: 24 }, { name: 'camp: back to the spawn', timeout: 2 * MINUTES, retries: 0 }).catch(() => {})
@@ -271,6 +272,11 @@ async function finalChain ({ log = () => {}, cfg = config(), netherOres = false,
     for (const p of plan.slice(start, last + 1)) {
       // the night before the phase: asleep in the bed, or (no bed, no armor) in a shelter
       await agent.restIfNight()
+      // room in the inventory: junk and surplus go; after M5 the milestones' ores and most building stone too
+      // (a full inventory drops what /give hands over at the stronghold — the eyes of ender)
+      const late = plan.indexOf(p) > plan.findIndex((q) => q.name === 'M5')
+      const tossed = await inventory.declutter(bot, { minFree: late ? 12 : 6, late }).catch(() => ({}))
+      if (Object.keys(tossed).length) agent.event('tossed', { items: tossed, phase: p.name })
       if (!await phase(p.name, p.run)) break
     }
     plan.splice(last + 1)

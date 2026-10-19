@@ -179,7 +179,9 @@ const NATURAL = {
   birch_leaves: {},
   spruce_leaves: {},
   short_grass: {},
-  tall_grass: {}
+  tall_grass: {},
+  // cobwebs (mineshafts): string for a fishing rod, cut with a sword
+  web: { rare: true }
 }
 
 module.exports = {
