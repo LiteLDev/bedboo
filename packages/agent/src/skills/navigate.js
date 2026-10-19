@@ -262,12 +262,25 @@ async function unstick (bot, { signal, toward } = {}) {
     await digSafe(bot, head, signal)
     return
   }
-  // walled in: open the side towards the goal (or any safe side) at feet + head height
   const dirs = world.HORIZONTAL.slice()
   if (toward) {
     const d = world.cardinalTowards(pos, toward)
     dirs.sort((a, b) => (b.equals(d) ? 1 : 0) - (a.equals(d) ? 1 : 0))
   }
+  // in water at a shore (land one block up): swim-jump onto it, towards the goal first — pathfinder's move out of the
+  // water stalls there at times (the bot stays put, the search keeps restarting)
+  if (world.isWater(bot.blockAt(pos))) {
+    for (const d of dirs) {
+      // the nearest dry cell 1–3 blocks along d, up to two above the feet (swimming up a submerged bank on the way)
+      let landing = null
+      for (let k = 1; k <= 3 && !landing; k++) {
+        const c = pos.plus(d.scaled(k))
+        landing = [c, c.offset(0, 1, 0), c.offset(0, 2, 0)].find((p) => world.standable(bot, p) && !world.isWater(bot.blockAt(p))) ?? null
+      }
+      if (landing && await climbOnto(bot, landing, signal)) return
+    }
+  }
+  // walled in: open the side towards the goal (or any safe side) at feet + head height
   for (const d of dirs) {
     const feet = pos.plus(d)
     const cells = [feet.offset(0, 1, 0), feet]
@@ -283,6 +296,28 @@ async function unstick (bot, { signal, toward } = {}) {
   // last resort: jump in place a few ticks
   bot.setControlState('jump', true)
   await waitTicks(bot, 10, signal).finally(() => bot.setControlState('jump', false))
+}
+
+/** out of the water onto the land cell `landing` (feet) close by: forward + jump (3 s at most); whether it worked */
+async function climbOnto (bot, landing, signal) {
+  const target = landing.offset(0.5, 0, 0.5)
+  try {
+    for (let i = 0; i < 60; i++) {
+      checkAbort(signal)
+      const here = bot.entity.position
+      if (here.y >= landing.y - 0.01 && Math.hypot(here.x - target.x, here.z - target.z) < 0.5 && bot.entity.onGround) break
+      await bot.lookAt(target.offset(0, bot.entity.eyeHeight ?? 1.62, 0), true)
+      bot.setControlState('forward', true)
+      bot.setControlState('jump', true)
+      await waitTicks(bot, 1, signal)
+    }
+  } finally {
+    bot.setControlState('forward', false)
+    bot.setControlState('jump', false)
+  }
+  const ok = bot.entity.position.floored().equals(landing)
+  log(bot, ok ? `unstick: climbed out of the water onto ${fmt(landing)}` : `unstick: could not climb out of the water onto ${fmt(landing)}`)
+  return ok
 }
 
 /** a wooden door / fence gate beside the feet: open it if closed, step into it and out the other side */
