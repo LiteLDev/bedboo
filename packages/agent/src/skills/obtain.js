@@ -66,7 +66,7 @@ async function hunt (bot, { mobs, item, count, signal, radius = 64 }) {
     checkAbort(signal)
     const target = bot.nearestEntity((e) => mobs.includes(e.name) && e.position.distanceTo(bot.entity.position) <= radius)
     if (!target) throw new SkillError(`no ${mobs.join('/')} in sight`, { code: 'NOT_FOUND' })
-    const r = await combat.fight(bot, target, { signal, timeout: 45000 })
+    const r = await combat.fight(bot, target, { signal, timeout: 20000 }) // a fleeing animal is not worth more
     if (r.outcome === 'died') throw new SkillError('died while hunting', { code: 'DIED' })
     if (r.outcome === 'killed') {
       kills++

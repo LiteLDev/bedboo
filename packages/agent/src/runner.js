@@ -353,7 +353,7 @@ class Agent extends EventEmitter {
     for (const step of scenario.steps) {
       const left = deadline - Date.now()
       if (left <= 0) { ok = false; error = { code: 'TIMEOUT', message: `${scenario.name} ran out of time` }; break }
-      await this.maintain({ timeout: Math.min(60000, left / 5) })
+      await this.maintain({ timeout: Math.min(45000, left / 5) })
       try {
         await this.run(step.skill, step.args ?? {}, { name: step.name, timeout: Math.min(step.timeout ?? DEFAULT_STEP_TIMEOUT, left), retries: step.retries ?? 1 })
       } catch (err) {
