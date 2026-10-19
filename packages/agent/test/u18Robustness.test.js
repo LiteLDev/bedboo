@@ -75,6 +75,12 @@ describe('U18 lava pools (FINAL-FIX-AGENT-B)', () => {
     const holed = { ...rim, '4,63,1': 'air' }
     assert.strictEqual(portal.dropBeside({ blockAt: world(holed) }, new Vec3(5, 65, 1)), true)
     assert.strictEqual(portal.lavaSafeGoal({ blockAt: world(holed) }, new Vec3(3, 63, 2), goals).isEnd(new Vec3(5, 65, 1)), false, 'the rim over the hole at (4, 63, 1)')
+    // the pool's footprint (a 1-deep hole a taken source left, lava gone from around it): still not a fill spot
+    const dry = { '3,63,1': 'air', '3,63,2': 'lava' }
+    const avoid = new Set(['(3, 63, 1)', '(3, 63, 2)'])
+    const dryGoal = portal.lavaSafeGoal({ blockAt: world(dry) }, new Vec3(3, 63, 2), goals, { avoid })
+    assert.strictEqual(dryGoal.isEnd(new Vec3(4, 64, 0)), false, 'next to the dry hole')
+    assert.strictEqual(dryGoal.isEnd(new Vec3(5, 64, 1)), true, 'two blocks off the footprint')
   })
 
   it('ranks open-sky pools first unless a cave pool is far nearer; skips given-up pools and pools with too few sources', () => {
