@@ -18,12 +18,15 @@ const u = require('./util')
 const DIRS = [new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Vec3(0, 0, 1), new Vec3(0, 0, -1)]
 const UP = new Vec3(0, 1, 0)
 
-/** ticks to nightfall (12800), 0 at night (12800 ≤ t < 23200), Infinity without a daylight cycle / time */
+/**
+ * ticks to nightfall (12800), 0 from then to sunrise (24000 ≡ 0: the dawn's mobs are still out, skeletons in the shade
+ * do not burn at all — N1M5 #1 left its shelter at 23220 and was shot), Infinity without a daylight cycle / time
+ */
 function ticksToNight (bot) {
   const t = bot.time?.timeOfDay
   if (t === null || t === undefined || bot.time?.doDaylightCycle === false) return Infinity
-  if (t >= 12800 && t < 23200) return 0
-  return t < 12800 ? 12800 - t : 24000 - t + 12800
+  if (t >= 12800) return 0
+  return 12800 - t
 }
 
 /** armor pieces the bot wears */

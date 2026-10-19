@@ -250,7 +250,8 @@ describe('U18 night ahead (FINAL-FIX-AGENT-B)', () => {
   it('ticks to nightfall, 0 at night, no night without a daylight cycle', () => {
     assert.strictEqual(shelter.ticksToNight(at(9000)), 3800)
     assert.strictEqual(shelter.ticksToNight(at(15000)), 0)
-    assert.strictEqual(shelter.ticksToNight(at(23500)), 500 + 12800)
+    assert.strictEqual(shelter.ticksToNight(at(23500)), 0, 'dawn: the night\'s mobs are still out')
+    assert.strictEqual(shelter.ticksToNight(at(100)), 12700)
     assert.strictEqual(shelter.ticksToNight({ time: { timeOfDay: 9000, doDaylightCycle: false } }), Infinity)
     assert.strictEqual(shelter.ticksToNight({}), Infinity)
   })

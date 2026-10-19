@@ -476,7 +476,7 @@ async function fillBucket (bot, liquid, { signal, guard, maxDistance = 128, near
       }
       const eye = bot.entity.position.offset(0, bot.entity.eyeHeight ?? 1.62, 0)
       const reach = eye.distanceTo(p.offset(0.5, 0.5, 0.5))
-      if (reach > 4.5) {
+      if (reach > 5.0) {
         skip.add(p.toString())
         skipped.push(`${p} out of reach (${reach.toFixed(1)} from ${bot.entity.position.floored()})`)
         u.log(bot, `${liquid} source ${p}: out of reach after the walk (${reach.toFixed(1)} blocks from ${bot.entity.position.floored()})`)
@@ -523,7 +523,7 @@ function lavaAround (bot, feet) {
  * 4.8–5.5 blocks from every source (N1M5 #1 / #3, N1M3 #1: "none in reach") — on a cell with no lava around it (a bot
  * at the rim walked into the pool at 8 hp: N1M3 #1).
  */
-function lavaSafeGoal (bot, p, goals, { reach = 4.2 } = {}) {
+function lavaSafeGoal (bot, p, goals, { reach = 4.0 } = {}) {
   const target = u.vec(p).offset(0.5, 0.5, 0.5)
   const goal = new goals.GoalNear(p.x, p.y + 1, p.z, 4) // its heuristic: the distance to the cell above the source
   goal.isEnd = (node) => new Vec3(node.x + 0.5, node.y + 1.62, node.z + 0.5).distanceTo(target) <= reach &&
@@ -532,7 +532,7 @@ function lavaSafeGoal (bot, p, goals, { reach = 4.2 } = {}) {
 }
 
 /** the same reach test for water (a lake's bank) */
-function reachGoal (p, goals, { reach = 4.2 } = {}) {
+function reachGoal (p, goals, { reach = 4.0 } = {}) {
   const target = u.vec(p).offset(0.5, 0.5, 0.5)
   const goal = new goals.GoalNear(p.x, p.y + 1, p.z, 4)
   goal.isEnd = (node) => new Vec3(node.x + 0.5, node.y + 1.62, node.z + 0.5).distanceTo(target) <= reach
