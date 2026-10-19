@@ -1,0 +1,5 @@
+{
+  "spec": ["scenarios/**/*.e2e.js"],
+  "timeout": 0,
+  "exit": true
+}

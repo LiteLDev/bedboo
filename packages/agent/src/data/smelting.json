@@ -1,0 +1,568 @@
+{
+ "source": "CloudburstMC/Data@73bda57f9afa recipes.json (Apache-2.0, Copyright CloudburstMC), furnace recipes; filtered by packages/agent/scripts/gen-smelting.js",
+ "cookTicks": 200,
+ "recipes": [
+  {
+   "input": "potato",
+   "output": "baked_potato",
+   "count": 1
+  },
+  {
+   "input": "black_terracotta",
+   "output": "black_glazed_terracotta",
+   "count": 1
+  },
+  {
+   "input": "blue_terracotta",
+   "output": "blue_glazed_terracotta",
+   "count": 1
+  },
+  {
+   "input": "clay_ball",
+   "output": "brick",
+   "count": 1
+  },
+  {
+   "input": "brown_terracotta",
+   "output": "brown_glazed_terracotta",
+   "count": 1
+  },
+  {
+   "input": "acacia_log",
+   "output": "charcoal",
+   "count": 1
+  },
+  {
+   "input": "acacia_wood",
+   "output": "charcoal",
+   "count": 1
+  },
+  {
+   "input": "birch_log",
+   "output": "charcoal",
+   "count": 1
+  },
+  {
+   "input": "birch_wood",
+   "output": "charcoal",
+   "count": 1
+  },
+  {
+   "input": "cherry_log",
+   "output": "charcoal",
+   "count": 1
+  },
+  {
+   "input": "cherry_wood",
+   "output": "charcoal",
+   "count": 1
+  },
+  {
+   "input": "dark_oak_log",
+   "output": "charcoal",
+   "count": 1
+  },
+  {
+   "input": "dark_oak_wood",
+   "output": "charcoal",
+   "count": 1
+  },
+  {
+   "input": "jungle_log",
+   "output": "charcoal",
+   "count": 1
+  },
+  {
+   "input": "jungle_wood",
+   "output": "charcoal",
+   "count": 1
+  },
+  {
+   "input": "mangrove_log",
+   "output": "charcoal",
+   "count": 1
+  },
+  {
+   "input": "mangrove_wood",
+   "output": "charcoal",
+   "count": 1
+  },
+  {
+   "input": "oak_log",
+   "output": "charcoal",
+   "count": 1
+  },
+  {
+   "input": "oak_wood",
+   "output": "charcoal",
+   "count": 1
+  },
+  {
+   "input": "pale_oak_log",
+   "output": "charcoal",
+   "count": 1,
+   "added": true
+  },
+  {
+   "input": "pale_oak_wood",
+   "output": "charcoal",
+   "count": 1,
+   "added": true
+  },
+  {
+   "input": "poplar_log",
+   "output": "charcoal",
+   "count": 1,
+   "added": true
+  },
+  {
+   "input": "poplar_wood",
+   "output": "charcoal",
+   "count": 1,
+   "added": true
+  },
+  {
+   "input": "spruce_log",
+   "output": "charcoal",
+   "count": 1
+  },
+  {
+   "input": "spruce_wood",
+   "output": "charcoal",
+   "count": 1
+  },
+  {
+   "input": "stripped_acacia_log",
+   "output": "charcoal",
+   "count": 1
+  },
+  {
+   "input": "stripped_acacia_wood",
+   "output": "charcoal",
+   "count": 1
+  },
+  {
+   "input": "stripped_birch_log",
+   "output": "charcoal",
+   "count": 1
+  },
+  {
+   "input": "stripped_birch_wood",
+   "output": "charcoal",
+   "count": 1
+  },
+  {
+   "input": "stripped_cherry_log",
+   "output": "charcoal",
+   "count": 1
+  },
+  {
+   "input": "stripped_cherry_wood",
+   "output": "charcoal",
+   "count": 1
+  },
+  {
+   "input": "stripped_dark_oak_log",
+   "output": "charcoal",
+   "count": 1
+  },
+  {
+   "input": "stripped_dark_oak_wood",
+   "output": "charcoal",
+   "count": 1
+  },
+  {
+   "input": "stripped_jungle_log",
+   "output": "charcoal",
+   "count": 1
+  },
+  {
+   "input": "stripped_jungle_wood",
+   "output": "charcoal",
+   "count": 1
+  },
+  {
+   "input": "stripped_mangrove_log",
+   "output": "charcoal",
+   "count": 1
+  },
+  {
+   "input": "stripped_mangrove_wood",
+   "output": "charcoal",
+   "count": 1
+  },
+  {
+   "input": "stripped_oak_log",
+   "output": "charcoal",
+   "count": 1
+  },
+  {
+   "input": "stripped_oak_wood",
+   "output": "charcoal",
+   "count": 1
+  },
+  {
+   "input": "stripped_pale_oak_log",
+   "output": "charcoal",
+   "count": 1,
+   "added": true
+  },
+  {
+   "input": "stripped_pale_oak_wood",
+   "output": "charcoal",
+   "count": 1,
+   "added": true
+  },
+  {
+   "input": "stripped_poplar_log",
+   "output": "charcoal",
+   "count": 1,
+   "added": true
+  },
+  {
+   "input": "stripped_poplar_wood",
+   "output": "charcoal",
+   "count": 1,
+   "added": true
+  },
+  {
+   "input": "stripped_spruce_log",
+   "output": "charcoal",
+   "count": 1
+  },
+  {
+   "input": "stripped_spruce_wood",
+   "output": "charcoal",
+   "count": 1
+  },
+  {
+   "input": "coal_ore",
+   "output": "coal",
+   "count": 1
+  },
+  {
+   "input": "deepslate_coal_ore",
+   "output": "coal",
+   "count": 1
+  },
+  {
+   "input": "beef",
+   "output": "cooked_beef",
+   "count": 1
+  },
+  {
+   "input": "chicken",
+   "output": "cooked_chicken",
+   "count": 1
+  },
+  {
+   "input": "cod",
+   "output": "cooked_cod",
+   "count": 1
+  },
+  {
+   "input": "mutton",
+   "output": "cooked_mutton",
+   "count": 1
+  },
+  {
+   "input": "porkchop",
+   "output": "cooked_porkchop",
+   "count": 1
+  },
+  {
+   "input": "rabbit",
+   "output": "cooked_rabbit",
+   "count": 1
+  },
+  {
+   "input": "salmon",
+   "output": "cooked_salmon",
+   "count": 1
+  },
+  {
+   "input": "copper_ore",
+   "output": "copper_ingot",
+   "count": 1
+  },
+  {
+   "input": "deepslate_copper_ore",
+   "output": "copper_ingot",
+   "count": 1
+  },
+  {
+   "input": "raw_copper",
+   "output": "copper_ingot",
+   "count": 1
+  },
+  {
+   "input": "deepslate_bricks",
+   "output": "cracked_deepslate_bricks",
+   "count": 1
+  },
+  {
+   "input": "deepslate_tiles",
+   "output": "cracked_deepslate_tiles",
+   "count": 1
+  },
+  {
+   "input": "nether_brick",
+   "output": "cracked_nether_bricks",
+   "count": 1
+  },
+  {
+   "input": "polished_blackstone_bricks",
+   "output": "cracked_polished_blackstone_bricks",
+   "count": 1
+  },
+  {
+   "input": "stone_bricks",
+   "output": "cracked_stone_bricks",
+   "count": 1
+  },
+  {
+   "input": "cyan_terracotta",
+   "output": "cyan_glazed_terracotta",
+   "count": 1
+  },
+  {
+   "input": "cobbled_deepslate",
+   "output": "deepslate",
+   "count": 1
+  },
+  {
+   "input": "deepslate_diamond_ore",
+   "output": "diamond",
+   "count": 1
+  },
+  {
+   "input": "diamond_ore",
+   "output": "diamond",
+   "count": 1
+  },
+  {
+   "input": "kelp",
+   "output": "dried_kelp",
+   "count": 1
+  },
+  {
+   "input": "deepslate_emerald_ore",
+   "output": "emerald",
+   "count": 1
+  },
+  {
+   "input": "emerald_ore",
+   "output": "emerald",
+   "count": 1
+  },
+  {
+   "input": "red_sand",
+   "output": "glass",
+   "count": 1
+  },
+  {
+   "input": "sand",
+   "output": "glass",
+   "count": 1
+  },
+  {
+   "input": "deepslate_gold_ore",
+   "output": "gold_ingot",
+   "count": 1
+  },
+  {
+   "input": "gold_ore",
+   "output": "gold_ingot",
+   "count": 1
+  },
+  {
+   "input": "nether_gold_ore",
+   "output": "gold_ingot",
+   "count": 1
+  },
+  {
+   "input": "raw_gold",
+   "output": "gold_ingot",
+   "count": 1
+  },
+  {
+   "input": "gray_terracotta",
+   "output": "gray_glazed_terracotta",
+   "count": 1
+  },
+  {
+   "input": "cactus",
+   "output": "green_dye",
+   "count": 1
+  },
+  {
+   "input": "green_terracotta",
+   "output": "green_glazed_terracotta",
+   "count": 1
+  },
+  {
+   "input": "clay",
+   "output": "hardened_clay",
+   "count": 1
+  },
+  {
+   "input": "deepslate_iron_ore",
+   "output": "iron_ingot",
+   "count": 1
+  },
+  {
+   "input": "iron_ore",
+   "output": "iron_ingot",
+   "count": 1
+  },
+  {
+   "input": "raw_iron",
+   "output": "iron_ingot",
+   "count": 1
+  },
+  {
+   "input": "deepslate_lapis_ore",
+   "output": "lapis_lazuli",
+   "count": 1
+  },
+  {
+   "input": "lapis_ore",
+   "output": "lapis_lazuli",
+   "count": 1
+  },
+  {
+   "input": "light_blue_terracotta",
+   "output": "light_blue_glazed_terracotta",
+   "count": 1
+  },
+  {
+   "input": "sea_pickle",
+   "output": "lime_dye",
+   "count": 1
+  },
+  {
+   "input": "lime_terracotta",
+   "output": "lime_glazed_terracotta",
+   "count": 1
+  },
+  {
+   "input": "magenta_terracotta",
+   "output": "magenta_glazed_terracotta",
+   "count": 1
+  },
+  {
+   "input": "netherrack",
+   "output": "netherbrick",
+   "count": 1
+  },
+  {
+   "input": "ancient_debris",
+   "output": "netherite_scrap",
+   "count": 1
+  },
+  {
+   "input": "orange_terracotta",
+   "output": "orange_glazed_terracotta",
+   "count": 1
+  },
+  {
+   "input": "pink_terracotta",
+   "output": "pink_glazed_terracotta",
+   "count": 1
+  },
+  {
+   "input": "chorus_fruit",
+   "output": "popped_chorus_fruit",
+   "count": 1
+  },
+  {
+   "input": "purple_terracotta",
+   "output": "purple_glazed_terracotta",
+   "count": 1
+  },
+  {
+   "input": "quartz_ore",
+   "output": "quartz",
+   "count": 1
+  },
+  {
+   "input": "red_terracotta",
+   "output": "red_glazed_terracotta",
+   "count": 1
+  },
+  {
+   "input": "deepslate_redstone_ore",
+   "output": "redstone",
+   "count": 1
+  },
+  {
+   "input": "redstone_ore",
+   "output": "redstone",
+   "count": 1
+  },
+  {
+   "input": "light_gray_terracotta",
+   "output": "silver_glazed_terracotta",
+   "count": 1
+  },
+  {
+   "input": "basalt",
+   "output": "smooth_basalt",
+   "count": 1
+  },
+  {
+   "input": "quartz_block",
+   "output": "smooth_quartz",
+   "count": 1
+  },
+  {
+   "input": "red_sandstone",
+   "output": "smooth_red_sandstone",
+   "count": 1
+  },
+  {
+   "input": "sandstone",
+   "output": "smooth_sandstone",
+   "count": 1
+  },
+  {
+   "input": "stone",
+   "output": "smooth_stone",
+   "count": 1
+  },
+  {
+   "input": "wet_sponge",
+   "output": "sponge",
+   "count": 1
+  },
+  {
+   "input": "cobblestone",
+   "output": "stone",
+   "count": 1
+  },
+  {
+   "input": "white_terracotta",
+   "output": "white_glazed_terracotta",
+   "count": 1
+  },
+  {
+   "input": "yellow_terracotta",
+   "output": "yellow_glazed_terracotta",
+   "count": 1
+  }
+ ],
+ "fuels": {
+  "lava_bucket": 20000,
+  "coal_block": 16000,
+  "dried_kelp_block": 4000,
+  "blaze_rod": 2400,
+  "coal": 1600,
+  "charcoal": 1600,
+  "tag:logs": 300,
+  "tag:planks": 300,
+  "crafting_table": 300,
+  "tag:wooden_slab": 150,
+  "stick": 100,
+  "tag:sapling": 100
+ }
+}

@@ -1,0 +1,237 @@
+{
+  "seed": "1234",
+  "generator": "default",
+  "bds": "1.26.51.1",
+  "scoutedAt": "2026-10-19",
+  "note": "Written by packages/agent/scripts/scout-seed.js (cheats used for scouting only). The milestones never read these coordinates: the agent finds everything itself.",
+  "spawn": {
+    "x": -516,
+    "y": 69,
+    "z": 77
+  },
+  "surface": {
+    "logs": {
+      "count": 531,
+      "kinds": {
+        "birch_log": 62,
+        "oak_log": 469
+      },
+      "nearest": {
+        "x": -531,
+        "y": 69,
+        "z": 57,
+        "distance": 25.7
+      }
+    },
+    "exposedStone": {
+      "count": 2,
+      "nearest": {
+        "x": -527,
+        "y": 63,
+        "z": 87,
+        "distance": 16.1
+      }
+    },
+    "surfaceLava": {
+      "count": 45,
+      "nearest": {
+        "x": -459,
+        "y": 62,
+        "z": 86,
+        "distance": 57.6
+      }
+    },
+    "gravel": {
+      "count": 464,
+      "nearest": {
+        "x": -538,
+        "y": 62,
+        "z": 68,
+        "distance": 25.4
+      }
+    },
+    "water": {
+      "count": 9704,
+      "nearest": {
+        "x": -536,
+        "y": 62,
+        "z": 80,
+        "distance": 21.8
+      }
+    }
+  },
+  "ores": {
+    "coal": {
+      "count": 5000,
+      "nearest": {
+        "x": -515,
+        "y": 65,
+        "z": 82,
+        "block": "coal_ore",
+        "distance": 6
+      }
+    },
+    "copper": {
+      "count": 5000,
+      "nearest": {
+        "x": -515,
+        "y": 63,
+        "z": 70,
+        "block": "copper_ore",
+        "distance": 9.6
+      }
+    },
+    "iron": {
+      "count": 5000,
+      "nearest": {
+        "x": -507,
+        "y": 62,
+        "z": 70,
+        "block": "iron_ore",
+        "distance": 13.3
+      }
+    },
+    "gold": {
+      "count": 1758,
+      "nearest": {
+        "x": -514,
+        "y": 25,
+        "z": 119,
+        "block": "gold_ore",
+        "distance": 60.5
+      }
+    },
+    "redstone": {
+      "count": 1744,
+      "nearest": {
+        "x": -537,
+        "y": 12,
+        "z": 60,
+        "block": "redstone_ore",
+        "distance": 63.4
+      }
+    },
+    "lapis": {
+      "count": 2228,
+      "nearest": {
+        "x": -513,
+        "y": 57,
+        "z": 97,
+        "block": "lapis_ore",
+        "distance": 23
+      }
+    },
+    "diamond": {
+      "count": 790,
+      "nearest": {
+        "x": -535,
+        "y": 1,
+        "z": 84,
+        "block": "deepslate_diamond_ore",
+        "distance": 71
+      }
+    },
+    "emerald": {
+      "count": 74,
+      "nearest": {
+        "x": -616,
+        "y": 67,
+        "z": 110,
+        "block": "emerald_ore",
+        "distance": 105.6
+      }
+    }
+  },
+  "mountains": [
+    {
+      "biome": "meadow",
+      "x": -676,
+      "y": 127,
+      "z": 45,
+      "distance": 164
+    },
+    {
+      "biome": "grove",
+      "x": 156,
+      "y": 126,
+      "z": 749,
+      "distance": 950
+    },
+    {
+      "biome": "jagged_peaks",
+      "x": 156,
+      "y": 150,
+      "z": 877,
+      "distance": 1044
+    },
+    {
+      "biome": "extreme_hills_mutated",
+      "x": -1572,
+      "y": 91,
+      "z": 749,
+      "distance": 1252
+    },
+    {
+      "biome": "extreme_hills",
+      "x": -804,
+      "y": 91,
+      "z": 1389,
+      "distance": 1343
+    },
+    {
+      "biome": "extreme_hills_plus_trees",
+      "x": -868,
+      "y": 93,
+      "z": 1517,
+      "distance": 1482
+    },
+    {
+      "biome": "stony_peaks",
+      "x": 924,
+      "y": 171,
+      "z": 685,
+      "distance": 1562
+    },
+    {
+      "biome": "cherry_grove",
+      "x": 604,
+      "y": 107,
+      "z": -2259,
+      "distance": 2591
+    },
+    {
+      "biome": "frozen_peaks",
+      "x": -3172,
+      "y": 172,
+      "z": -915,
+      "distance": 2836
+    },
+    {
+      "biome": "snowy_slopes",
+      "x": -3684,
+      "y": 79,
+      "z": 1773,
+      "distance": 3594
+    }
+  ],
+  "emerald": [
+    {
+      "biome": "meadow",
+      "at": {
+        "x": -676,
+        "y": 127,
+        "z": 45
+      },
+      "distance": 164,
+      "count": 92,
+      "nearest": {
+        "x": -663,
+        "y": 121,
+        "z": 43,
+        "block": "emerald_ore",
+        "distance": 14.1
+      }
+    }
+  ],
+  "score": 105
+}

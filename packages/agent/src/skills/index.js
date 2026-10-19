@@ -1,16 +1,30 @@
-// owner: U17 (agent core & overworld milestones); U18's skills are pre-registered here
+// owner: U17 (agent core & overworld milestones)
 'use strict'
+/**
+ * Skill registry: name → `async (bot, args) => result` (see ../skill.js), auto-discovered.
+ *
+ * Every `*.js` file in this directory (except this one) is required; a module that exports a function registers it
+ * under the file's base name (`mine.js` → `mine`), and `module.exports.skills = { name: fn }` registers more names.
+ * Units add skills by adding files (U18: combat, portal, nether, end) — never by editing this one.
+ */
+const fs = require('fs')
+const path = require('path')
 
-/** Skill registry: name -> `async (bot, args) => result` (see ../skill.js). */
-module.exports = {
-  navigate: require('./navigate'),
-  gather: require('./gather'),
-  craft: require('./craft'),
-  smelt: require('./smelt'),
-  mine: require('./mine'),
-  build: require('./build'),
-  combat: require('./combat'),
-  portal: require('./portal'),
-  nether: require('./nether'),
-  end: require('./end')
+function discover (dir = __dirname) {
+  const registry = {}
+  const files = fs.readdirSync(dir).filter((f) => f.endsWith('.js') && f !== 'index.js' && !f.startsWith('.')).sort()
+  for (const file of files) {
+    const mod = require(path.join(dir, file))
+    const name = path.basename(file, '.js')
+    if (typeof mod === 'function') registry[name] = mod
+    if (mod && typeof mod.skills === 'object') {
+      for (const [extra, fn] of Object.entries(mod.skills)) {
+        if (typeof fn === 'function') registry[extra] = fn
+      }
+    }
+  }
+  return registry
 }
+
+module.exports = discover()
+Object.defineProperty(module.exports, 'discover', { value: discover, enumerable: false })

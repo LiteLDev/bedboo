@@ -4,7 +4,7 @@
   "private": true,
   "description": "Scripted (no LLM) survival agent built on mineflayer-bedrock",
   "license": "MIT",
-  "main": "src/runner.js",
+  "main": "index.js",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/LiteLDev/bedboo.git",
@@ -14,7 +14,10 @@
     "node": ">=24"
   },
   "scripts": {
-    "test": "mocha"
+    "test": "mocha",
+    "test:e2e": "mocha --config .mocharc.e2e.json",
+    "scout": "node scripts/scout-seed.js",
+    "full-run": "node scenarios/overworld/full-run.js"
   },
   "dependencies": {
     "mineflayer-armor-manager": "2.0.1",
@@ -28,6 +31,8 @@
   },
   "devDependencies": {
     "@bedboo/bds": "workspace:*",
-    "mocha": "12.0.3"
+    "@bedboo/bedrock-data": "workspace:*",
+    "mocha": "12.0.3",
+    "prismarine-registry": "1.12.0"
   }
 }
