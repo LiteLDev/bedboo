@@ -1,0 +1,499 @@
+diff --git a/index.js b/index.js
+index b38bd30c0c1babb4d7d3d396067ed828d9dc9f6a..c58f9548f46f8b23fdc8886b5fe2c8ea3d3d5607 100644
+--- a/index.js
++++ b/index.js
+@@ -9,11 +9,10 @@ const Lock = require('./lib/lock')
+ const Vec3 = require('vec3').Vec3
+ 
+ const Physics = require('./lib/physics')
+-const nbt = require('prismarine-nbt')
+ const interactableBlocks = require('./lib/interactable.json')
++const bedrock = require('./lib/bedrock')
+ 
+ function inject (bot) {
+-  const waterType = bot.registry.blocksByName.water.id
+   const ladderId = bot.registry.blocksByName.ladder.id
+   const vineId = bot.registry.blocksByName.vine.id
+   let stateMovements = new Movements(bot)
+@@ -23,6 +22,7 @@ function inject (bot) {
+   let dynamicGoal = false
+   let path = []
+   let pathUpdated = false
++  let plannedFrom = null // bedboo: where the bot was when the current path was computed
+   let digging = false
+   let placing = false
+   let placingBlock = null
+@@ -44,13 +44,12 @@ function inject (bot) {
+ 
+   bot.pathfinder.bestHarvestTool = (block) => {
+     const availableTools = bot.inventory.items()
+-    const effects = bot.entity.effects
+ 
+     let fastest = Number.MAX_VALUE
+     let bestTool = null
+     for (const tool of availableTools) {
+-      const enchants = (tool && tool.nbt) ? nbt.simplify(tool.nbt).Enchantments : []
+-      const digTime = block.digTime(tool ? tool.type : null, false, false, false, enchants, effects)
++      // bedboo: item.enchants (Java Enchantments / Bedrock ench) + Bedrock effect factors, see lib/bedrock.js
++      const digTime = bedrock.digTimeOf(bot, block, tool)
+       if (digTime < fastest) {
+         fastest = digTime
+         bestTool = tool
+@@ -116,8 +115,10 @@ function inject (bot) {
+ 
+   function detectDiggingStopped () {
+     digging = false
+-    bot.removeAllListeners('diggingAborted', detectDiggingStopped)
+-    bot.removeAllListeners('diggingCompleted', detectDiggingStopped)
++    // bedboo: removeListener — removeAllListeners(event) ignores its second argument and dropped every other
++    // 'diggingAborted' / 'diggingCompleted' listener of the bot (other plugins', the application's)
++    bot.removeListener('diggingAborted', detectDiggingStopped)
++    bot.removeListener('diggingCompleted', detectDiggingStopped)
+   }
+ 
+   function resetPath (reason, clearStates = true) {
+@@ -160,7 +161,16 @@ function inject (bot) {
+   }
+ 
+   bot.pathfinder.stop = () => {
++    // Nothing is running, so there is nothing to stop; the flag would otherwise survive until the
++    // next goal and stop that one instead. (backport of master #375)
++    if (!stateGoal && path.length === 0) return
+     stopPathing = true
++    // bedboo: a goal without a path being walked (a failed search, a reached dynamic goal) reaches no node and no reset
++    // that would act on the flag: stop on the next tick (async, like a stop at a node: a path_stop listener added right
++    // after stop() — mineflayer-pvp's — still hears it)
++    if (path.length === 0 && !digging && !placing) {
++      setImmediate(() => { if (stopPathing && path.length === 0 && !digging && !placing) stop() })
++    }
+   }
+ 
+   bot.on('physicsTick', monitorMovement)
+@@ -168,9 +178,14 @@ function inject (bot) {
+   function postProcessPath (path) {
+     for (let i = 0; i < path.length; i++) {
+       const curPoint = path[i]
+-      if (curPoint.toBreak.length > 0 || curPoint.toPlace.length > 0) break
++      // A useOne (open a gate/door on the way through) is a click, not a placement (backport of master #372)
++      if (curPoint.toBreak.length > 0 || curPoint.toPlace.some(p => !p.useOne)) break
+       const b = bot.blockAt(new Vec3(curPoint.x, curPoint.y, curPoint.z))
+-      if (b && (b.type === waterType || ((b.type === ladderId || b.type === vineId) && i + 1 < path.length && path[i + 1].y < curPoint.y))) {
++      // An openable block is a doorway: its node is the floor centre (master #372). Liquids: water and (Bedrock)
++      // flowing_water, water-filled blocks, waterlogged blocks (master #384)
++      const doorway = stateMovements && stateMovements.openable && b && stateMovements.openable.has(b.type)
++      const liquid = b && b.boundingBox === 'empty' && (stateMovements.liquids.has(b.type) || b.isWaterlogged === true)
++      if (b && (liquid || doorway || ((b.type === ladderId || b.type === vineId) && i + 1 < path.length && path[i + 1].y < curPoint.y))) {
+         curPoint.x = Math.floor(curPoint.x) + 0.5
+         curPoint.y = Math.floor(curPoint.y)
+         curPoint.z = Math.floor(curPoint.z) + 0.5
+@@ -335,6 +350,11 @@ function inject (bot) {
+     bot.entity.velocity.x = 0
+     bot.entity.velocity.z = 0
+ 
++    // bedboo: a server-authoritative movement server (Bedrock) corrects a client-side teleport back (measured: 3-4
++    // corrections of 0.16-0.64 block per bridge); the bot stops where it is instead. (BDS mostly accepts the zeroed
++    // velocity above — within its position acceptance threshold — and otherwise corrects it once, by ~0.24 block.)
++    if (bedrock.serverAuthoritativeMovement(bot)) return
++
+     const blockX = Math.floor(bot.entity.position.x) + 0.5
+     const blockZ = Math.floor(bot.entity.position.z) + 0.5
+ 
+@@ -462,12 +482,16 @@ function inject (bot) {
+             stateGoal = null
+             fullStop()
+           }
+-        } else if (!pathUpdated) {
++        } else if (!pathUpdated || (dynamicGoal && !astartTimedout && plannedFrom && bot.entity.position.distanceTo(plannedFrom) > 1)) {
++          // bedboo: a dynamic goal (GoalFollow) also re-plans when the bot was pushed away from where its finished path
++          // was computed (knockback: a skeleton's arrows pushed a mineflayer-pvp bot out of range for good, as the
++          // target itself did not move far enough for hasChanged())
+           const results = bot.pathfinder.getPathTo(stateMovements, stateGoal)
+           bot.emit('path_update', results)
+           path = results.path
+           astartTimedout = results.status === 'partial'
+           pathUpdated = true
++          plannedFrom = bot.entity.position.clone()
+         }
+       }
+     }
+@@ -524,6 +548,10 @@ function inject (bot) {
+         bot.activateBlock(bot.blockAt(new Vec3(placingBlock.x, placingBlock.y, placingBlock.z))).then(() => {
+           lockUseBlock.release()
+           placingBlock = nextPoint.toPlace.shift()
++          // bedboo: nothing left to place on this node: walk on (upstream kept `placing` and then read
++          // `placingBlock.y` of undefined, or reset the path for want of scaffolding blocks)
++          if (!placingBlock) placing = false
++          lastNodeTime = performance.now()
+         }, err => {
+           console.error(err)
+           lockUseBlock.release()
+diff --git a/lib/bedrock.js b/lib/bedrock.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..419ccc5f48514488e645e56c3ac7397cd01ec0a2
+--- /dev/null
++++ b/lib/bedrock.js
+@@ -0,0 +1,64 @@
++// bedboo (mineflayer-bedrock) patch, U15: helpers shared by index.js and lib/movements.js so the pathfinder works on
++// Minecraft: Bedrock Edition (mineflayer-bedrock bots) without changing its behaviour on Java.
++
++/**
++ * Milliseconds to break `block` holding `tool` (upstream: prismarine-block `block.digTime(type, false, false, false,
++ * nbt.simplify(tool.nbt).Enchantments, effects)`).
++ * - Enchantments come from `item.enchants` (prismarine-item: Java `Enchantments` and Bedrock `ench` NBT alike, as
++ *   `{ name, lvl }` — upstream's simplified NBT has `id`, which prismarine-block never matches).
++ * - mineflayer-bedrock bots expose `bot._bedrock.digging.blockDigTime` (Bedrock Haste / Conduit Power / Mining Fatigue
++ *   factors); prismarine-block's own digTime keeps Java's.
++ */
++function digTimeOf (bot, block, tool) {
++  const type = tool ? tool.type : null
++  const enchants = (tool && tool.enchants) || []
++  const effects = (bot.entity && bot.entity.effects) || {}
++  const bedrock = bot._bedrock && bot._bedrock.digging && bot._bedrock.digging.blockDigTime
++  if (typeof bedrock === 'function') return bedrock(block, type, false, false, false, enchants, effects)
++  return block.digTime(type, false, false, false, enchants, effects)
++}
++
++/** registry ids of the blocks named `names` that exist in this registry (Java and Bedrock names differ) */
++function idsOf (registry, names) {
++  const ids = []
++  for (const name of names) {
++    const block = registry.blocksByName[name]
++    if (block) ids.push(block.id)
++  }
++  return ids
++}
++
++/** wooden (hand-openable) doors and fence gates: Java `oak_door` / Bedrock `wooden_door`, `*_fence_gate` / `fence_gate` */
++function isOpenableName (name) {
++  if (name.includes('iron')) return false
++  if (name === 'fence_gate' || name.endsWith('_fence_gate')) return true
++  return (name === 'wooden_door' || name.endsWith('_door')) && !name.endsWith('trapdoor')
++}
++
++/** an open door / gate (Java property `open`, Bedrock `open_bit`) */
++function isOpen (block) {
++  if (!block || typeof block.getProperties !== 'function') return false
++  const props = block.getProperties()
++  return props.open === true || props.open === 'true' || props.open_bit === true || props.open_bit === 1 || props.open_bit === 'true'
++}
++
++/**
++ * Whether a bot crossing `block` along `dir` ({x, z}, one of them 0), centred in it (0.6 wide: 0.2–0.8), clears every
++ * collision box of the block: a door leaf at the edge it walks along does, the leaf across its way does not.
++ */
++function passableAlong (block, dir) {
++  for (const [x0, , z0, x1, , z1] of block.shapes) {
++    if (dir.x !== 0 ? (z1 > 0.2 && z0 < 0.8) : (x1 > 0.2 && x0 < 0.8)) return false
++  }
++  return true
++}
++
++/**
++ * Whether the bot runs on a server-authoritative movement server (Bedrock): moving `bot.entity.position` client side
++ * (fullStop's recentring) is corrected by the server there instead of being accepted like on Java.
++ */
++function serverAuthoritativeMovement (bot) {
++  return !!(bot._bedrock && bot._bedrock.physics)
++}
++
++module.exports = { digTimeOf, idsOf, isOpenableName, isOpen, passableAlong, serverAuthoritativeMovement }
+diff --git a/lib/goto.js b/lib/goto.js
+index 0b8b9de4e3459c896fda1485d4c71fb98704e720..e46af4adb56e6b7d93d6baf4bbae0a88be984c4a 100644
+--- a/lib/goto.js
++++ b/lib/goto.js
+@@ -20,12 +20,15 @@ function goto (bot, goal) {
+     }
+ 
+     function noPathListener (results) {
+-      if (results.path.length === 0) {
+-        cleanup()
+-      } else if (results.status === 'noPath') {
++      // A search that fails or is still slicing reconstructs its best node, which is the start node
++      // and so an empty path. Only a 'success' with nothing to walk means the goal is already met.
++      // (backport of master #375)
++      if (results.status === 'noPath') {
+         cleanup(error('NoPath', 'No path to the goal!'))
+       } else if (results.status === 'timeout') {
+         cleanup(error('Timeout', 'Took to long to decide path to goal!'))
++      } else if (results.status === 'success' && results.path.length === 0) {
++        cleanup()
+       }
+     }
+ 
+diff --git a/lib/interactable.json b/lib/interactable.json
+index ca4928c3515fa388e613aed9c8649ba864be9182..24b1db7541c78f7abe361cb2a54debe388a6045a 100644
+--- a/lib/interactable.json
++++ b/lib/interactable.json
+@@ -132,5 +132,161 @@
+   "white_shulker_box",
+   "wood_button",
+   "yellow_bed",
+-  "yelow_shulker_box"
++  "yelow_shulker_box",
++  "acacia_hanging_sign",
++  "acacia_shelf",
++  "acacia_standing_sign",
++  "acacia_wall_sign",
++  "bamboo_button",
++  "bamboo_door",
++  "bamboo_fence_gate",
++  "bamboo_hanging_sign",
++  "bamboo_shelf",
++  "bamboo_standing_sign",
++  "bamboo_trapdoor",
++  "bamboo_wall_sign",
++  "bed",
++  "birch_hanging_sign",
++  "birch_shelf",
++  "birch_standing_sign",
++  "birch_wall_sign",
++  "black_candle_cake",
++  "blue_candle_cake",
++  "brown_candle_cake",
++  "cake",
++  "candle_cake",
++  "cartography_table",
++  "cave_vines_body_with_berries",
++  "cave_vines_head_with_berries",
++  "chain_command_block",
++  "cherry_button",
++  "cherry_door",
++  "cherry_fence_gate",
++  "cherry_hanging_sign",
++  "cherry_shelf",
++  "cherry_standing_sign",
++  "cherry_trapdoor",
++  "cherry_wall_sign",
++  "chiseled_bookshelf",
++  "copper_chest",
++  "copper_door",
++  "copper_trapdoor",
++  "crafter",
++  "crimson_button",
++  "crimson_door",
++  "crimson_fence_gate",
++  "crimson_hanging_sign",
++  "crimson_shelf",
++  "crimson_standing_sign",
++  "crimson_trapdoor",
++  "crimson_wall_sign",
++  "cyan_candle_cake",
++  "dark_oak_hanging_sign",
++  "dark_oak_shelf",
++  "darkoak_standing_sign",
++  "darkoak_wall_sign",
++  "decorated_pot",
++  "deprecated_anvil",
++  "exposed_copper_chest",
++  "exposed_copper_door",
++  "exposed_copper_trapdoor",
++  "frame",
++  "glow_frame",
++  "gray_candle_cake",
++  "green_candle_cake",
++  "grindstone",
++  "jigsaw",
++  "jungle_hanging_sign",
++  "jungle_shelf",
++  "jungle_standing_sign",
++  "jungle_wall_sign",
++  "lectern",
++  "light_blue_candle_cake",
++  "light_gray_candle_cake",
++  "lime_candle_cake",
++  "lit_blast_furnace",
++  "lit_furnace",
++  "lit_smoker",
++  "loom",
++  "magenta_candle_cake",
++  "mangrove_button",
++  "mangrove_door",
++  "mangrove_fence_gate",
++  "mangrove_hanging_sign",
++  "mangrove_shelf",
++  "mangrove_standing_sign",
++  "mangrove_trapdoor",
++  "mangrove_wall_sign",
++  "noteblock",
++  "oak_hanging_sign",
++  "oak_shelf",
++  "orange_candle_cake",
++  "oxidized_copper_chest",
++  "oxidized_copper_door",
++  "oxidized_copper_trapdoor",
++  "pale_oak_button",
++  "pale_oak_door",
++  "pale_oak_fence_gate",
++  "pale_oak_hanging_sign",
++  "pale_oak_shelf",
++  "pale_oak_standing_sign",
++  "pale_oak_trapdoor",
++  "pale_oak_wall_sign",
++  "pink_candle_cake",
++  "polished_blackstone_button",
++  "poplar_button",
++  "poplar_door",
++  "poplar_fence_gate",
++  "poplar_hanging_sign",
++  "poplar_shelf",
++  "poplar_standing_sign",
++  "poplar_trapdoor",
++  "poplar_wall_sign",
++  "powered_comparator",
++  "purple_candle_cake",
++  "red_candle_cake",
++  "respawn_anchor",
++  "soul_campfire",
++  "spruce_hanging_sign",
++  "spruce_shelf",
++  "spruce_standing_sign",
++  "spruce_trapdoor",
++  "spruce_wall_sign",
++  "standing_sign",
++  "stonecutter_block",
++  "straw_bed",
++  "structure_block",
++  "sweet_berry_bush",
++  "trapdoor",
++  "undyed_shulker_box",
++  "unpowered_comparator",
++  "wall_sign",
++  "warped_button",
++  "warped_door",
++  "warped_fence_gate",
++  "warped_hanging_sign",
++  "warped_shelf",
++  "warped_standing_sign",
++  "warped_trapdoor",
++  "warped_wall_sign",
++  "waxed_copper_chest",
++  "waxed_copper_door",
++  "waxed_copper_trapdoor",
++  "waxed_exposed_copper_chest",
++  "waxed_exposed_copper_door",
++  "waxed_exposed_copper_trapdoor",
++  "waxed_oxidized_copper_chest",
++  "waxed_oxidized_copper_door",
++  "waxed_oxidized_copper_trapdoor",
++  "waxed_weathered_copper_chest",
++  "waxed_weathered_copper_door",
++  "waxed_weathered_copper_trapdoor",
++  "weathered_copper_chest",
++  "weathered_copper_door",
++  "weathered_copper_trapdoor",
++  "white_candle_cake",
++  "wooden_button",
++  "wooden_door",
++  "yellow_candle_cake",
++  "yellow_shulker_box"
+ ]
+\ No newline at end of file
+diff --git a/lib/movements.js b/lib/movements.js
+index a7e35053cde64e3cd32880af2aafa5f03e919ff8..eebc31f5215ece8a6f16ea28738f41a8f8ae4c33 100644
+--- a/lib/movements.js
++++ b/lib/movements.js
+@@ -1,6 +1,6 @@
+ const { Vec3 } = require('vec3')
+-const nbt = require('prismarine-nbt')
+ const Move = require('./move')
++const bedrock = require('./bedrock')
+ 
+ const cardinalDirections = [
+   { x: -1, z: 0 }, // West
+@@ -51,10 +51,15 @@ class Movements {
+     if (registry.blocksByName.cobweb) this.blocksToAvoid.add(registry.blocksByName.cobweb.id)
+     if (registry.blocksByName.web) this.blocksToAvoid.add(registry.blocksByName.web.id)
+     this.blocksToAvoid.add(registry.blocksByName.lava.id)
++    // Bedrock: flowing liquids are blocks of their own (Java: a `level` state of water / lava)
++    for (const id of bedrock.idsOf(registry, ['flowing_lava'])) this.blocksToAvoid.add(id)
+ 
+     this.liquids = new Set()
+     this.liquids.add(registry.blocksByName.water.id)
+     this.liquids.add(registry.blocksByName.lava.id)
++    for (const id of bedrock.idsOf(registry, ['flowing_water', 'flowing_lava'])) this.liquids.add(id)
++    // These blocks contain water even though their block ID is not water (backport of master #384)
++    for (const id of bedrock.idsOf(registry, ['seagrass', 'tall_seagrass', 'kelp', 'kelp_plant', 'bubble_column'])) this.liquids.add(id)
+ 
+     this.gravityBlocks = new Set()
+     this.gravityBlocks.add(registry.blocksByName.sand.id)
+@@ -71,6 +76,7 @@ class Movements {
+     if (registry.blocksByName.void_air) this.replaceables.add(registry.blocksByName.void_air.id)
+     this.replaceables.add(registry.blocksByName.water.id)
+     this.replaceables.add(registry.blocksByName.lava.id)
++    for (const id of bedrock.idsOf(registry, ['flowing_water', 'flowing_lava'])) this.replaceables.add(id)
+ 
+     this.scafoldingBlocks = []
+     this.scafoldingBlocks.push(registry.itemsByName.dirt.id)
+@@ -92,7 +98,8 @@ class Movements {
+       }
+     })
+     registry.blocksArray.forEach(block => {
+-      if (this.interactableBlocks.has(block.name) && block.name.toLowerCase().includes('gate') && !block.name.toLowerCase().includes('iron')) {
++      // fence gates and (bedboo) wooden doors: Java `oak_door`, Bedrock `wooden_door`, `spruce_door`, … (never iron)
++      if (this.interactableBlocks.has(block.name) && bedrock.isOpenableName(block.name.toLowerCase())) {
+         // console.info(block)
+         this.openable.add(block.id)
+       }
+@@ -233,10 +240,18 @@ class Movements {
+     b.safe = (b.boundingBox === 'empty' || b.climbable || this.carpets.has(b.type)) && !this.blocksToAvoid.has(b.type)
+     b.physical = b.boundingBox === 'block' && !this.fences.has(b.type)
+     b.replaceable = this.replaceables.has(b.type) && !b.physical
+-    b.liquid = this.liquids.has(b.type)
++    b.liquid = this.liquids.has(b.type) || b.isWaterlogged === true
+     b.height = pos.y + dy
+     b.canFall = this.gravityBlocks.has(b.type)
+     b.openable = this.openable.has(b.type)
++    // bedboo: an open fence gate has no collision (its type-level bounding box says 'block'): passable from every
++    // side. A door, open or closed, is a thin leaf at one edge of its block: getMoveForward lets the bot through when
++    // the leaf is clear of its way (bedrock.passableAlong), and opens a closed door that is not
++    b.isOpen = b.openable && bedrock.isOpen(b)
++    if (b.isOpen && b.shapes.length === 0) {
++      b.safe = !this.blocksToAvoid.has(b.type)
++      b.physical = false
++    }
+ 
+     for (const shape of b.shapes) {
+       b.height = Math.max(b.height, pos.y + dy + shape[4])
+@@ -290,9 +305,7 @@ class Movements {
+     if (block.physical) cost += this.getNumEntitiesAt(block.position, 0, 1, 0) * this.entityCost // Add entity cost if there is an entity above (a breakable block) that will fall
+ 
+     const tool = this.bot.pathfinder.bestHarvestTool(block)
+-    const enchants = (tool && tool.nbt) ? nbt.simplify(tool.nbt).Enchantments : []
+-    const effects = this.bot.entity.effects
+-    const digTime = block.digTime(tool ? tool.type : null, false, false, false, enchants, effects)
++    const digTime = bedrock.digTimeOf(this.bot, block, tool)
+     const laborCost = (1 + 3 * digTime / 1000) * this.digCost
+     cost += laborCost
+     return cost
+@@ -384,20 +397,26 @@ class Movements {
+       cost += this.placeCost // additional cost for placing a block
+     }
+ 
+-    cost += this.safeOrBreak(blockB, toBreak)
++    // Open fence gates (bedboo: and wooden doors — their upper half opens with the lower one; a door leaf that is
++    // already clear of the way, open or closed, is walked past)
++    const passesB = blockB.openable && blockB.shapes.length > 0 && bedrock.passableAlong(blockB, dir)
++    const passesC = blockC.openable && blockC.shapes.length > 0 && bedrock.passableAlong(blockC, dir)
++    const opensDoor = this.canOpenDoors && blockC.openable && !blockC.isOpen && !passesC && blockC.shapes && blockC.shapes.length !== 0
++    if (!(passesB || (opensDoor && blockB.openable))) cost += this.safeOrBreak(blockB, toBreak)
+     if (cost > 100) return
+ 
+-    // Open fence gates
+-    if (this.canOpenDoors && blockC.openable && blockC.shapes && blockC.shapes.length !== 0) {
++    if (opensDoor) {
+       toPlace.push({ x: node.x + dir.x, y: node.y, z: node.z + dir.z, dx: 0, dy: 0, dz: 0, useOne: true }) // Indicate that a block should be used on this block not placed
+-    } else {
++    } else if (!passesC) {
+       cost += this.safeOrBreak(blockC, toBreak)
+       if (cost > 100) return
+     }
+ 
+     if (this.getBlock(node, 0, 0, 0).liquid) cost += this.liquidCost
+ 
+-    neighbors.push(new Move(blockC.position.x, blockC.position.y, blockC.position.z, node.remainingBlocks - toPlace.length, cost, toBreak, toPlace))
++    // bedboo: opening a door (useOne) uses no scaffolding block
++    const placed = toPlace.filter(p => !p.useOne).length
++    neighbors.push(new Move(blockC.position.x, blockC.position.y, blockC.position.z, node.remainingBlocks - placed, cost, toBreak, toPlace))
+   }
+ 
+   getMoveDiagonal (node, dir, neighbors) {

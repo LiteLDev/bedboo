@@ -1,0 +1,47 @@
+diff --git a/HISTORY.md b/HISTORY.md
+deleted file mode 100644
+index 1ec838b6b268220737e5a98b3832db546864411a..0000000000000000000000000000000000000000
+diff --git a/lib/CollectBlock.js b/lib/CollectBlock.js
+index 445df38741dfbc99c5ae048ac9d9577cbce6a013..5feeda9309c065c144d76db0f94ce2973abfd562 100644
+--- a/lib/CollectBlock.js
++++ b/lib/CollectBlock.js
+@@ -27,6 +27,14 @@ function collectAll(bot, options) {
+                 break;
+             switch (closest.constructor.name) {
+                 case 'Block': {
++                    // bedboo (mineflayer-bedrock) patch, U15: the block may be gone already — mineflayer-pathfinder digs
++                    // what is in its way, e.g. the log above a dug one while it follows that log's drop. A
++                    // GoalLookAtBlock on air never ends: the search ran into its timeout and collect() rejected
++                    const current = bot.blockAt(closest.position);
++                    if (current == null || current.type !== closest.type) {
++                        options.targets.removeTarget(closest);
++                        continue;
++                    }
+                     const goal = new mineflayer_pathfinder_1.goals.GoalLookAtBlock(closest.position, bot.world);
+                     yield bot.pathfinder.goto(goal);
+                     yield mineBlock(bot, closest, options);
+@@ -78,7 +86,10 @@ function mineBlock(bot, block, options) {
+         }
+         const tempEvents = new TemporarySubscriber_1.TemporarySubscriber(bot);
+         tempEvents.subscribeTo('itemDrop', (entity) => {
+-            if (entity.position.distanceTo(block.position.offset(0.5, 0.5, 0.5)) <= 0.5) {
++            // bedboo (mineflayer-bedrock) patch, U15: a block's drops spawn at a random point 0.25–0.75 into the block on
++            // each axis (minus half the item's height), up to ~0.52 from its centre (measured on BDS: 0.17–0.52); within
++            // 0.5 missed some, which were then never collected
++            if (entity.position.distanceTo(block.position.offset(0.5, 0.5, 0.5)) <= 0.75) {
+                 options.targets.appendTarget(entity);
+             }
+         });
+@@ -173,9 +184,11 @@ class CollectBlock {
+                 cb = options;
+                 options = {};
+             }
++            // bedboo (mineflayer-bedrock) patch, U15: bind `this` — callbackify(this.collect) lost it, so the callback form
++            // (mineflayer's examples/collectblock.js) always failed with "Cannot read properties of undefined (reading 'bot')"
+             // @ts-expect-error
+             if (cb != null)
+-                return (0, util_1.callbackify)(this.collect)(target, options, cb);
++                return (0, util_1.callbackify)(this.collect).call(this, target, options, cb);
+             const optionsFull = {
+                 append: (_a = options.append) !== null && _a !== void 0 ? _a : false,
+                 ignoreNoPath: (_b = options.ignoreNoPath) !== null && _b !== void 0 ? _b : false,

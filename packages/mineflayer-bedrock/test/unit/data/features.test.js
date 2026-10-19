@@ -74,8 +74,9 @@ describe('lib/bedrock/features.js', () => {
     const registry = createRegistry()
     registry.supportFeature = createSupportFeature(registry, { strict: true })
     assert.strictEqual(registry.supportFeature('village&pillageInventoryWindows'), false)
-    // true would take the 1.14+ branch, whose registry.version['>=']('1.20.3') throws on Bedrock
-    assert.throws(() => registry.version['>=']('1.20.3'))
+    // true would take the 1.14+ branch (Java window type ids, `registry.version['>=']('1.20.3')`: a Java version, which
+    // the Bedrock registry compares numerically since U15 — it used to throw)
+    assert.strictEqual(registry.version['>=']('1.20.3'), true)
     const windows = require('prismarine-windows')(registry)
     assert.strictEqual(windows.windows['minecraft:inventory'].slots, 46)
     assert.strictEqual(windows.createWindow(0, 'minecraft:inventory', 'Inventory').slots.length, 46)

@@ -1,0 +1,23 @@
+diff --git a/HISTORY.md b/HISTORY.md
+deleted file mode 100644
+index 8a24ee0cf706649a5743d1093259e53d8a6a71b8..0000000000000000000000000000000000000000
+diff --git a/lib/PVP.js b/lib/PVP.js
+index 758c2b3797824f70b843231b286c449ee7448dea..dd1a6b06845ed88571c2c6f13f35c45c7afa3cf0 100644
+--- a/lib/PVP.js
++++ b/lib/PVP.js
+@@ -171,11 +171,12 @@ class PVP {
+     checkExplosion() {
+         if (!this.target || !this.hasShield())
+             return;
++        // bedboo (mineflayer-bedrock) patch, U15: Java's creeper state is metadata index 16 (1 = fusing); Bedrock flags a
++        // fusing creeper with the `ignited` entity flag (set_entity_data → entity.metadata.flags)
++        const fusing = (metadata) => (metadata[16] && metadata[16] === 1) || !!(metadata.flags && metadata.flags.ignited);
+         if (this.target.name &&
+             this.target.name === 'creeper' &&
+-            this.target.metadata[16] &&
+-            // @ts-ignore
+-            this.target.metadata[16] === 1) {
++            fusing(this.target.metadata)) {
+             this.blockingExplosion = true;
+             this.bot.pathfinder.stop();
+             this.bot.lookAt(this.target.position.offset(0, 1, 0), true);

@@ -51,6 +51,8 @@ const FLY_TO_TOLERANCE = 0.15
 const FLY_TO_LOOKAHEAD = 6
 const FLY_TO_STALL_TICKS = 60
 const FLY_TO_JUMP_REPRESS = 12
+/** creative flyTo: never press forward again within this many ticks of releasing it (a double-tapped forward sprints) */
+const FLY_TO_FORWARD_REPRESS = 10
 /** BDS only starts gliding when start_gliding comes with a jump press (measured) */
 const GLIDE_START_FLAGS = ['jump_down', 'jumping', 'want_up', 'jump_current_raw', 'jump_pressed_raw', 'start_jumping']
 /** a glide the server has not confirmed after this many ticks is dropped */
@@ -82,6 +84,8 @@ function inject (bot, { physicsEnabled }) {
   let lastSent = null // { position: Vec3 (feet), yaw, pitch } of the last packet
   let lookingTask = createDoneTask()
   let prevInput = null // input record of the previous sent tick (edge flags)
+  // creative flyTo key timing across consecutive flyTo calls (U15): ticks captured, last jump press, last forward release
+  const keyEdges = { tick: 0, jumpPressed: -Infinity, forwardReleased: -Infinity }
   let pendingKnockback = null // Vec3 from set_entity_motion, applied at the start of the next tick
   let flyTarget = null // { destination: Vec3, resolve, reject }
   let vehicleInput = { left: 0, forward: 0 }
@@ -221,12 +225,15 @@ function inject (bot, { physicsEnabled }) {
     const usingItem = itemInUse()
     let control = effectiveControls(usingItem)
     let rawControl = { ...controlState, jump: controlState.jump || bot.jumpQueued }
+    keyEdges.tick++
     if (flyTarget && flying) {
       const plan = flyToPlan()
       bot.entity.yaw = plan.yaw
       control = plan.control
       rawControl = { ...plan.control }
     }
+    if (rawControl.jump && !prevInput?.rawControl?.jump) keyEdges.jumpPressed = keyEdges.tick
+    if (!rawControl.forward && prevInput?.rawControl?.forward) keyEdges.forwardReleased = keyEdges.tick
     return {
       control,
       rawControl,
@@ -661,26 +668,34 @@ function inject (bot, { physicsEnabled }) {
     const dx = target.x - entity.position.x
     const dz = target.z - entity.position.z
     const yaw = Math.hypot(dx, dz) > 1e-3 ? Math.atan2(-dx, -dz) : entity.yaw
-    // BDS toggles flight on a double-tapped jump: never press jump again within FLY_TO_JUMP_REPRESS ticks
+    // BDS toggles flight on a double-tapped jump: never press jump again within FLY_TO_JUMP_REPRESS ticks — also across
+    // consecutive flyTo calls (U15); and it sprint-flies (≈ twice as fast as the engine's flight) after a double-tapped
+    // forward: never press forward again within FLY_TO_FORWARD_REPRESS ticks of releasing it
     const jumpHeld = !!prevInput?.rawControl?.jump
-    const mayPressJump = jumpHeld || flyTarget.ticks - flyTarget.lastJumpPress >= FLY_TO_JUMP_REPRESS
+    const forwardHeld = !!prevInput?.rawControl?.forward
+    const mayPressJump = jumpHeld || keyEdges.tick - keyEdges.jumpPressed >= FLY_TO_JUMP_REPRESS
+    const mayPressForward = forwardHeld || keyEdges.tick - keyEdges.forwardReleased >= FLY_TO_FORWARD_REPRESS
     let best = null
     for (const forward of [false, true]) {
+      if (forward && !mayPressForward) continue
       for (const vertical of [null, 'jump', 'sneak']) {
         if (vertical === 'jump' && !mayPressJump) continue
         const control = { forward, back: false, left: false, right: false, jump: vertical === 'jump', sprint: false, sneak: vertical === 'sneak' }
-        const score = predictFlight(control, yaw).distanceTo(target) + (forward ? 1e-9 : 0) + (vertical ? 1e-9 : 0)
+        const outcome = predictFlight(control, yaw, target)
+        // touching the ground ends creative flight on Bedrock (BDS answers flying: false, which rejects the flyTo):
+        // never land anywhere but at the destination (U15: examples/bee.js flew into the ground)
+        const score = outcome.pos.distanceTo(target) + (outcome.landsAway ? 1e3 : 0) + (forward ? 1e-9 : 0) + (vertical ? 1e-9 : 0)
         if (!best || score < best.score) best = { score, control, yaw }
       }
     }
     flyTarget.ticks++
-    if (best.control.jump && !jumpHeld) flyTarget.lastJumpPress = flyTarget.ticks
     return best
   }
 
   const IDLE_CONTROL = { forward: false, back: false, left: false, right: false, jump: false, sprint: false, sneak: false }
 
-  function predictFlight (control, yaw) {
+  /** the position after this tick's `control` and FLY_TO_LOOKAHEAD idle ticks; landsAway: touched the ground away from `target` */
+  function predictFlight (control, yaw, target) {
     const entity = bot.entity
     const state = {
       pos: entity.position.clone(),
@@ -697,8 +712,13 @@ function inject (bot, { physicsEnabled }) {
     bot.physics.simulatePlayer(state, world)
     state.control = IDLE_CONTROL
     state.moveVector = { x: 0, z: 0 }
-    for (let i = 0; i < FLY_TO_LOOKAHEAD; i++) bot.physics.simulatePlayer(state, world)
-    return state.pos
+    const away = () => state.onGround && state.pos.distanceTo(target) > FLY_TO_TOLERANCE
+    let landsAway = away()
+    for (let i = 0; i < FLY_TO_LOOKAHEAD; i++) {
+      bot.physics.simulatePlayer(state, world)
+      landsAway = landsAway || away()
+    }
+    return { pos: state.pos, landsAway }
   }
 
   function checkFlyTo () {
@@ -740,7 +760,7 @@ function inject (bot, { physicsEnabled }) {
     if (flyTarget) cancelFlyTo(new Error('flyTo: superseded by a new destination'))
     setFlying(true)
     return new Promise((resolve, reject) => {
-      flyTarget = { destination: new Vec3(destination.x, destination.y, destination.z), resolve, reject, best: Infinity, stalled: 0, ticks: 0, lastJumpPress: -Infinity }
+      flyTarget = { destination: new Vec3(destination.x, destination.y, destination.z), resolve, reject, best: Infinity, stalled: 0, ticks: 0 }
     })
   }
 
