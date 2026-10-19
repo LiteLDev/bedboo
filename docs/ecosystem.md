@@ -54,12 +54,19 @@ bot.pathfinder.setMovements(moves)
 - Not handled (as upstream): trapdoors, iron doors (dug when `canDig`), vines (not climbable), Bedrock scaffolding
   blocks, swimming as such (the bot crosses water by floating with jump; sprint-swimming is not modelled).
 - `bot.pathfinder.stop()` while idle is a no-op and `goto()` rejects with `NoPath` on an unreachable goal (master
-  backports). A `GoalFollow` re-plans when the bot is knocked away.
+  backports); mineflayer-collectblock's `cancelTask()` still ends a collection after the step in progress (patched).
+  A `GoalFollow` re-plans when the bot is knocked away.
+- Doors: BDS opens a door's lower half only; mineflayer-bedrock gives the upper half the open leaf's shape, so the bot
+  walks back through a door it opened (never clicks an open door shut, never digs it with `canOpenDoors`).
+- A sprint lasts while `forward` is held on Bedrock: pathfinder releasing the sprint control does not slow the bot
+  down until it stops (no corrections; [differences/U16a.md](differences/U16a.md#sticky-sprint)).
+- XP orbs, thrown potions, tridents, fireworks and other projectiles are passable (Bedrock entity names added).
 
 ## mineflayer-pvp
 
 - Shields: `activateItem(true)` raises the shield by sneaking on Bedrock, so the bot moves at sneaking speed between
-  attacks while it holds one; a fusing creeper (Bedrock `ignited` flag) makes pvp raise it (patched).
+  attacks while it holds one; pathfinder's `clearControlStates()` does not lower it (only `deactivateItem()` does); a
+  fusing creeper (Bedrock `ignited` flag) makes pvp raise it (patched).
 - Ranged mobs (skeletons, strays, pillagers) back off: set `bot.pvp.followRange = 1`, otherwise the bot can stop 4
   blocks away, out of the 3.5 attack range (upstream behaviour on Java too).
 - Bedrock has no attack cooldown; pvp's Java cooldown timing only attacks a little slower than possible.
@@ -73,7 +80,8 @@ priority, bannedFood })`, `enableAuto()` / `disableAuto()`, events `eatStart` / 
 ## mineflayer-collectblock / -tool / -armor-manager
 
 - collectblock: `collect(blocks)` with a tool and scaffolding blocks in the inventory; `chestLocations` (Vec3 of a
-  chest block) are used when the inventory is full. The callback form `collect(target, cb)` works (patched).
+  chest block) are used when the inventory is full. The callback form `collect(target, cb)` works (patched);
+  `cancelTask()` ends the job after the step in progress (patched).
 - tool: `equipForBlock(block, { requireHarvest })` — rejects with `NoItem` when nothing can harvest the block.
 - armor-manager: picked-up armor / shields / totems are equipped one at a time (patched); `equipAll()`.
 

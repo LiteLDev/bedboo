@@ -22,6 +22,8 @@
 //   - creative / abilities flight (start_flying / stop_flying), elytra gliding (start_gliding / stop_gliding),
 //     vehicles (client_predicted_vehicle via input.setVehicle).
 // Hooks (bot._bedrock.physics): setPosition(pos, { forced, handledTeleport = forced }), setFlying(on), isFlying(),
+//   holdSneak(on) (FINAL-FIX-LIB: a raised shield sneaks on Bedrock; this sneak is OR-ed with the sneak control, so
+//   clearControlStates() / setControlState('sneak', false) leave it — deactivateItem() lowers it, like Java),
 //   flyTo(destination) → Promise (speed-limited flight path, used by bot.creative.flyTo), moveVehicle(left, forward),
 //   history() (recorded ticks, tests/debugging), simulate(state) (one engine step with this bot's world),
 //   onCorrection(fn) / stats() (server corrections, tests and diagnostics),
@@ -94,8 +96,11 @@ function inject (bot, { physicsEnabled }) {
   let prevInput = null // input record of the previous sent tick (edge flags)
   // creative flyTo key timing across consecutive flyTo calls (U15): ticks captured, last jump press, last forward release
   const keyEdges = { tick: 0, jumpPressed: -Infinity, forwardReleased: -Infinity, forwardPressed: -Infinity }
-  // U16a: the server's double-tap sprint, predicted like the vanilla client (which sprints on a double tap itself)
-  let tapSprint = false
+  // U16a: the server's double-tap sprint, predicted like the vanilla client (which sprints on a double tap itself);
+  // FINAL-FIX-LIB: any sprint (key or double tap) is sticky on Bedrock, see captureInput
+  let stickySprint = false
+  // FINAL-FIX-LIB: a raised shield (inventory.js: Bedrock blocks by sneaking) holds the sneak besides the control
+  let heldSneak = false
   let pendingKnockback = null // Vec3 from set_entity_motion, applied at the start of the next tick
   let flyTarget = null // { destination: Vec3, resolve, reject }
   let vehicleInput = { left: 0, forward: 0 }
@@ -120,14 +125,14 @@ function inject (bot, { physicsEnabled }) {
   let clickAirUse = false // a click_air was queued since the bot last stopped using an item (server item use)
   const listenerErrors = [] // errors thrown by physicsTick listeners, reported once the input is sent
 
+  /** the sneak the server gets: the control, or a raised shield (holdSneak) */
+  const sneakOn = () => controlState.sneak || heldSneak
+
   bot.setControlState = (control, state) => {
     assert.ok(control in controlState, `invalid control: ${control}`)
     assert.ok(typeof state === 'boolean', `invalid state: ${state}`)
-    // an explicit sprint release also ends a double-tap sprint (stop_sprinting goes out with the next input, U16a)
-    if (control === 'sprint' && !state && tapSprint) {
-      tapSprint = false
-      controlGen++
-    }
+    // FINAL-FIX-LIB: releasing the sprint control does not end a sprint while forward stays held — BDS keeps the
+    // sprint speed until forward is released (or sneak, back, a wall, hunger, item use …), see captureInput
     if (controlState[control] === state) return
     controlState[control] = state
     if (control === 'sneak' || control === 'sprint') controlGen++
@@ -136,7 +141,7 @@ function inject (bot, { physicsEnabled }) {
 
   bot.getControlState = (control) => {
     assert.ok(control in controlState, `invalid control: ${control}`)
-    return controlState[control]
+    return control === 'sneak' ? sneakOn() : controlState[control]
   }
 
   bot.clearControlStates = () => {
@@ -149,7 +154,7 @@ function inject (bot, { physicsEnabled }) {
   bot.controlState = {}
   for (const control of CONTROLS) {
     Object.defineProperty(bot.controlState, control, {
-      get () { return controlState[control] },
+      get () { return bot.getControlState(control) },
       set (state) {
         bot.setControlState(control, state)
         return state
@@ -229,7 +234,7 @@ function inject (bot, { physicsEnabled }) {
    * item — BDS drops the sprint modifier as soon as an item is in use; measured)
    */
   function effectiveControls (usingItem = itemInUse()) {
-    const c = { ...controlState }
+    const c = { ...controlState, sneak: sneakOn() }
     c.sprint = c.sprint && c.forward && !c.back && !c.sneak && !usingItem
     if (bot.jumpQueued) c.jump = true
     return c
@@ -239,7 +244,7 @@ function inject (bot, { physicsEnabled }) {
   function captureInput () {
     const usingItem = itemInUse()
     let control = effectiveControls(usingItem)
-    let rawControl = { ...controlState, jump: controlState.jump || bot.jumpQueued }
+    let rawControl = { ...controlState, sneak: sneakOn(), jump: controlState.jump || bot.jumpQueued }
     keyEdges.tick++
     if (flyTarget && flying) {
       const plan = flyToPlan()
@@ -250,16 +255,21 @@ function inject (bot, { physicsEnabled }) {
     if (rawControl.jump && !prevInput?.rawControl?.jump) keyEdges.jumpPressed = keyEdges.tick
     if (!rawControl.forward && prevInput?.rawControl?.forward) keyEdges.forwardReleased = keyEdges.tick
     if (rawControl.forward && !prevInput?.rawControl?.forward) {
-      if (keyEdges.tick - keyEdges.forwardPressed <= DOUBLE_TAP_TICKS && !riding()) tapSprint = true
+      if (keyEdges.tick - keyEdges.forwardPressed <= DOUBLE_TAP_TICKS && !riding()) stickySprint = true
       keyEdges.forwardPressed = keyEdges.tick
     }
     // BDS sprints on its own after a double-tapped forward: predict it (and report it with the sprinting flags, like
-    // the vanilla client does on its own double tap), or every such step ends in corrections. It lasts while forward
-    // is held and sprinting is possible (not flying or riding, not sneaking or backing, no item in use, food above 6,
-    // not stopped by a wall) or until the sprint control is released explicitly.
-    if (tapSprint && (!rawControl.forward || flying || riding() || control.back || control.sneak || usingItem ||
-      bot.entity?.isCollidedHorizontally || !mayTapSprint())) tapSprint = false
-    if (tapSprint && !control.sprint) control = { ...control, sprint: true }
+    // the vanilla client does on its own double tap), or every such step ends in corrections (U16a).
+    // A sprint is sticky on Bedrock (FINAL-FIX-LIB, measured on 1.26.51.1): once the player sprints — sprint control
+    // or double tap — BDS keeps the sprint speed while forward is held, also after a stop_sprinting (it re-sends the
+    // movement attribute with its "Sprinting speed boost" until forward is released), like the vanilla client keeps
+    // sprinting when the sprint key is let go. So the sprint lasts while forward is held and sprinting is possible
+    // (not flying or riding, not sneaking or backing, no item in use, food above 6, not stopped by a wall), whatever
+    // the sprint control says; a teleport or a death ends it too.
+    if (control.sprint) stickySprint = true
+    if (stickySprint && (!rawControl.forward || flying || riding() || control.back || control.sneak || usingItem ||
+      bot.entity?.isCollidedHorizontally || !mayTapSprint())) stickySprint = false
+    if (stickySprint && !control.sprint) control = { ...control, sprint: true }
     return {
       control,
       rawControl,
@@ -268,7 +278,7 @@ function inject (bot, { physicsEnabled }) {
       flying,
       gliding,
       sprinting: control.sprint && !flying,
-      sneaking: controlState.sneak && !flying,
+      sneaking: sneakOn() && !flying,
       swimming: false,
       moveVector: moveVector(control, { flying }),
       knockback: pendingKnockback,
@@ -440,7 +450,7 @@ function inject (bot, { physicsEnabled }) {
     }
     const input = captureInput()
     builtControlGen = controlGen
-    builtControls = { sneak: controlState.sneak, sprint: controlState.sprint }
+    builtControls = { sneak: sneakOn(), sprint: controlState.sprint }
     pendingKnockback = null
     // BDS does not simulate the first input it processes after applying a teleport (it just takes the teleport
     // state): neither do we (see move_player below)
@@ -573,7 +583,7 @@ function inject (bot, { physicsEnabled }) {
   /** a sneak / sprint change is not in a sent player_auth_input yet (and one will be sent) */
   function controlsPending () {
     if (controlGen === sentControlGen) return false
-    if (controlState.sneak === sentControls.sneak && controlState.sprint === sentControls.sprint) return false
+    if (sneakOn() === sentControls.sneak && controlState.sprint === sentControls.sprint) return false
     const input = bot._bedrock?.input
     if (!input || input.isSuspended?.() || input.isRunning?.() === false) return false
     return !!bot.entity
@@ -836,6 +846,11 @@ function inject (bot, { physicsEnabled }) {
     bot._bedrock.physics.setPosition = setPosition
     bot._bedrock.physics.setFlying = setFlying
     bot._bedrock.physics.isFlying = () => flying
+    bot._bedrock.physics.holdSneak = (on) => {
+      if (heldSneak === !!on) return
+      heldSneak = !!on
+      controlGen++
+    }
     bot._bedrock.physics.flyTo = flyTo
     bot._bedrock.physics.moveVehicle = moveVehicle
     bot._bedrock.physics.history = () => history.slice()
@@ -973,7 +988,7 @@ function inject (bot, { physicsEnabled }) {
    * input is the unsimulated one.
    */
   function applyTeleport (feet, onGround, serverTick) {
-    tapSprint = false
+    stickySprint = false
     const entity = bot.entity
     entity.position.update(feet)
     entity.velocity.set(0, 0, 0)
@@ -1219,7 +1234,7 @@ function inject (bot, { physicsEnabled }) {
   // a glide does not survive a death / dimension change: the server's next gliding flag starts a new one
   // (entityElytraFlew), even without a gliding = false in between
   bot.on('death', () => resetGliding(bot.entity))
-  bot.on('death', () => { tapSprint = false })
+  bot.on('death', () => { stickySprint = false })
   bot.on('respawn', () => resetGliding(bot.entity))
 
   bot.elytraFly = async () => {

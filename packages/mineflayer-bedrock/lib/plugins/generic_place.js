@@ -289,14 +289,19 @@ function inject (bot) {
    * Bedrock recovery around the vendored place_block.js (U16a): BDS refuses a click whose block runtime id is not the
    * server's state of the clicked block — which happens when the server changed it right before (farmland and grass
    * paths turn into dirt under a placed block one tick after the placement). The answer to the click discloses it
-   * (placer.stale): such a refusal is retried once with the block as it is now.
+   * (placer.stale): such a refusal is retried once with the block as it is now. A click that changed the clicked block
+   * itself (a replaceable block, a slab merged into a double slab, …) is not stale: it rejects like upstream after one
+   * click (FINAL-FIX-LIB).
+   * BDS likewise refuses a click whose held item the server changed meanwhile (a pickup or /give merged into the held
+   * stack: new stack id, placer.staleHeld; Java's block_place carries no item): retried once with the server's copy.
    */
   function withStaleRetry (placeBlockWithOptions) {
     return async function _placeBlockWithOptions (referenceBlock, faceVector, options) {
       try {
         return await placeBlockWithOptions(referenceBlock, faceVector, options)
       } catch (err) {
-        if (!/^Server refused to place/.test(err?.message ?? '') || !placer.stale(referenceBlock.position)) throw err
+        if (!/^Server refused to place/.test(err?.message ?? '')) throw err
+        if (!placer.stale(referenceBlock.position) && !placer.staleHeld(referenceBlock.position)) throw err
         const fresh = bot.blockAt(referenceBlock.position)
         if (!fresh || fresh.type === bot.registry.blocksByName.air?.id) throw err
         return await placeBlockWithOptions(fresh, faceVector, options)
@@ -318,6 +323,7 @@ function inject (bot) {
       click: placer.click,
       acquire: placer.acquire,
       stale: placer.stale,
+      staleHeld: placer.staleHeld,
       flushStop: placer.flushStop,
       raycast: (opts) => placement.raycast(bot, opts),
       isInteractive: placement.isInteractive,

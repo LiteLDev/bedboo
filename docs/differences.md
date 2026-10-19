@@ -23,7 +23,9 @@ each unit documents its own in `docs/differences/<unit>.md` (format: [`differenc
 | U14 | [`U14.md`](differences/U14.md) | 5 | 9 |
 | U15 | [`U15.md`](differences/U15.md) | 12 | 13 |
 | U16 | [`U16-transport.md`](differences/U16-transport.md) | 4 | 0 |
-| U16 | [`U16a.md`](differences/U16a.md) | 16 | 2 |
+| U16 | [`U16a.md`](differences/U16a.md) | 20 | 2 |
+| U17 | [`U17.md`](differences/U17.md) | 8 | 4 |
+| U18 | [`U18.md`](differences/U18.md) | 8 | 3 |
 | ? | [`W3FIX.md`](differences/W3FIX.md) | 7 | 0 |
 | ? | [`W3FIXB.md`](differences/W3FIXB.md) | 4 | 0 |
 
@@ -1204,7 +1206,10 @@ protocol forces underneath and the few visible consequences.
   after 32 ticks the server sends `completed_using_item { use_method: 'eat' }` and the shrunk stack. Shields have no
   use action: a Bedrock player blocks while sneaking with a shield in either hand.
 - **mineflayer-bedrock:** `activateItem(offHand)` sends click_air (`hand: off_hand` + the off-hand item for
-  `offHand`); with a shield it holds sneak instead (`deactivateItem` releases it); `completed_using_item` (or a
+  `offHand`); with a shield it holds sneak instead (`deactivateItem` releases it). That sneak is the shield's own
+  (final review): `clearControlStates()` or a sneak-control release — mineflayer-pathfinder does both under
+  mineflayer-pvp — leave it, as they leave a raised shield on Java; `getControlState('sneak')` reports it;
+  `completed_using_item` (or a
   held-stack change, like upstream) finishes `consume()` and clears `usingHeldItem`. Java's `set_cooldown` handling
   has no counterpart: Bedrock item cooldowns are client side (no server packet in protocol 2193).
 - **Tests:** `test/external/activateItem.test.js`, `test/external/consume.test.js`, `test/unit/inventory.test.js`
@@ -2157,7 +2162,9 @@ below (`patches/mineflayer-*.patch`); each entry says what the patch changes and
     open door / gate (`open_bit`, Java `open`) is passable and never clicked again; the doorway node is the floor centre
     and a `useOne` node no longer stops the path post-processing (backport of master #372); after the click the executor
     walks on (upstream kept `placing` set and then read `placingBlock.y` of undefined or reset the path for want of
-    scaffolding blocks);
+    scaffolding blocks). BDS opens a door's lower half only (the upper half keeps `open_bit` 0): its upper half gets the
+    open leaf's shape from mineflayer-bedrock's `blockAt()` (final review, docs/differences/U16a.md#door-halves), so the
+    bot walks back through a door it opened instead of finding no path or digging it;
   - `fullStop()` keeps upstream's zeroed horizontal velocity but skips the recentring teleport when the bot has
     `bot._bedrock.physics` (server-authoritative movement). Measured on the scaffold test: pathfinder bridge 0
     corrections (was 3–4); the ecosystem suite sees at most one ~0.24-block correction now and then when BDS does not
@@ -2166,7 +2173,13 @@ below (`patches/mineflayer-*.patch`); each entry says what the patch changes and
     simplified NBT had `id`, which prismarine-block never matched) and `bot._bedrock.digging.blockDigTime` when present
     (Bedrock effect factors; prismarine-block's `digTime` otherwise);
   - backports of master #375: `stop()` while idle no longer latches (it stopped the next goal), `goto` rejects with
-    NoPath instead of resolving on an empty failed search;
+    NoPath instead of resolving on an empty failed search. mineflayer-collectblock's `cancelTask()` relied on that latch
+    (it calls `stop()` while the pathfinder is idle during a dig): its patch now cancels by itself (below);
+  - `lib/passableEntities.json` also lists the Bedrock names of the passable entities (`xp_orb`, `xp_bottle`,
+    `splash_potion`, `lingering_potion`, `fireworks_rocket`, `thrown_trident`, `fishing_hook`, `evocation_fang`,
+    `wind_charge_projectile`, `breeze_wind_charge_projectile`, `ender_crystal`, `eye_of_ender_signal`,
+    `ominous_item_spawner`, `wither_skull_dangerous`): with only the Java names, XP orbs and projectiles counted as
+    obstacles (entity cost, no pillaring or scaffolding where an orb was) (final review);
   - `detectDiggingStopped` removes only its own listeners (`removeAllListeners(event, fn)` ignores `fn` and dropped
     every other `diggingCompleted` / `diggingAborted` listener of the bot);
   - a dynamic goal (`GoalFollow`) re-plans when the bot was pushed more than a block away from where its finished path
@@ -2193,12 +2206,19 @@ below (`patches/mineflayer-*.patch`); each entry says what the patch changes and
 - **Both:** a target block that is already gone when its turn comes (mineflayer-pathfinder digs what is in its way,
   e.g. the log above a dug one while following that log's drop) got a `GoalLookAtBlock` on air, which never ends: the
   search ran into its 5 s timeout and `collect()` rejected (measured: 2 of 4 runs of the 5-log scenario).
+- **Both (final review):** `cancelTask()` calls `bot.pathfinder.stop()` and waits for the job to end. With pathfinder
+  2.4.5 the stop latched while the pathfinder was idle (during a dig, while waiting for a pickup), so the job's next
+  `goto` rejected with `PathStopped`, which `collect()` swallows. The patched pathfinder no longer latches (master #375,
+  above): the cancel was lost and `cancelTask()` waited for the whole job (measured: 17 s for 4 logs).
 - **mineflayer-bedrock (patch):** `callbackify(this.collect).call(this, …)`; drops within 0.75 of the mined block's
-  centre are collected; a block target that changed is dropped before pathing to it. Nothing else is patched: digging
-  waits for
-  the server (U10), drops come from `itemDrop` → `GoalFollow` → `playerCollect` / `entityGone` (U7), the chest flow uses
-  `openChest` / `deposit` (U8) unchanged.
-- **Tests:** `test/external/ecosystemCollectBlock.test.js`, `test/external/exampleEcosystem.test.js`.
+  centre are collected; a block target that changed is dropped before pathing to it; `cancelTask()` also flags the
+  running job, which checks the flag after each step (`goto`, the dig, the pickup wait, emptying the inventory) and
+  ends with `PathStopped` like before — after the step in progress, as with pathfinder 2.4.5 — and a pickup wait ends
+  at once. Nothing else is patched: digging waits for the server (U10), drops come from `itemDrop` → `GoalFollow` →
+  `playerCollect` / `entityGone` (U7), the chest flow uses `openChest` / `deposit` (U8) unchanged.
+- **Tests:** `test/external/ecosystemCollectBlock.test.js`, `test/external/exampleEcosystem.test.js`,
+  `test/external/finalFix.test.js` › "mineflayer-collectblock: cancelTask() while a log is dug …", unit
+  `test/unit/final_fix.test.js` › "#5 …".
 
 #### mineflayer-armor-manager 2.0.1 patch  {#armor-manager}
 - **Affects:** auto-equip on `playerCollect`
@@ -2230,7 +2250,9 @@ below (`patches/mineflayer-*.patch`); each entry says what the patch changes and
   docs/differences/U8.md); there is no attack cooldown.
 - **mineflayer-bedrock (patch):** `checkExplosion` also reads `metadata.flags.ignited` (measured live: the flag is set,
   pvp raises the shield). Unpatched: `activateItem(true)` / `deactivateItem()` hold / release sneak (U8), so the bot
-  moves at sneaking speed between attacks while it holds a shield; the Java cooldown timing just attacks a little
+  moves at sneaking speed between attacks while it holds a shield; that sneak is the shield's own, so pathfinder's
+  `clearControlStates()` (each time a chase ends, before a dig or placement, on `stop()`) no longer lowers it (final
+  review; docs/differences/U8.md#item-use); the Java cooldown timing just attacks a little
   slower than Bedrock allows. With the default `followRange` 2 a skeleton that backs off while shooting stays 4 blocks
   away (GoalFollow re-plans only when the target moved more than the range; the same on Java): use
   `bot.pvp.followRange = 1` against ranged mobs. pvp listens to `physicTick` (mineflayer prints its deprecation
@@ -2474,9 +2496,64 @@ skips, full-suite stability). Everything below was observed against BDS 1.26.51.
   dirt under a placed block, 50–90 ms after the placement's answer), so the next click against them was refused.
 - **mineflayer-bedrock:** the answer to a click discloses the server's state of the clicked block; a refusal whose
   click carried another state is retried once with the block as it is now (wrapper of the vendored place_block.js in
-  generic_place.js). Any other refusal rejects like upstream.
+  generic_place.js). Any other refusal rejects like upstream. A click that changed the clicked block itself is never
+  taken for a stale one (final review): against a replaceable block (`snow_layer`, `short_grass`, `fern`, `vine`,
+  `seagrass`, …) or a block the held item merges into (the same half slab → double slab, one more candle / sea pickle
+  / snow layer / petal, a candle onto a cake) BDS puts the block into the clicked position and leaves the block across
+  the face as it was — exactly like Java, so the call rejects with upstream's `Server refused` after one click (the
+  first version clicked again and placed a second block above it); nor is a click that used up an item.
 - **Tests:** `test/unit/hardening.test.js` › "a refusal of a click with a stale block state …";
-  `test/external/hardening.test.js` › "placing against farmland right after it turned into dirt …".
+  `test/external/hardening.test.js` › "placing against farmland right after it turned into dirt …";
+  `test/unit/final_fix.test.js` › "#1 / #3 …"; `test/external/finalFix.test.js` › "#1 a click that replaces / merges
+  into the clicked block".
+
+#### A click whose held stack changed on the server is retried  {#stale-held}
+- **Affects:** `bot.placeBlock` / `_placeBlockWithOptions` while items are picked up, given (`/give`) or otherwise
+  added to the held stack (dig-then-place loops, mineflayer-pathfinder's scaffolding).
+- **Java:** `block_place` carries no item.
+- **Bedrock:** the click carries the exact server copy of the held item (its stack id). A pickup that merges into the
+  held stack between the click and its processing gives the stack a new stack id first (`inventory_transaction`
+  normal, then `inventory_content`), and BDS refuses the click (measured: 4 of 180 placements of a dig-then-place
+  loop; a `/give` right before the click: every time).
+- **mineflayer-bedrock:** the placer notes a server-side change of the held slot between the click and its answer (an
+  `inventory_transaction` of that slot, or the stack grew); such a refusal is retried once with the server's copy (the
+  client has it by then). Any other refusal rejects like upstream.
+- **Tests:** `test/unit/final_fix.test.js` › "a pickup merged into the held stack …"; `test/external/finalFix.test.js` ›
+  "placeBlock: a /give merging into the held stack right before the click still places (retried once)".
+
+#### A window click raced by a server-side change of its slots is planned again  {#raced-requests}
+- **Affects:** `bot.clickWindow` and everything built on it (`transfer`, `deposit` / `withdraw`, `moveSlotItem`,
+  `equip`, `toss` / `tossStack`, `putAway`, crafting) while drops are picked up, `/give` runs, a hopper or another
+  player changes a slot the request touches.
+- **Java:** `window_click` is applied by the server to its own current state (and resynced); it never fails.
+- **Bedrock:** an item stack request names each slot's stack id as the client knows it; when the server changed the
+  slot meanwhile (a pickup: `inventory_transaction` normal with a new stack id) BDS rejects the whole request (status
+  49 stack id mismatch / 50). Measured: a chest deposit / withdraw loop with a console `/give` every 400 ms → 6
+  rejections in 88 operations ("Server rejected transaction for clicking on slot 27 …").
+- **mineflayer-bedrock:** a server packet that sets a slot of a request in flight to another stack than the one the
+  request was planned on marks it raced (`lib/bedrock/inventory_model.js`); a raced request that BDS rejects is planned
+  again once on the server's state and sent again (item stack requests are atomic: the rejected one changed nothing).
+  Requests chained on it (planned on its prediction) are retried the same way. A rejection without such a change still
+  throws mineflayer's message.
+- **Tests:** `test/unit/final_fix.test.js` › "#2 …"; `test/external/finalFix.test.js` › "chest deposit / withdraw loop
+  while pickups and /give land on the stack: never rejected", "rapid clickWindow / transfer in the inventory while
+  drops are picked up …".
+
+#### A door's upper half takes its shape from the lower half  {#door-halves}
+- **Affects:** `bot.blockAt(<upper half of a door>).shapes`, physics collisions in a doorway, mineflayer-pathfinder
+  through doors.
+- **Java:** both halves carry `open`, `facing` and `hinge`.
+- **Bedrock:** the open state and the facing live on the lower half and the hinge on the upper half: BDS never sets the
+  upper half's `open_bit` (measured on 1.26.51.1, also checked with `testforblock`), and the vanilla client draws both
+  halves from both. The per-state shapes therefore gave an open door's upper half the closed leaf: the bot bumped its
+  head in the doorway (server correction), and mineflayer-pathfinder found no way back through a door it had opened
+  (NoPath, or it dug the door with `canDig`).
+- **mineflayer-bedrock:** `bot.blockAt()` (`blocks.js`) gives each half of a door the shapes of the combined state
+  (open state and facing of the lower half, hinge of the upper half); `stateId` and `getProperties()` stay the
+  server's (`open_bit` of the upper half stays 0 — read the lower half).
+- **Tests:** `test/unit/final_fix.test.js` › "#4 …", `test/unit/ecosystem.test.js` (real BDS door states);
+  `test/external/finalFix.test.js` › "mineflayer-pathfinder walks back through the door it opened: not clicked shut,
+  not dug".
 
 #### A container whose entity or block is gone  {#container-gone}
 - **Affects:** `windowClose`, `bot.currentWindow`, trading (`bot.openVillager`, `bot.trade`) and station windows
@@ -2525,11 +2602,33 @@ skips, full-suite stability). Everything below was observed against BDS 1.26.51.
 - **mineflayer-bedrock:** the physics plugin predicts it like the vanilla client (which sprints on a double tap on its
   own): such a second press sprints (`sprinting` / `start_sprinting` in the input, no sprint key) while forward is
   held and sprinting is possible (not flying or riding, not sneaking or backing, no item in use, food above 6, not
-  stopped by a wall; a teleport or death ends it); `setControlState('sprint', false)` ends it too (stop_sprinting).
-  Every toggle pattern tried then had no correction and the server's position equalled the bot's.
-  `getControlState('sprint')` stays false. Creative `flyTo` avoids the double tap instead (U15).
+  stopped by a wall; a teleport or death ends it). Like any Bedrock sprint it is sticky
+  ([below](#sticky-sprint)): `setControlState('sprint', false)` does **not** end it while forward stays held — BDS keeps
+  the sprint speed (corrected in the final review: the first version sent `stop_sprinting` there and predicted walking,
+  which BDS corrected about every 27 ticks, e.g. under mineflayer-pathfinder, which releases the sprint control every
+  tick while it walks). Every toggle pattern tried then had no correction and the server's position equalled the
+  bot's. `getControlState('sprint')` stays false. Creative `flyTo` avoids the double tap instead (U15).
 - **Tests:** `test/unit/hardening.test.js` › "double-tapped forward …"; `test/external/hardening.test.js` › "BDS sprints
-  after forward is pressed again within 6 ticks; the bot predicts it: no corrections, same position".
+  after forward is pressed again within 6 ticks; the bot predicts it: no corrections, same position";
+  `test/external/finalFix.test.js` › "a double-tap sprint with the sprint control released every tick (pathfinder): no
+  corrections".
+
+#### A sprint lasts until forward is released  {#sticky-sprint}
+- **Affects:** `bot.setControlState('sprint', false)` while `forward` stays held (mineflayer-pathfinder's walking
+  branches, user code that sprints for a while), the bot's speed.
+- **Java:** releasing the sprint control sends `stop_sprinting`; the player walks from the next tick on.
+- **Bedrock:** a sprint is sticky (measured on 1.26.51.1, final review): once the player sprints — sprint flag or a
+  double tap — BDS keeps the sprint speed while forward is held, also after a `stop_sprinting` (it clears the
+  `sprinting` actor flag but re-sends the movement attribute with its "Sprinting speed boost" until forward is
+  released). The vanilla client behaves the same way (letting go of the sprint key does not stop a sprint). Walking at
+  0.1 then cost a correction about every 27 ticks.
+- **mineflayer-bedrock:** the physics plugin keeps sprinting (and reporting `sprinting`, no `stop_sprinting`) after the
+  sprint control is released, until forward is released or another end condition applies: sneaking, backing, a wall,
+  food ≤ 6 in survival, an item in use, flying, riding, a teleport or a death. `getControlState('sprint')` reports the
+  control (false). To walk on at walking speed, release `forward` (for at least 7 ticks if the previous press was
+  within 6 ticks, or the re-press is a [double tap](#double-tap-sprint)).
+- **Tests:** `test/unit/final_fix.test.js` › "#6 …"; `test/external/finalFix.test.js` › "sprint released while forward
+  stays held: BDS keeps sprinting, the bot predicts it — no corrections".
 
 #### An end portal set inside the player can push it out  {#end-portal-push}
 - **Affects:** test `dimensionTravel` › "end portal block at the feet → the End, …" (the known wave-3/4 flake).
@@ -2588,6 +2687,198 @@ skips, full-suite stability). Everything below was observed against BDS 1.26.51.
     directory and console), not `BDS_HOST` / `BDS_PORT` — not a Bedrock limit;
   - `stress.test.js` (`BEDBOO_STRESS`) and `soak.test.js` (`BEDBOO_SOAK=1`): opt-in load tests.
 - **Tests:** the full e2e suite (`docs/parity/U16a.md` lists the runs).
+
+## U17
+
+<!-- from docs/differences/U17.md -->
+What the scripted agent (`packages/agent`) ran into on BDS 1.26.51.1 while playing survival through the public
+mineflayer API, and how each was handled. One is a library fix (offline player data); the rest are Bedrock facts the
+agent works around in its own code.
+
+#### Offline players keep their saved data  {#offline-player-data}
+- **Affects:** `createBot({ auth: 'offline' })` — the player's inventory, position, spawn point, … across reconnects
+  and server restarts
+- **Java:** an offline-mode player's UUID is `nameUUIDFromBytes("OfflinePlayer:" + name)`: a rejoin is the same
+  player, the server restores its saved data.
+- **Bedrock:** BDS keys an offline (xuid 0) player's saved data by the login's `SelfSignedId`, which bedrock-protocol
+  randomizes for every connection: measured on BDS 1.26.51.1 — give items, quit, rejoin (same server, or a server
+  started from a snapshot of the world) → empty inventory at the world spawn. With a fixed `SelfSignedId` the rejoin
+  gets its inventory and position back.
+- **mineflayer-bedrock (fixed, lib/client.js):** for offline auth the `SelfSignedId` defaults to Java's offline-mode
+  UUID of the username (`offlineSelfSignedId`); `skinData.SelfSignedId` overrides it; Xbox Live logins are untouched.
+  The agent's milestones depend on it: milestone k starts from the world snapshot of milestone k-1's end, player
+  included.
+- **Tests:** `packages/mineflayer-bedrock/test/unit/client_offline.test.js`; e2e: every milestone M2–M5 starts with
+  the previous milestone's inventory (`packages/agent/scenarios/overworld/milestones.e2e.js`).
+
+#### No furnace recipes from the server  {#furnace-recipes}
+- **Affects:** any code that wants to know what smelts into what (the agent's obtain planner)
+- **Java:** minecraft-data / the client's recipe book include the furnace recipes.
+- **Bedrock:** BDS 1.26.51's `crafting_data` carries no furnace recipes (see U12's recipes entry); minecraft-data's
+  Bedrock recipes are not what the server uses.
+- **Agent:** a vetted furnace table vendored from CloudburstMC/Data (Apache-2.0) `recipes.json` @73bda57f9afa (1.21.40,
+  the last dump with furnace recipes): `packages/agent/src/data/smelting.json`, regenerated by
+  `packages/agent/scripts/gen-smelting.js`, checked against the 1.26.51 registry by `packages/agent/test/smelting.test.js`.
+
+#### No loot tables in the Bedrock data  {#loot}
+- **Affects:** `registry.blockLoot`, `registry.entityLoot` (empty for `bedrock_1.26.51`)
+- **Java:** minecraft-data has block and entity loot tables (drop chances and counts).
+- **Bedrock:** only `blocks[].drops` (a list of item ids, no counts / chances) exists.
+- **Agent:** `src/data/index.js` has the yields it needs (redstone ore ×4.5, lapis ×6.5, copper ×3.5, gravel → flint 10 %,
+  leaves → saplings / sticks / apples) and the drops of the passive mobs it hunts.
+
+#### A click into a just-placed furnace is now and then rejected  {#furnace-click}
+- **Affects:** `Furnace.putInput` / `putFuel` / `takeOutput` right after the furnace was placed and opened
+- **Observed:** in about 1 of 10 smelts the first transfer into a furnace placed a moment before failed with
+  `Server rejected transaction for clicking on slot 1, on window with id N.` (BDS answered the item stack request with
+  an error); the same transfer a few hundred ms later succeeded. Not reproduced in isolation (U13's furnace suite opens
+  long-standing furnaces).
+- **Agent:** retries a rejected furnace transfer twice after 600 ms (skills/smelt.js), recomputing what is still
+  missing. **Not fixed in the library** (U16a's area); noted for it.
+
+#### mineflayer-auto-eat eats whenever health < 14  {#auto-eat-health}
+- **Affects:** mineflayer-auto-eat 5.0.3 `minHealth` (default 14), on Java and Bedrock alike
+- **Bedrock:** a player with a full food bar cannot eat (unlike golden apples on Java, the server refuses), so an
+  auto-eat triggered by low health alone starts a meal every tick that never completes (3 s timeout each).
+- **Agent:** `minHealth: 0`, `minHunger: 16` (eat by hunger only); its safety behaviours do not wait on such meals.
+
+#### pathfinder: long searches and partial paths  {#pathfinder-long}
+- **Affects:** mineflayer-pathfinder `goto()` to goals 100+ blocks away over hills (same on Java)
+- **Observed:** `goto(GoalLookAtBlock(ore 90 blocks away))` rejects with "Took to long to decide path to goal!" — goto
+  rejects on the search's `timeout` status instead of following the best partial path.
+- **Agent:** far goals are walked in legs of 32 blocks (`GoalNearXZ` waypoints, a leg 16 blocks to the side when one
+  fails), `thinkTimeout` 10 s; a 1×1 pillar needs the bot centred in its column (a hitbox overlapping the neighbouring
+  column hits that column's ceiling when jumping) — `surface` centres before each jump.
+
+#### No path out through a door the bot just placed  {#own-door}
+- **Affects:** mineflayer-pathfinder (patched, `canOpenDoors`) right after the bot placed a wooden door and stays
+  connected
+- **Observed:** in 2 chained runs (M4 → M5 in one session) the bot that had placed the house door from the inside got
+  `NoPath` for every goal outside; after a rejoin (the per-milestone runs start from a snapshot) pathfinder opened the
+  same door and walked out. The door's block states seen by the bot are correct (checked: `open_bit` on the lower half,
+  `upper_block_bit` on the upper one, the same after a rejoin), so the cause is not the world model; not investigated
+  further (pathfinder patch: U15).
+- **Agent:** the build skill places a door from outside the footprint and leaves a finished structure through its
+  door itself (`activateBlock` + walk); navigation's unstick opens an adjacent closed door and steps through.
+
+#### The world spawn's search height  {#spawn-height}
+- **Affects:** `bot.spawnPoint` on a default (non-flat) world
+- **Java:** the spawn position packet carries the real spawn block.
+- **Bedrock:** `start_game.spawn_position` has y = 32767 until the server fixed the height (BDS searches the highest
+  safe block when a player spawns there); the bot got (x, 32767, z) and a pathfinder goal at that y made bots pillar
+  upwards (found by U18).
+- **mineflayer-bedrock (fixed, lib/plugins/spawn_point.js, minimal U17 edit):** a 32767 height is replaced by the spawn
+  column's highest solid block + 1 as soon as that overworld column is loaded (`chunkColumnLoad` / `spawn`); x and z
+  are kept, a real height (`/setworldspawn`) is never touched, and nothing is resolved while the bot is in another
+  dimension. The agent's `navigate { spawn: true }` also treats a still-unresolved height as x / z only.
+- **Tests:** `packages/mineflayer-bedrock/test/unit/spawn_height.test.js`, `test/unit/player_state.test.js` › "spawn
+  point" (the flat capture's spawn resolves to y -60).
+
+## U18
+
+<!-- from docs/differences/U18.md -->
+U18 adds the scripted agent's combat, portal, nether and end skills (`packages/agent/src/skills/{combat,portal,nether,end}.js`,
+helpers in `packages/agent/src/dims/`) and the milestone scenarios `packages/agent/scenarios/{combat,nether,end}/`. The
+skills use only the public mineflayer API and mineflayer-pathfinder, so they would run unchanged on Java; the entries
+below record the Bedrock facts they rely on, the one library fix U18 made, and every cheat-assisted step of the
+scenarios.
+
+#### Inventory screen after a nether portal trip (library fix)  {#inventory-screen-after-portal}
+- **Affects:** `bot.equip` (armor, off-hand), `bot.toss`, crafting from the inventory grid, `bot.moveSlotItem` — every
+  request that needs the player's inventory screen (`lib/bedrock/inventory_model.js` `screen.open()`)
+- **Java:** inventory clicks need no screen.
+- **Bedrock:** item stack requests on the player's inventory need the inventory screen open (`interact open_inventory`
+  → `container_open window_type inventory`). Measured on BDS 1.26.51.1: while the player stands in a nether portal,
+  and for ≈ 1–2 s after it stepped out of the arrival portal, BDS silently drops `open_inventory` (no
+  `container_open`, nothing else). A command teleport (`/execute in nether run tp`) does not do this.
+- **mineflayer-bedrock:** `screen.open()` repeats the `open_inventory` request every 1.5 s until the screen opens
+  (timeout raised from 5 s to 8 s). Before the fix the first equip after a portal trip failed with "the server did not
+  open the inventory screen" (the nether skill's golden helmet, armor swaps). Standing inside a portal still fails
+  (vanilla behaviour); the agent steps out of the arrival portal first.
+- **Tests:** U18's N1 / N2 scenarios (equip right after the arrival); reproduced with a scratch experiment (portal →
+  equip at +0 / +1.2 / +2.2 s).
+
+#### Buckets stack on Bedrock  {#stacked-buckets}
+- **Affects:** agent bucket handling (lava / water pickup)
+- **Java:** a bucket stack of 1; using an empty bucket on a source turns the held item into the filled bucket.
+- **Bedrock:** empty buckets stack (16). `bot.activateBlock(<lava source>)` with a stack of 3 buckets in the hand
+  leaves 2 empty buckets in the hand and puts the `lava_bucket` into another slot.
+- **mineflayer-bedrock / agent:** nothing to change in the library (the server's inventory update is mirrored); the
+  agent counts `lava_bucket` / `water_bucket` items instead of checking the held item.
+
+#### End portal block collision  {#end-portal-shape}
+- **Affects:** walking into an end portal (agent `end` skill)
+- **Java:** the end portal block has no collision box; touching it teleports.
+- **Bedrock:** the data gives `end_portal` a 0.25-high collision box; BDS teleports the player as soon as it touches the
+  block. The agent walks from the stairs onto the frame ring and towards the ring's centre until the dimension changes.
+
+#### Pillaring (1×1 towers) under a ceiling  {#towers}
+- **Affects:** mineflayer-pathfinder's `allow1by1towers` (agent movement in the End)
+- **Java:** pathfinder jumps and places a block under its feet; it only clears the block two above the feet. Java's
+  server accepts the placement as soon as the client says it rose; the client re-centres itself on the pillar.
+- **Bedrock:** BDS refuses any block that overlaps the player's server-side hitbox, and the patched pathfinder no
+  longer re-centres the bot (U15: that caused corrections). An off-centre hitbox spans the neighbouring columns; a block
+  two or three above the feet there (the underside of the End's island over its arrival platform) cuts the jump short
+  and every placement is refused (measured: 204 `place_error` path resets in a row, the bot stuck on a 3-block pillar).
+- **agent:** in the End, `ensurePathfinder` drops tower steps with a block 2–3 above the feet in any of the nine columns;
+  the pathfinder digs a staircase through the end stone instead (platform → island top in ≈25 s). Elsewhere towers
+  stay on (a bot that dug itself into a 1×1 shaft is centred and towers out fine).
+
+#### Bridging over the Nether's lava ocean  {#nether-bridges}
+- **Affects:** agent movement in the Nether
+- **agent:** no scaffolding block is placed over a drop deeper than 4 blocks there (a bridge over the lava ocean is
+  where a hoglin's toss or a crossbow bolt ended two test runs in the lava); the pathfinder digs through rock instead.
+
+#### Cheat-assisted scenario steps  {#cheat-assisted}
+- **Affects:** U18 scenarios only (the skills themselves never use commands)
+- **N1 (nether entry):** the starting kit — diamond pickaxe, 3 buckets, 3 iron ingots, 16 bread, iron sword and
+  armor — is given with `/give`, standing in for the end state of U17's overworld milestones (M3 "diamond"); `time
+  set day` / `weather clear` with the day and weather cycles off. Obsidian (bucket casting at a lava pool, mined with
+  the diamond pickaxe), water (filled at a lake), flint (gravel dug by the bot), the flint and steel (crafted), the
+  frame, the lighting and the trip are the bot's own work. **N1M3** (`scenarios/nether/n1-from-m3.js`) is the same
+  milestone with no cheat at all: U17's M3 end-state snapshot (seed 1234) under U17's Agent, which obtains a second
+  bucket and an iron ingot itself, walks back to the spawn and runs `portal` (measured: 5 min in all, portal step
+  185 s).
+- **N2 (nether ores):** the kit (diamond pickaxe and sword, diamond armor, a golden helmet for piglin neutrality, a shield,
+  food, cobblestone, a flint and steel) with `/give`, and the overworld portal FRAME placed with `/setblock` next to
+  the spawn (N1 covers building one); the bot lights it, goes through, mines and comes back on its own. Difficulty
+  normal, vanilla mob spawning.
+- **E1 (The End):** `locate structure stronghold` (console), then the bot is teleported (creative) above the located
+  point, the portal room's frame ring is found in the chunks the server sent, and the bot is teleported onto the
+  room's stairs next to the ring and switched to survival; the kit (12 eyes of ender, diamond gear, bow, arrows,
+  food, cobblestone) with `/give`; the ender dragon is killed with `execute in the_end run kill @e[type=ender_dragon]`
+  right after the bot arrived, which opens the exit portal (the dragon fight is not attempted). Filling the 12 frames
+  (`activateBlock` with an eye), entering, the endermen fights and the exit (credits acknowledged by
+  mineflayer-bedrock) are the bot's own actions.
+- **C1 (survive the night):** the kit (iron sword, shield, iron armor, bow, 64 arrows, food) with `/give`; `time set
+  midnight` with the day cycle off. Mobs spawn naturally (`domobspawning` true, difficulty normal); nothing is summoned.
+
+#### Ore search uses the chunk data  {#ore-search}
+- **Affects:** agent `nether` skill
+- **Java / Bedrock:** identical — the server sends whole chunks, and mineflayer bots locate blocks with
+  `bot.findBlocks` (what mineflayer-collectblock's examples do).
+- **agent:** ores (and ancient debris, preferring the y 8–22 band) are located in the loaded chunks, reached with
+  mineflayer-pathfinder (digging through netherrack, never breaking a block next to a liquid) and dug with the diamond
+  pickaxe. Ancient debris must be buried in rock up to the bot's level (no open cavern or lava above it) and within 64
+  blocks of the home portal. The y 8–22 band (the big veins, around y 15) mostly lies under the lava ocean (y ≤ 31):
+  around seed 35's portal every band target sat under an open cavern, and the pathfinder bridged and pillared through
+  the void towards it or the bot fell into the lava. The agent therefore looks above the lava ocean first (y ≥ 32,
+  where the small veins are) and falls back to the 8–22 band (`args.debrisY` changes the order); when no debris is in
+  reach at all it branch-mines (a straight tunnel) until one shows up in the newly loaded chunks. Nether gold is
+  mined last and never within 20 blocks of a piglin (mining gold angers the piglins that see it, gold armour or not:
+  crossbow piglins then shot the bot for the rest of the trip).
+
+#### mineflayer-pathfinder drops into lava  {#pathfinder-lava-drop}
+- **Affects:** agent movement (all U18 skills), anyone using mineflayer-pathfinder's defaults in the Nether
+- **Java / Bedrock:** identical upstream behaviour: `Movements.infiniteLiquidDropdownDistance` (default true) lets a
+  path drop any height into a "liquid", and pathfinder's liquids include lava — a nether path dropped the bot into the
+  lava ocean (measured: "u18bot tried to swim in lava" while exploring at y 26).
+- **agent:** `src/dims/util.js` `ensurePathfinder` sets `infiniteLiquidDropdownDistance = false` (drops limited to
+  `maxDropDown` 3) and adds portals, fire, magma, berry bushes, … to `blocksToAvoid`; `goto` gives up when the bot has
+  not moved for 30 s (a search that keeps failing) instead of waiting for the full timeout. Upstream `goto()` rejects
+  as soon as a search runs out of think time ("Took to long to decide path to goal!") although the pathfinder then
+  walks the best partial path, and nothing re-plans at its end: the agent's `goto` waits for that walk and searches
+  again from there (a long way home through the Nether's netherrack failed without this).
 
 ## W3FIX.md
 

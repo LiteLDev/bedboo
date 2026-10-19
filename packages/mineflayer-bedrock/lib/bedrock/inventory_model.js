@@ -327,7 +327,7 @@ function createInventoryModel (bot, { Item, Window }) {
       const key = keyOf(window, j)
       if (key && key !== 'out') {
         if (key.startsWith('w:') && window !== currentWindow()) setSlot(window, j, items[idx])
-        else write(key, items[idx])
+        else serverWrite(key, items[idx])
       }
     }
   }
@@ -344,23 +344,50 @@ function createInventoryModel (bot, { Item, Window }) {
     return (list ?? []).map(wire => fromNetwork(bot.registry, wire))
   }
 
+  /**
+   * A server packet sets slot `key` while requests that change it are in flight (FINAL-FIX-LIB): when the server's
+   * stack is not the one such a request was planned on (a pickup, /give, a hopper, another player changed it — new
+   * stack id), BDS rejects the request (49 stack id mismatch / 50): it is marked `raced` so execute() plans it again
+   * on the server's state (Java's server applies a click to its own current state instead of rejecting it).
+   */
+  function noteServerWrite (key, item) {
+    if (inflight.size === 0) return
+    const cw = key.startsWith('w:') ? currentWindow() : null
+    for (const entry of inflight.values()) {
+      if (entry.raced) continue
+      const change = entry.byKey.get(key)
+      if (!change) continue
+      if (cw && entry.window !== cw) continue
+      const before = change.before
+      // planned on another request's prediction (chained): that one is compared; its rejection propagates (rollback)
+      if (before && inflight.has(before.stackId)) continue
+      const same = !before && !item ? true : !!before && !!item && before.type === item.type && before.count === item.count && (before.stackId ?? 0) === (item.stackId ?? 0)
+      if (!same) entry.raced = true
+    }
+  }
+  /** write() of a server packet */
+  function serverWrite (key, item) {
+    noteServerWrite(key, item)
+    write(key, item)
+  }
+
   function onInventoryContent (packet) {
     const id = windowIdOf(packet.window_id)
     const items = itemsOf(packet.input)
     switch (id) {
       case INVENTORY_WINDOW:
-        for (let i = 0; i < 36; i++) write(`p:${i}`, items[i] ?? null)
+        for (let i = 0; i < 36; i++) serverWrite(`p:${i}`, items[i] ?? null)
         bot.emit('setWindowItems:0')
         return
       case ARMOR_WINDOW:
-        for (let i = 0; i < 4; i++) write(`a:${i}`, items[i] ?? null)
+        for (let i = 0; i < 4; i++) serverWrite(`a:${i}`, items[i] ?? null)
         return
       case OFFHAND_WINDOW:
-        write('o', items[0] ?? null)
+        serverWrite('o', items[0] ?? null)
         return
       case UI_WINDOW:
-        write('c', items[0] ?? null)
-        for (let i = 1; i < items.length && i < uiStore.length; i++) write(`u:${i}`, items[i] ?? null)
+        serverWrite('c', items[0] ?? null)
+        for (let i = 1; i < items.length && i < uiStore.length; i++) serverWrite(`u:${i}`, items[i] ?? null)
         return
     }
     if (id === null) return
@@ -379,19 +406,19 @@ function createInventoryModel (bot, { Item, Window }) {
     const item = fromNetwork(bot.registry, packet.item)
     const slot = packet.slot
     switch (id) {
-      case INVENTORY_WINDOW: if (slot >= 0 && slot < 36) write(`p:${slot}`, item); return
-      case ARMOR_WINDOW: if (slot >= 0 && slot < 4) write(`a:${slot}`, item); return
-      case OFFHAND_WINDOW: write('o', item); return
+      case INVENTORY_WINDOW: if (slot >= 0 && slot < 36) serverWrite(`p:${slot}`, item); return
+      case ARMOR_WINDOW: if (slot >= 0 && slot < 4) serverWrite(`a:${slot}`, item); return
+      case OFFHAND_WINDOW: serverWrite('o', item); return
       case UI_WINDOW:
-        if (slot === 0) write('c', item)
-        else if (slot > 0 && slot < uiStore.length) write(`u:${slot}`, item)
+        if (slot === 0) serverWrite('c', item)
+        else if (slot > 0 && slot < uiStore.length) serverWrite(`u:${slot}`, item)
         return
     }
     const cw = currentWindow()
     if (cw && cw.id === id) {
       const j = slots.contentToJava(cw, slot)
       const key = j === null ? null : keyOf(cw, j)
-      if (key && key !== 'out') write(key, item)
+      if (key && key !== 'out') serverWrite(key, item)
     } else if (id !== null) {
       const early = earlyContent.get(id)
       if (early && slot < early.length) early[slot] = item
@@ -406,10 +433,10 @@ function createInventoryModel (bot, { Item, Window }) {
       if (action.source_type !== 'container') continue
       const id = windowIdOf(action.window_id)
       const item = fromNetwork(bot.registry, action.new_item)
-      if (id === INVENTORY_WINDOW && action.slot >= 0 && action.slot < 36) write(`p:${action.slot}`, item)
-      else if (id === ARMOR_WINDOW && action.slot >= 0 && action.slot < 4) write(`a:${action.slot}`, item)
-      else if (id === OFFHAND_WINDOW) write('o', item)
-      else if (id === UI_WINDOW && action.slot === 0) write('c', item)
+      if (id === INVENTORY_WINDOW && action.slot >= 0 && action.slot < 36) serverWrite(`p:${action.slot}`, item)
+      else if (id === ARMOR_WINDOW && action.slot >= 0 && action.slot < 4) serverWrite(`a:${action.slot}`, item)
+      else if (id === OFFHAND_WINDOW) serverWrite('o', item)
+      else if (id === UI_WINDOW && action.slot === 0) serverWrite('c', item)
     }
   }
 
@@ -513,8 +540,10 @@ function createInventoryModel (bot, { Item, Window }) {
       const { key, before, after } = entry.changes[k]
       if (!windowKeyValid(entry, key)) continue
       const next = nextOnSlot(entry, key)
-      if (next) next.byKey.get(key).before = before // the next request was planned on our (rejected) prediction
-      else if (read(key) === after) write(key, before) // else a server packet replaced the slot meanwhile: keep it
+      if (next) {
+        next.byKey.get(key).before = before // the next request was planned on our (rejected) prediction
+        if (entry.raced) next.raced = true // and named its request id: rejected too, planned again like this one
+      } else if (read(key) === after) write(key, before) // else a server packet replaced the slot meanwhile: keep it
     }
     unlink(entry)
   }
@@ -573,8 +602,17 @@ function createInventoryModel (bot, { Item, Window }) {
     try {
       return await executeOnce(window, steps, opts)
     } catch (err) {
+      if (err.name !== 'StackRequestError' || opts.retried) throw err
+      // a server packet changed a slot of the request while it was in flight (a pickup, /give, a hopper: new stack
+      // id) and BDS rejected it: plan it again on the server's state, once (FINAL-FIX-LIB; Java's server applies the
+      // click to its current state). Only planned requests (clickWindow, returnItems, craft): fixed steps were sized
+      // for the old state
+      if (err.raced && err.outcome === 'error' && typeof steps === 'function' && opts.requestId === undefined) {
+        if (!slots.isPlayerInventory(window) && window !== currentWindow()) throw err
+        return executeOnce(window, steps, { ...opts, retried: true })
+      }
       // status 7: BDS has no matching screen (e.g. it dropped our inventory screen on a respawn) → reopen, retry once
-      if (err.name !== 'StackRequestError' || err.status !== NO_SCREEN_STATUS || opts.retried || !slots.isPlayerInventory(window) || currentWindow()) throw err
+      if (err.status !== NO_SCREEN_STATUS || !slots.isPlayerInventory(window) || currentWindow()) throw err
       screen.reset()
       return executeOnce(window, steps, { ...opts, retried: true })
     }
@@ -695,7 +733,12 @@ function createInventoryModel (bot, { Item, Window }) {
       link(entry)
       for (const { key, after } of changes) write(key, after)
       mgr().write(request)
-      return await response
+      try {
+        return await response
+      } catch (err) {
+        if (entry.raced && err && typeof err === 'object') err.raced = true
+        throw err
+      }
     } finally {
       screen.busy--
       screen.scheduleIdleClose()

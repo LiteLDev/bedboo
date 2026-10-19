@@ -497,3 +497,28 @@ index a7e35053cde64e3cd32880af2aafa5f03e919ff8..eebc31f5215ece8a6f16ea28738f41a8
    }
  
    getMoveDiagonal (node, dir, neighbors) {
+diff --git a/lib/passableEntities.json b/lib/passableEntities.json
+index 641d5c8d918b8f8ee6c91fd0741c9dbdc97506fd..f0f8c2357ae0c19421a12212401491a310760fd7 100644
+--- a/lib/passableEntities.json
++++ b/lib/passableEntities.json
+@@ -26,5 +26,19 @@
+   "experience_bottle",
+   "trident",
+   "fishing_bobber",
+-  "evoker_fangs"
++  "evoker_fangs",
++  "xp_orb",
++  "xp_bottle",
++  "splash_potion",
++  "lingering_potion",
++  "fireworks_rocket",
++  "thrown_trident",
++  "fishing_hook",
++  "evocation_fang",
++  "wind_charge_projectile",
++  "breeze_wind_charge_projectile",
++  "ender_crystal",
++  "eye_of_ender_signal",
++  "ominous_item_spawner",
++  "wither_skull_dangerous"
+ ]
