@@ -23,7 +23,7 @@ each unit documents its own in `docs/differences/<unit>.md` (format: [`differenc
 | U14 | [`U14.md`](differences/U14.md) | 5 | 9 |
 | U15 | [`U15.md`](differences/U15.md) | 12 | 13 |
 | U16 | [`U16-transport.md`](differences/U16-transport.md) | 4 | 0 |
-| U16 | [`U16a.md`](differences/U16a.md) | 13 | 2 |
+| U16 | [`U16a.md`](differences/U16a.md) | 16 | 2 |
 | ? | [`W3FIX.md`](differences/W3FIX.md) | 7 | 0 |
 | ? | [`W3FIXB.md`](differences/W3FIXB.md) | 4 | 0 |
 
@@ -2542,6 +2542,35 @@ skips, full-suite stability). Everything below was observed against BDS 1.26.51.
   player walks into a portal.
 - **Tests:** `test/external/dimensionTravel.test.js` (passes in every full-suite run since, and 20/20 rounds in two
   parallel loops under load).
+
+#### A server hotbar select can be older than the bot's own selection  {#hotbar-select}
+- **Affects:** `bot.quickBarSlot`, `bot.heldItem`, `heldItemChanged` right after `setQuickBarSlot` (test
+  `inventoryFlows` › "simpleClick, putAway, …", seen once in a full run).
+- **Java:** `held_item_slot` from the server and the client's `held_item_change` do not cross in practice.
+- **Bedrock:** BDS answers console commands (`/clear`, `/replaceitem`, `/give`) with `player_hotbar { select_slot:
+  true }` carrying its selected slot. When such a command runs before BDS has read the bot's latest `mob_equipment`
+  selection, the select is stale: following it switches the bot back to the previous slot while BDS then applies the
+  bot's selection — client and server stay out of sync.
+- **mineflayer-bedrock:** a server select (player_hotbar or the bot's own mob_equipment) that contradicts a selection
+  the bot sent less than 1 s ago is ignored and the bot's selection sent again.
+- **Tests:** `test/unit/hardening.test.js` › "player_hotbar select_slot contradicting a selection sent < 1 s ago …".
+
+#### Progress reports after an instant break  {#instant-break-report}
+- **Affects:** `bot._bedrock.digging.last.serverSpeedData` (diagnostics; test `digEverything` › `short_dry_grass`,
+  seen once in a full run).
+- **Bedrock:** after an instant break BDS may report the block-break progress of what replaced the block (the water
+  a plant in a water source leaves) — sometimes in the batch before the `update_block` of the break.
+- **mineflayer-bedrock:** an instant break (start and predict in one input) ignores progress reports: there is no
+  progress to follow, and the report is not the dug block's speed.
+- **Tests:** `test/unit/hardening.test.js` › "a progress report of the water left behind …".
+
+#### A /setblock right after a long teleport  {#setblock-after-teleport}
+- **Affects:** test `nether` (seen once in a full run under load).
+- **Bedrock:** right after a teleport 16–128 blocks away the target chunk may not be loaded on the server yet: the
+  bot's `/setblock ~ ~ ~ portal` fails with `commands.setblock.outOfWorld` and no portal appears.
+- **mineflayer-bedrock:** nothing in the library; the test waits for `bot.waitForChunksToLoad()` (the server sends a
+  chunk only once it has loaded it) before the `/setblock`.
+- **Tests:** `test/external/nether.test.js`.
 
 #### Skips left in the e2e suites  {#test-skips}
 - **Affects:** `packages/mineflayer-bedrock/test/external/*.test.js`.
