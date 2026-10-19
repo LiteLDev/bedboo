@@ -22,8 +22,12 @@
 //   Waterlogging (docs/differences/U4.md#waterlogging): bot.blockAt() returns the layer-0 block; when layer 1
 //   holds water it carries `block.superimposed` (the layer-1 Block), `block.computedStates.waterlogged = true`
 //   and `block.isWaterlogged = true` (prismarine-chunk's Bedrock representation, patched to skip air).
-// - network_chunk_publisher_update: columns farther than the publisher radius (+1 chunk) are unloaded →
-//   'chunkColumnUnload'.
+// - network_chunk_publisher_update: columns farther than the publisher radius (+2 chunks) are unloaded →
+//   'chunkColumnUnload'. BDS never resends a column it considers sent, so the client must not drop one early
+//   (U16b fix, observed on BDS 1.26.51.1): during the join, before its chunk_radius_update, it sends columns more
+//   than 100 blocks away while its publisher updates still say 64 — nothing is unloaded until the granted radius
+//   is known (or, if no chunk_radius_update ever comes, until the bot spawned), and the radius used is at least
+//   the granted one (chunk_radius_update) plus two chunks of slack.
 // - start_game / the lifecycle's 'dimensionChange' (change_dimension): bot._bedrock.world.reset(dimension) unloads
 //   every column (upstream's switchWorld); U9 calls the same hook for its dimension flow.
 // - block entities (U9, upstream tile_entity_data): block.entity / block.blockEntity from the sub-chunk payloads'
@@ -143,9 +147,21 @@ function inject (bot) {
     }
   })
 
+  // chunk_radius_update: the radius (chunks) the server granted to request_chunk_radius (null: not answered yet)
+  let grantedRadius = null
+  let spawned = false
+  bot._client.on('chunk_radius_update', (packet) => {
+    grantedRadius = Number(packet.chunk_radius) || 0
+  })
+  bot.once('spawn', () => { spawned = true })
+
   bot._client.on('network_chunk_publisher_update', (packet) => {
+    // the join: BDS sends columns beyond the publisher radius until it answered request_chunk_radius (a server
+    // that never answers: the publisher radius alone once the bot spawned)
+    if (grantedRadius === null && !spawned) return
     const { x, z } = packet.coordinates
-    const limit = packet.radius + 16 // one chunk of slack: never drop a column the server still considers sent
+    // two chunks of slack: never drop a column the server still considers sent (it would not send it again)
+    const limit = Math.max(packet.radius, (grantedRadius ?? 0) * 16) + 32
     const outside = (cx, cz) => Math.hypot(cx * 16 + 8 - x, cz * 16 + 8 - z) > limit
     for (const [key, { column }] of pendingColumns) {
       if (outside(column.x, column.z)) pendingColumns.delete(key)

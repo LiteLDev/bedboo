@@ -12,6 +12,7 @@ Owner: U1 (wave 1). U0 seeded it with the transport spike results, which are kep
 - [Troubleshooting](#troubleshooting)
 - [BDS 1.26.51.1 quirks](#bds-126511-quirks-seen)
 - [Transport spike (U0)](#transport-spike-u0-2026-10-18--result-raknet-works)
+- [NetherNet (U16b)](#nethernet-u16b)
 - [Fixtures](#fixtures)
 - [Manual docker recipe](#manual-docker-recipe-no-harness)
 
@@ -97,7 +98,8 @@ in the error).
 `default-player-permission-level=operator`, `view-distance=32`, `tick-distance=4`, `max-threads=4`,
 `max-players=10`) < `startServer` options < `properties` overrides < enforced keys. **Enforced** (an
 override with another value throws): `enable-lan-visibility=false` (otherwise every server also binds
-19132/19133), `transport=raknet`, `online-mode=false`, `allow-list=false`, `player-idle-timeout=0`, and
+19132/19133), `transport=raknet` (unless the `transport: 'nethernet'` option asks for NetherNet, see
+[NetherNet](#nethernet-u16b)), `online-mode=false`, `allow-list=false`, `player-idle-timeout=0`, and
 `server-port`/`server-portv6` from the slot.
 
 **Profiles.** Right after `Server started.` (before any player joins) the profile's gamerules are applied
@@ -136,6 +138,7 @@ const server = await bds.startServer({ world: 'flat', gamemode: 'creative' })
 | `difficulty` | `'peaceful'` | `peaceful` / `easy` / `normal` / `hard` |
 | `levelName` | `'bedboo'` | `level-name` |
 | `properties` | `{}` | raw server.properties overrides (enforced keys excepted) |
+| `transport` | `'raknet'` | `'nethernet'`: BDS's default transport, for `createBot({ transport: 'nethernet' })` (U16b; [NetherNet](#nethernet-u16b)) |
 | `profile` | `'deterministic'` | gamerule profile, `'none'` for vanilla rules |
 | `gamerules` | `{}` | gamerule overrides on top of the profile, e.g. `{ domobspawning: true }` |
 | `persistent` | `false` | survives this process (`bds up`); never reaped |
@@ -175,7 +178,7 @@ waitForSpawn?, timeout? }) → { bot, server, stop }` (generic; the e2e suites u
 | command | |
 |---|---|
 | `pull [--force]` | image + golden cache (idempotent) |
-| `up [--name n] [--world flat\|default] [--seed s] [--gamemode m] [--difficulty d] [--profile p] [--gamerule k=v]… [--property k=v]… [--snapshot s]` | persistent server; prints `BDS_HOST=… BDS_PORT=… BDS_CONTAINER=…` (default name `<user>-dbg`) |
+| `up [--name n] [--world flat\|default] [--seed s] [--gamemode m] [--difficulty d] [--profile p] [--gamerule k=v]… [--property k=v]… [--snapshot s] [--transport raknet\|nethernet]` | persistent server; prints `BDS_HOST=… BDS_PORT=… BDS_CONTAINER=…` (default name `<user>-dbg`) |
 | `cmd <n> <command…>` | run a console command, print its output (everything up to a console marker) |
 | `logs <n> [-f] [--tail k]` | `docker logs` |
 | `down <n>…` | remove container, data dir and slot (also when the container was already removed with `docker rm`) |
@@ -285,6 +288,9 @@ coordinates; "in dim" = prefixed with `execute in <bot's dimension> run`.
 | `BEDBOO_BDS_LOG` | — | `1`: echo every console line to stderr |
 | `BEDBOO_TRACE` | — | `1`: `bot.test.dumpMarker` logs |
 | `BEDBOO_STRESS`, `BEDBOO_STRESS_SERVERS` | — | enable `stress.test.js` (N parallel servers) |
+| `BEDBOO_NETHERNET` | — | `1`: run `nethernet.test.js` without `--grep nethernet` (U16b) |
+| `BEDBOO_COMBAT_RUNS` | 1 | fights per mob in `combatMatrix.test.js` (gate: `5`, a row needs ⌈0.8·runs⌉ wins; 1 = one fight + one retry) |
+| `BEDBOO_COMBAT_REPORT` | — | file the combat matrix appends every fight to (JSON lines) |
 
 ## Troubleshooting
 
@@ -394,7 +400,7 @@ Server: `itzg/minecraft-bedrock-server:2026.10.1`, BDS **1.26.51.1** (build 5106
 | bedrock-protocol 3.60.1, `transport: 'raknet'`, `raknetBackend: 'raknet-native'` (patched) | **works**: join ≈0.3 s, `start_game` ≈0.5 s, `spawn` ≈1.0 s, `level_chunk` + `subchunk`, stable 25 s sessions with a 50 ms `player_auth_input` loop |
 | `raknetBackend: 'raknet-native'` unpatched | fails to load: binding looks for `prebuilds/linux-6-x64` (kernel major 6), only `linux-5-x64` ships, falls back to a cmake build (no toolchain) |
 | `raknetBackend: 'jsp-raknet'` | **fails**: BDS answers the open-connection request with `ID_INCOMPATIBLE_PROTOCOL_VERSION` (0x19, server RakNet protocol 11; jsp-raknet speaks 10) and the client retries until timeout |
-| NetherNet | not needed for the gate (BDS default transport; public-client signalling is an unmerged bedrock-protocol PR) — U16 smoke only |
+| NetherNet | **works** (U16b, see [NetherNet](#nethernet-u16b)): `createBot({ transport: 'nethernet' })` with HTTP signalling on the server port; join ≈1.7 s, spawn ≈2.6 s. RakNet stays the default |
 | Unconnected ping (`bedrock.ping`, discovery without `skipPing`) | **no reply** with `enable-lan-visibility=false` → discovery waits 1 s then falls back to configured defaults. `lib/client.js` therefore defaults to `skipPing: true` |
 
 Limitation: raknet-native 1.2.3 bundles x64 prebuilds only (`linux-5-x64`, `darwin-21-x64`,
@@ -409,6 +415,28 @@ cwd. The prebuild needs glibc ≥ 2.34. Its install script (cmake build) is disa
 
 Re-run the spike: `corepack pnpm test:e2e -- --grep "raw bedrock-protocol transport"` (harness server),
 or `node scripts/capture-fixtures.js --port <P> --container <c>` against a `bds up` server.
+
+## NetherNet (U16b)
+
+BDS 1.26.51's default transport is NetherNet (WebRTC data channels); RakNet still works with `transport=raknet` but
+Mojang announced its removal (possibly in BDS 26.60). The library and the suite stay on RakNet by default — it is the
+transport bedrock-protocol has supported for years and the one every suite was written against — and NetherNet is
+opt-in:
+
+- Client: `createBot({ transport: 'nethernet' })` joins with **HTTP signalling** on the server port
+  (`POST http://host:port/v1/join/<network id>`), which works with `enable-lan-visibility=false`: bedrock-protocol#831
+  and node-nethernet#32 (merged upstream, unreleased) are backported as `patches/bedrock-protocol@3.60.1.patch` and
+  `patches/nethernet@1.1.2.patch`. See `docs/differences/U16-transport.md`.
+- Server: `startServer({ transport: 'nethernet' })` / `bds up --transport nethernet`. LAN visibility stays off, so no
+  exclusive slot is needed (HTTP signalling uses the slot's own port; nothing binds UDP 7551).
+- Quirk: BDS opens its signalling listener on **TCP** `server-port` and logs `Accepting clients on [::]:<port>`; when
+  that TCP port is still held (e.g. `TIME_WAIT` connections of the previous server on the slot, ~1 min) it runs
+  without the listener and logs nothing — clients get `ECONNREFUSED`. The harness skips slots whose TCP port is held
+  (`/proc/net/tcp`) and retries on another slot when the line is missing.
+- Test: `test/external/nethernet.test.js` (join, spawn, chat both ways, a block update, walking, HTTP discovery,
+  server-key pinning, quit) is tagged `nethernet` and kept out of the default run:
+  `corepack pnpm test:e2e -- --grep nethernet` (or `BEDBOO_NETHERNET=1`). It needs a server the harness starts
+  (skipped with `BDS_HOST`/`BDS_PORT`: an external server's transport is unknown).
 
 ## Fixtures
 

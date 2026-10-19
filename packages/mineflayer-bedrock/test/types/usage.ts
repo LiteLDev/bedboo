@@ -53,3 +53,12 @@ console.log(testedVersions, latestSupportedVersion, oldestSupportedVersion, supp
 
 // mineflayer.createBot({ client }) overload
 createBot({ client: bot._client, username: 'x' })
+
+// U16b: transports (BotOptions extends bedrock-protocol's ClientOptions, NethernetOptions from the patch)
+createBot({ host: '127.0.0.1', port: 19132, username: 'nn', auth: 'offline', transport: 'nethernet' })
+createBot({
+  username: 'nn2',
+  transport: 'nethernet',
+  nethernet: { signalling: 'http', serverKey: 'sha256:00', onServerKey: (fingerprint: string, url: string) => fingerprint.length > 0 && url.length > 0 }
+})
+createBot({ username: 'rak', transport: 'raknet', raknetBackend: 'raknet-native' })

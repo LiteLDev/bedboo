@@ -1,0 +1,184 @@
+diff --git a/index.js b/index.js
+index 4c74c51d554a3f8880d9f3a740d47111e2dcab3c..61aa6cf3ff641e3b4f651aa95e2958da22847b6f 100644
+--- a/index.js
++++ b/index.js
+@@ -1,3 +1,4 @@
++const { pingHttp } = require('./src/signalling/http') // bedboo patch (node-nethernet#32)
+ const { Client } = require('./src/client')
+ const { Server } = require('./src/server')
+ const { ErrorCode, SignalStructure } = require('./src/signalling')
+@@ -11,6 +12,7 @@ const SignalType = {
+ 
+ module.exports = {
+   Client,
++  pingHttp,
+   ErrorCode,
+   Server,
+   SignalType,
+diff --git a/src/client.js b/src/client.js
+index e39e03b7c9cb706ac8a99c849b7bc99164bede64..16258e1ef9dee731bc8b34c934bafdfbdf60834c 100644
+--- a/src/client.js
++++ b/src/client.js
+@@ -1,4 +1,6 @@
+ const { attachIdentity } = require('./identity')
++// bedboo patch: HTTP signalling backport (node-nethernet#32)
++const { exchangeOffer, signallingUrl } = require('./signalling/http')
+ const dgram = require('node:dgram')
+ const { EventEmitter } = require('node:events')
+ const { Connection } = require('./connection')
+@@ -20,6 +22,7 @@ class Client extends EventEmitter {
+   constructor (networkId, broadcastAddress = BROADCAST_ADDRESS, options = {}) {
+     super()
+ 
++    this.http = options.http && { ...options.http, url: signallingUrl(options.http.url) }
+     this.webrtc = getWebRTC(options.webrtcBackend)
+ 
+     this.serverNetworkId = networkId
+@@ -59,15 +62,14 @@ class Client extends EventEmitter {
+ 
+     this._signalHandler = this.sendDiscoveryMessage.bind(this)
+ 
+-    this.sendDiscoveryRequest()
+-
+-    this.pingInterval = setInterval(() => {
++    if (!this.http) {
+       this.sendDiscoveryRequest()
+-    }, 2000)
++      this.pingInterval = setInterval(() => this.sendDiscoveryRequest(), 2000)
++    }
+ 
+     this._hasEmittedConnected = false
+     this._pendingConnect = false
+-    this._externalSignaling = false
++    this._externalSignaling = Boolean(this.http)
+     this._negotiationTimeout = null
+   }
+ 
+@@ -241,7 +243,7 @@ class Client extends EventEmitter {
+     const isCurrent = () => !this._closed && this.connection === connection && !connection.closed
+ 
+     rtcConnection.onicecandidate = (event) => {
+-      if (event.candidate && isCurrent()) {
++      if (!this.http && event.candidate && isCurrent()) {
+         debug('Sending CandidateAdd to networkId:', this.serverNetworkId)
+         const signal = new SignalStructure(SignalType.CandidateAdd, this.connectionId, event.candidate.candidate, this.serverNetworkId)
+ 
+@@ -304,6 +306,21 @@ class Client extends EventEmitter {
+       return
+     }
+ 
++    if (this.http) {
++      try {
++        const sdp = await exchangeOffer(this, controller.signal)
++        if (isCurrent()) await this.handleAnswer({ data: sdp, networkId: this.serverNetworkId })
++      } catch (err) {
++        if (!isCurrent() || controller.signal.aborted) return
++        try {
++          this.reportError(err)
++        } finally {
++          this.close('HTTP signalling failed')
++        }
++      }
++      return
++    }
++
+     try {
+       const localDesc = this.rtcConnection.localDescription
+       let sdp = localDesc.sdp
+diff --git a/src/identity.js b/src/identity.js
+index 663662a3728b092117e019ea41d02dac23b9f315..3bed2b63b0df12f4420436de6cfd5f8a615fc979 100644
+--- a/src/identity.js
++++ b/src/identity.js
+@@ -5,6 +5,7 @@
+ // where `fingerprints` is a DETACHED ES384 JWS over the canonical-JSON of the offer's DTLS fingerprints, signed with the
+ // private key whose public key is the multiplayer token's `cpk` claim.
+ const crypto = require('crypto')
++const JWT = require('jsonwebtoken')
+ 
+ const b64url = (buf) => Buffer.from(buf).toString('base64url')
+ 
+@@ -59,4 +60,30 @@ function attachIdentity (sdp, identity) {
+   return lines.join(eol)
+ }
+ 
+-module.exports = { extractFingerprints, fingerprintsPayload, detachedES384, buildIdentityAttribute, attachIdentity }
++// bedboo patch (node-nethernet#32): verify possession of the operator key and bind it to WebRTC's DTLS fingerprints.
++// Trust in that key (HTTPS or an application pin) is checked separately.
++function verifyServerIdentity (sdp) {
++  const lines = sdp.split(/\r?\n/)
++  const identities = lines.filter(line => line.startsWith('a=identity:'))
++  if (identities.length !== 1) throw new Error('Expected one Nethernet server identity assertion')
++  const envelope = JSON.parse(Buffer.from(identities[0].slice('a=identity:'.length), 'base64').toString())
++  if (envelope.idp?.protocol !== 'default') throw new Error('Unsupported Nethernet identity protocol')
++  const assertion = JSON.parse(envelope.assertion)
++  const claims = JWT.decode(assertion.token)
++  const key = crypto.createPublicKey({ key: claims?.cpk, format: 'jwk' })
++  JWT.verify(assertion.token, key)
++
++  const fingerprints = extractFingerprints(sdp)
++  if (!fingerprints.length) throw new Error('Missing Nethernet DTLS fingerprint')
++  const parts = assertion.fingerprints.split('.')
++  if (parts.length !== 3 || parts[1] !== '') throw new Error('Invalid detached fingerprint signature')
++  parts[1] = Buffer.from(JSON.stringify({ fingerprint: fingerprints })).toString('base64url')
++  JWT.verify(parts.join('.'), key)
++
++  return {
++    fingerprint: 'sha256:' + crypto.createHash('sha256').update(key.export({ type: 'spki', format: 'der' })).digest('hex'),
++    sdp: lines.filter(line => !line.startsWith('a=identity:')).join('\r\n')
++  }
++}
++
++module.exports = { verifyServerIdentity, extractFingerprints, fingerprintsPayload, detachedES384, buildIdentityAttribute, attachIdentity }
+diff --git a/src/signalling/http.js b/src/signalling/http.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..df4d03c9205a8763456ad1cf67247a9bd3fea9ce
+--- /dev/null
++++ b/src/signalling/http.js
+@@ -0,0 +1,47 @@
++// bedboo patch: backport of PrismarineJS/node-nethernet#32 (HTTP discovery and signalling, merged upstream after
++// 1.1.2, unreleased). Identical to upstream src/signalling/http.js except the sdpIdentity require path (1.1.2 keeps
++// it in src/identity.js). Drop this patch once a release contains #32.
++const { once } = require('node:events')
++const { attachIdentity, verifyServerIdentity } = require('../identity')
++
++function signallingUrl (origin) {
++  const url = new URL(origin)
++  if (!['http:', 'https:'].includes(url.protocol) || url.pathname !== '/' || url.search || url.hash || url.username || url.password) {
++    throw new Error('HTTP signalling URL must be an HTTP(S) origin')
++  }
++  return url
++}
++
++async function pingHttp (origin, { timeout = 1000, signal } = {}) {
++  const deadline = AbortSignal.timeout(timeout)
++  signal = signal ? AbortSignal.any([signal, deadline]) : deadline
++  const response = await fetch(new URL('/v1/join', signallingUrl(origin)), { signal, redirect: 'error' })
++  if (!response.ok) throw new Error(`Nethernet HTTP discovery returned ${response.status}`)
++  const raw = await response.text()
++  // A successful response can omit metadata (for example with BDS LAN visibility off).
++  return { ...(raw ? JSON.parse(raw) : {}), raw }
++}
++
++async function exchangeOffer (client, signal) {
++  const rtc = client.rtcConnection
++  signal.throwIfAborted()
++  while (rtc.iceGatheringState !== 'complete') await once(rtc, 'icegatheringstatechange', { signal })
++  if (!client.identity) throw new Error('Nethernet HTTP offer requires a player identity')
++  // Sign the complete local description after ICE gathering, with no trickle candidates.
++  const body = attachIdentity(rtc.localDescription.sdp, client.identity)
++  const { url, serverKey, onServerKey } = client.http
++  const response = await fetch(new URL(`/v1/join/${client.networkId}`, url), {
++    method: 'POST', headers: { 'content-type': 'application/sdp' }, body, signal, redirect: 'error'
++  })
++  if (!response.ok) throw new Error(`Nethernet HTTP signalling returned ${response.status}`)
++  const answer = await response.text()
++  if (!answer.startsWith('v=')) throw new Error(`Nethernet HTTP rejected the offer: ${answer}`)
++  const verified = verifyServerIdentity(answer)
++  let trusted = serverKey ? serverKey === verified.fingerprint : url.protocol === 'https:'
++  if (!trusted && !serverKey && onServerKey) trusted = await onServerKey(verified.fingerprint, url.origin) === true
++  if (!trusted) throw new Error(`Untrusted Nethernet server key ${verified.fingerprint}; configure serverKey after verifying it`)
++  signal.throwIfAborted()
++  return verified.sdp
++}
++
++module.exports = { pingHttp, signallingUrl, exchangeOffer }

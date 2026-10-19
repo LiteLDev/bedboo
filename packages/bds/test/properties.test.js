@@ -58,6 +58,15 @@ describe('server.properties writer', () => {
     assert.throws(() => properties.resolve({}), /ports are required/)
   })
 
+  it('transport option: raknet by default, nethernet on request (U16b), nothing else', () => {
+    assert.strictEqual(properties.resolve({ ports, transport: 'raknet' }).transport, 'raknet')
+    const v = properties.resolve({ ports, transport: 'nethernet', properties: { transport: 'nethernet' } })
+    assert.strictEqual(v.transport, 'nethernet')
+    assert.strictEqual(v['enable-lan-visibility'], 'false')
+    assert.throws(() => properties.resolve({ ports, transport: 'nethernet', properties: { transport: 'raknet' } }), /enforced by the harness/)
+    assert.throws(() => properties.resolve({ ports, transport: 'websocket' }), /Invalid transport/)
+  })
+
   it('renders over the BDS template: comments kept, values replaced, missing keys appended', () => {
     const v = properties.resolve({ ports, properties: { 'custom-key': 'x' } })
     const text = properties.render(TEMPLATE, v)

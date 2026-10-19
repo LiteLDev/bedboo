@@ -1,8 +1,29 @@
 diff --git a/index.d.ts b/index.d.ts
-index be905a97f64d73b843b5c3c0cc18cba13a0da210..f7191c65e81fa8c68f852fd1e3f505a19516fd02 100644
+index be905a97f64d73b843b5c3c0cc18cba13a0da210..33d972d108a2a11391827d781bdcc4f016235cc1 100644
 --- a/index.d.ts
 +++ b/index.d.ts
-@@ -146,6 +146,17 @@ declare module 'bedrock-protocol' {
+@@ -10,9 +10,17 @@ declare module 'bedrock-protocol' {
+     webrtcBackend?: 'werift' | 'wrtc' | 'auto'
+     // Remote ID for clients; local ID for servers (generated when omitted by createServer).
+     networkId?: string | bigint
+-    // LAN discovery signalling or authenticated Minecraft services signalling (default: lan).
+-    signalling?: 'lan' | 'services'
+-    // Maximum wait for services signalling credentials in milliseconds (default: 15000).
++    // createClient discovers LAN/HTTP signalling; low-level clients default to LAN.
++    // (bedboo patch: 'http' from PrismarineJS/bedrock-protocol#831)
++    signalling?: 'lan' | 'services' | 'http'
++    // HTTP(S) signalling origin; defaults to http://host:port (client only).
++    url?: string
++    // SHA-256 fingerprint of the server identity's DER SPKI, formatted sha256:<hex>.
++    serverKey?: string
++    // Approve an unknown plain-HTTP key. Called only after verifying its signatures.
++    // A configured serverKey mismatch is always rejected, without calling this hook.
++    onServerKey?: (fingerprint: string, url: string) => boolean | Promise<boolean>
++    // Maximum wait for HTTP signalling or services signalling credentials in milliseconds (default: 15000).
+     signallingConnectTimeout?: number
+   }
+ 
+@@ -146,6 +154,17 @@ declare module 'bedrock-protocol' {
       * Send a disconnect packet and close the connection
       */
      disconnect(): void
@@ -20,11 +41,75 @@ index be905a97f64d73b843b5c3c0cc18cba13a0da210..f7191c65e81fa8c68f852fd1e3f505a1
    }
  
    /**
+diff --git a/src/client.js b/src/client.js
+index fa71ddd1faa140e3fc0628c514ef99cc9fef8d6c..5cc99819113304bdb7cf5e9428e78528ac553132 100644
+--- a/src/client.js
++++ b/src/client.js
+@@ -21,7 +21,8 @@ class Client extends Connection {
+   constructor (options) {
+     super()
+     this._closed = false
+-    this.options = { ...Options.defaultOptions, ...options, nethernet: { signalling: 'lan', ...options.nethernet } }
++    // bedboo patch: NetherNet HTTP signalling (PrismarineJS/bedrock-protocol#831, unmerged; needs node-nethernet#32)
++    this.options = { ...Options.defaultOptions, ...options, nethernet: { ...options.nethernet } }
+ 
+     if (this.options.transport === 'nethernet') {
+       this.nethernet = {}
+@@ -45,6 +46,7 @@ class Client extends Connection {
+ 
+   init () {
+     if (this._closed) return
++    this.options.nethernet.signalling ??= 'lan'
+     this.validateOptions()
+     // Choose initial compression after discovery has selected the protocol version.
+     this.compressionAlgorithm = this.versionGreaterThanOrEqualTo('1.19.30') ? 'none' : 'deflate'
+@@ -63,7 +65,7 @@ class Client extends Connection {
+ 
+     if (this.options.transport === 'nethernet') {
+       this.nethernet ??= {}
+-      this.connection = new NethernetClient({ networkId, host: this.options.host, webrtcBackend: this.options.nethernet.webrtcBackend })
++      this.connection = new NethernetClient({ networkId, host: this.options.host, ...this.options.nethernet, port: this.options.port })
+       this.batchHeader = null
+       this.disableEncryption = true
+     } else if (this.options.transport === 'raknet') {
+@@ -136,7 +138,7 @@ class Client extends Connection {
+   validateOptions () {
+     switch (this.options.transport) {
+       case 'nethernet':
+-        if (!this.options.nethernet.networkId) throw Error('Invalid nethernet.networkId')
++        if (this.options.nethernet.signalling !== 'http' && !this.options.nethernet.networkId) throw Error('Invalid nethernet.networkId')
+         break
+       case 'raknet':
+         if (!this.options.host || this.options.port == null) throw Error('Invalid host/port')
+@@ -190,6 +192,7 @@ class Client extends Connection {
+     // Preserve immediate transport startup: deferring this call coalesces
+     // independently created RakNet clients into simultaneous handshakes.
+     try {
++      if (this.options.transport === 'nethernet' && this.options.nethernet.signalling === 'http' && this.options.offline) this.createClientChain(null, true)
+       if (this.options.transport === 'nethernet' && this.multiplayerToken) {
+         this.connection.nethernet.identity = {
+           privateKey: this.ecdhKeyPair.privateKey,
 diff --git a/src/createClient.js b/src/createClient.js
-index 1f5909eca2c31adeccd0d3cfd4a629c715910174..0671dbbb7184555eb7eca0f2e7955fe46b81fe85 100644
+index 1f5909eca2c31adeccd0d3cfd4a629c715910174..f61cde4ba87dec2dc79a185e6a273449e79314a0 100644
 --- a/src/createClient.js
 +++ b/src/createClient.js
-@@ -72,8 +72,33 @@ function connect (client) {
+@@ -6,6 +6,7 @@ const Options = require('./options')
+ const advertisement = require('./server/advertisement')
+ const auth = require('./client/auth')
+ const { NethernetClient } = require('./nethernet')
++const { pingHttp } = require('./nethernet/http') // bedboo patch (bedrock-protocol#831)
+ 
+ /** @param {{ version?: string, host: string, port?: number, connectTimeout?: number, skipPing?: boolean }} options */
+ function createClient (options) {
+@@ -37,6 +38,7 @@ function createClient (options) {
+     config.transport = ad?.transport ?? config.transport ?? 'raknet'
+     config.version = options.version ?? Options.CURRENT_VERSION
+     if (ad) {
++      if (ad.signalling === 'http') config.nethernet.signalling = 'http'
+       if (ad.networkId != null) config.nethernet.networkId = ad.networkId
+       if (ad.portV4 && config.followPort) config.port = ad.portV4
+       // Nethernet v4 has no protocol field; its constructor defaults are not server metadata.
+@@ -72,8 +74,33 @@ function connect (client) {
      response_status_name: 'resourcepackstackfinished',
      resourcepackids: []
    })
@@ -60,7 +145,7 @@ index 1f5909eca2c31adeccd0d3cfd4a629c715910174..0671dbbb7184555eb7eca0f2e7955fe4
      client.once('resource_pack_stack', completeResourcePacks)
  
      client.queue('client_cache_status', { enabled: false })
-@@ -81,6 +106,11 @@ function connect (client) {
+@@ -81,6 +108,11 @@ function connect (client) {
      if (client.versionLessThanOrEqualTo('1.20.80')) client.queue('tick_sync', { request_time: BigInt(Date.now()), response_time: 0n })
  
      sleep(500).then(() => client.queue('request_chunk_radius', { chunk_radius: client.viewDistance || 10 }))
@@ -72,3 +157,104 @@ index 1f5909eca2c31adeccd0d3cfd4a629c715910174..0671dbbb7184555eb7eca0f2e7955fe4
    })
  
    if (client.versionLessThanOrEqualTo('1.20.80')) {
+@@ -111,6 +143,8 @@ function connect (client) {
+ 
+ async function ping ({ host, port = 19132, nethernet, transport = nethernet ? 'nethernet' : undefined, signal, timeout = transport === 'nethernet' ? 10000 : 1000 }) {
+   if (transport != null && !['raknet', 'nethernet'].includes(transport)) throw new Error(`Unsupported transport: ${transport}`)
++  if (transport === 'nethernet' && nethernet?.signalling === 'services') throw new Error('Services signalling does not support server discovery')
++  if (transport === 'nethernet' && nethernet?.signalling === 'http') return pingHttp({ host, port, nethernet, timeout, signal })
+   const controller = new AbortController()
+   signal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal
+   signal.throwIfAborted()
+@@ -122,14 +156,21 @@ async function ping ({ host, port = 19132, nethernet, transport = nethernet ? 'n
+         : new RakClient({ host: host ?? '127.0.0.1', port })
+       try {
+         const result = await con.ping(timeout, { signal })
+-        return Object.assign(selected === 'nethernet' ? result : advertisement.fromServerName(result), { transport: selected })
++        return Object.assign(selected === 'nethernet' ? result : advertisement.fromServerName(result), { transport: selected, ...(selected === 'nethernet' ? { signalling: 'lan' } : {}) })
+       } finally {
+         con.close()
+       }
+     }))
+   } catch (error) {
+     signal.throwIfAborted()
+-    throw transport ? error.errors[0] : error
++    if (transport === 'raknet' || nethernet?.signalling || nethernet?.networkId != null) throw error.errors[0]
++    // Prefer existing UDP connections; HTTP is the fallback when neither responds.
++    try {
++      return await pingHttp({ host, port, nethernet, timeout, signal })
++    } catch (httpError) {
++      signal.throwIfAborted()
++      throw new AggregateError([...error.errors, httpError], 'Server discovery failed')
++    }
+   } finally {
+     controller.abort()
+   }
+diff --git a/src/nethernet/http.js b/src/nethernet/http.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..938527b5734dafa44dc428739aea9a1d14f7d316
+--- /dev/null
++++ b/src/nethernet/http.js
+@@ -0,0 +1,26 @@
++// bedboo patch: PrismarineJS/bedrock-protocol#831 (NetherNet HTTP discovery and signalling, unmerged).
++const { isIP } = require('net')
++const { pingHttp: discoverHttp } = require('nethernet')
++
++function signallingUrl ({ host = '127.0.0.1', port = 19132, nethernet = {} }) {
++  const address = isIP(host) === 6 ? `[${host}]` : host
++  return nethernet.url ?? `http://${address}:${port}`
++}
++
++async function pingHttp (options) {
++  const data = await discoverHttp(signallingUrl(options), options)
++  return {
++    transport: 'nethernet',
++    signalling: 'http',
++    motd: data.name,
++    protocol: data.protocol,
++    gameVersion: data.version,
++    levelName: data.level,
++    playersOnline: data.players,
++    playersMax: data.maxPlayers,
++    gamemodeId: data.gameType,
++    raw: data.raw
++  }
++}
++
++module.exports = { pingHttp, signallingUrl }
+diff --git a/src/nethernet/index.js b/src/nethernet/index.js
+index ec6b258308055cb3368a37721927c55870d3ea8c..e1d11a621a7a2b0c7224ed418404de6106d28995 100644
+--- a/src/nethernet/index.js
++++ b/src/nethernet/index.js
+@@ -1,3 +1,4 @@
++const { signallingUrl } = require('./http') // bedboo patch (bedrock-protocol#831)
+ const waitForPong = require('../client/ping')
+ const { Client, Server } = require('nethernet')
+ const { NethernetServerAdvertisement } = require('./advertisement')
+@@ -15,7 +16,13 @@ class NethernetClient {
+     this.nethernet = new Client(
+       options.networkId ?? 0n,
+       options.host || '255.255.255.255',
+-      { webrtcBackend: options.webrtcBackend }
++      {
++        webrtcBackend: options.webrtcBackend,
++        ...(options.signalling === 'http' && {
++          http: { url: signallingUrl({ ...options, nethernet: options }), serverKey: options.serverKey, onServerKey: options.onServerKey },
++          responseTimeoutMs: options.signallingConnectTimeout
++        })
++      }
+     )
+ 
+     this.nethernet.on('connected', (client) => {
+diff --git a/src/server.js b/src/server.js
+index 595059ecbc5c3050a8d4005462e94e46f76bd2f0..73d19c470cc35ad388f88c6954eb8d65d11df701 100644
+--- a/src/server.js
++++ b/src/server.js
+@@ -14,6 +14,7 @@ class Server extends EventEmitter {
+     this._closed = false
+ 
+     this.options = { ...Options.defaultOptions, ...options, nethernet: { signalling: 'lan', ...options.nethernet } }
++    if (this.options.nethernet.signalling === 'http') throw new Error('HTTP signalling is currently client-only')
+     this.options.maxPlayers ??= 3
+     this.validateOptions()
+ 
