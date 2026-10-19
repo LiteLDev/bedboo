@@ -101,13 +101,18 @@ dropped after 3 failures.
 src/safety.js runs during every task. When it takes over, pathfinder and digging stop and the task waits:
 
 - a hostile that hurt the bot or comes close (creepers from 6 blocks) is fought with skills/combat.js `fight`
-  (melee, bow when available, retreat when low) — or fled from without a weapon at low health;
-- in lava: jump towards the nearest solid ground; low on air: swim up (centred in the water column);
-- mineflayer-auto-eat eats when the food level drops below 16; between tasks the agent hunts when hungry and out of
-  food;
-- a death aborts the task; after the respawn the agent walks back, picks up its drops and retries the task;
+  (melee, bow when available, retreat when low) — or fled from without a weapon at low health; a mob it could not get
+  at within 15 s is left alone for a minute;
+- in lava: jump towards the nearest solid ground; low on air: swim up (centred in the water column); a falling
+  block in the head cell (gravel, sand): dig it out (never towards lava);
+- mineflayer-auto-eat eats when the food level drops below 16 (rotten flesh too when starving); between tasks the
+  agent hunts passive animals in sight when hungry and out of food, and cooks the meat in its furnace;
+- a death aborts the task; after the respawn the agent walks back (a shaft for a death deep underground, when it still
+  has a pickaxe), picks up its drops and retries the task; a lost tool is obtained again by the mine step that needs it;
 - digging never opens a cell next to lava or water, never drops into a cave deeper than 3 blocks, never digs what the
-  agent built (protected zones), and pathfinder never breaks stations / chests / doors.
+  agent built (protected zones), and pathfinder never breaks stations / chests / doors;
+- the event log records every damage taken (health, food, the blocks at the feet and the head, the nearest hostile)
+  and the server's death messages, so a failed run says what killed the bot.
 
 ## Blueprints
 
@@ -134,6 +139,7 @@ corepack pnpm --filter @bedboo/agent test:e2e -- --grep M1            # one run 
 AGENT_RUNS=5 corepack pnpm --filter @bedboo/agent test:e2e -- --grep M3 # the gate: ≥ 4 of 5
 AGENT_FULL_RUN=1 corepack pnpm --filter @bedboo/agent test:e2e -- --grep "full run"
 node packages/agent/scenarios/overworld/full-run.js --log             # the same chained run as a script
+node packages/agent/scenarios/overworld/final-chain.js --log          # M1→M5 → Nether → End, one world (below)
 ```
 
 | | from | steps | verified |
@@ -165,6 +171,17 @@ Nothing in a milestone is cheated: the harness only starts servers and takes sna
 Env: `AGENT_RUNS` (runs per milestone), `AGENT_DIFFICULTY`, `AGENT_REPORT_DIR` (reports + `runs.jsonl`; default
 `~/.cache/bedboo/agent-reports`), `AGENT_REFRESH=1` (rebuild the snapshots), `AGENT_LOG=1` (print the event stream),
 `AGENT_SNAPSHOT_TAG`.
+
+### The final chain
+
+`scenarios/overworld/final-chain.js` (`corepack pnpm --filter @bedboo/agent final-chain`, or
+`AGENT_FINAL_CHAIN=1 … test:e2e -- --grep "final chain"`) runs everything in one world with one bot and no reconnects:
+M1 → M5, U18's N1M3 (second bucket, iron ingot, back to the spawn, bucket-cast obsidian portal, into the Nether), back
+home through the bot's own portal (`--nether-ores`: N2's quartz, nether gold and ancient debris on the way), then
+U18's End part — the stronghold portal room is reached with cheats (locate + teleport, eyes of ender given; see
+docs/differences/U18.md), the bot fills the frames, enters the End, the dragon is killed by `/kill` (cheat), the bot
+fights two endermen and leaves through the exit portal. Every phase's time is printed; the report goes to
+`$AGENT_REPORT_DIR/final-chain-<time>.json`.
 
 ## Seed scouting
 
