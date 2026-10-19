@@ -460,57 +460,71 @@ async function fillBucket (bot, liquid, { signal, guard, maxDistance = 128, near
   const skipped = []
   let lastErr = null
   let walks = 0
-  while (walks < tries && Date.now() - started < timeout) {
-    u.throwIfAborted(signal)
-    const me = bot.entity.position
-    const left = candidates.filter((p) => usable(p) && !failed.some((f) => f.distanceTo(p) <= spread))
-    if (!left.length) break
-    left.sort((a, b) => a.distanceTo(me) - b.distanceTo(me))
-    const p = left[0]
-    walks++
-    const t = Date.now()
-    try {
+  // lava: keep the path off the pool's rim — a source just taken leaves air for a moment, a walkable dip to the
+  // pathfinder, until the lava flows back in (N1M5 #5 "tried to swim in lava" between two fills at 5.6 hp)
+  const { movements } = u.ensurePathfinder(bot)
+  const offRim = (block) => block?.position && lavaAround(bot, block.position) ? 1000 : 0
+  if (liquid === 'lava' && movements?.exclusionAreasStep) movements.exclusionAreasStep.push(offRim)
+  try {
+    return await fillLoop()
+  } finally {
+    const i = movements?.exclusionAreasStep?.indexOf(offRim) ?? -1
+    if (i >= 0) movements.exclusionAreasStep.splice(i, 1)
+  }
+
+  async function fillLoop () {
+    while (walks < tries && Date.now() - started < timeout) {
+      u.throwIfAborted(signal)
+      const me = bot.entity.position
+      const left = candidates.filter((p) => usable(p) && !failed.some((f) => f.distanceTo(p) <= spread))
+      if (!left.length) break
+      left.sort((a, b) => a.distanceTo(me) - b.distanceTo(me))
+      const p = left[0]
+      walks++
+      const t = Date.now()
+      try {
       // lava: from a cell with no lava beside or under it (a bot at the pool's rim walked into it: N1M3 #1, "tried to
       // swim in lava" at 8 hp)
-      const goal = liquid === 'lava' ? lavaSafeGoal(bot, p, goals) : reachGoal(p, goals)
-      await u.goto(bot, goal, { signal, timeout: Math.max(5000, Math.min(45000, timeout - (Date.now() - started))), retries: 1 })
-      const block = bot.blockAt(p)
-      if (!isSource(block)) {
-        skip.add(p.toString())
-        skipped.push(`${p} gone (${block?.name})`)
-        continue
-      }
-      const eye = bot.entity.position.offset(0, bot.entity.eyeHeight ?? 1.62, 0)
-      const reach = eye.distanceTo(p.offset(0.5, 0.5, 0.5))
-      if (reach > 5.0) {
-        skip.add(p.toString())
-        skipped.push(`${p} out of reach (${reach.toFixed(1)} from ${bot.entity.position.floored()})`)
-        u.log(bot, `${liquid} source ${p}: out of reach after the walk (${reach.toFixed(1)} blocks from ${bot.entity.position.floored()})`)
-        continue
-      }
-      const before = u.count(bot, filled)
-      const others = { water_bucket: u.count(bot, 'water_bucket'), lava_bucket: u.count(bot, 'lava_bucket') }
-      await holdBucket(bot, 'bucket', { guard, signal })
-      await bot.activateBlock(block)
-      await waitCount(bot, filled, before + 1, { timeout: 3000, signal }).catch((err) => {
+        const goal = liquid === 'lava' ? lavaSafeGoal(bot, p, goals) : reachGoal(p, goals)
+        await u.goto(bot, goal, { signal, timeout: Math.max(5000, Math.min(45000, timeout - (Date.now() - started))), retries: 1 })
+        const block = bot.blockAt(p)
+        if (!isSource(block)) {
+          skip.add(p.toString())
+          skipped.push(`${p} gone (${block?.name})`)
+          continue
+        }
+        const eye = bot.entity.position.offset(0, bot.entity.eyeHeight ?? 1.62, 0)
+        const reach = eye.distanceTo(p.offset(0.5, 0.5, 0.5))
+        if (reach > 5.0) {
+          skip.add(p.toString())
+          skipped.push(`${p} out of reach (${reach.toFixed(1)} from ${bot.entity.position.floored()})`)
+          u.log(bot, `${liquid} source ${p}: out of reach after the walk (${reach.toFixed(1)} blocks from ${bot.entity.position.floored()})`)
+          continue
+        }
+        const before = u.count(bot, filled)
+        const others = { water_bucket: u.count(bot, 'water_bucket'), lava_bucket: u.count(bot, 'lava_bucket') }
+        await holdBucket(bot, 'bucket', { guard, signal })
+        await bot.activateBlock(block)
+        await waitCount(bot, filled, before + 1, { timeout: 3000, signal }).catch((err) => {
         // the click used another bucket (the hand changed under it): say so, it explains the liquid where it should not be
-        for (const [k, n] of Object.entries(others)) if (u.count(bot, k) < n) u.log(bot, `bucket desync: a ${k} was used on ${p} instead of the empty bucket`)
-        throw err
-      })
-      u.log(bot, `filled a ${filled} at ${p}`)
-      return p
-    } catch (err) {
-      if (signal?.aborted) throw err
-      lastErr = err
-      skip.add(p.toString())
-      // a quick "no path" is about that one block; a walk that stalled or ran out of time is about that whole edge
-      if (Date.now() - t > 10000) failed.push(p)
-      const fire = u.findBlocks(bot, ['fire'], { maxDistance: 8, count: 64 }).length
-      u.log(bot, `${liquid} source ${p}: ${err.message} (bot at ${bot.entity.position.floored()} in ${bot.blockAt(bot.entity.position.floored())?.name}, ${fire} fire blocks within 8)`)
+          for (const [k, n] of Object.entries(others)) if (u.count(bot, k) < n) u.log(bot, `bucket desync: a ${k} was used on ${p} instead of the empty bucket`)
+          throw err
+        })
+        u.log(bot, `filled a ${filled} at ${p}`)
+        return p
+      } catch (err) {
+        if (signal?.aborted) throw err
+        lastErr = err
+        skip.add(p.toString())
+        // a quick "no path" is about that one block; a walk that stalled or ran out of time is about that whole edge
+        if (Date.now() - t > 10000) failed.push(p)
+        const fire = u.findBlocks(bot, ['fire'], { maxDistance: 8, count: 64 }).length
+        u.log(bot, `${liquid} source ${p}: ${err.message} (bot at ${bot.entity.position.floored()} in ${bot.blockAt(bot.entity.position.floored())?.name}, ${fire} fire blocks within 8)`)
+      }
     }
+    if (!walks) throw new Error(`no reachable ${liquid} source ${only ? 'left in the pool' : `within ${maxDistance} blocks`}`)
+    throw new Error(`could not fill a bucket with ${liquid} (${walks} sources tried in ${Math.round((Date.now() - started) / 1000)} s): ${lastErr?.message ?? skipped.slice(0, 3).join(', ') ?? 'none in reach'}`)
   }
-  if (!walks) throw new Error(`no reachable ${liquid} source ${only ? 'left in the pool' : `within ${maxDistance} blocks`}`)
-  throw new Error(`could not fill a bucket with ${liquid} (${walks} sources tried in ${Math.round((Date.now() - started) / 1000)} s): ${lastErr?.message ?? skipped.slice(0, 3).join(', ') ?? 'none in reach'}`)
 }
 
 /** whether lava is next to (or under) a feet cell, diagonals included */
