@@ -462,10 +462,6 @@ function inject (bot) {
   function onLevelEvent (packet) {
     const state = current
     if (!state || state.done || state.legacy || state.index < 0) return
-    // an instant break (start + predict in one input) has no progress to follow: a report now is about what replaced
-    // the block (the water a seagrass or a waterlogged plant leaves, sometimes in the batch BEFORE the update_block),
-    // not the dug block's speed (U16a: seen once in digEverything › short_dry_grass after seagrass)
-    if (state.ticks === 0) return
     if (packet.event !== 'block_start_break' && packet.event !== 'block_break_speed') return
     if (!packet.position || !samePosition(packet.position, state.position)) return
     const data = Number(packet.data)
@@ -473,6 +469,11 @@ function inject (bot) {
     // (positions only: another player breaking the same block is indistinguishable; at worst predict_break goes out
     // early, BDS restores the block and the dig goes on until BDS breaks it)
     state.lastServerIndex = state.index
+    // an instant break (start + predict in one input; already predicted) has no progress to follow: a report now may be
+    // about what replaced the block (the water a plant in a water source leaves, sometimes in the batch BEFORE the
+    // update_block), not the dug block's speed — it only shows the server is still at it (U16a: seen once in
+    // digEverything › short_dry_grass after seagrass)
+    if (state.ticks === 0) return
     // the first report is the dug block's (once it is destroyed BDS, still holding, reports what replaced it — e.g.
     // the water of ice — in the same batch as the update_block)
     if (state.serverData === null) state.serverData = data

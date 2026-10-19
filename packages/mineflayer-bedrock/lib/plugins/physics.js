@@ -123,6 +123,11 @@ function inject (bot, { physicsEnabled }) {
   bot.setControlState = (control, state) => {
     assert.ok(control in controlState, `invalid control: ${control}`)
     assert.ok(typeof state === 'boolean', `invalid state: ${state}`)
+    // an explicit sprint release also ends a double-tap sprint (stop_sprinting goes out with the next input, U16a)
+    if (control === 'sprint' && !state && tapSprint) {
+      tapSprint = false
+      controlGen++
+    }
     if (controlState[control] === state) return
     controlState[control] = state
     if (control === 'sneak' || control === 'sprint') controlGen++
@@ -245,13 +250,15 @@ function inject (bot, { physicsEnabled }) {
     if (rawControl.jump && !prevInput?.rawControl?.jump) keyEdges.jumpPressed = keyEdges.tick
     if (!rawControl.forward && prevInput?.rawControl?.forward) keyEdges.forwardReleased = keyEdges.tick
     if (rawControl.forward && !prevInput?.rawControl?.forward) {
-      if (keyEdges.tick - keyEdges.forwardPressed <= DOUBLE_TAP_TICKS) tapSprint = true
+      if (keyEdges.tick - keyEdges.forwardPressed <= DOUBLE_TAP_TICKS && !riding()) tapSprint = true
       keyEdges.forwardPressed = keyEdges.tick
     }
     // BDS sprints on its own after a double-tapped forward: predict it (and report it with the sprinting flags, like
     // the vanilla client does on its own double tap), or every such step ends in corrections. It lasts while forward
-    // is held and sprinting is possible (not flying, not sneaking or backing, no item in use, food above 6).
-    if (tapSprint && (!rawControl.forward || flying || !control.forward || control.back || control.sneak || usingItem || !mayTapSprint())) tapSprint = false
+    // is held and sprinting is possible (not flying or riding, not sneaking or backing, no item in use, food above 6,
+    // not stopped by a wall) or until the sprint control is released explicitly.
+    if (tapSprint && (!rawControl.forward || flying || riding() || control.back || control.sneak || usingItem ||
+      bot.entity?.isCollidedHorizontally || !mayTapSprint())) tapSprint = false
     if (tapSprint && !control.sprint) control = { ...control, sprint: true }
     return {
       control,
@@ -966,6 +973,7 @@ function inject (bot, { physicsEnabled }) {
    * input is the unsimulated one.
    */
   function applyTeleport (feet, onGround, serverTick) {
+    tapSprint = false
     const entity = bot.entity
     entity.position.update(feet)
     entity.velocity.set(0, 0, 0)
@@ -1211,6 +1219,7 @@ function inject (bot, { physicsEnabled }) {
   // a glide does not survive a death / dimension change: the server's next gliding flag starts a new one
   // (entityElytraFlew), even without a gliding = false in between
   bot.on('death', () => resetGliding(bot.entity))
+  bot.on('death', () => { tapSprint = false })
   bot.on('respawn', () => resetGliding(bot.entity))
 
   bot.elytraFly = async () => {

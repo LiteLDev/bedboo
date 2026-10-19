@@ -180,6 +180,34 @@ describe('wave-4 review fixes (U16a)', function () {
       }
       assert.ok(!inputs().some((p) => flags(p).includes('sprinting')), 'sneaking: no sprint')
     })
+
+    it('an explicit setControlState(\'sprint\', false) ends it (stop_sprinting); no tap sprint while riding', async () => {
+      const created = await spawned()
+      const { bot, tick, inputs } = created
+      bot.game.gameMode = 'survival'
+      bot.food = 20
+      for (const [forward, ticks] of [[true, 3], [false, 1], [true, 3]]) {
+        bot.setControlState('forward', forward)
+        tick(ticks)
+      }
+      assert.ok(flags(inputs().at(-1)).includes('sprinting'))
+      bot.setControlState('sprint', false)
+      tick(1)
+      assert.ok(flags(inputs().at(-1)).includes('stop_sprinting'), 'stop_sprinting')
+      tick(3)
+      assert.ok(!flags(inputs().at(-1)).includes('sprinting'), 'walking while forward is still held')
+      bot.clearControlStates()
+      tick(2)
+      // riding: forward is the vehicle's, no tap sprint
+      bot.vehicle = { id: 77, runtimeId: 77n, uniqueId: -77n, name: 'boat', yaw: 0, pitch: 0, position: new Vec3(2.5, -61, 0.5) }
+      bot.emit('mount')
+      created.client.clearSent()
+      for (const [forward, ticks] of [[true, 2], [false, 1], [true, 3]]) {
+        bot.setControlState('forward', forward)
+        tick(ticks)
+      }
+      assert.ok(!inputs().some((p) => flags(p).includes('sprinting')), 'no sprint while riding')
+    })
   })
 
   describe('full-suite flake: a server hotbar select older than our own selection', () => {
@@ -189,8 +217,10 @@ describe('wave-4 review fixes (U16a)', function () {
       bot.setQuickBarSlot(1)
       bot.setQuickBarSlot(0) // e.g. unequip('hand') then the caller's own choice, in one batch
       client.clearSent()
+      const selectedAt = bot._bedrock.hotbarSelection.last().at
       // BDS ran a console /clear between them: its player_hotbar still has slot 1
       client.receive('player_hotbar', { selected_slot: 1, window_id: 'inventory', select_slot: true })
+      assert.strictEqual(bot._bedrock.hotbarSelection.last().at, selectedAt, 'a resend does not extend the window')
       assert.strictEqual(bot.quickBarSlot, 0)
       assert.strictEqual(bot.heldItem?.name, 'dirt')
       assert.deepStrictEqual(client.sent('mob_equipment').map((p) => p.selected_slot), [0], 'our selection again')

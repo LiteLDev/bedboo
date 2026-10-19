@@ -69,8 +69,8 @@ function inject (bot) {
   // the latest selection this client sent: a player_hotbar select the server built before it read it must not undo it
   // (the inventory plugin checks it, U16a)
   let selection = null
-  function sendSelection (slot) {
-    selection = { slot, at: Date.now() }
+  function sendSelection (slot, { resend = false } = {}) {
+    if (!resend) selection = { slot, at: Date.now() } // a resend keeps the time of the selection (a bounded window)
     bot._client.queue('mob_equipment', {
       runtime_entity_id: bot._bedrock.ids?.selfRuntimeId?.() ?? bot.entity?.runtimeId ?? 0n,
       item: bot._bedrock.heldNetworkItem(),
@@ -82,7 +82,7 @@ function inject (bot) {
   if (bot._bedrock) {
     bot._bedrock.hotbarSelection = {
       last: () => selection,
-      resend: () => { if (selection) sendSelection(selection.slot) }
+      resend: () => { if (selection) sendSelection(selection.slot, { resend: true }) }
     }
   }
 
