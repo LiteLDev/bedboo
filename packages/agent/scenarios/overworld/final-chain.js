@@ -139,8 +139,8 @@ async function finalChain ({ log = () => {}, cfg = config(), netherOres = false,
         }
         // wood for later (the shield's planks, sticks, a table): deep in a mine a log is a long climb away
         const logs = () => inventory.allItems(bot).filter((i) => /_log$/.test(i.name)).reduce((n, i) => n + i.count, 0)
-        if (logs() < 6) {
-          await task('gather', { item: 'log', count: 6 - logs() }, { name: 'camp: logs', timeout: 90000, retries: 0 }).catch((err) => { out.logs = err.message })
+        if (logs() < 8) {
+          await task('gather', { item: 'log', count: 8 - logs() }, { name: 'camp: logs', timeout: 90000, retries: 0 }).catch((err) => { out.logs = err.message })
         }
         // meat for later (cooked in the gear phase): the animals in sight
         await task('food', { min: 0, items: 6, stock: true, radius: 48, explore: false, fishing: false, timeout: 55000 }, { name: 'camp: meat', timeout: 60000, retries: 0 })
@@ -157,6 +157,12 @@ async function finalChain ({ log = () => {}, cfg = config(), netherOres = false,
         const missing = GEAR.filter((g) => inventory.count(bot, g.item) < (g.count ?? 1))
         const ingots = missing.reduce((n, g) => n + g.ingots * ((g.count ?? 1) - inventory.count(bot, g.item)), 0) + 1
         if (inventory.count(bot, 'iron_ingot') < ingots) {
+          // coal for the smelt first: without it the planner burns the carried logs, and the shield's planks and the
+          // sticks of a later pickaxe are then a climb to the surface away
+          const coal = Math.ceil((ingots - inventory.count(bot, 'iron_ingot')) / 8) + 1
+          if (inventory.count(bot, 'coal') < coal) {
+            await task('obtain', { item: 'coal', count: coal }, { name: 'gear: coal', timeout: 2 * MINUTES, retries: 0 }).catch(() => {})
+          }
           await task('obtain', { item: 'iron_ingot', count: ingots }, { name: `gear: ${ingots} iron ingots`, timeout: 9 * MINUTES, retries: 1 })
         }
         const made = []
