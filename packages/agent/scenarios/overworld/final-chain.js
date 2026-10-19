@@ -166,9 +166,13 @@ async function finalChain ({ log = () => {}, cfg = config(), netherOres = false,
           await task('obtain', { item: 'iron_ingot', count: ingots }, { name: `gear: ${ingots} iron ingots`, timeout: 9 * MINUTES, retries: 1 })
         }
         const made = []
+        const failed = {}
         for (const g of missing) {
           if (inventory.count(bot, g.item) >= (g.count ?? 1)) continue
-          await task('obtain', { item: g.item, count: g.count ?? 1 }, { name: `gear: ${g.item}`, timeout: 3 * MINUTES, retries: 0 })
+          // the armor is what this phase is for; the rest (shield, spares) is best effort
+          const r = task('obtain', { item: g.item, count: g.count ?? 1 }, { name: `gear: ${g.item}`, timeout: 3 * MINUTES, retries: 0 })
+          if (ARMOR_SLOT[g.item]) await r
+          else await r.catch((err) => { failed[g.item] = err.message })
           made.push(g.item)
         }
         // sticks for a pickaxe made later (deep in a mine a log is a long climb away)
@@ -178,7 +182,7 @@ async function finalChain ({ log = () => {}, cfg = config(), netherOres = false,
         if (worn.length < 4) throw new Error(`armor worn: ${worn.join(', ') || 'none'}`)
         // the camp's meat: cooked while the furnace is out anyway (best effort)
         await task('food', { min: 0, items: 0, stock: true, explore: false, fishing: false, timeout: 90000 }, { name: 'gear: cook', timeout: 2 * MINUTES, retries: 0 }).catch(() => {})
-        return { made, worn, shield: bot.inventory.slots[45]?.name ?? null }
+        return { made, worn, shield: bot.inventory.slots[45]?.name ?? null, failed }
       }
     })
     plan.push(milestone('M3'))
