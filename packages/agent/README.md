@@ -173,16 +173,21 @@ node packages/agent/scenarios/overworld/final-chain.js --log          # M1→M5 
 | M4 | M3's end | surface, walk to the world spawn, build house5x5 | every block of the house, ≤ 48 blocks from the spawn |
 | M5 | M4's end | coal, copper, iron; emerald (mountains); lapis, gold, redstone, diamond | one new item from each of the 8 ores |
 
-Gate on BDS 1.26.51.1 (2026-10-19, seed 1234, easy, 5 runs each from the previous milestone's snapshot; failure
-reasons and timings in `$AGENT_REPORT_DIR/runs.jsonl`; this code minus the later climb-out of the water in `unstick`):
+Gate on BDS 1.26.51.1 (2026-10-20, seed 1234, easy, 5 runs each from the previous milestone's snapshot; failure
+reasons and timings in `$AGENT_REPORT_DIR/runs.jsonl`; code of e4e832b — the final chain's code minus its late
+declutter, the cobwebs for a fishing rod and the camp's extra meat, which only the chain uses):
 
 | | passed | wall time per run (s) | notes |
 |---|---|---|---|
-| M1 | 5/5 | 101, 113, 88, 100, 97 | |
-| M2 | 5/5 | 217, 222, 218, 261, 230 | night falls: zombies fought; run 5 re-run (the first try got no BDS slot) |
-| M3 | 5/5 | 92, 100, 94, 115, 91 | diamonds at y 3–4 (deepslate diamond ore) |
-| M4 | 5/5 | 180, 295, 253, 206, 182 | 125 cells verified; two runs survived a death at night |
-| M5 | 4/5 | 459, 358, 600 ✗, 307, 352 | deaths survived in 3 runs (drops recovered); ✗: stuck at the lake west of the spawn on the way to the emerald, out of time |
+| M1 | 5/5 | 76, 91, 93, 82, 96 | |
+| M2 | 5/5 | 210, 232, 221, 200, 237 | night falls during the run: zombies fought |
+| M3 | 5/5 | 126, 92, 113, 113, 97 | diamonds at y 3–4 (deepslate diamond ore) |
+| M4 | 5/5 | 183, 174, 172, 176, 172 | 125 cells verified |
+| M5 | 5/5 | 409, 303, 461, 483, 533 | |
+
+Earlier rounds on the way there: M4 4/5 (one run failed after a death at night), M5 3/5 (copper dug under
+the lake, its drops lost in the water → a spot whose digs give nothing is left; redstone dug in a shaft without a
+'mine' event → ores dug by shafts and the pathfinder are counted).
 
 World: the scouted seed in `scenarios/overworld/seed.json` (default generator), survival, difficulty
 `AGENT_DIFFICULTY` (default `easy`), vanilla gamerules (mobs spawn, day and night pass). Each milestone runs on a
@@ -212,7 +217,7 @@ and no reconnects:
 | provisions | back to the spawn; ≥ 8 food items (hunted around the spawn, exploring for animals; fishing when none is left; cooked) | 5 + 2×4 min |
 | N1M3 | U18's nether entry: second bucket, iron ingot (both carried by then), bucket-cast obsidian at a lava pool, frame, flint and steel, into the Nether | 45 min |
 | home | U18's nether skill: back through the bot's own portal (`--nether-ores`: N2's quartz, nether gold and ancient debris on the way) | 14 min |
-| E1 | U18's End part — the stronghold portal room reached with cheats (locate + teleport, eyes of ender given; docs/differences/U18.md), the bot fills the frames, enters the End, the dragon is killed by `/kill` (cheat), the bot fights two endermen and leaves through the exit portal | 4 + 13 + 4 min (the fight's budget includes ~5 min for U18's walk up from the arrival platform, which stalls in most chained runs) |
+| E1 | U18's End part — the stronghold portal room reached with cheats (locate + teleport, eyes of ender given; docs/differences/U18.md), the bot fills the frames, enters the End, the dragon is killed by `/kill` (cheat), the bot fights two endermen and leaves through the exit portal | 4 + 13 + 4 min (the fight's budget includes ~5 min for U18's walk up from the arrival platform, which stalled for ~5 min in four development runs, in none of the acceptance runs) |
 
 Between scenario steps the Agent sleeps through a night in its bed (and before every phase; without a bed and
 without armor it would wait in its house or a sealed hole), tosses junk when the inventory fills up, hunts when
@@ -224,6 +229,27 @@ phase.
 Earlier runs (before FINAL-FIX-AGENT-A, M1 → M5 → provisions → N1M3 only): none passed every phase — drowned in a
 flooded cave going back to the spawn; no food, the portal skill searching a mineshaft for 13 min, a starving fall;
 stuck in the lake west of the spawn; killed by a spider at night during provisions; stuck 8 min in its own copper pit.
+
+**Acceptance** (BDS 1.26.51.1, 2026-10-20, seed 1234, easy, code of 4903066 = this version; a fresh world per run,
+three runs at a time; phase seconds): **5/5 end to end**, no deaths, no stuck task.
+
+| run | total | M1 | camp | M2 | gear | down | M3 | M4 | M5 | provisions | N1M3 | home | E1: stronghold, activate, dragon, endermen, exit | nights slept |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| e1 | 35.3 min | 97 | 194 | 169 | 523 | 21 | 69 | 183 | 285 | 243 | 243 | 5 | 6, 12, 2, 46, 8 | 2 |
+| e2 | 40.6 min | 87 | 161 | 324 | 564 | 110 | 83 | 236 | 298 | 169 | 296 | 5 | 5, 15, 2, 47, 11 | 2 |
+| e3 | 34.6 min | 92 | 110 | 189 | 667 | 95 | 70 | 228 | 201 | 101 | 208 | 5 | 5, 11, 2, 44, 16 | 2 |
+| e4 | 37.5 min | 78 | 161 | 374 | 524 | 96 | 63 | 248 | 199 | 181 | 214 | 5 | 6, 14, 2, 44, 23 | 2 |
+| e5 | 37.0 min | 96 | 188 | 292 | 666 | 79 | 38 | 238 | 194 | 148 | 191 | 5 | 6, 12, 2, 42, 7 | 3 |
+
+Chained runs before (each failure fixed before the next round): full5, full6, full7 and a1 passed (40.1, 52.2, 32.9
+and 42.5 min); full8 failed M3 — three plain diamond ores at y 9–10, none of deepslate (→ the "down to the diamonds"
+phase); full9 failed the End: U18's walk from the arrival platform up to the island stalled 305 s and the fight ran
+out of time (→ its budget covers the walk); b1 and c2 failed M3 with 2 and 1 diamond ores counted — the pathfinder
+and the shaft had dug the others (→ every ore the bot digs is counted); b2 drowned in an aquifer in the gear phase;
+c1 ran out of time in M3 fighting a creeper behind a wall every 12 s (→ a mob given up on twice stays ignored); d1
+reached the stronghold with a full inventory, its kit of eyes on the ground (→ the inventory is cleared of
+late-useless blocks and ores before every phase); d2 found 3 food items in provisions (→ more meat at the camp,
+cobwebs for a fishing rod).
 
 Development runs of this version's overworld part (seed 1234, easy; phase seconds; each failure fixed before the
 next round):
