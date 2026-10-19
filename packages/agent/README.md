@@ -219,7 +219,22 @@ it started at are printed; the report goes to `$AGENT_REPORT_DIR/final-chain-<ti
 acceptance run): `--from m5` starts from a milestone snapshot after that milestone, `--until provisions` stops after a
 phase.
 
-RESULTS_PLACEHOLDER
+Earlier runs (before FINAL-FIX-AGENT-A, M1 → M5 → provisions → N1M3 only): none passed every phase — drowned in a
+flooded cave going back to the spawn; no food, the portal skill searching a mineshaft for 13 min, a starving fall;
+stuck in the lake west of the spawn; killed by a spider at night during provisions; stuck 8 min in its own copper pit.
+
+Development runs of this version's overworld part (seed 1234, easy; phase seconds; each failure fixed before the
+next round):
+
+| run | M1, camp, M2, gear, M3, M4, M5 (s) | result |
+|---|---|---|
+| ow1 | 83, 289, 177, 542, 186, 211, — | M5: 24 gold ores dug, no raw gold — the inventory was full (→ junk tossed, unwanted drops left) |
+| ow2 | 89, 228, 206, 434, — | M3: the logs had been burnt as fuel, a log trip from y -12 (→ coal first, sticks kept); auto-eat stuck "eating" (→ guard) |
+| ow3 | 85, 181, 212, 468, 362, 102, — | M5: full inventory, as ow1 |
+| ow4 | 100, 368, 227, 426, 121, — | M4: suffocated in a pillar step retried after a meal (→ retried after a fight only); recovery left the drops at the first fight (→ goes on) |
+| ow5 | 94, 302, 188, — | gear: the shield's planks were a log trip from underground (→ shield and spares best effort) |
+| full1 | 79, 131, 260, 405, 59, 197, 196 | provisions: an x/z goal skipped the climb to the surface, a zombie behind a wall fought every 12 s (→ both fixed); stopped |
+
 
 ## Seed scouting
 
