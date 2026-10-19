@@ -103,6 +103,41 @@ describe('final fix (agent): safety under U18 guards', () => {
     safety.attackers.clear()
     safety.ignored.set(8, Date.now() + 60000)
     assert.strictEqual(safety.threat(false)?.target, creeper, 'a close creeper is fought anyway')
+    creeper.position = new Vec3(4.5, 0, 0.5)
+    assert.strictEqual(safety.threat(false)?.target, creeper, 'within 5 blocks')
+    // given up on twice (behind a wall): ignored — for 3 minutes
+    safety._givenUp.set(8, { n: 2, at: Date.now() })
+    assert.strictEqual(safety.threat(false), null)
+    safety._givenUp.set(8, { n: 2, at: Date.now() - 4 * 60 * 1000 })
+    assert.strictEqual(safety.threat(false)?.target, creeper, 'the hard ignore decays')
+  })
+
+  it('meal holds are counted (auto-eat back on with the last one); three failed meals pause auto-eat', () => {
+    const bot = fakeBot()
+    const ae = new EventEmitter()
+    ae.enabled = true
+    ae.disableAuto = () => { ae.enabled = false }
+    ae.enableAuto = () => { ae.enabled = true }
+    bot.autoEat = ae
+    const safety = new Safety(bot)
+    safety.start()
+    const fight = safety.suppressMeals()
+    const placement = safety.suppressMeals()
+    assert.strictEqual(ae.enabled, false)
+    fight()
+    fight()
+    assert.strictEqual(ae.enabled, false, 'still held by the placement (and a double release counts once)')
+    placement()
+    assert.strictEqual(ae.enabled, true)
+    // meals that began and failed, as runner.js guardAutoEat reports them
+    ae._bedbooOnFail()
+    ae._bedbooOnFail()
+    assert.strictEqual(ae.enabled, true)
+    ae._bedbooOnFail()
+    assert.strictEqual(ae.enabled, false, 'paused')
+    clearTimeout(safety._mealPause)
+    safety.stop()
+    assert.strictEqual(ae._bedbooOnFail, null)
   })
 
   it('a fight against a mob out of reach gives way to one hitting the bot from up close', () => {
@@ -259,6 +294,26 @@ describe('final fix (agent): mineflayer-auto-eat guard', () => {
     ae._eating = true
     await assert.rejects(ae.eat(), /Already eating/)
     assert.strictEqual(ae.isEating, true)
+  })
+
+  it('a meal that began and failed is reported (auto-eat throws, no eatFail event)', async () => {
+    const { guardAutoEat } = require('../src/runner')
+    const ae = new EventEmitter()
+    ae._eating = false
+    ae.eat = async () => {
+      ae.emit('eatStart')
+      throw new Error('Eating was cancelled')
+    }
+    let fails = 0
+    ae._bedbooOnFail = () => fails++
+    guardAutoEat(ae)
+    await assert.rejects(ae.eat(), /cancelled/)
+    assert.strictEqual(fails, 1)
+    ae.eat = async () => { throw new Error('No food') } // before the meal: no report
+    ae._bedbooGuarded = false
+    guardAutoEat(ae)
+    await assert.rejects(ae.eat(), /No food/)
+    assert.strictEqual(fails, 1)
   })
 })
 

@@ -182,7 +182,8 @@ async function fish (bot, { count = 3, timeout = 180000, signal, obtainRod = fal
     if (inventory.count(bot, 'string') < 2) {
       const web = world.findBlocks(bot, ['web'], { maxDistance: 48, count: 1 })[0]
       if (!web) throw new SkillError(`no fishing rod, ${inventory.count(bot, 'string')} string and no cobweb in sight`, { code: 'MISSING' })
-      await require('./obtain').obtain(bot, { item: 'string', count: 2, signal })
+      // (the webs in sight only: obtain would explore for more)
+      await require('../dig').collectBlocks(bot, { item: 'string', count: 2 - inventory.count(bot, 'string'), blocks: ['web'], maxDistance: 48, exploreDistance: 0, timeout: 60000, signal })
     }
     await require('./obtain').obtain(bot, { item: 'fishing_rod', count: 1, signal })
   }

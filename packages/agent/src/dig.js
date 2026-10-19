@@ -119,7 +119,8 @@ async function collectBlocks (bot, { item = null, count = 1, blocks, maxDistance
         mined[name] = (mined[name] ?? 0) + 1
         dug++
         failures = 0
-        if (item && inventory.count(bot, item) <= had) {
+        interruptions = 0
+        if (item && inventory.count(bot, item) <= had && sureDrop(bot, name, item)) {
           // dug, nothing picked up: three in a row → this spot loses its drops (water under the ore, a ledge):
           // leave it for ten minutes and look elsewhere
           if (++fruitless >= 3) {
@@ -297,6 +298,15 @@ async function digDown (bot, targetY, { signal, maxSteps = 400 } = {}) {
     await waitTicks(bot, 2, signal)
   }
   throw new SkillError(`digDown: too many steps (at ${navigate.fmt(bot.entity.position)})`, { code: 'FAILED' })
+}
+
+/**
+ * `block` always drops `item` (a yield of 1 or more; not filler, which the walk to the block uses up as scaffolding):
+ * a dig that gave none lost its drop
+ */
+function sureDrop (bot, block, item) {
+  if (inventory.FILLER.includes(item)) return false
+  return require('./knowledge').blocksDropping(bot.registry, item).some((s) => s.block === block && s.yield >= 1)
 }
 
 /** an ore dug on the way down (a shaft through a vein): mined like any other — the milestones count these events */

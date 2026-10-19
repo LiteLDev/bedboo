@@ -35,6 +35,8 @@ const { AbortError } = require('./errors')
 
 /** projectiles a melee hit sends back (ghast fireballs) */
 const DEFLECTABLE = new Set(['fireball', 'large_fireball'])
+/** how long fights given up on a mob count towards ignoring it for good */
+const GIVEN_UP_MS = 3 * 60 * 1000
 /** melee mobs that follow the bot at its own speed: no use running from them */
 const CHASERS = new Set(['zombie', 'husk', 'drowned', 'zombie_villager', 'zombie_villager_v2', 'spider', 'cave_spider', 'zombified_piglin', 'zombie_pigman', 'piglin', 'piglin_brute', 'hoglin', 'zoglin', 'vindicator', 'enderman', 'silverfish', 'endermite', 'slime', 'magma_cube'])
 
@@ -80,6 +82,10 @@ class Safety extends EventEmitter {
     on(this.bot, 'entitySwingArm', (e) => { if (e !== this.bot.entity) this.swings.set(e, Date.now()) })
     on(this.bot, 'physicsTick', () => this.onTick())
     on(this.bot, 'health', () => this.tuneEating())
+    // auto-eat's automatic mode as the runner set it up: the meal holds (suppressMeals) restore it; meals that failed
+    // after they started are reported by runner.js guardAutoEat (auto-eat's strictErrors throws, no 'eatFail')
+    this._autoEatWanted = !!this.bot.autoEat?.enabled
+    if (this.bot.autoEat) this.bot.autoEat._bedbooOnFail = () => this.mealFailed()
     if (this.bot.autoEat) {
       // a meal that starts or ends is no stuck one (back-to-back meals keep isEating set for long)
       on(this.bot.autoEat, 'eatStart', () => { this._eatingSince = 0; this.claim('eat') })
@@ -91,6 +97,7 @@ class Safety extends EventEmitter {
 
   stop () {
     this.enabled = false
+    if (this.bot.autoEat?._bedbooOnFail) this.bot.autoEat._bedbooOnFail = null
     for (const [emitter, event, fn] of this._listeners) emitter.removeListener(event, fn)
     this._listeners = []
     this.release(this.busy?.type)
@@ -194,12 +201,36 @@ class Safety extends EventEmitter {
     const now = Date.now()
     this._mealFails = (this._mealFails ?? []).filter((t) => now - t < 15000)
     this._mealFails.push(now)
-    const ae = this.bot.autoEat
-    if (this._mealFails.length < 3 || !ae?.enabled || this._mealPause) return
+    if (this._mealFails.length < 3 || this._mealPause) return
     this.log('safety: meals keep failing; auto-eat paused for 10 s')
-    ae.disableAuto()
     this._mealFails = []
-    this._mealPause = setTimeout(() => { this._mealPause = null; if (this.enabled) ae.enableAuto() }, 10000)
+    const release = this.suppressMeals()
+    this._mealPause = setTimeout(() => { this._mealPause = null; release() }, 10000)
+  }
+
+  /**
+   * Hold mineflayer-auto-eat's automatic mode off (a fight, a placement, a pause after failing meals); the returned
+   * function releases the hold. Counted: auto-eat comes back on when the last hold is released, never while a fight
+   * still holds it. @returns {() => void}
+   */
+  suppressMeals () {
+    this._mealHolds = (this._mealHolds ?? 0) + 1
+    this.applyMeals()
+    let released = false
+    return () => {
+      if (released) return
+      released = true
+      this._mealHolds--
+      this.applyMeals()
+    }
+  }
+
+  applyMeals () {
+    const ae = this.bot.autoEat
+    if (!ae || typeof ae.disableAuto !== 'function') return
+    if (this._mealHolds > 0) {
+      if (ae.enabled) ae.disableAuto()
+    } else if (this._autoEatWanted && !ae.enabled) ae.enableAuto()
   }
 
   onHurt () {
@@ -264,10 +295,10 @@ class Safety extends EventEmitter {
       // a mob given up on (could not get at it: behind a wall, across a gap) stays ignored until it hurts the bot —
       // it is then an attacker — even right next to the bot (a zombie behind a block 3 blocks away is fought
       // forever otherwise)
-      // (a creeper right next to the bot is never ignored: it hurts only once it blows up — unless it was given up on
-      // over and over: behind a wall, it never gets there)
+      // (a creeper within 5 blocks is never ignored: it hurts only once it blows up — unless it was given up on twice
+      // in the last 3 minutes: behind a wall, it never gets there)
       exclude: (e) => ignoredBy(e) || Math.abs(e.position.y - pos.y) > eff.maxDy ||
-        ((this.ignored.get(e.id) ?? 0) > now && !(e.name === 'creeper' && e.position.distanceTo(pos) < 3 && !this.hardIgnored(e.id)))
+        ((this.ignored.get(e.id) ?? 0) > now && !(e.name === 'creeper' && e.position.distanceTo(pos) < 5 && !this.hardIgnored(e.id)))
     })
     if (!target) return null
     const d = target.position.distanceTo(pos)
@@ -299,8 +330,10 @@ class Safety extends EventEmitter {
     const t = this.threat(hurt)
     if (!t) return
     const combat = require('./skills/combat')
-    // no weapon and low, or a creeper while the bot could not take its blast: run
-    const weak = (!combat.bestWeapon(bot) && bot.health <= this.opts.fleeHealth) || (t.target.name === 'creeper' && bot.health <= 10)
+    // no weapon and low, or a creeper while the bot could not take its blast: run (unless the last flight from that
+    // creeper went nowhere — a ledge, lava, a wall: then it is fought, hit and run, rather than waited for)
+    const cornered = this._cornered?.id === t.target.id && this._cornered.until > Date.now()
+    const weak = (!combat.bestWeapon(bot) && bot.health <= this.opts.fleeHealth) || (t.target.name === 'creeper' && bot.health <= 10 && !cornered)
     if (weak) this.run('flee', () => this.flee(t.target), t.target)
     else this.run('fight', () => this.fight(t.target), t.target)
   }
@@ -352,8 +385,7 @@ class Safety extends EventEmitter {
     const combat = require('./skills/combat')
     await combat.equipForCombat(bot, { shield: true }).catch(() => {})
     // auto-eat would swap the weapon for food mid-fight: the fight eats itself (while it retreats, out of reach)
-    const autoEat = bot.autoEat?.enabled ? bot.autoEat : null
-    autoEat?.disableAuto()
+    const releaseMeals = this.suppressMeals()
     let r
     try {
       // safe: the fight's own moves (approach, strafe, retreat) never step into lava / fire / a portal or off a ledge
@@ -373,20 +405,23 @@ class Safety extends EventEmitter {
         log: this.log
       })
     } finally {
-      autoEat?.enableAuto()
+      releaseMeals()
     }
     this.attackers.delete(target)
     if (['timeout', 'unreachable', 'escaped'].includes(r.outcome)) {
       this.ignored.set(target.id, Date.now() + this.opts.ignoreMs)
-      this._givenUp.set(target.id, (this._givenUp.get(target.id) ?? 0) + 1)
+      const g = this._givenUp.get(target.id)
+      const now = Date.now()
+      this._givenUp.set(target.id, { n: (g && now - g.at < GIVEN_UP_MS ? g.n : 0) + 1, at: now })
     }
     if (r.outcome === 'killed' && this.opts.pickupDrops) await this.collectDrops(target.position.clone()).catch(() => {})
     return r.outcome
   }
 
-  /** a mob given up on twice: no exception for it any more (until it hurts the bot) */
+  /** a mob given up on twice within 3 minutes: no exception for it any more (until it hurts the bot) */
   hardIgnored (id) {
-    return (this._givenUp.get(id) ?? 0) >= 2
+    const g = this._givenUp.get(id)
+    return !!g && g.n >= 2 && Date.now() - g.at < GIVEN_UP_MS
   }
 
   /** an attacker that hit the bot in the last 2 s from within melee reach while `target` is out of it */
@@ -451,6 +486,7 @@ class Safety extends EventEmitter {
   async flee (target) {
     const bot = this.bot
     const combat = require('./skills/combat')
+    const from = bot.entity.position.clone()
     for (let i = 0; i < 60 && bot.entities[target.id] && bot.health > 0; i++) {
       const away = bot.entity.position.minus(target.position)
       const dir = away.norm() > 0.01 ? away.normalize() : new Vec3(1, 0, 0)
@@ -464,6 +500,11 @@ class Safety extends EventEmitter {
       if (target.position.distanceTo(bot.entity.position) > 16) break
     }
     bot.clearControlStates()
+    // cornered (less than 3 blocks gained, the mob still close): it is fought next time, not fled from again
+    if (bot.entities[target.id] && bot.entity.position.distanceTo(from) < 3 && target.position.distanceTo(bot.entity.position) < 8) {
+      this._cornered = { id: target.id, until: Date.now() + 15000 }
+      return 'cornered'
+    }
     return 'fled'
   }
 

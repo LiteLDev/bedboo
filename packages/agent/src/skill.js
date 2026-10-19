@@ -151,13 +151,21 @@ function withTimeout (promise, ms, { signal, message, onTimeout } = {}) {
  */
 async function withoutMeals (bot, fn) {
   const ae = bot.autoEat
-  if (!ae?.enabled) return fn()
+  const safety = agentOf(bot)?.safety
+  // under an Agent: a counted hold on the Safety (a fight that starts and ends meanwhile does not turn auto-eat back on)
+  const holds = typeof safety?.suppressMeals === 'function'
+  if (!ae || (!ae.enabled && !holds)) return fn()
   for (let i = 0; i < 80 && ae.isEating; i++) await new Promise((resolve) => setTimeout(resolve, 50))
-  ae.disableAuto()
+  let release
+  if (holds) release = safety.suppressMeals()
+  else {
+    ae.disableAuto()
+    release = () => ae.enableAuto()
+  }
   try {
     return await fn()
   } finally {
-    ae.enableAuto()
+    release()
   }
 }
 
@@ -168,6 +176,7 @@ async function withoutMeals (bot, fn) {
 async function eatNow (bot, { below = 16 } = {}) {
   const ae = bot.autoEat
   if (!ae || typeof ae.eat !== 'function' || bot.food >= below || ae.isEating || bot.food >= 20) return false
+  if (agentOf(bot)?.safety?.busy) return false // a fight / an escape has the controls (and holds the meals)
   try { bot.pathfinder?.setGoal(null) } catch {}
   try { bot.clearControlStates() } catch {}
   let timer

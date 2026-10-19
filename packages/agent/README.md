@@ -107,8 +107,10 @@ src/safety.js runs during every task. When it takes over, pathfinder and digging
 
 - a hostile that hurt the bot or comes close (creepers from 6 blocks) is fought with skills/combat.js `fight` with
   `safe: true` (melee, bow when available, retreat and eat when low; its moves never step into lava / fire / a portal
-  or off a ledge higher than 3) — or fled from without a weapon at low health; a mob the bot neither hit nor got
-  closer to for 12 s, or that ran 24 blocks away, is left alone for a minute; a neutral mob (piglin, enderman) that
+  or off a ledge higher than 3) — or fled from without a weapon at low health, and a creeper at 10 hp or less (unless
+  the last flight from it went nowhere: then it is fought); a mob the bot neither hit nor got closer to for 12 s, or
+  that ran 24 blocks away, is left alone for a minute — until it hurts the bot (a creeper within 5 blocks only once it
+  was given up on twice in 3 minutes); a neutral mob (piglin, enderman) that
   swung at the bot and hurt it is fought back (`combat.likelyAttacker`); a ghast fireball within 4 blocks is hit
   back; what a killed mob dropped next to the bot (string, bones) is picked up;
 - U18's skills (portal, nether, end) run under `combat.guardFor()`: under an Agent it pushes the skill's guard options
@@ -119,7 +121,9 @@ src/safety.js runs during every task. When it takes over, pathfinder and digging
   nearest pocket of air under a ceiling; a falling block in the head cell (gravel, sand): dig it out (never towards
   lava);
 - mineflayer-auto-eat eats when the food level drops below 16 — below 18 while the bot is hurt (natural regeneration
-  needs 18) — (rotten flesh too when starving), never during a fight; between tasks the agent hunts passive animals
+  needs 18) — (rotten flesh only when starving), never during a fight, a pillar step or a placement (counted holds:
+  `Safety#suppressMeals`); 3 meals that fail in 15 s pause it for 10 s; before a climb and between tasks the bot eats
+  standing still; between tasks the agent hunts passive animals
   in sight when hungry and out of food (chased with the pathfinder around fences and ledges), and cooks the meat in
   its furnace;
 - nights: between tasks, in the overworld at night, the agent sleeps in its bed (`rest`: the night is skipped); with
