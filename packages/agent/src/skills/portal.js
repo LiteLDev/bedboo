@@ -772,9 +772,14 @@ async function lowHealthPause (bot, { guard, signal, below = 10, until = 14, max
   }
   // hurt at night without armor: out of the mobs' reach until the morning (U17's shelter or a pocket / pit)
   if (nightMs > 0 && shelter.ticksToNight(bot) === 0 && shelter.armorWorn(bot) < 2) {
-    await shelter.untilDay(bot, { signal, guard, maxMs: nightMs, why: `health ${bot.health} at night` })
-      .catch((err) => { if (signal?.aborted) throw err; u.log(bot, `portal: shelter: ${err.message}`) })
-    return { ms: Date.now() - t, healed: bot.health >= from + 2, sheltered: true }
+    return shelterPause()
+  }
+  // nothing to eat and too hungry to regenerate: waiting heals nothing (N1M3: 30 s before each of ten casts)
+  const ae = bot.autoEat
+  const edible = typeof ae?.findBestChoices === 'function' ? ae.findBestChoices(bot.inventory.items(), ae.opts?.priority ?? 'foodPoints').length > 0 : !!u.findItem(bot, u.FOODS)
+  if (bot.food < 18 && !edible) {
+    u.log(bot, `portal: health ${bot.health}, food ${bot.food}, nothing to eat: going on`)
+    return { ms: Date.now() - t, healed: false, sheltered: false }
   }
   while (bot.health < until && Date.now() - t < maxMs) {
     // health only comes back with a (nearly) full food bar: eat up to 18
@@ -783,6 +788,12 @@ async function lowHealthPause (bot, { guard, signal, below = 10, until = 14, max
     await u.sleep(1000, signal)
   }
   return { ms: Date.now() - t, healed: bot.health >= from + 2, sheltered: false }
+
+  async function shelterPause () {
+    await shelter.untilDay(bot, { signal, guard, maxMs: nightMs, why: `health ${bot.health} at night` })
+      .catch((err) => { if (signal?.aborted) throw err; u.log(bot, `portal: shelter: ${err.message}`) })
+    return { ms: Date.now() - t, healed: bot.health >= from + 2, sheltered: true }
+  }
 }
 
 /** a water bucket again after a cast lost it; @returns {Promise<string|null>} why not (the pool loop gives up) */
