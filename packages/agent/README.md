@@ -197,27 +197,29 @@ Env: `AGENT_RUNS` (runs per milestone), `AGENT_DIFFICULTY`, `AGENT_REPORT_DIR` (
 ### The final chain
 
 `scenarios/overworld/final-chain.js` (`corepack pnpm --filter @bedboo/agent final-chain`, or
-`AGENT_FINAL_CHAIN=1 … test:e2e -- --grep "final chain"`) runs everything in one world with one bot and no reconnects:
-M1 → M5, provisions (back to the spawn, meat hunted and cooked for the trip, best effort), U18's N1M3 (second
-bucket, iron ingot, back to the spawn, bucket-cast obsidian portal, into the Nether), back home through the bot's own
-portal (`--nether-ores`: N2's quartz, nether gold and ancient debris on the way), then U18's End part — the stronghold
-portal room is reached with cheats (locate + teleport, eyes of ender given; see docs/differences/U18.md), the bot
-fills the frames, enters the End, the dragon is killed by `/kill` (cheat), the bot fights two endermen and leaves
-through the exit portal. Every phase's time is printed; the report goes to `$AGENT_REPORT_DIR/final-chain-<time>.json`.
+`AGENT_FINAL_CHAIN=1 … test:e2e -- --grep "final chain"`) runs everything in one world (seed 1234, easy) with one bot
+and no reconnects:
 
-Runs so far (2026-10-19, seed 1234, easy): **no run has passed every phase yet.** M1 → M5 passed in 4 of 5 chained
-runs (14.1–16.3 min); N1M3 failed in all 4 runs that reached it:
-
-| run | M1 → M5 (s) | then |
+| phase | what the bot does | budget |
 |---|---|---|
-| 1 | 77, 207, 107, 173, 298 | N1M3: drowned in a flooded cave going back to the spawn, the diamond pickaxe lost |
-| 2 | 87, 233, 128, 163, 366 | N1M3 (17 min): no food (the hunts failed), the portal skill searched water / lava from a mineshaft for 13 min, a starving bot fell to its death, recovery gave up without a pickaxe |
-| 3 | 102, 201, 96, 166, 315 | provisions found no animals in the mountains; N1M3 "back to the spawn" stuck 2 min in the water at a lake shore 44 blocks west of the spawn |
-| 4 | 94, 202, 132, 175, 244 | provisions: killed by a spider at night (health low); N1M3 got its buckets and walked back, cast 2 of 10 obsidian, then the portal skill's cast loop waited at the mold for 12 min |
-| 5 | 75, 200, 102, 176, — | M5: stuck 8 min in its own copper pit under a lake shore on the way to the emerald |
+| M1 | wood → stone tools (the milestone) | 10 min |
+| camp | at the spawn while it is day: 3 wool of one colour from sheep → a bed; logs; meat (best effort) | ~6 min |
+| M2 | iron tools, a bucket | 10 min |
+| gear | all the iron in one trip and one 3-furnace smelt → iron helmet, chestplate, leggings, boots (worn) and a shield (off-hand), a spare iron pickaxe, the second bucket and the iron for the flint and steel; sticks; the camp's meat cooked | 9 + 2×7 min |
+| M3, M4, M5 | diamonds, the house at the spawn, every overworld ore (the milestones) | 10 min each |
+| provisions | back to the spawn; ≥ 8 food items (hunted around the spawn, exploring for animals; fishing when none is left; cooked) | 5 + 2×4 min |
+| N1M3 | U18's nether entry: second bucket, iron ingot (both carried by then), bucket-cast obsidian at a lava pool, frame, flint and steel, into the Nether | 45 min |
+| home | U18's nether skill: back through the bot's own portal (`--nether-ores`: N2's quartz, nether gold and ancient debris on the way) | 14 min |
+| E1 | U18's End part — the stronghold portal room reached with cheats (locate + teleport, eyes of ender given; docs/differences/U18.md), the bot fills the frames, enters the End, the dragon is killed by `/kill` (cheat), the bot fights two endermen and leaves through the exit portal | 4 + 8 + 4 min |
 
-Fixed after the runs that found them: hunting (run 2), recovery without a pickaxe (2), provisions start at the spawn
-(3), climbing out of the water at a shore (3; only run 5 had it). Runs 2 and 4 stalled in U18's portal skill.
+Between scenario steps the Agent sleeps through a night in its bed (and before every phase; without a bed and
+without armor it would wait in its house or a sealed hole), tosses junk when the inventory fills up, hunts when
+hungry; a stuck task is aborted by the watchdog and run again after an escape. Every phase's time and the time of day
+it started at are printed; the report goes to `$AGENT_REPORT_DIR/final-chain-<time>.json`. Development only (not an
+acceptance run): `--from m5` starts from a milestone snapshot after that milestone, `--until provisions` stops after a
+phase.
+
+RESULTS_PLACEHOLDER
 
 ## Seed scouting
 

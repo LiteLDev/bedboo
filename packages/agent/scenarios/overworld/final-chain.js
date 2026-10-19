@@ -118,6 +118,14 @@ async function finalChain ({ log = () => {}, cfg = config(), netherOres = false,
     const who = JSON.stringify(bot.username)
     const ctx = { bot, server, cmd: (c) => server.commandOutput(c.replaceAll('{bot}', who)), who, log: (m) => agent.event('log', { msg: m }), data: {} }
     const milestone = (id) => ({ name: id, run: () => scenario(MILESTONES.find((m) => m.id === id)) })
+    /** 3 wool of one colour from sheep (the plains around the spawn have flocks), then the bed is crafted */
+    const bed = async (ms) => {
+      if (Math.max(...WOOL.map((w) => inventory.count(bot, w))) < 3) {
+        await task('hunt', { mobs: ['sheep'], item: WOOL, count: 3, total: true, radius: 48, explore: true, timeout: ms }, { name: 'wool for a bed', timeout: ms + 10000, retries: 0 })
+          .catch(() => {})
+      }
+      return task('obtain', { item: 'bed', count: 1 }, { name: 'a bed', timeout: 2 * MINUTES, retries: 0 })
+    }
 
     plan.push(milestone('M1'))
     plan.push({
@@ -127,13 +135,7 @@ async function finalChain ({ log = () => {}, cfg = config(), netherOres = false,
         const out = {}
         await task('navigate', { spawn: true, range: 24 }, { name: 'camp: to the spawn', timeout: 2 * MINUTES, retries: 0 }).catch((err) => { out.home = err.message })
         if (!has(bot, 'bed')) {
-          // 3 wool of one colour from sheep (the plains around the spawn have flocks), then the bed is crafted
-          if (Math.max(...WOOL.map((w) => inventory.count(bot, w))) < 3) {
-            await task('hunt', { mobs: ['sheep'], item: WOOL, count: 3, total: true, radius: 48, explore: true, timeout: 150000 }, { name: 'camp: wool', timeout: 160000, retries: 0 })
-              .catch((err) => { out.wool = err.message })
-          }
-          await task('obtain', { item: 'bed', count: 1 }, { name: 'camp: a bed', timeout: 2 * MINUTES, retries: 0 })
-            .then(() => { out.bed = true }, (err) => { out.bed = err.message })
+          out.bed = await bed(150000).then(() => true, (err) => err.message)
         }
         // wood for later (the shield's planks, sticks, a table): deep in a mine a log is a long climb away
         const logs = () => inventory.allItems(bot).filter((i) => /_log$/.test(i.name)).reduce((n, i) => n + i.count, 0)
@@ -192,6 +194,8 @@ async function finalChain ({ log = () => {}, cfg = config(), netherOres = false,
         }
         const items = require('../../src/skills/survive').foodItems(bot)
         if (items < PROVISIONS) throw new Error(`${items} food items (need ${PROVISIONS}): ${r?.error ?? JSON.stringify(r?.hunted ?? {})}`)
+        // no bed yet (the camp found too few sheep): another try on the plains, for the nights to come (best effort)
+        if (!has(bot, 'bed')) await bed(150000).catch(() => {})
         // back where the portal goes
         await task('navigate', { spawn: true, range: 16 }, { name: 'provisions: back to the spawn', timeout: 3 * MINUTES, retries: 1 }).catch(() => {})
         return { home: home.error ?? 'reached', items, hunted: r?.hunted, fished: r?.fished }
