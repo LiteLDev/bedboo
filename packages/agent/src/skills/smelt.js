@@ -28,6 +28,23 @@ function chooseFuel (bot, { fuel, input, inputCount }) {
 }
 
 /**
+ * A furnace transfer, retried twice: now and then BDS rejects the stack request of a click into a furnace that was
+ * placed a moment ago (it works a few ticks later). A retry recomputes what is still missing (the callback reads the
+ * furnace again).
+ */
+async function retry (bot, fn, signal) {
+  for (let i = 0; ; i++) {
+    try {
+      return await fn()
+    } catch (err) {
+      if (i >= 2 || !/rejected|didn't respond/i.test(err.message)) throw err
+      log(bot, `furnace: ${err.message}; retrying`)
+      await sleep(600, signal)
+    }
+  }
+}
+
+/**
  * Smelt until the bot has `count` more `item`s (or the input / fuel ran out).
  * @param {object} bot
  * @param {{ item: string, count?: number, input?: string, fuel?: string, signal?: AbortSignal, keepFurnace?: boolean }} opts
@@ -47,16 +64,20 @@ async function smeltItem (bot, { item, count = 1, input, fuel, signal, keepFurna
   let furnace = null
   try {
     furnace = await bot.openFurnace(st.block)
-    if (furnace.outputItem()) await furnace.takeOutput()
-    if (furnace.inputItem() && furnace.inputItem().name !== source.input) await furnace.takeInput()
-    if (furnace.fuelItem() && furnace.fuelItem().name !== fuelName) await furnace.takeFuel()
+    if (furnace.outputItem()) await retry(bot, () => furnace.takeOutput(), signal)
+    if (furnace.inputItem() && furnace.inputItem().name !== source.input) await retry(bot, () => furnace.takeInput(), signal)
+    if (furnace.fuelItem() && furnace.fuelItem().name !== fuelName) await retry(bot, () => furnace.takeFuel(), signal)
     const already = furnace.inputItem()?.count ?? 0
     const put = Math.max(0, n - already)
-    if (put > 0) await furnace.putInput(reg.itemsByName[source.input].id, null, put)
+    if (put > 0) await retry(bot, () => furnace.putInput(reg.itemsByName[source.input].id, null, Math.min(put, Math.max(0, n - (furnace.inputItem()?.count ?? 0)))), signal)
     const fuelHave = furnace.fuelItem()?.count ?? 0
     const fuelNeed = Math.max(0, Math.ceil(n / perFuel) - fuelHave)
-    const fuelPut = Math.min(fuelNeed, inventory.count(bot, fuelName) - (fuelName === source.input ? n : 0))
-    if (fuelPut > 0) await furnace.putFuel(reg.itemsByName[fuelName].id, null, fuelPut)
+    // the inputs are in the furnace already: what is left of the fuel item is all fuel (also when fuel = input)
+    const fuelPut = Math.min(fuelNeed, inventory.count(bot, fuelName))
+    if (fuelPut > 0) {
+      const target = fuelHave + fuelPut
+      await retry(bot, () => furnace.putFuel(reg.itemsByName[fuelName].id, null, Math.min(target - (furnace.fuelItem()?.count ?? 0), inventory.count(bot, fuelName))), signal)
+    }
     log(bot, `smelting ${n} ${source.input} → ${item} with ${fuelPut} ${fuelName} (${st.placed ? 'placed' : 'nearby'} furnace)`)
     const deadline = Date.now() + n * 10000 + 20000
     let taken = 0
@@ -65,18 +86,18 @@ async function smeltItem (bot, { item, count = 1, input, fuel, signal, keepFurna
       await sleep(1000, signal)
       const out = furnace.outputItem()
       if (out && (out.count >= Math.min(8, n * source.count - taken) || !furnace.inputItem())) {
-        await furnace.takeOutput()
+        await retry(bot, () => furnace.takeOutput(), signal)
         taken = inventory.count(bot, item) - start
       }
       if (!furnace.inputItem() && !furnace.outputItem()) break
-      if (!furnace.fuelItem() && furnace.fuel === 0 && furnace.inputItem()) {
-        // out of fuel with input left: add more of any fuel carried
-        const more = chooseFuel(bot, { input: source.input, inputCount: furnace.inputItem().count })
+      if (!furnace.fuelItem() && !furnace.fuel && furnace.inputItem()) {
+        // out of fuel (or never lit) with input left: add more of any fuel carried
+        const more = chooseFuel(bot, { input: source.input, inputCount: 0 })
         if (!more) break
         await furnace.putFuel(reg.itemsByName[more].id, null, Math.min(inventory.count(bot, more), Math.ceil(furnace.inputItem().count / data.itemsPerFuel(more))))
       }
     }
-    if (furnace.outputItem()) await furnace.takeOutput()
+    if (furnace.outputItem()) await retry(bot, () => furnace.takeOutput(), signal)
     if (!keepFurnace || st.placed) {
       // leave nothing behind in a furnace we take with us
       if (furnace.inputItem()) await furnace.takeInput().catch(() => {})

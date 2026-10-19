@@ -177,6 +177,21 @@ describe('obtain planner (U17)', () => {
     simulate(r.steps, world.inventory)
   })
 
+  it('carried ingredients that could not be found again still count (no 0 × Infinity)', () => {
+    const world = fakeWorld({
+      inventory: { string: 3, stick: 3, crafting_table: 1, raw_iron: 2, furnace: 1, lava_bucket: 1 },
+      extra: { recipes: { bow: [{ result: { name: 'bow', count: 1 }, ingredients: { string: 3, stick: 3 }, requiresTable: true }] } }
+    })
+    world.fuels.push({ name: 'lava_bucket', perItem: 100 })
+    const bow = plan({ item: 'bow', count: 1 }, world)
+    assert.ok(bow.ok, bow.reason)
+    assert.deepStrictEqual(bow.steps.map((s) => s.item), ['bow'])
+    // raw iron carried, iron ore not visible anywhere: smelting what is carried, with the carried lava as fuel
+    const iron = plan({ item: 'iron_ingot', count: 2 }, { ...world, sources: () => [] })
+    assert.ok(iron.ok, iron.reason)
+    assert.deepStrictEqual(iron.steps.map((s) => `${s.action}:${s.item}:${s.fuel ?? ''}`), ['smelt:iron_ingot:lava_bucket'])
+  })
+
   it('impossible items say why', () => {
     const r = plan({ item: 'nether_star', count: 1 }, fakeWorld())
     assert.strictEqual(r.ok, false)

@@ -22,7 +22,10 @@ const { config, serverOptions, USERNAME } = require('./harness')
  */
 async function fullRun ({ from = 'M1', to = 'M5', log = () => {}, cfg = config() } = {}) {
   const bds = require('@bedboo/bds')
-  const list = MILESTONES.slice(MILESTONES.findIndex((m) => m.id === from), MILESTONES.findIndex((m) => m.id === to) + 1)
+  const a = MILESTONES.findIndex((m) => m.id === String(from).toUpperCase())
+  const b = MILESTONES.findIndex((m) => m.id === String(to).toUpperCase())
+  if (a < 0 || b < a) throw new Error(`bad milestone range ${from}..${to} (M1..M5)`)
+  const list = MILESTONES.slice(a, b + 1)
   const server = await bds.startServer(serverOptions(cfg, null))
   const t0 = Date.now()
   const milestones = []

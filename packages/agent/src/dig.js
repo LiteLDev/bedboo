@@ -31,18 +31,16 @@ const isProtected = world.isProtected
  */
 function candidates (bot, blocks, { maxDistance = 64, exclude = new Set(), point } = {}) {
   const here = point ?? bot.entity.position
-  const found = world.findBlocks(bot, blocks, { maxDistance, count: 48, point: here })
+  const usable = (p) => !exclude.has(key(p)) && !isProtected(bot, p) && world.safeToDig(bot, p) && !world.lavaAround(bot, p)
+  const found = world.findBlocks(bot, blocks, { maxDistance, count: 48, point: here, filter: usable })
   const out = []
   for (const p of found) {
-    if (exclude.has(key(p)) || isProtected(bot, p)) continue
-    if (!world.safeToDig(bot, p)) continue
     const b = bot.blockAt(p)
     let cost = world.distXZ(p, here) + Math.max(0, here.y - p.y) * 1.2 + Math.max(0, p.y - here.y - 3) * 2
     if (/_log$|_stem$/.test(b?.name ?? '')) {
       const ground = groundBelow(bot, p)
       if (ground === null || p.y - ground > 3) cost += 30 // up in the canopy: its drop may stay in the leaves
     }
-    if (world.lavaAround(bot, p)) continue
     out.push({ pos: p, cost })
   }
   out.sort((a, b) => a.cost - b.cost)
@@ -109,10 +107,14 @@ async function collectBlocks (bot, { item = null, count = 1, blocks, maxDistance
     const pos = list[0]
     const name = bot.blockAt(pos)?.name
     try {
-      await mineAt(bot, pos, { signal, item })
-      mined[name] = (mined[name] ?? 0) + 1
-      dug++
-      failures = 0
+      if (await mineAt(bot, pos, { signal, item })) {
+        mined[name] = (mined[name] ?? 0) + 1
+        dug++
+        failures = 0
+      } else {
+        tried.add(key(pos)) // gone before the bot got there (or a liquid now)
+        await sleep(50, signal)
+      }
     } catch (err) {
       if (isAbort(err) || err.code === 'DIED' || err.code === 'MISSING') throw err
       tried.add(key(pos))
@@ -135,7 +137,7 @@ async function collectBlocks (bot, { item = null, count = 1, blocks, maxDistance
  */
 async function mineAt (bot, pos, { signal, item, pickup = true } = {}) {
   let block = bot.blockAt(pos)
-  if (!block || world.isPassable(block)) return
+  if (!block || world.isAir(block) || world.isLiquid(block)) return false
   const harvest = inventory.harvestToolNames(bot.registry, block)
   if (harvest && !harvest.some((t) => inventory.count(bot, t) > 0)) {
     throw new SkillError(`${block.name} needs one of ${harvest.join(', ')}`, { code: 'MISSING' })
@@ -143,15 +145,17 @@ async function mineAt (bot, pos, { signal, item, pickup = true } = {}) {
   progress(bot, 'mine', { block: block.name, at: { x: pos.x, y: pos.y, z: pos.z } })
   await reach(bot, pos, { signal })
   block = bot.blockAt(pos)
-  if (!block || world.isPassable(block)) return
+  if (!block || world.isAir(block) || world.isLiquid(block)) return false
   if (!world.safeToDig(bot, pos)) throw new SkillError(`${block.name} at ${navigate.fmt(pos)} is next to a liquid`, { code: 'UNSAFE' })
   await digBlock(bot, block, signal)
   if (pickup) await pickupNear(bot, pos.offset(0.5, 0.5, 0.5), { signal, item })
+  return true
 }
 
 /** equip the best tool and dig (rejects when the block cannot be reached / is refused) */
 async function digBlock (bot, block, signal) {
   checkAbort(signal)
+  if (world.isAir(block)) return
   const tool = inventory.bestToolFor(bot, block)
   if (tool) await inventory.equip(bot, tool)
   if (!bot.canDigBlock(block)) {

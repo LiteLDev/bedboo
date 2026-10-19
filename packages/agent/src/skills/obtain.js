@@ -73,7 +73,9 @@ async function hunt (bot, { mobs, item, count, signal, radius = 64 }) {
       await dig.pickupNear(bot, target.position.clone(), { signal, item, radius: 4 })
     }
   }
-  return { killed: kills, collected: { [item]: inventory.count(bot, item) - start } }
+  const collected = inventory.count(bot, item) - start
+  if (collected <= 0) throw new SkillError(`killed ${kills} ${mobs.join('/')} but picked up no ${item}`, { code: 'FAILED' })
+  return { killed: kills, collected: { [item]: collected } }
 }
 
 /**
@@ -110,6 +112,7 @@ async function obtain (bot, { item, count = 1, maxSteps = 80, signal } = {}) {
       done.push({ action: step.action, item: step.item, count: step.count, ms: Date.now() - t0, error: err.message })
       log(bot, `obtain: ${step.action} ${step.item} failed (${err.code ?? err.name}): ${err.message}`)
       progress(bot, 'step-failed', { action: step.action, item: step.item, code: err.code, error: err.message })
+      if (/could not place/.test(err.message)) await makeRoom(bot, signal)
     }
   }
   throw new SkillError(`obtain ${count} ${item}: gave up after ${maxSteps} steps`, { code: 'FAILED', details: { steps: done } })
@@ -124,6 +127,15 @@ function mergeGathers (steps) {
   if (!first || (first.action !== 'mine' && first.action !== 'gather')) return first
   const count = steps.filter((s) => s.action === first.action && s.item === first.item).reduce((n, s) => n + s.count, 0)
   return { ...first, count }
+}
+
+/** no room for a station here (a 1×1 shaft, a ledge): walk a few blocks away to more open ground */
+async function makeRoom (bot, signal) {
+  const { goals } = require('mineflayer-pathfinder')
+  const navigate = require('./navigate')
+  const p = bot.entity.position
+  await navigate.goto(bot, new goals.GoalInvert(new goals.GoalNear(p.x, p.y, p.z, 4)), { signal, timeout: 20000, attempts: 1, legs: false })
+    .catch((err) => { if (isAbort(err)) throw err; log(bot, `obtain: could not move away: ${err.message}`) })
 }
 
 function failureKey (step) {

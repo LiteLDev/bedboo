@@ -26,6 +26,9 @@
  * — or `{ ok: false, reason }`. `steps[0]` can always be executed with the current inventory.
  */
 
+/** cost of `deficit` more units at `each` seconds (no deficit costs nothing, even when the item is unobtainable) */
+const more = (deficit, each) => deficit > 0 ? deficit * each : 0
+
 /** seconds: one craft request (plus walking to / placing a table) */
 const CRAFT_COST = 2
 const PLACE_COST = 4
@@ -144,7 +147,7 @@ class Planner {
       let c = CRAFT_COST
       for (const [ing, n] of Object.entries(r.ingredients)) {
         if (ing === item || stack.includes(ing)) { c = Infinity; break }
-        c += Math.max(0, n * times - (inv[ing] ?? 0)) * this.estimate(ing, new Set(stack))
+        c += more(n * times - (inv[ing] ?? 0), this.estimate(ing, new Set(stack)))
         if (!Number.isFinite(c)) break
       }
       if (r.requiresTable && !this.hasStation('crafting_table', inv)) c += this.estimate('crafting_table', new Set(stack)) + PLACE_COST
@@ -155,7 +158,7 @@ class Planner {
     for (const s of this.smelting(item)) {
       if (s.input === item || stack.includes(s.input)) continue
       const k = Math.ceil(missing / s.count)
-      let c = SMELT_COST * k + Math.max(0, k - (inv[s.input] ?? 0)) * this.estimate(s.input, new Set(stack))
+      let c = SMELT_COST * k + more(k - (inv[s.input] ?? 0), this.estimate(s.input, new Set(stack)))
       const fuel = this.chooseFuel(k, inv, stack, s.input)
       if (!fuel) continue
       c += fuel.cost
@@ -235,7 +238,7 @@ class Planner {
       if (stack.includes(f.name)) continue
       const units = Math.ceil(k / f.perItem)
       const spare = Math.max(0, (inv[f.name] ?? 0) - (f.name === input ? k : 0))
-      const c = Math.max(0, units - spare) * this.estimate(f.name, new Set(stack))
+      const c = more(units - spare, this.estimate(f.name, new Set(stack)))
       if (!Number.isFinite(c)) continue
       if (!best || c < best.cost || (c === best.cost && units < best.units)) best = { name: f.name, units, cost: c }
     }

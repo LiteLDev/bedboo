@@ -11,7 +11,8 @@ const fs = require('fs')
 const path = require('path')
 
 function discover (dir = __dirname) {
-  const registry = {}
+  // `discover` lives on the prototype: never an own key, so it can't be run as a skill (runSkill checks Object.hasOwn)
+  const registry = Object.create({ discover })
   const files = fs.readdirSync(dir).filter((f) => f.endsWith('.js') && f !== 'index.js' && !f.startsWith('.')).sort()
   for (const file of files) {
     const mod = require(path.join(dir, file))
@@ -27,4 +28,3 @@ function discover (dir = __dirname) {
 }
 
 module.exports = discover()
-Object.defineProperty(module.exports, 'discover', { value: discover, enumerable: false })

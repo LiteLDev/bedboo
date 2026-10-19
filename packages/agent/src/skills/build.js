@@ -54,7 +54,7 @@ function findSite (bot, size, { radius = 24, avoid = () => false } = {}) {
       const counts = {}
       for (const h of hs) counts[h] = (counts[h] ?? 0) + 1
       const y0 = Number(Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0])
-      if (hs.some((h) => Math.abs(h - y0) > 2)) continue
+      if (hs.some((h) => Math.abs(h - y0) > 1)) continue
       const origin = new Vec3(x0, y0, z0)
       if (avoid(origin)) continue
       let cost = hs.reduce((s, h) => s + Math.abs(h - y0) * 2, 0)
@@ -235,7 +235,21 @@ async function build (bot, args) {
   if (!bp) throw new SkillError(`unknown blueprint ${args.blueprint}`, { code: 'FAILED' })
   const probe = compile(bp, { x: 0, y: 0, z: 0 })
   const agent = agentOf(bot)
-  let origin = args.origin ? new Vec3(args.origin.x, args.origin.y, args.origin.z) : null
+  const home = args.origin ? new Vec3(args.origin.x, args.origin.y, args.origin.z) : bot.entity.position.floored()
+
+  // 1. materials first (the site is picked afterwards, so no station placed while crafting ends up inside it)
+  if (args.obtain !== false) {
+    // crafted pieces (chest, door, table) first: crafting them eats planks the roof needs; then re-check everything
+    const order = probe.materials.slice().sort((a, b) => a.count - b.count)
+    const short = () => order.filter((m) => m.names.reduce((n, name) => n + inventory.count(bot, name), 0) < m.count)
+    for (let pass = 0; pass < 3 && short().length; pass++) {
+      for (const m of order) await obtainAny(bot, m.names, m.count, { signal })
+    }
+    if (short().length) throw new SkillError(`materials still missing: ${short().map((m) => m.item).join(', ')}`, { code: 'MISSING' })
+  }
+  // 2. back to where the build was asked for (obtaining may have taken the bot far away), pick the site there
+  await navigate.goto(bot, new (goals().GoalNear)(home.x, home.y, home.z, 3), { signal, timeout: 180000 })
+  let origin = args.origin ? home : null
   if (!origin) {
     origin = findSite(bot, probe.size, { radius: args.radius ?? 24 })
     if (!origin) throw new SkillError(`no site for ${bp.name} within ${args.radius ?? 24} blocks`, { code: 'NOT_FOUND' })
@@ -245,31 +259,29 @@ async function build (bot, args) {
   // our structure is off limits for every later dig (mine / gather / pathfinder through the Agent's movements)
   if (agent) agent.state.protectedZones.push({ name: compiled.name, min: compiled.bounds.min, max: compiled.bounds.max })
 
-  if (args.obtain !== false) {
-    // crafted pieces (chest, door, table) first: crafting them eats planks the roof needs; then re-check everything
-    const order = compiled.materials.slice().sort((a, b) => a.count - b.count)
-    const short = () => order.filter((m) => m.names.reduce((n, name) => n + inventory.count(bot, name), 0) < m.count)
-    for (let pass = 0; pass < 3 && short().length; pass++) {
-      for (const m of order) await obtainAny(bot, m.names, m.count, { signal })
-    }
-    if (short().length) throw new SkillError(`materials still missing: ${short().map((m) => m.item).join(', ')}`, { code: 'MISSING' })
-  }
-  // back to the site (obtaining may have taken the bot far away)
-  const center = origin.offset(Math.floor(compiled.size.x / 2), 0, compiled.size.z + 1)
-  await navigate.goto(bot, new (goals().GoalNear)(center.x, center.y, center.z, 3), { signal, timeout: 180000 })
+  // 3. clear the volume, fill dips under the floor, place, verify
   const cleared = await clearVolume(bot, compiled, { signal })
+  await fillUnder(bot, compiled, { signal })
   let placed = 0
-  for (const p of compiled.placements) {
-    const before = bot.blockAt(p.pos)
-    if (before && p.names.includes(before.name)) continue
-    if (await placeCell(bot, p, compiled, { signal })) placed++
-    else log(bot, `build: ${p.names[0]} at ${navigate.fmt(p.pos)} not placed`)
+  const placeAll = async () => {
+    for (const p of compiled.placements) {
+      const before = bot.blockAt(p.pos)
+      if (before && p.names.includes(before.name)) continue
+      try {
+        if (await placeCell(bot, p, compiled, { signal })) placed++
+        else log(bot, `build: ${p.names[0]} at ${navigate.fmt(p.pos)} not placed`)
+      } catch (err) {
+        if (isAbort(err) || err.code === 'MISSING' || err.code === 'DIED') throw err
+        log(bot, `build: ${p.names[0]} at ${navigate.fmt(p.pos)}: ${err.message}`)
+      }
+    }
   }
+  await placeAll()
   let v = verify(compiled, (pos) => bot.blockAt(pos))
   if (!v.ok) {
     log(bot, `build: ${v.mismatches.length} mismatch(es), repairing`)
     await clearVolume(bot, compiled, { signal })
-    for (const p of compiled.placements) await placeCell(bot, p, compiled, { signal }).catch((err) => { if (isAbort(err)) throw err })
+    await placeAll()
     v = verify(compiled, (pos) => bot.blockAt(pos))
   }
   progress(bot, 'build-verified', { ok: v.ok, checked: v.checked, mismatches: v.mismatches.length })
@@ -287,6 +299,27 @@ async function build (bot, args) {
   return result
 }
 
+/** a filler block under every bottom-layer cell that has none (dips in the ground), so the floor has support */
+async function fillUnder (bot, compiled, { signal }) {
+  const bottom = compiled.placements.filter((p) => p.rel.y === 0)
+  const materials = new Set(compiled.materials.flatMap((m) => m.names))
+  const fillers = inventory.FILLER.filter((n) => !materials.has(n))
+  for (const p of bottom) {
+    const below = p.pos.offset(0, -1, 0)
+    if (world.isSolid(bot.blockAt(below))) continue
+    if (!fillers.some((n) => inventory.count(bot, n) > 0)) {
+      log(bot, 'build: no filler blocks for the dips under the floor')
+      return
+    }
+    try {
+      await placeCell(bot, { pos: below, names: fillers, item: fillers[0], tall: false }, compiled, { signal })
+    } catch (err) {
+      if (isAbort(err)) throw err
+      log(bot, `build: could not fill ${navigate.fmt(below)}: ${err.message}`)
+    }
+  }
+}
+
 const skill = defineSkill('build', build, { description: 'build a blueprint (materials obtained, verified block by block)' })
 
-module.exports = Object.assign(skill, { build, findSite, placeCell, clearVolume, referenceFor, obtainAny })
+module.exports = Object.assign(skill, { build, findSite, placeCell, clearVolume, fillUnder, referenceFor, obtainAny })

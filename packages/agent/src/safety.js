@@ -64,6 +64,7 @@ class Safety extends EventEmitter {
 
   /** resolves when no safety behaviour has the controls (rejects on abort) */
   idle (signal) {
+    if (signal?.aborted) return Promise.reject(new AbortError())
     if (!this.busy) return Promise.resolve()
     return new Promise((resolve, reject) => {
       const waiter = { resolve, reject }

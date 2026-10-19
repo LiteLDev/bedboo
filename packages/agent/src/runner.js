@@ -110,7 +110,8 @@ async function loadPlugins (bot, { autoEat = true, pvp = true, armor = true } = 
   await bot.waitForTicks(2).catch(() => {})
   if (bot.autoEat) {
     bot.autoEat.setOpts({
-      minHunger: 15,
+      minHunger: 16,
+      minHealth: 0, // auto-eat's default 14 tries to eat whenever hurt, even when full (Bedrock refuses): hunger only
       priority: 'foodPoints',
       bannedFood: ['rotten_flesh', 'spider_eye', 'poisonous_potato', 'pufferfish', 'chicken', 'golden_apple', 'enchanted_golden_apple', 'chorus_fruit', 'suspicious_stew']
     })
@@ -241,11 +242,11 @@ class Agent extends EventEmitter {
         const error = died ? controller.signal.reason : err
         task.errors = (task.errors ?? []).concat({ code: error.code ?? error.name, message: error.message })
         this.event('task-error', { task: task.name, attempt: task.attempts, code: error.code ?? error.name, error: error.message })
+        if (died) await this.recover().catch((e) => this.event('log', { msg: `recover: ${e.message}` }))
         if (!died || task.attempts > retries || Date.now() - started > timeout) {
           task.error = { code: error.code ?? error.name, message: error.message }
           break
         }
-        await this.recover().catch((e) => this.event('log', { msg: `recover: ${e.message}` }))
       } finally {
         this._abortTask = null
         try { this.bot.pathfinder?.setGoal(null) } catch {}

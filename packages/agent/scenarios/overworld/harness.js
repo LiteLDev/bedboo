@@ -36,6 +36,9 @@ function config () {
   }
 }
 
+/** snapshots (re)built by this process: fresh even with AGENT_REFRESH=1 */
+const rebuilt = new Set()
+
 function snapshotName (id, cfg = config()) {
   return `u17-s${cfg.seed}-${id.toLowerCase()}${cfg.tag}`
 }
@@ -84,6 +87,7 @@ async function runMilestone (milestone, { snapshotAfter = null, run = 1, cfg = c
   try {
     if (report.ok && snapshotAfter) {
       await server.snapshot(snapshotAfter, { overwrite: true, description: `${milestone.name}: end state of a successful run (${new Date().toISOString()})` })
+      rebuilt.add(snapshotAfter)
       report.snapshot = snapshotAfter
     }
   } finally {
@@ -127,7 +131,7 @@ async function ensureStart (milestone, { cfg = config(), attempts = 3, log = () 
   if (index <= 0) return null
   const prev = MILESTONES[index - 1]
   const name = snapshotName(prev.id, cfg)
-  if (!cfg.refresh && bds.readSnapshot(name)) return name
+  if ((!cfg.refresh || rebuilt.has(name)) && bds.readSnapshot(name)) return name
   await ensureStart(prev, { cfg, attempts, log })
   for (let i = 1; i <= attempts; i++) {
     log(`building start snapshot ${name}: ${prev.id} attempt ${i}`)
@@ -138,4 +142,4 @@ async function ensureStart (milestone, { cfg = config(), attempts = 3, log = () 
   throw new Error(`could not produce snapshot ${name}: ${prev.id} failed ${attempts} times`)
 }
 
-module.exports = { config, snapshotName, serverOptions, runMilestone, ensureStart, summary, USERNAME, MILESTONES }
+module.exports = { config, snapshotName, serverOptions, runMilestone, ensureStart, summary, rebuilt, USERNAME, MILESTONES }

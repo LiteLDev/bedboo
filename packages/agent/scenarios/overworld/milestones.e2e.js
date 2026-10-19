@@ -13,7 +13,7 @@
  */
 const assert = require('assert')
 const { MILESTONES } = require('./milestones')
-const { config, snapshotName, runMilestone, ensureStart, summary } = require('./harness')
+const { config, snapshotName, runMilestone, ensureStart, summary, rebuilt } = require('./harness')
 
 describe('overworld milestones (U17)', function () {
   this.timeout(0)
@@ -27,7 +27,7 @@ describe('overworld milestones (U17)', function () {
       const results = []
       for (let run = 1; run <= runs; run++) {
         const own = snapshotName(milestone.id, cfg)
-        const snapshotAfter = (!bds.readSnapshot(own) || (cfg.refresh && run === 1)) ? own : null
+        const snapshotAfter = (!bds.readSnapshot(own) || (cfg.refresh && !rebuilt.has(own))) ? own : null
         const r = await runMilestone(milestone, { run, snapshotAfter, cfg })
         const s = summary(r, null)
         const inTime = r.ok && r.ms <= milestone.timeout

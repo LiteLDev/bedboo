@@ -141,10 +141,9 @@ function mobsFor (bot, item, { failures } = {}) {
   return out
 }
 
-/** a station block within `radius` (crafting_table / furnace) */
-function stationNear (bot, name, radius = 24) {
-  const names = name === 'furnace' ? ['furnace', 'lit_furnace'] : [name]
-  return world.findBlocks(bot, names, { maxDistance: radius, count: 1 })[0] ?? null
+/** a usable station block nearby (crafting_table / furnace), see stations.stationNear */
+function stationNear (bot, name, radius) {
+  return require('./stations').stationNear(bot, name, radius)
 }
 
 /**
