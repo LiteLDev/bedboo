@@ -462,6 +462,10 @@ function inject (bot) {
   function onLevelEvent (packet) {
     const state = current
     if (!state || state.done || state.legacy || state.index < 0) return
+    // an instant break (start + predict in one input) has no progress to follow: a report now is about what replaced
+    // the block (the water a seagrass or a waterlogged plant leaves, sometimes in the batch BEFORE the update_block),
+    // not the dug block's speed (U16a: seen once in digEverything › short_dry_grass after seagrass)
+    if (state.ticks === 0) return
     if (packet.event !== 'block_start_break' && packet.event !== 'block_break_speed') return
     if (!packet.position || !samePosition(packet.position, state.position)) return
     const data = Number(packet.data)

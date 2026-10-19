@@ -62,6 +62,15 @@ function inject (bot) {
     assert.ok(slot < 9)
     if (bot.quickBarSlot === slot) return
     bot.quickBarSlot = slot
+    sendSelection(slot)
+    bot.updateHeldItem()
+  }
+
+  // the latest selection this client sent: a player_hotbar select the server built before it read it must not undo it
+  // (the inventory plugin checks it, U16a)
+  let selection = null
+  function sendSelection (slot) {
+    selection = { slot, at: Date.now() }
     bot._client.queue('mob_equipment', {
       runtime_entity_id: bot._bedrock.ids?.selfRuntimeId?.() ?? bot.entity?.runtimeId ?? 0n,
       item: bot._bedrock.heldNetworkItem(),
@@ -69,7 +78,12 @@ function inject (bot) {
       selected_slot: slot,
       window_id: 'inventory'
     })
-    bot.updateHeldItem()
+  }
+  if (bot._bedrock) {
+    bot._bedrock.hotbarSelection = {
+      last: () => selection,
+      resend: () => { if (selection) sendSelection(selection.slot) }
+    }
   }
 
   async function equipEmpty () {

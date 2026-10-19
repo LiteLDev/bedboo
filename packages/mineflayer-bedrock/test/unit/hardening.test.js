@@ -182,6 +182,45 @@ describe('wave-4 review fixes (U16a)', function () {
     })
   })
 
+  describe('full-suite flake: a server hotbar select older than our own selection', () => {
+    it('player_hotbar select_slot contradicting a selection sent < 1 s ago is ignored and ours sent again', async () => {
+      const { bot, client } = await joined()
+      client.receive('inventory_content', inventoryContent(bot, { 0: ['dirt', 3] }))
+      bot.setQuickBarSlot(1)
+      bot.setQuickBarSlot(0) // e.g. unequip('hand') then the caller's own choice, in one batch
+      client.clearSent()
+      // BDS ran a console /clear between them: its player_hotbar still has slot 1
+      client.receive('player_hotbar', { selected_slot: 1, window_id: 'inventory', select_slot: true })
+      assert.strictEqual(bot.quickBarSlot, 0)
+      assert.strictEqual(bot.heldItem?.name, 'dirt')
+      assert.deepStrictEqual(client.sent('mob_equipment').map((p) => p.selected_slot), [0], 'our selection again')
+      // the same slot, or a select long after our last selection, is followed
+      client.receive('player_hotbar', { selected_slot: 0, window_id: 'inventory', select_slot: true })
+      assert.strictEqual(bot.quickBarSlot, 0)
+      bot._bedrock.hotbarSelection.last().at -= 1500
+      client.receive('player_hotbar', { selected_slot: 4, window_id: 'inventory', select_slot: true })
+      assert.strictEqual(bot.quickBarSlot, 4)
+    })
+  })
+
+  describe('full-suite flake: an instant break in water', () => {
+    it('a progress report of the water left behind (before the update_block) is not the dug block\'s speed', async () => {
+      const { bot, client, tick } = await spawned()
+      bot.game.gameMode = 'survival'
+      const pos = new Vec3(2, -60, 0)
+      serverSets(bot, client, pos, 'short_grass')
+      const done = bot.dig(bot.blockAt(pos), true)
+      await settle()
+      tick(1) // start_break + predict_break
+      client.receive('level_event', { event: 'block_start_break', position: { x: 2, y: -60, z: 0 }, data: 21 }) // the water's
+      serverSets(bot, client, pos, 'water')
+      tick(2)
+      await done
+      assert.strictEqual(bot._bedrock.digging.last.serverSpeedData, null)
+      assert.strictEqual(bot._bedrock.digging.last.outcome, 'completed')
+    })
+  })
+
   describe('#12 books longer than BDS keeps', () => {
     it('writeBook / signBook with more than 50 pages reject at once (nothing moved or sent)', async () => {
       const { bot, client } = await joined()

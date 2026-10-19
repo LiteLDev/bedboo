@@ -59,6 +59,8 @@ const CONTENT_TIMEOUT = 1000
 // BDS drops a container activation that arrives in the tick its previous container closed (observed: no
 // container_open, no resync); activations wait this long after a close
 const REOPEN_DELAY = 100
+/** ms after the bot's own hotbar selection during which a contradicting server select is taken as stale (U16a) */
+const STALE_SELECTION_MS = 1000
 
 /** Bedrock blocks whose activation opens a window (containers and stations) */
 const WINDOW_BLOCKS = /(?:^|_)(?:chest|barrel|shulker_box|furnace|smoker|crafting_table|anvil|enchanting_table|brewing_stand|hopper|dispenser|dropper|beacon|grindstone|stonecutter_block|loom|cartography_table|smithing_table|crafter|lectern)$/
@@ -588,12 +590,26 @@ function inject (bot) {
   bot._client.on('player_hotbar', (packet) => {
     if (packet.window_id !== undefined && windowIdOf(packet.window_id) !== 0) return
     if (!packet.select_slot && bot.quickBarSlot !== null) return
+    if (staleSelection(packet.selected_slot)) return
     selectSlot(packet.selected_slot)
   })
   bot._client.on('mob_equipment', (packet) => {
     if (!isSelf(packet.runtime_entity_id) || windowIdOf(packet.window_id) !== 0) return
+    if (staleSelection(packet.selected_slot)) return
     selectSlot(packet.selected_slot)
   })
+  /**
+   * BDS answers a console command (/clear, /replaceitem, /give) with a player_hotbar select of ITS selected slot, which
+   * may predate a selection this client sent a moment ago (the command ran before our mob_equipment was read): the
+   * bot would switch back and stay out of sync with the server (seen in the full e2e suite). A select that contradicts
+   * our own selection of the last second is ignored and our selection sent again (U16a).
+   */
+  function staleSelection (slot) {
+    const own = bot._bedrock.hotbarSelection?.last()
+    if (!own || own.slot !== bot.quickBarSlot || slot === own.slot || Date.now() - own.at >= STALE_SELECTION_MS) return false
+    bot._bedrock.hotbarSelection.resend()
+    return true
+  }
 
   // ---------------------------------------------------------------- windows
 

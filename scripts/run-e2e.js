@@ -23,35 +23,37 @@ let args = process.argv.slice(2).filter((arg, i) => !(arg === '--' && i === 0))
 const mocha = path.join(pkgDir, 'node_modules', '.bin', process.platform === 'win32' ? 'mocha.cmd' : 'mocha')
 
 /**
- * Approximate seconds per e2e file (wave-4/5 runs: tests + server start); unlisted files count DEFAULT_WEIGHT.
+ * Approximate seconds per e2e file (U16a's wave-5 full runs: tests + server start); unlisted files count DEFAULT_WEIGHT.
  * Only the balance depends on these numbers.
  */
 const WEIGHTS = {
   'digEverything.test.js': 760,
-  'combatMatrix.test.js': 260,
-  'readmeQuickstart.test.js': 30,
-  'ecosystemPathfinder.test.js': 120,
-  'ecosystemCollectBlock.test.js': 50,
-  'ecosystemPvp.test.js': 50,
-  'exampleEcosystem.test.js': 40,
+  'digOres.test.js': 520,
+  'physicsLoop.test.js': 140,
   'physicsBlocks.test.js': 120,
-  'physicsLoop.test.js': 75,
+  'combatMatrix.test.js': 120,
+  'ecosystemPathfinder.test.js': 110,
   'craftingTags.test.js': 50,
-  'digging.test.js': 48,
+  'digging.test.js': 45,
   'physicsFlight.test.js': 45,
-  'furnace.test.js': 42,
-  'craftingMatrix.test.js': 40,
-  'digOres.test.js': 40,
+  'ecosystemCollectBlock.test.js': 40,
+  'furnace.test.js': 40,
   'dimensionTravel.test.js': 40,
-  'coreJoin.test.js': 32,
-  'physicsInteractions.test.js': 32,
-  'entities.test.js': 30,
-  'enchanting.test.js': 28,
-  'riding.test.js': 26,
-  'hardening.test.js': 60,
-  'scaffold.test.js': 24,
-  'mobFights.test.js': 23,
-  'anvil.test.js': 21
+  'craftingMatrix.test.js': 35,
+  'coreJoin.test.js': 30,
+  'hardening.test.js': 30,
+  'physicsInteractions.test.js': 30,
+  'readmeQuickstart.test.js': 30,
+  'animals.test.js': 28,
+  'entities.test.js': 28,
+  'exampleBee.test.js': 25,
+  'enchanting.test.js': 25,
+  'exampleEcosystem.test.js': 25,
+  'riding.test.js': 22,
+  'scaffold.test.js': 22,
+  'mobFights.test.js': 20,
+  'anvil.test.js': 20,
+  'ecosystemPvp.test.js': 20
 }
 const DEFAULT_WEIGHT = 12
 const WEIGHT_KEY = (f) => path.basename(f)
