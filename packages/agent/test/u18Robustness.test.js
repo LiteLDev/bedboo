@@ -78,9 +78,10 @@ describe('U18 lava pools (FINAL-FIX-AGENT-B)', () => {
     assert.deepStrictEqual(portal.rankPools([tiny, open], { from, need: 10 }).map((p) => p.key), ['open'])
     // one cast left: a one-source pool next to the bot is fine
     assert.deepStrictEqual(portal.rankPools([tiny, open], { from, need: 1 }).map((p) => p.key), ['tiny', 'open'])
-    // a deep cave lake (no sky, below y 40) is never worth the walk
+    // a deep cave lake / a ravine's lava floor (below y 40, sky or not) is never worth the walk
     const deep = { ...pool('deep', 5, 40, 0), center: new Vec3(5, -55, 0) }
-    assert.deepStrictEqual(portal.rankPools([deep, open], { from, need: 10 }).map((p) => p.key), ['open'])
+    const ravine = { ...pool('ravine', 5, 200, 15), center: new Vec3(5, -31, 0) }
+    assert.deepStrictEqual(portal.rankPools([deep, ravine, open], { from, need: 10 }).map((p) => p.key), ['open'])
   })
 })
 

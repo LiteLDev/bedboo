@@ -303,13 +303,14 @@ function lavaPools (blockAt, lava) {
  * Rank pools for bucket casting (best first): enough reachable sources for the casts still needed, under the open sky
  * (a cave pool needs a way down and back), close to `from`; `bad` pool keys are left out. Pure.
  */
-function rankPools (pools, { from, need = 1, bad = new Set(), minSources = 2, minCaveY = 40 } = {}) {
+function rankPools (pools, { from, need = 1, bad = new Set(), minSources = 2, minY = 40 } = {}) {
   const f = u.vec(from)
   const nearest = (pool) => Math.min(...pool.reachable.map((p) => p.distanceTo(f)))
   return pools
     .filter((p) => !bad.has(p.key) && p.reachable.length >= Math.min(minSources, need))
-    // deep lava lakes in caves (no sky, below y 40): minutes of walking for no flat ground for a mold (N1M5 #3)
-    .filter((p) => p.sky > 0 || p.center.y >= minCaveY)
+    // deep lava lakes (below y 40): in caves minutes of walking for no flat ground for a mold (N1M5 #3); at the bottom of
+    // a ravine — open to the sky — the walk down ended in the lava (N1M5 #1, a ravine pool at y -31)
+    .filter((p) => p.center.y >= minY)
     .map((p) => ({ pool: p, score: nearest(p) + (p.sky > 0 ? 0 : 96) + (p.reachable.length < need ? 24 : 0) }))
     .sort((a, b) => a.score - b.score)
     .map((x) => x.pool)
@@ -446,9 +447,14 @@ async function fillBucket (bot, liquid, { signal, guard, maxDistance = 128, near
   // reachable from above: air (or a plant) right above
   const usable = (p) => !skip.has(p.toString()) && isSource(bot.blockAt(p)) && u.isClear(bot.blockAt(p.offset(0, 1, 0)))
   // many: in a lake the nearest thousands of water blocks can all be under water (only the top layer is reachable)
-  const candidates = only
+  let candidates = only
     ? only.map((p) => u.vec(p))
     : u.findBlocks(bot, names, { maxDistance, count: 32768, point: near, filter: (b) => usable(b.position) }).map((b) => b.position)
+  // water: a lake under the open sky first (a cave's water is a walk through the dark, next to its lava)
+  if (!only && liquid === 'water') {
+    const sky = candidates.slice(0, 2000).filter((p) => openSky(worldOf(bot), p))
+    if (sky.length) candidates = sky
+  }
   const started = Date.now()
   const failed = []
   const skipped = []
