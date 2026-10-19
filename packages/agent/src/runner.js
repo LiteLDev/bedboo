@@ -496,6 +496,8 @@ class Agent extends EventEmitter {
     } finally {
       clearTimeout(timer)
     }
+    // the armor and the shield came back as items: wear them again
+    await require('./skills/combat').equipForCombat(bot, { shield: true }).catch(() => {})
     this.event('recovered', { inventory: inventory.counts(bot) })
   }
 
