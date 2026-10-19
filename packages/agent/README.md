@@ -144,6 +144,17 @@ node packages/agent/scenarios/overworld/full-run.js --log             # the same
 | M4 | M3's end | surface, walk to the world spawn, build house5x5 | every block of the house, ≤ 48 blocks from the spawn |
 | M5 | M4's end | coal, copper, iron; emerald (mountains); lapis, gold, redstone, diamond | one new item from each of the 8 ores |
 
+Gate on BDS 1.26.51.1 (2026-10-19, seed 1234, easy, 5 runs each from the previous milestone's snapshot; failure
+reasons and timings in `$AGENT_REPORT_DIR/runs.jsonl`):
+
+| | passed | wall time per run (s) | notes |
+|---|---|---|---|
+| M1 | 5/5 | 91, 86, 80, 93, 88 | |
+| M2 | 5/5 | 220, 252, 227, 195, 223 | night falls: zombies fought |
+| M3 | 5/5 | 159, 90, 121, 120, 121 | diamonds at y 3–4 (deepslate diamond ore) |
+| M4 | 5/5 | 185, 176, 200, 188, 172 | 125 cells verified; spiders, zombies, creepers fought |
+| M5 | 5/5 | 361, 327, 424, 316, 506 | two runs survived a death (respawn, walk back, drops recovered) |
+
 World: the scouted seed in `scenarios/overworld/seed.json` (default generator), survival, difficulty
 `AGENT_DIFFICULTY` (default `easy`), vanilla gamerules (mobs spawn, day and night pass). Each milestone runs on a
 fresh server started from the snapshot `u17-s<seed>-m<k-1>` — the end state of a successful run of the previous
