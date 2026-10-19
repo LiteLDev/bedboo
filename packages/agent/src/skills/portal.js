@@ -1273,7 +1273,11 @@ async function obtainFlint (bot, { signal, maxTries = 60, timeout = 240000 } = {
           !u.isWater(bot.blockAt(b.position.offset(0, 1, 0))) && !/gravel|sand/.test(bot.blockAt(b.position.offset(0, 1, 0))?.name ?? '')
       })
       if (!found.length) throw new Error('no gravel within 96 blocks')
-      target = found[0]
+      // near the bot's level first: gravel deep below is a pit to dig and to climb out of (N1 seed 35 #2: flint from
+      // 15 blocks down, then the walk back up to the frame stalled)
+      const y = bot.entity.position.y
+      const cost = (b) => b.position.distanceTo(bot.entity.position) + 3 * Math.max(0, y - b.position.y - 3)
+      target = found.slice().sort((a, b) => cost(a) - cost(b))[0]
       u.log(bot, `flint: gravel at ${target.position} (bot at ${bot.entity.position.floored()})`)
       try {
         await u.goto(bot, new goals.GoalGetToBlock(target.position.x, target.position.y, target.position.z), { signal, timeout: Math.max(5000, Math.min(90000, timeout - (Date.now() - started))) })
@@ -1405,7 +1409,9 @@ async function lightPortal (bot, frame, { signal } = {}) {
   }
   const crafted = await ensureFlintAndSteel(bot, { signal })
   const spot = frame.spot ?? frame.stand[0]
-  await u.goto(bot, new goals.GoalBlock(spot.x, spot.y, spot.z), { signal, timeout: 60000 })
+  // down in a gravel pit after the flint: up first (a straight walk out of a 1×1 shaft stalls)
+  if (bot.entity.position.y < spot.y - 4) await toSurface(bot, { signal })
+  await u.goto(bot, new goals.GoalBlock(spot.x, spot.y, spot.z), { signal, timeout: 120000 })
   await u.equipItem(bot, 'flint_and_steel')
   await bot.placeBlock(bot.blockAt(frame.light.ref), frame.light.face)
   for (const p of frame.interior) await u.waitForBlock(bot, p, (b) => b.name === 'portal', { timeout: 5000, signal })
