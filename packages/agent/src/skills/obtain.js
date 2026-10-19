@@ -137,26 +137,33 @@ async function strike (bot, target, { signal, timeout = 20000 } = {}) {
   }
 }
 
-/** kill passive mobs in sight for their drops (chased with the pathfinder, see strike) */
+/**
+ * Kill passive mobs in sight for their drops (chased with the pathfinder, see strike). `item` may be a list: then
+ * `count` of any ONE of them (3 wool of one colour for a bed).
+ */
 async function hunt (bot, { mobs, item, count, signal, radius = 64, filter = () => true }) {
-  const start = inventory.count(bot, item)
+  const items = [].concat(item)
+  const start = Object.fromEntries(items.map((i) => [i, inventory.count(bot, i)]))
   // a hungry bot eats the meat as soon as it is picked up (mineflayer-auto-eat): that counts as collected
   // ('eatFinish' also follows a failed meal: 'eatFail' comes right before it then)
   let eaten = 0
   let failed = false
   const onFail = () => { failed = true }
   const onEat = (o) => {
-    if (!failed && o?.food?.name === item) eaten++
+    if (!failed && items.includes(o?.food?.name)) eaten++
     failed = false
   }
   bot.autoEat?.on?.('eatFail', onFail)
   bot.autoEat?.on?.('eatFinish', onEat)
-  const collected = () => inventory.count(bot, item) - start + eaten
+  const best = () => items.reduce((b, i) => inventory.count(bot, i) - start[i] > inventory.count(bot, b) - start[b] ? i : b, items[0])
+  const collected = () => inventory.count(bot, best()) - start[best()] + eaten
+  const dead = require('./combat').deadEntities(bot)
   let kills = 0
   try {
     for (let i = 0; i < count * 3 && collected() < count; i++) {
       checkAbort(signal)
-      const target = bot.nearestEntity((e) => mobs.includes(e.name) && preyOk(bot, e) && e.position.distanceTo(bot.entity.position) <= radius && filter(e))
+      // (a mob killed a moment ago stays in bot.entities during its death animation)
+      const target = bot.nearestEntity((e) => mobs.includes(e.name) && !dead.has(e) && preyOk(bot, e) && e.position.distanceTo(bot.entity.position) <= radius && filter(e))
       if (!target) throw new SkillError(`no ${mobs.join('/')} in sight`, { code: 'NOT_FOUND' })
       const outcome = await strike(bot, target, { signal, timeout: 20000 }) // a fleeing animal is not worth more
       log(bot, `hunt: ${target.name} at ${target.position.floored()} → ${outcome}`)
@@ -168,15 +175,18 @@ async function hunt (bot, { mobs, item, count, signal, radius = 64, filter = () 
       }
       if (outcome === 'killed') {
         kills++
-        await dig.pickupNear(bot, target.position.clone(), { signal, item, radius: 4 })
+        const had = inventory.counts(bot)
+        await dig.pickupNear(bot, target.position.clone(), { signal, radius: 5, wait: 1500, timeout: 10000 })
+        const got = Object.entries(inventory.counts(bot)).filter(([n, c]) => c > (had[n] ?? 0)).map(([n, c]) => `${c - (had[n] ?? 0)} ${n}`)
+        progress(bot, 'pickup', { from: target.name, got })
       }
     }
   } finally {
     bot.autoEat?.removeListener?.('eatFail', onFail)
     bot.autoEat?.removeListener?.('eatFinish', onEat)
   }
-  if (collected() <= 0) throw new SkillError(`killed ${kills} ${mobs.join('/')} but picked up no ${item}`, { code: 'FAILED' })
-  return { killed: kills, collected: { [item]: collected() } }
+  if (collected() <= 0) throw new SkillError(`killed ${kills} ${mobs.join('/')} but picked up no ${items.join('/')}`, { code: 'FAILED' })
+  return { killed: kills, collected: { [best()]: collected() } }
 }
 
 /**
@@ -188,6 +198,7 @@ async function obtain (bot, { item, count = 1, maxSteps = 80, signal } = {}) {
   if (!bot.registry.itemsByName[item]) throw new SkillError(`unknown item ${item}`, { code: 'NO_PLAN' })
   const started = Date.now()
   const failures = new Map()
+  const forgiven = new Map()
   const done = []
   for (let i = 0; i < maxSteps; i++) {
     checkAbort(signal)
@@ -203,13 +214,20 @@ async function obtain (bot, { item, count = 1, maxSteps = 80, signal } = {}) {
     if (!step) throw new SkillError(`obtain ${item}: empty plan`, { code: 'NO_PLAN' })
     log(bot, `obtain ${count} ${item}: ${describe(p.steps)} (~${Math.round(p.cost)} s)`)
     const t0 = Date.now()
+    const safety = agentOf(bot)?.safety
+    const interventionsBefore = safety?.interventions.length ?? 0
     try {
       await execute(bot, step, { signal })
       done.push({ action: step.action, item: step.item, count: step.count, ms: Date.now() - t0 })
     } catch (err) {
       if (isAbort(err) || err.code === 'DIED') throw err
       const k = failureKey(step)
-      failures.set(k, (failures.get(k) ?? 0) + 1)
+      // a fight / a lava escape in the middle (the furnace window closed, the path stopped) is not this way's fault
+      // (at most 3 times per way, so a way that keeps failing during fights is still dropped eventually)
+      const interrupted = !!safety && (safety.busy || safety.interventions.length > interventionsBefore || safety.recentlyBusy(3000)) &&
+        !['NO_PLAN', 'MISSING'].includes(err.code) && (forgiven.get(k) ?? 0) < 3
+      if (interrupted) forgiven.set(k, (forgiven.get(k) ?? 0) + 1)
+      else failures.set(k, (failures.get(k) ?? 0) + 1)
       done.push({ action: step.action, item: step.item, count: step.count, ms: Date.now() - t0, error: err.message })
       log(bot, `obtain: ${step.action} ${step.item} failed (${err.code ?? err.name}): ${err.message}`)
       progress(bot, 'step-failed', { action: step.action, item: step.item, code: err.code, error: err.message })
@@ -250,6 +268,47 @@ const skill = defineSkill('obtain', (bot, args) => obtain(bot, args), {
 })
 
 /**
+ * Skill `hunt` — args: { mobs: string[], item: string|string[], count?: 1, total?: false, radius?: 48, explore?: true,
+ * timeout?: 150000 }: kill passive mobs (chased with the pathfinder) until `count` more `item`s were picked up (a list
+ * of items: `count` of any one of them; `total`: until that many are carried); when none is in sight, walk a spiral
+ * on the surface until one is. result: { collected: { [item]: n }, killed }
+ */
+async function huntSkill (bot, { mobs, item, count = 1, total = false, radius = 48, explore: mayExplore = true, timeout = 150000, signal } = {}) {
+  if (!mobs?.length || !item) throw new SkillError('hunt needs args.mobs and args.item', { code: 'FAILED' })
+  const started = Date.now()
+  const items = [].concat(item)
+  const start = Object.fromEntries(items.map((i) => [i, inventory.count(bot, i)]))
+  let killed = 0
+  // a list of items: `count` of any one of them (`total`: carried in all, else gained)
+  const got = () => Math.max(...items.map((i) => inventory.count(bot, i) - (total ? 0 : start[i])))
+  while (got() < count) {
+    checkAbort(signal)
+    if (Date.now() - started > timeout) break
+    await agentOf(bot)?.safety?.idle(signal)
+    const dead = require('./combat').deadEntities(bot)
+    const inSight = () => bot.nearestEntity((e) => mobs.includes(e.name) && !dead.has(e) && preyOk(bot, e) && e.position.distanceTo(bot.entity.position) <= radius)
+    if (!inSight()) {
+      if (!mayExplore) break
+      log(bot, `hunt: no ${mobs.join('/')} in sight; exploring`)
+      const r = await require('./explore').explore(bot, { until: inSight, maxDistance: 160, leg: 32, signal, timeout: Math.max(15000, timeout - (Date.now() - started)) })
+      if (!r.found) break
+    }
+    try {
+      const r = await hunt(bot, { mobs, item, count: count - got(), signal, radius })
+      killed += r.killed
+    } catch (err) {
+      if (isAbort(err) || err.code === 'DIED') throw err
+      log(bot, `hunt: ${err.message}`)
+      await waitTicks(bot, 10, signal)
+    }
+  }
+  const have = (i) => inventory.count(bot, i) - (total ? 0 : start[i])
+  const best = items.reduce((b, i) => have(i) > have(b) ? i : b, items[0])
+  if (got() < count) throw new SkillError(`hunted ${got()} of ${count} ${items.length > 1 ? 'of one of ' : ''}${items.join('/')} (${killed} ${mobs.join('/')} killed)`, { code: 'NOT_FOUND', details: { killed } })
+  return { collected: { [best]: got() }, killed }
+}
+
+/**
  * Obtain several items in order. @returns {Promise<{ results: object[] }>}
  */
 async function obtainAll (bot, { items, signal }) {
@@ -258,4 +317,4 @@ async function obtainAll (bot, { items, signal }) {
   return { results }
 }
 
-module.exports = Object.assign(skill, { obtain, obtainAll, execute, hunt, preyOk, describe, FOODS: data.FOODS })
+module.exports = Object.assign(skill, { skills: { hunt: defineSkill('hunt', (bot, args) => huntSkill(bot, args), { description: 'kill passive mobs for an item (exploring for them)' }) }, obtain, obtainAll, execute, hunt, huntSkill, preyOk, describe, FOODS: data.FOODS })

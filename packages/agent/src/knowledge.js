@@ -83,7 +83,7 @@ function nearestBlocks (bot, blocks, radius) {
     // drop positions dug since
     return hit.found.filter((p) => blocks.includes(bot.blockAt(p)?.name))
   }
-  const found = world.findBlocks(bot, blocks, { maxDistance: radius, count: 4, filter: (p) => world.safeToDig(bot, p) })
+  const found = world.findBlocks(bot, blocks, { maxDistance: radius, count: 4, filter: (p) => world.safeToDig(bot, p) && !world.inTrap(bot, p) })
   cache.set(key, { at: Date.now(), from: here.clone(), found })
   return found
 }

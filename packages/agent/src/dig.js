@@ -31,7 +31,7 @@ const isProtected = world.isProtected
  */
 function candidates (bot, blocks, { maxDistance = 64, exclude = new Set(), point } = {}) {
   const here = point ?? bot.entity.position
-  const usable = (p) => !exclude.has(key(p)) && !isProtected(bot, p) && world.safeToDig(bot, p) && !world.lavaAround(bot, p)
+  const usable = (p) => !exclude.has(key(p)) && !isProtected(bot, p) && !world.inTrap(bot, p) && world.safeToDig(bot, p) && !world.lavaAround(bot, p)
   const found = world.findBlocks(bot, blocks, { maxDistance, count: 48, point: here, filter: usable })
   const out = []
   for (const p of found) {
@@ -90,6 +90,11 @@ async function collectBlocks (bot, { item = null, count = 1, blocks, maxDistance
     checkAbort(signal)
     if (Date.now() - started > timeout) throw new SkillError(`collecting ${item ?? blocks.join('/')}: timed out after ${timeout} ms (${JSON.stringify(mined)})`, { code: 'TIMEOUT' })
     await agentOf(bot)?.safety?.idle(signal)
+    // a full inventory picks nothing up: the ore would be dug for nothing, again and again
+    if (inventory.freeSlots(bot) < 3) {
+      const tossed = await inventory.declutter(bot, { minFree: 5, keep: item })
+      if (Object.keys(tossed).length) log(bot, `inventory full: tossed ${JSON.stringify(tossed)}`)
+    }
     let list = candidates(bot, blocks, { maxDistance, exclude: tried })
     if (!list.length) {
       if (!exploreDistance) throw new SkillError(`no ${blocks.join('/')} within ${maxDistance} blocks`, { code: 'NOT_FOUND' })
@@ -150,12 +155,16 @@ async function mineAt (bot, pos, { signal, item, pickup = true } = {}) {
   if (harvest && !harvest.some((t) => inventory.count(bot, t) > 0)) {
     throw new SkillError(`${block.name} needs one of ${harvest.join(', ')}`, { code: 'MISSING' })
   }
-  progress(bot, 'mine', { block: block.name, at: { x: pos.x, y: pos.y, z: pos.z } })
   await reach(bot, pos, { signal })
   block = bot.blockAt(pos)
   if (!block || world.isAir(block) || world.isLiquid(block)) return false
   if (!world.safeToDig(bot, pos)) throw new SkillError(`${block.name} at ${navigate.fmt(pos)} is next to a liquid`, { code: 'UNSAFE' })
+  const name = block.name
   if (!(await digBlock(bot, block, signal))) return false
+  // only a block that is gone counts as mined (the milestones verify these events)
+  for (let i = 0; i < 10 && bot.blockAt(pos)?.name === name; i++) await waitTicks(bot, 1, signal)
+  if (bot.blockAt(pos)?.name === name) return false
+  progress(bot, 'mine', { block: name, at: { x: pos.x, y: pos.y, z: pos.z } })
   if (pickup) await pickupNear(bot, pos.offset(0.5, 0.5, 0.5), { signal, item })
   return true
 }
@@ -328,8 +337,8 @@ async function pickupNear (bot, center, { signal, radius = 3, wait = 900, timeou
   await sleep(150, signal)
   while (Date.now() - started < timeout) {
     checkAbort(signal)
-    if (item && inventory.count(bot, item) > before && !nearbyDrops(bot, center, radius, skip).length) return true
-    const drops = nearbyDrops(bot, center, radius, skip)
+    if (item && inventory.count(bot, item) > before && !nearbyDrops(bot, center, radius, skip, item).length) return true
+    const drops = nearbyDrops(bot, center, radius, skip, item)
     if (!drops.length) {
       if (Date.now() - started > wait) return item ? inventory.count(bot, item) > before : true
       await sleep(100, signal)
@@ -347,9 +356,15 @@ async function pickupNear (bot, center, { signal, radius = 3, wait = 900, timeou
   return item ? inventory.count(bot, item) > before : true
 }
 
-function nearbyDrops (bot, center, radius, skip) {
+function nearbyDrops (bot, center, radius, skip, want) {
+  // junk and surplus (cobblestone beyond what the agent keeps, saplings, tossed stuff) stay where they are
+  const unwanted = (e) => {
+    let name = null
+    try { name = e.getDroppedItem?.()?.name ?? null } catch {}
+    return name !== want && inventory.unwanted(bot, name)
+  }
   return Object.values(bot.entities)
-    .filter((e) => e.name === 'item' && !skip.has(e.id) && e.position.distanceTo(center) <= radius)
+    .filter((e) => e.name === 'item' && !skip.has(e.id) && e.position.distanceTo(center) <= radius && !unwanted(e))
     .sort((a, b) => a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position))
 }
 

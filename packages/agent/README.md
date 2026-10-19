@@ -69,12 +69,16 @@ A skill is `async (bot, args) => result` (`args.signal` is the runner's AbortSig
 | `mine` | `{ item \| block \| blocks, count }` or `{ all: [{ item, count }] }` | ores and stone: shaft down to deep ones, explore towards the right biome when none is loaded |
 | `gather` | `{ item \| blocks, count }` | surface blocks: logs (`item: 'log'` = any), sand, gravel, … |
 | `craft` | `{ item, count }` | `bot.recipesFor` / `bot.craft`, 2×2 or a crafting table (placed and taken back) |
-| `smelt` | `{ item, count, input?, fuel? }` | `bot.openFurnace`; the furnace is placed and taken back |
+| `smelt` | `{ item, count, input?, fuel?, furnaces?: 3 }` | `bot.openFurnace`; the furnace is placed and taken back; the window is only open to load / unload (a fight that closes it costs nothing); ≥ 12 items are split over up to 3 furnaces |
 | `build` | `{ blueprint, origin?, radius? }` | builds a blueprint near the bot, verifies it block by block |
-| `navigate` | `{ position \| spawn: true, goal?, range? }` | pathfinder with re-planning, legs for far goals, unsticking (own door, head block, out of the water onto a bank, a side dug open) |
+| `navigate` | `{ position \| spawn: true, goal?, range? }` | pathfinder with re-planning, legs for far goals (each leg's end on dry land, never in a lake), unsticking (own door, head block, out of the water onto a bank, a side dug open), the last resort after two failures in a pit / the water: `escape`; `spawn: true` is an x / z goal (the spawn column) |
 | `explore` | `{ blocks?, biomes?, maxDistance? }` | spiral walk until a block / biome is loaded |
 | `surface` | `{}` | out of a mine: pillar up (staircase where liquid is above, around lakes) |
-| `food` | `{ min }` | hunt passive animals for food |
+| `food` | `{ min, items?, stock?, explore?, fishing? }` | carry `min` hunger points and `items` food items: hunt passive animals (exploring for them), cook the meat; fish when no animal is left |
+| `hunt` | `{ mobs, item, count }` | kill passive mobs for an item (wool, leather, …), exploring until one is in sight |
+| `fish` | `{ count, obtainRod? }` | `bot.fish()` from a shore next to open water (≥ 2 deep); each cast waits ≤ 40 s for a bite |
+| `rest` | `{ shelter? }` | the night: sleep in the carried bed (placed, `bot.sleep`, taken back: the night is skipped); with `shelter` and no bed / armor: the house, or a sealed hole in the ground until the morning |
+| `escape` | `{ away? }` | last-resort unstick: out of the water onto a bank, up to the open sky (pillar / staircase), a few blocks away on dry land |
 | `combat`, `portal`, `nether`, `end` | | U18's (fighting, portals, other dimensions) |
 
 ## The obtain planner
@@ -100,14 +104,30 @@ dropped after 3 failures.
 
 src/safety.js runs during every task. When it takes over, pathfinder and digging stop and the task waits:
 
-- a hostile that hurt the bot or comes close (creepers from 6 blocks) is fought with skills/combat.js `fight`
-  (melee, bow when available, retreat when low) — or fled from without a weapon at low health; a mob it could not get
-  at within 15 s is left alone for a minute;
-- in lava: jump towards the nearest solid ground; low on air: swim up (centred in the water column); a falling
-  block in the head cell (gravel, sand): dig it out (never towards lava);
-- mineflayer-auto-eat eats when the food level drops below 16 (rotten flesh too when starving); between tasks the
-  agent hunts passive animals in sight when hungry and out of food (chased with the pathfinder around fences and
-  ledges), and cooks the meat in its furnace;
+- a hostile that hurt the bot or comes close (creepers from 6 blocks) is fought with skills/combat.js `fight` with
+  `safe: true` (melee, bow when available, retreat and eat when low; its moves never step into lava / fire / a portal
+  or off a ledge higher than 3) — or fled from without a weapon at low health; a mob the bot neither hit nor got
+  closer to for 12 s, or that ran 24 blocks away, is left alone for a minute; a neutral mob (piglin, enderman) that
+  swung at the bot and hurt it is fought back (`combat.likelyAttacker`); a ghast fireball within 4 blocks is hit
+  back; what a killed mob dropped next to the bot (string, bones) is picked up;
+- U18's skills (portal, nether, end) run under `combat.guardFor()`: under an Agent it pushes the skill's guard options
+  (radius, height band, `ignore` — ghasts without a bow —, neutral mobs, retaliation, deflection) onto the safety
+  behaviours for as long as the skill runs, so they keep their own guard's protections; the combat skill's hunt /
+  nearby modes pause the safety behaviours while they fight themselves (one fighter per mob);
+- in lava: jump towards the nearest solid ground; low on air: swim up (centred in the water column), or to the
+  nearest pocket of air under a ceiling; a falling block in the head cell (gravel, sand): dig it out (never towards
+  lava);
+- mineflayer-auto-eat eats when the food level drops below 16 — below 18 while the bot is hurt (natural regeneration
+  needs 18) — (rotten flesh too when starving), never during a fight; between tasks the agent hunts passive animals
+  in sight when hungry and out of food (chased with the pathfinder around fences and ledges), and cooks the meat in
+  its furnace;
+- nights: between tasks, in the overworld at night, the agent sleeps in its bed (`rest`: the night is skipped); with
+  `shelter: true` (the final chain) and neither a bed nor armor it waits for the morning in its house or a sealed hole;
+- the stuck watchdog: a task (obtain, mine, gather, navigate, explore, build, food, hunt, fish, surface) whose bot
+  stayed in a box of 6 blocks for 2½–4 minutes without digging, placing, crafting, smelting or picking anything up is
+  aborted; the bot escapes (`escape`: out of the water, up to the sky, away from the spot), the spot is a trap for ten
+  minutes (no ore / goal there is chosen again) and the task runs again (twice at most); an aborted task's skill is
+  given 10 s to unwind before anything else drives the bot;
 - a death aborts the task; after the respawn the agent walks back (a shaft for a death deep underground, after making
   a wooden pickaxe if none is left), picks up its drops and retries the task; a lost tool is obtained again by the mine
   step that needs it;
@@ -177,27 +197,44 @@ Env: `AGENT_RUNS` (runs per milestone), `AGENT_DIFFICULTY`, `AGENT_REPORT_DIR` (
 ### The final chain
 
 `scenarios/overworld/final-chain.js` (`corepack pnpm --filter @bedboo/agent final-chain`, or
-`AGENT_FINAL_CHAIN=1 … test:e2e -- --grep "final chain"`) runs everything in one world with one bot and no reconnects:
-M1 → M5, provisions (back to the spawn, meat hunted and cooked for the trip, best effort), U18's N1M3 (second
-bucket, iron ingot, back to the spawn, bucket-cast obsidian portal, into the Nether), back home through the bot's own
-portal (`--nether-ores`: N2's quartz, nether gold and ancient debris on the way), then U18's End part — the stronghold
-portal room is reached with cheats (locate + teleport, eyes of ender given; see docs/differences/U18.md), the bot
-fills the frames, enters the End, the dragon is killed by `/kill` (cheat), the bot fights two endermen and leaves
-through the exit portal. Every phase's time is printed; the report goes to `$AGENT_REPORT_DIR/final-chain-<time>.json`.
+`AGENT_FINAL_CHAIN=1 … test:e2e -- --grep "final chain"`) runs everything in one world (seed 1234, easy) with one bot
+and no reconnects:
 
-Runs so far (2026-10-19, seed 1234, easy): **no run has passed every phase yet.** M1 → M5 passed in 4 of 5 chained
-runs (14.1–16.3 min); N1M3 failed in all 4 runs that reached it:
-
-| run | M1 → M5 (s) | then |
+| phase | what the bot does | budget |
 |---|---|---|
-| 1 | 77, 207, 107, 173, 298 | N1M3: drowned in a flooded cave going back to the spawn, the diamond pickaxe lost |
-| 2 | 87, 233, 128, 163, 366 | N1M3 (17 min): no food (the hunts failed), the portal skill searched water / lava from a mineshaft for 13 min, a starving bot fell to its death, recovery gave up without a pickaxe |
-| 3 | 102, 201, 96, 166, 315 | provisions found no animals in the mountains; N1M3 "back to the spawn" stuck 2 min in the water at a lake shore 44 blocks west of the spawn |
-| 4 | 94, 202, 132, 175, 244 | provisions: killed by a spider at night (health low); N1M3 got its buckets and walked back, cast 2 of 10 obsidian, then the portal skill's cast loop waited at the mold for 12 min |
-| 5 | 75, 200, 102, 176, — | M5: stuck 8 min in its own copper pit under a lake shore on the way to the emerald |
+| M1 | wood → stone tools (the milestone) | 10 min |
+| camp | at the spawn while it is day: 3 wool of one colour from sheep → a bed; logs; meat (best effort) | ~6 min |
+| M2 | iron tools, a bucket | 10 min |
+| gear | all the iron in one trip and one 3-furnace smelt → iron helmet, chestplate, leggings, boots (worn) and a shield (off-hand), a spare iron pickaxe, the second bucket and the iron for the flint and steel; sticks; the camp's meat cooked | 9 + 2×7 min |
+| M3, M4, M5 | diamonds, the house at the spawn, every overworld ore (the milestones) | 10 min each |
+| provisions | back to the spawn; ≥ 8 food items (hunted around the spawn, exploring for animals; fishing when none is left; cooked) | 5 + 2×4 min |
+| N1M3 | U18's nether entry: second bucket, iron ingot (both carried by then), bucket-cast obsidian at a lava pool, frame, flint and steel, into the Nether | 45 min |
+| home | U18's nether skill: back through the bot's own portal (`--nether-ores`: N2's quartz, nether gold and ancient debris on the way) | 14 min |
+| E1 | U18's End part — the stronghold portal room reached with cheats (locate + teleport, eyes of ender given; docs/differences/U18.md), the bot fills the frames, enters the End, the dragon is killed by `/kill` (cheat), the bot fights two endermen and leaves through the exit portal | 4 + 8 + 4 min |
 
-Fixed after the runs that found them: hunting (run 2), recovery without a pickaxe (2), provisions start at the spawn
-(3), climbing out of the water at a shore (3; only run 5 had it). Runs 2 and 4 stalled in U18's portal skill.
+Between scenario steps the Agent sleeps through a night in its bed (and before every phase; without a bed and
+without armor it would wait in its house or a sealed hole), tosses junk when the inventory fills up, hunts when
+hungry; a stuck task is aborted by the watchdog and run again after an escape. Every phase's time and the time of day
+it started at are printed; the report goes to `$AGENT_REPORT_DIR/final-chain-<time>.json`. Development only (not an
+acceptance run): `--from m5` starts from a milestone snapshot after that milestone, `--until provisions` stops after a
+phase.
+
+Earlier runs (before FINAL-FIX-AGENT-A, M1 → M5 → provisions → N1M3 only): none passed every phase — drowned in a
+flooded cave going back to the spawn; no food, the portal skill searching a mineshaft for 13 min, a starving fall;
+stuck in the lake west of the spawn; killed by a spider at night during provisions; stuck 8 min in its own copper pit.
+
+Development runs of this version's overworld part (seed 1234, easy; phase seconds; each failure fixed before the
+next round):
+
+| run | M1, camp, M2, gear, M3, M4, M5 (s) | result |
+|---|---|---|
+| ow1 | 83, 289, 177, 542, 186, 211, — | M5: 24 gold ores dug, no raw gold — the inventory was full (→ junk tossed, unwanted drops left) |
+| ow2 | 89, 228, 206, 434, — | M3: the logs had been burnt as fuel, a log trip from y -12 (→ coal first, sticks kept); auto-eat stuck "eating" (→ guard) |
+| ow3 | 85, 181, 212, 468, 362, 102, — | M5: full inventory, as ow1 |
+| ow4 | 100, 368, 227, 426, 121, — | M4: suffocated in a pillar step retried after a meal (→ retried after a fight only); recovery left the drops at the first fight (→ goes on) |
+| ow5 | 94, 302, 188, — | gear: the shield's planks were a log trip from underground (→ shield and spares best effort) |
+| full1 | 79, 131, 260, 405, 59, 197, 196 | provisions: an x/z goal skipped the climb to the surface, a zombie behind a wall fought every 12 s (→ both fixed); stopped |
+
 
 ## Seed scouting
 

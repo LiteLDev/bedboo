@@ -99,28 +99,37 @@ const isEnd = (goal, bot) => goal.isEnd(bot.entity.position.floored()) || goal.i
  * @param {AbortSignal} [opts.signal]
  * @param {object} [opts.movements] Movements to use (default: movements(bot))
  * @param {number} [opts.stuckMs=8000] no progress for this long → unstick
+ * @param {boolean} [opts.escape=false] after two failures with a goal more than 24 blocks away while in the water or
+ *   under a roof: survive.escape (out of the water, up to the sky) once, then plan again — for long walks only (a
+ *   miner's goal underground must not send it to the surface)
+ * @param {boolean} [opts.safety=true] wait while the Agent's safety behaviours have the controls (false: called by
+ *   one of them)
  * @returns {Promise<{ reached: true, ms: number, attempts: number }>}
  */
-async function goto (bot, goal, { timeout = 90000, attempts = 4, signal, movements: moves, stuckMs = 8000, legs = true } = {}) {
+async function goto (bot, goal, { timeout = 90000, attempts = 4, signal, movements: moves, stuckMs = 8000, legs = true, safety: waitSafety = true, escape = false } = {}) {
   ensurePathfinder(bot)
   const started = Date.now()
-  const agent = agentOf(bot)
+  // `safety: false`: called by a safety behaviour itself (it has the controls; waiting for it would deadlock)
+  const safety = waitSafety ? agentOf(bot)?.safety : null
   // far away: walk there in legs (one A* search over 100+ blocks of hills runs out of think time), on the surface
   // (from deep underground pathfinder tunnels or swims through flooded caves)
   const center = goalCenter(goal)
   if (legs && center && distXZ(center, bot.entity.position) > LEG * 1.5) {
     const survive = require('./survive')
-    if (!survive.underOpenSky(bot) && (center.y === undefined || center.y > bot.entity.position.y + 8)) {
-      await survive.surface(bot, { signal }).catch((err) => { if (isAbort(err)) throw err; log(bot, `goto: could not surface first: ${err.message}`) })
+    // (an x / z goal has no height: GoalNearXZ / GoalXZ — the surface it is)
+    const goalY = goal.pos?.y ?? goal.y
+    if (!survive.underOpenSky(bot) && (goalY === undefined || goalY > bot.entity.position.y + 8)) {
+      await survive.surface(bot, { signal, timeout: Math.min(180000, timeout / 2) }).catch((err) => { if (isAbort(err)) throw err; log(bot, `goto: could not surface first: ${err.message}`) })
     }
     await travel(bot, center, { signal, timeout: timeout * 0.8, movements: moves })
   }
   let failures = 0
   let shortOfGoal = 0
   let lastError = null
+  let escaped = false
   for (let attempt = 0; ; attempt++) {
     checkAbort(signal)
-    await agent?.safety?.idle(signal)
+    await safety?.idle(signal)
     if (isEnd(goal, bot)) return { reached: true, ms: Date.now() - started, attempts: attempt }
     const left = timeout - (Date.now() - started)
     if (left <= 0) throw new SkillError(`navigation timed out after ${timeout} ms at ${fmt(bot.entity.position)}${lastError ? ` (${lastError.message})` : ''}`, { code: 'TIMEOUT', cause: lastError })
@@ -134,7 +143,7 @@ async function goto (bot, goal, { timeout = 90000, attempts = 4, signal, movemen
     } catch (err) {
       stopPathfinder(bot)
       if (isAbort(err)) throw err
-      if (agent?.safety?.busy) continue // interrupted by a fight / flight: not a navigation failure
+      if (safety?.busy) continue // interrupted by a fight / flight: not a navigation failure
       lastError = err
       failures++
       log(bot, `goto: ${err.name ?? 'Error'} ${err.message} (failure ${failures})`)
@@ -146,11 +155,27 @@ async function goto (bot, goal, { timeout = 90000, attempts = 4, signal, movemen
         continue
       }
       if (err.code === 'STUCK' || err.name === 'NoPath') {
+        // stuck twice in a pit / a flooded cave / the water with the goal far away: the last resort first — out of
+        // the water, up to the sky (pillar / staircase), then plan again from the surface
+        const far = center && distXZ(center, bot.entity.position) > 24
+        if (escape && !escaped && failures >= 2 && far && waitSafety && needsEscape(bot)) {
+          escaped = true
+          log(bot, `goto: stuck at ${fmt(bot.entity.position)} (${err.message}); escaping (out of the water / the pit)`)
+          await require('./survive').escape(bot, { signal, timeout: Math.min(150000, Math.max(30000, timeout - (Date.now() - started))) })
+            .catch((e) => { if (isAbort(e)) throw e; log(bot, `goto: escape: ${e.message}`) })
+          continue
+        }
         await unstick(bot, { signal, toward: goalCenter(goal) }).catch((e) => { if (isAbort(e)) throw e })
       }
       await sleep(200, signal)
     }
   }
+}
+
+/** in the water, or under a roof (a pit, a cave, a flooded tunnel) */
+function needsEscape (bot) {
+  const survive = require('./survive')
+  return survive.inWater(bot) || !survive.underOpenSky(bot)
 }
 
 function goalCenter (goal) {
@@ -183,9 +208,11 @@ async function travel (bot, target, { signal, timeout = 120000, movements: moves
     const d = distXZ(target, here)
     const dir = { x: (target.x - here.x) / d, z: (target.z - here.z) / d }
     const side = sideways ? (sideways % 2 ? 1 : -1) * 16 : 0
-    const wp = { x: here.x + dir.x * leg - dir.z * side, z: here.z + dir.z * leg + dir.x * side }
+    // the leg's end on dry land (a waypoint in a lake leaves the bot swimming at a shore it may not climb)
+    const wp = dryNear(bot, { x: here.x + dir.x * leg - dir.z * side, z: here.z + dir.z * leg + dir.x * side }) ??
+      { x: here.x + dir.x * leg - dir.z * side, z: here.z + dir.z * leg + dir.x * side }
     try {
-      await goto(bot, new goals.GoalNearXZ(wp.x, wp.z, 4), { signal, timeout: Math.min(60000, timeout - (Date.now() - started)), attempts: 1, movements: moves, legs: false })
+      await goto(bot, new goals.GoalNearXZ(wp.x, wp.z, 4), { signal, timeout: Math.min(60000, timeout - (Date.now() - started)), attempts: 1, movements: moves, legs: false, escape: true })
       sideways = 0
     } catch (err) {
       if (isAbort(err)) throw err
@@ -194,6 +221,45 @@ async function travel (bot, target, { signal, timeout = 120000, movements: moves
     }
   }
   return true
+}
+
+/**
+ * What the top of column x, z is: 'water' / 'lava' / 'dry' (solid ground under open air), or null when the column is
+ * not loaded. Scans down from `top` (leaves and logs are skipped: a tree stands on the ground).
+ */
+function columnTop (bot, x, z, top) {
+  for (let y = top; y > top - 96; y--) {
+    const b = bot.blockAt(new Vec3(Math.floor(x), y, Math.floor(z)))
+    if (!b) return null
+    if (world.isWater(b)) return 'water'
+    if (world.isLava(b)) return 'lava'
+    if (world.isPassable(b) || /leaves|_log$/.test(b.name)) continue
+    return 'dry'
+  }
+  return null
+}
+
+/**
+ * `wp` itself when its column's top is dry land (or not loaded), else the nearest dry column within 12 blocks of it
+ * (null when there is none).
+ */
+function dryNear (bot, wp) {
+  const top = Math.min(319, Math.floor(bot.entity.position.y) + 40)
+  const first = columnTop(bot, wp.x, wp.z, top)
+  if (first === null || first === 'dry') return wp
+  let best = null
+  for (let r = 2; r <= 12 && !best; r += 2) {
+    for (let dx = -r; dx <= r; dx += 2) {
+      for (let dz = -r; dz <= r; dz += 2) {
+        if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue
+        const p = { x: wp.x + dx, z: wp.z + dz }
+        if (columnTop(bot, p.x, p.z, top) !== 'dry') continue
+        const d = Math.hypot(dx, dz)
+        if (!best || d < best.d) best = { ...p, d }
+      }
+    }
+  }
+  return best ? { x: best.x, z: best.z } : null
 }
 
 function stopPathfinder (bot) {
@@ -394,16 +460,28 @@ function fmt (p) {
   return p ? `(${p.x.toFixed(1)}, ${p.y.toFixed(1)}, ${p.z.toFixed(1)})` : '?'
 }
 
-const navigate = defineSkill('navigate', async (bot, args) => {
-  // `spawn: true`: the world spawn (bot.spawnPoint) instead of a position
+/**
+ * The goal spec of the navigate skill's args. `spawn: true` is the world spawn (bot.spawnPoint): a column (the bot
+ * spawns on its top), so x / z only unless a goal kind is asked for; a height outside the world (BDS's spawn search
+ * height y 32767 before the column was loaded) means nothing either: a GoalNear at y 32767 makes pathfinder pillar up
+ * with every block the bot carries.
+ * @returns {{ position: object, goal: string|undefined, range: number|undefined }}
+ */
+function targetSpec (bot, args) {
   const position = args.spawn ? bot.spawnPoint : args.position
   if (!position) throw new SkillError('navigate needs args.position (or spawn: true)', { code: 'FAILED' })
-  // BDS's spawn search height (y 32767, not resolved yet because the column is not loaded): only x / z mean anything
-  const xzOnly = position.y >= 32767
-  const goal = goalFor({ ...args, position, goal: xzOnly && args.goal !== 'xz' ? 'xz' : args.goal, range: xzOnly ? Math.max(args.range ?? 1, 2) : args.range }, bot)
-  const r = await goto(bot, goal, { timeout: args.timeout ?? 120000, signal: args.signal })
+  const minY = bot.game?.minY ?? -64
+  const maxY = minY + (bot.game?.height ?? 384)
+  const xzOnly = (args.spawn && !args.goal) || !(position.y >= minY && position.y < maxY)
+  return { position, goal: xzOnly ? 'xz' : args.goal, range: xzOnly ? Math.max(args.range ?? 1, 2) : args.range }
+}
+
+const navigate = defineSkill('navigate', async (bot, args) => {
+  const goal = goalFor({ ...args, ...targetSpec(bot, args) }, bot)
+  // a walk somewhere far (back to the spawn): a pit / a lake shore on the way is escaped from as a last resort
+  const r = await goto(bot, goal, { timeout: args.timeout ?? 120000, signal: args.signal, escape: args.escape ?? true })
   const p = bot.entity.position
   return { reached: true, position: { x: p.x, y: p.y, z: p.z }, ms: r.ms }
 }, { description: 'walk to a position with mineflayer-pathfinder (re-plans, unsticks)' })
 
-module.exports = Object.assign(navigate, { goto, travel, throughDoor, isDoorName, movements, goalFor, ensurePathfinder, unstick, digSafe, stepTo, stopPathfinder, fmt })
+module.exports = Object.assign(navigate, { goto, travel, throughDoor, isDoorName, movements, goalFor, ensurePathfinder, unstick, digSafe, stepTo, stopPathfinder, fmt, dryNear, columnTop, targetSpec })
