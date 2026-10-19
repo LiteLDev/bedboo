@@ -57,6 +57,7 @@ class Safety extends EventEmitter {
     this.bot = bot
     this.opts = { engageRadius: 5, alertRadius: 12, fleeHealth: 4, fightTimeout: 25000, fightGiveUpMs: 12000, maxChase: 24, ignoreMs: 60000, pickupDrops: true, ...opts }
     this.ignored = new Map() // entity id → until (fights given up: the mob cannot get at the bot either)
+    this._givenUp = new Map() // entity id → fights given up on it
     this.attackers = new Map() // entity → until: mobs that hurt the bot (retaliation)
     this.swings = new WeakMap() // entity → time of its last arm swing
     this.guards = [] // option sets of U18 skills running under combat.guardFor()
@@ -263,9 +264,10 @@ class Safety extends EventEmitter {
       // a mob given up on (could not get at it: behind a wall, across a gap) stays ignored until it hurts the bot —
       // it is then an attacker — even right next to the bot (a zombie behind a block 3 blocks away is fought
       // forever otherwise)
-      // (a creeper coming close is never ignored: it hurts only once it blows up)
+      // (a creeper right next to the bot is never ignored: it hurts only once it blows up — unless it was given up on
+      // over and over: behind a wall, it never gets there)
       exclude: (e) => ignoredBy(e) || Math.abs(e.position.y - pos.y) > eff.maxDy ||
-        ((this.ignored.get(e.id) ?? 0) > now && !(e.name === 'creeper' && e.position.distanceTo(pos) < 5))
+        ((this.ignored.get(e.id) ?? 0) > now && !(e.name === 'creeper' && e.position.distanceTo(pos) < 3 && !this.hardIgnored(e.id)))
     })
     if (!target) return null
     const d = target.position.distanceTo(pos)
@@ -374,9 +376,17 @@ class Safety extends EventEmitter {
       autoEat?.enableAuto()
     }
     this.attackers.delete(target)
-    if (['timeout', 'unreachable', 'escaped'].includes(r.outcome)) this.ignored.set(target.id, Date.now() + this.opts.ignoreMs)
+    if (['timeout', 'unreachable', 'escaped'].includes(r.outcome)) {
+      this.ignored.set(target.id, Date.now() + this.opts.ignoreMs)
+      this._givenUp.set(target.id, (this._givenUp.get(target.id) ?? 0) + 1)
+    }
     if (r.outcome === 'killed' && this.opts.pickupDrops) await this.collectDrops(target.position.clone()).catch(() => {})
     return r.outcome
+  }
+
+  /** a mob given up on twice: no exception for it any more (until it hurts the bot) */
+  hardIgnored (id) {
+    return (this._givenUp.get(id) ?? 0) >= 2
   }
 
   /** an attacker that hit the bot in the last 2 s from within melee reach while `target` is out of it */

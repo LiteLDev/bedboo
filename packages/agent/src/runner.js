@@ -212,6 +212,7 @@ class Agent extends EventEmitter {
     // there is chosen again for a while); home: where the bot's house is (M4)
     this.state = { protectedZones: [], lastDeath: null, traps: [], home: null }
     this._lastWork = 0
+    this._mined = new Map() // position → time of its 'mine' event
     this.startedAt = null
     this.safety = null
     this._log = this.opts.log ?? (() => {})
@@ -272,6 +273,16 @@ class Agent extends EventEmitter {
     })
     this._invTimer = setInterval(() => { if (bot.health > 0 && bot.entity) this._lastInventory = inventory.counts(bot) }, 2000)
     bot.on('death', () => this.onDeath())
+    // an ore the bot dug — whoever dug it (the pathfinder on its way, a shaft): it was mined (the milestones count
+    // these events; a pickaxe swing that the pathfinder makes does not go through dig.mineAt)
+    bot.on('blockUpdate', (oldBlock, newBlock) => {
+      if (!oldBlock || !newBlock || !/_ore$/.test(oldBlock.name) || /_ore$/.test(newBlock.name)) return
+      const last = bot.lastDigTime
+      if (last == null || performance.now() - last > 2000 || !bot.entity) return
+      if (bot.entity.position.distanceTo(oldBlock.position) > 7) return
+      const p = oldBlock.position
+      this.event('mine', { block: oldBlock.name, at: { x: p.x, y: p.y, z: p.z }, by: 'dig' })
+    })
     bot.on('kicked', (reason) => this.event('kicked', { reason: typeof reason === 'string' ? reason : JSON.stringify(reason) }))
     bot.on('end', (reason) => this.event('end', { reason: String(reason) }))
     if (this.opts.safety) {
@@ -285,6 +296,14 @@ class Agent extends EventEmitter {
 
   /** record + emit an event */
   event (type, data = {}) {
+    // one 'mine' per dug block: the block-update watch (any dig: the pathfinder's, a shaft's) and the skill's own event
+    if (type === 'mine' && data.at) {
+      const k = `${data.at.x},${data.at.y},${data.at.z}`
+      const now = Date.now()
+      if ((this._mined.get(k) ?? 0) > now - 10000) return null
+      this._mined.set(k, now)
+      if (this._mined.size > 500) for (const [key, t] of this._mined) if (t < now - 10000) this._mined.delete(key)
+    }
     const e = { t: this.startedAt ? Date.now() - this.startedAt : 0, type, ...data }
     if (WORK_EVENTS.has(type)) this._lastWork = Date.now()
     if (type === 'heartbeat') return e // the stuck watchdog's only: not worth a line in the report

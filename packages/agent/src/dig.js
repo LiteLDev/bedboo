@@ -82,6 +82,7 @@ async function collectBlocks (bot, { item = null, count = 1, blocks, maxDistance
   const tried = new Set()
   let failures = 0
   let interruptions = 0
+  let fruitless = 0 // blocks dug that gave nothing (the drops fell into water / out of reach)
   const progressDone = () => item ? inventory.count(bot, item) - startCount >= count : dug >= count
   if (!biomes) {
     const hints = blocks.map((b) => data.NATURAL[b]?.biomes).filter(Boolean)
@@ -112,11 +113,22 @@ async function collectBlocks (bot, { item = null, count = 1, blocks, maxDistance
     }
     const pos = list[0]
     const name = bot.blockAt(pos)?.name
+    const had = item ? inventory.count(bot, item) : 0
     try {
       if (await mineAt(bot, pos, { signal, item })) {
         mined[name] = (mined[name] ?? 0) + 1
         dug++
         failures = 0
+        if (item && inventory.count(bot, item) <= had) {
+          // dug, nothing picked up: three in a row → this spot loses its drops (water under the ore, a ledge):
+          // leave it for ten minutes and look elsewhere
+          if (++fruitless >= 3) {
+            log(bot, `${fruitless} ${name} dug around ${navigate.fmt(pos)} without a single ${item}: leaving the spot`)
+            for (let dx = -5; dx <= 5; dx++) for (let dy = -5; dy <= 5; dy++) for (let dz = -5; dz <= 5; dz++) tried.add(key(pos.offset(dx, dy, dz)))
+            agentOf(bot)?.state?.traps?.push({ x: pos.x, y: pos.y, z: pos.z, until: Date.now() + 10 * 60 * 1000 })
+            fruitless = 0
+          }
+        } else fruitless = 0
       } else {
         tried.add(key(pos)) // gone before the bot got there (or a liquid now)
         await sleep(50, signal)
