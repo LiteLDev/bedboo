@@ -186,3 +186,8 @@ ore 150 blocks west (emerald at (-663, 121, 43)).
 recipes — BDS's crafting_data has none), filtered by `scripts/gen-smelting.js` (furnace only, no gear → nuggets,
 names checked against the 1.26.51 registry, newer wood types added). Fuel burn times, drop yields and mob drops in
 `src/data/index.js` are the vanilla values.
+
+## Combat & dimensions (U18)
+
+The `combat`, `portal`, `nether` and `end` skills, the `combat.defend()` guard, the milestone scenarios (C1, N1, N2,
+E1, chain) and their e2e commands: [scenarios/README.md](scenarios/README.md#combat--dimensions-u18).

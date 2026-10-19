@@ -1,0 +1,7 @@
+{
+  "world": "flat",
+  "bds": "1.26.51.1",
+  "why": "BDS's superflat world (grass at y -61, the bot at (0.5, -60, 0.5)): open ground in every direction, so every hostile that spawns in the dark can reach the bot — zombies, skeletons, spiders, creepers (plus slimes in slime chunks, witches, endermen). No seed: flat worlds ignore it.",
+  "night": "time set midnight with dodaylightcycle false: it stays night for the whole run",
+  "gamerules": { "domobspawning": true, "dodaylightcycle": false, "doweathercycle": false }
+}

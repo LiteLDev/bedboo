@@ -1,0 +1,15 @@
+{
+  "seed": "35",
+  "world": "default",
+  "bds": "1.26.51.1",
+  "spawn": { "x": 0.5, "y": 71, "z": 0.5 },
+  "why": "a surface lava pool (≈60 sources, y 68) 28 blocks from the spawn on flat forest ground, a lake 40 blocks east (water bucket), gravel under the spawn (flint); scouted among seeds 1–60 with scenarios/nether/scout.js",
+  "lava": { "nearest": { "x": 19, "y": 68, "z": 20 }, "pool": "x 17..24, z 20..29, y 67..68" },
+  "water": { "nearest": { "x": 40, "y": 62, "z": 0 } },
+  "gravel": "underground near the spawn (≈10 blocks), no exposed gravel within 100 blocks",
+  "alternatives": {
+    "60": "lava pool 14 blocks from the spawn on a forested hillside (y 79), water 60 blocks, stronghold 886 blocks",
+    "46": "lava pool 25 blocks from the spawn (y 59), water 33 blocks",
+    "31": "lava pool 52 blocks from the spawn, water 23 blocks"
+  }
+}
