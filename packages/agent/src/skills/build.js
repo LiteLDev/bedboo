@@ -11,7 +11,7 @@
  */
 const { Vec3 } = require('vec3')
 const { SkillError, checkAbort, isAbort } = require('../errors')
-const { defineSkill, log, progress, agentOf, waitTicks, heartbeat } = require('../skill')
+const { defineSkill, log, progress, agentOf, waitTicks, heartbeat, withoutMeals } = require('../skill')
 const { compile, verify, BLUEPRINTS } = require('../blueprint')
 const world = require('../world')
 const inventory = require('../inventory')
@@ -272,8 +272,10 @@ async function placeCell (bot, placement, compiled, { signal }) {
     }
     try {
       await agentOf(bot)?.safety?.idle(signal)
-      await inventory.equip(bot, stack)
-      await bot.placeBlock(r.ref, r.face)
+      await withoutMeals(bot, async () => {
+        await inventory.equip(bot, stack)
+        await bot.placeBlock(r.ref, r.face)
+      })
       heartbeat(bot) // work done (the stuck watchdog)
     } catch (err) {
       if (isAbort(err)) throw err

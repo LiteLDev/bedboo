@@ -178,8 +178,12 @@ async function fish (bot, { count = 3, timeout = 180000, signal, obtainRod = fal
   const { heartbeat } = require('../skill')
   if (!inventory.count(bot, 'fishing_rod')) {
     if (!obtainRod) throw new SkillError('no fishing rod', { code: 'MISSING' })
-    // only when the string is already there: string comes from spiders / cobwebs, not worth a trip of its own
-    if (inventory.count(bot, 'string') < 2) throw new SkillError(`no fishing rod and ${inventory.count(bot, 'string')} string`, { code: 'MISSING' })
+    // string: carried (spiders' drops), or cobwebs in sight (a mineshaft) cut with a sword — not worth a trip of its own
+    if (inventory.count(bot, 'string') < 2) {
+      const web = world.findBlocks(bot, ['web'], { maxDistance: 48, count: 1 })[0]
+      if (!web) throw new SkillError(`no fishing rod, ${inventory.count(bot, 'string')} string and no cobweb in sight`, { code: 'MISSING' })
+      await require('./obtain').obtain(bot, { item: 'string', count: 2, signal })
+    }
     await require('./obtain').obtain(bot, { item: 'fishing_rod', count: 1, signal })
   }
   let spot = fishingSpot(bot, { maxDistance })
@@ -396,6 +400,8 @@ function dryColumn (bot, feet, radius = 16) {
  */
 async function climbUp (bot, { targetY, signal, timeout = 240000, maxSteps = 400 } = {}) {
   const started = Date.now()
+  // eat before the climb (standing still), not in the middle of a jump
+  await require('../skill').eatNow(bot, { below: 18 })
   let interrupted = 0
   for (let i = 0; i < maxSteps; i++) {
     checkAbort(signal)
@@ -472,7 +478,12 @@ async function clearCell (bot, pos, signal) {
 }
 
 /** one pillar step: clear the cell over the head, centre, jump, place a filler block under the feet */
-async function pillarStep (bot, signal, { exclude = [] } = {}) {
+async function pillarStep (bot, signal, opts = {}) {
+  // the block in the hand from the equip to the placement: no meal swapped in halfway
+  return require('../skill').withoutMeals(bot, () => pillarStepOnce(bot, signal, opts))
+}
+
+async function pillarStepOnce (bot, signal, { exclude = [] } = {}) {
   const feet = bot.entity.position.floored()
   await clearCell(bot, feet.offset(0, 2, 0), signal)
   const fill = inventory.FILLER.filter((n) => !exclude.includes(n)).map((n) => inventory.find(bot, n)).find(Boolean) ?? null

@@ -43,7 +43,7 @@ const WIND_DOWN_MS = 10000
  * (smelting, fishing, sleeping) send heartbeats. Defaults per skill; U18's skills (portal, nether, end, combat) have
  * their own budgets and run without it.
  */
-const STUCK_MS = { obtain: 180000, mine: 180000, gather: 180000, navigate: 150000, explore: 150000, build: 240000, food: 150000, surface: 150000, fish: 150000, hunt: 150000 }
+const STUCK_MS = { obtain: 180000, mine: 180000, gather: 180000, navigate: 150000, explore: 150000, build: 240000, food: 150000, surface: 150000, fish: 150000, hunt: 150000, descend: 180000 }
 const STUCK_EXTENT = 6
 /** event types that are progress (anything else — log lines, failed gotos — is not) */
 const WORK_EVENTS = new Set(['mine', 'craft', 'smelt', 'place', 'pickup', 'obtained', 'build-site', 'build-verified', 'heartbeat', 'shaft', 'food', 'caught', 'slept'])
@@ -212,6 +212,7 @@ class Agent extends EventEmitter {
     // there is chosen again for a while); home: where the bot's house is (M4)
     this.state = { protectedZones: [], lastDeath: null, traps: [], home: null }
     this._lastWork = 0
+    this._mined = new Map() // position → time of its 'mine' event
     this.startedAt = null
     this.safety = null
     this._log = this.opts.log ?? (() => {})
@@ -272,6 +273,16 @@ class Agent extends EventEmitter {
     })
     this._invTimer = setInterval(() => { if (bot.health > 0 && bot.entity) this._lastInventory = inventory.counts(bot) }, 2000)
     bot.on('death', () => this.onDeath())
+    // an ore the bot dug — whoever dug it (the pathfinder on its way, a shaft): it was mined (the milestones count
+    // these events; a pickaxe swing that the pathfinder makes does not go through dig.mineAt)
+    bot.on('blockUpdate', (oldBlock, newBlock) => {
+      if (!oldBlock || !newBlock || !/_ore$/.test(oldBlock.name) || /_ore$/.test(newBlock.name)) return
+      const last = bot.lastDigTime
+      if (last == null || performance.now() - last > 2000 || !bot.entity) return
+      if (bot.entity.position.distanceTo(oldBlock.position) > 7) return
+      const p = oldBlock.position
+      this.event('mine', { block: oldBlock.name, at: { x: p.x, y: p.y, z: p.z }, by: 'dig' })
+    })
     bot.on('kicked', (reason) => this.event('kicked', { reason: typeof reason === 'string' ? reason : JSON.stringify(reason) }))
     bot.on('end', (reason) => this.event('end', { reason: String(reason) }))
     if (this.opts.safety) {
@@ -285,6 +296,14 @@ class Agent extends EventEmitter {
 
   /** record + emit an event */
   event (type, data = {}) {
+    // one 'mine' per dug block: the block-update watch (any dig: the pathfinder's, a shaft's) and the skill's own event
+    if (type === 'mine' && data.at) {
+      const k = `${data.at.x},${data.at.y},${data.at.z}`
+      const now = Date.now()
+      if ((this._mined.get(k) ?? 0) > now - 10000) return null
+      this._mined.set(k, now)
+      if (this._mined.size > 500) for (const [key, t] of this._mined) if (t < now - 10000) this._mined.delete(key)
+    }
     const e = { t: this.startedAt ? Date.now() - this.startedAt : 0, type, ...data }
     if (WORK_EVENTS.has(type)) this._lastWork = Date.now()
     if (type === 'heartbeat') return e // the stuck watchdog's only: not worth a line in the report
@@ -390,7 +409,8 @@ class Agent extends EventEmitter {
       const now = Date.now()
       // a fight / flight / meal, a sleep: not the task's fault
       // (a behaviour that has held the controls for over a minute is stuck itself: no excuse)
-      if ((this.safety?.busy && now - this.safety.busy.since < 60000) || bot.isSleeping) quietSince = now
+      // (a meal is no excuse either: mineflayer-auto-eat eats every minute or two while the task is stuck)
+      if ((this.safety?.busy && this.safety.busy.type !== 'eat' && now - this.safety.busy.since < 60000) || bot.isSleeping) quietSince = now
       samples.push({ t: now, p: bot.entity.position.clone() })
       while (samples.length && samples[0].t < now - stuckMs) samples.shift()
       if (now - started < stuckMs || now - Math.max(quietSince, this._lastWork) < stuckMs) return
@@ -522,6 +542,8 @@ class Agent extends EventEmitter {
   async maintain ({ timeout = 90000 } = {}) {
     const bot = this.bot
     if (!bot?.entity) return
+    // a meal now, standing still, rather than one auto-eat starts in the middle of the next step's climb or placement
+    await require('./skill').eatNow(bot, { below: 16 })
     // between steps: a sleep only (a whole night in a shelter would eat the scenario's budget)
     await this.restIfNight({ timeout: Math.max(timeout, 45000), shelter: false })
     // room for what the next step digs up

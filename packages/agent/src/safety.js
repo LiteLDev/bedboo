@@ -57,6 +57,7 @@ class Safety extends EventEmitter {
     this.bot = bot
     this.opts = { engageRadius: 5, alertRadius: 12, fleeHealth: 4, fightTimeout: 25000, fightGiveUpMs: 12000, maxChase: 24, ignoreMs: 60000, pickupDrops: true, ...opts }
     this.ignored = new Map() // entity id → until (fights given up: the mob cannot get at the bot either)
+    this._givenUp = new Map() // entity id → fights given up on it
     this.attackers = new Map() // entity → until: mobs that hurt the bot (retaliation)
     this.swings = new WeakMap() // entity → time of its last arm swing
     this.guards = [] // option sets of U18 skills running under combat.guardFor()
@@ -83,7 +84,7 @@ class Safety extends EventEmitter {
       // a meal that starts or ends is no stuck one (back-to-back meals keep isEating set for long)
       on(this.bot.autoEat, 'eatStart', () => { this._eatingSince = 0; this.claim('eat') })
       on(this.bot.autoEat, 'eatFinish', () => { this._eatingSince = 0; this.release('eat') })
-      on(this.bot.autoEat, 'eatFail', () => { this._eatingSince = 0; this.release('eat') })
+      on(this.bot.autoEat, 'eatFail', () => { this._eatingSince = 0; this.release('eat'); this.mealFailed() })
     }
     on(this.bot, 'death', () => { this.attackers.clear(); this.release(this.busy?.type) })
   }
@@ -176,6 +177,29 @@ class Safety extends EventEmitter {
     if (!ae?.opts) return
     const want = this.bot.health > 0 && this.bot.health < 14 ? 18 : 16
     if (ae.opts.minHunger !== want) ae.opts.minHunger = want
+    // rotten flesh only when starving (≤ 6): above that a meal of it is hunger and nausea for nothing, and the hungry
+    // bot that carries nothing else restarts it every tick
+    const banned = ae.opts.bannedFood ?? (ae.opts.bannedFood = [])
+    const starving = this.bot.food <= 6
+    const i = banned.indexOf('rotten_flesh')
+    if (starving && i >= 0) banned.splice(i, 1)
+    else if (!starving && i < 0) banned.push('rotten_flesh')
+  }
+
+  /**
+   * Meals that keep failing (a tool / block swap by the pathfinder cancels each one, and auto-eat starts the next on
+   * the following tick): after 3 failures in 15 s auto-eat pauses for 10 s — the task gets its hand back.
+   */
+  mealFailed () {
+    const now = Date.now()
+    this._mealFails = (this._mealFails ?? []).filter((t) => now - t < 15000)
+    this._mealFails.push(now)
+    const ae = this.bot.autoEat
+    if (this._mealFails.length < 3 || !ae?.enabled || this._mealPause) return
+    this.log('safety: meals keep failing; auto-eat paused for 10 s')
+    ae.disableAuto()
+    this._mealFails = []
+    this._mealPause = setTimeout(() => { this._mealPause = null; if (this.enabled) ae.enableAuto() }, 10000)
   }
 
   onHurt () {
@@ -240,9 +264,10 @@ class Safety extends EventEmitter {
       // a mob given up on (could not get at it: behind a wall, across a gap) stays ignored until it hurts the bot —
       // it is then an attacker — even right next to the bot (a zombie behind a block 3 blocks away is fought
       // forever otherwise)
-      // (a creeper coming close is never ignored: it hurts only once it blows up)
+      // (a creeper right next to the bot is never ignored: it hurts only once it blows up — unless it was given up on
+      // over and over: behind a wall, it never gets there)
       exclude: (e) => ignoredBy(e) || Math.abs(e.position.y - pos.y) > eff.maxDy ||
-        ((this.ignored.get(e.id) ?? 0) > now && !(e.name === 'creeper' && e.position.distanceTo(pos) < 5))
+        ((this.ignored.get(e.id) ?? 0) > now && !(e.name === 'creeper' && e.position.distanceTo(pos) < 3 && !this.hardIgnored(e.id)))
     })
     if (!target) return null
     const d = target.position.distanceTo(pos)
@@ -274,7 +299,8 @@ class Safety extends EventEmitter {
     const t = this.threat(hurt)
     if (!t) return
     const combat = require('./skills/combat')
-    const weak = !combat.bestWeapon(bot) && bot.health <= this.opts.fleeHealth
+    // no weapon and low, or a creeper while the bot could not take its blast: run
+    const weak = (!combat.bestWeapon(bot) && bot.health <= this.opts.fleeHealth) || (t.target.name === 'creeper' && bot.health <= 10)
     if (weak) this.run('flee', () => this.flee(t.target), t.target)
     else this.run('fight', () => this.fight(t.target), t.target)
   }
@@ -342,15 +368,37 @@ class Safety extends EventEmitter {
         maxChase: this.opts.maxChase,
         eat: true,
         bow: 'auto',
+        // another mob hitting the bot from up close while this one is out of reach: that one first
+        stop: () => this.betterTarget(target),
         log: this.log
       })
     } finally {
       autoEat?.enableAuto()
     }
     this.attackers.delete(target)
-    if (['timeout', 'unreachable', 'escaped'].includes(r.outcome)) this.ignored.set(target.id, Date.now() + this.opts.ignoreMs)
+    if (['timeout', 'unreachable', 'escaped'].includes(r.outcome)) {
+      this.ignored.set(target.id, Date.now() + this.opts.ignoreMs)
+      this._givenUp.set(target.id, (this._givenUp.get(target.id) ?? 0) + 1)
+    }
     if (r.outcome === 'killed' && this.opts.pickupDrops) await this.collectDrops(target.position.clone()).catch(() => {})
     return r.outcome
+  }
+
+  /** a mob given up on twice: no exception for it any more (until it hurts the bot) */
+  hardIgnored (id) {
+    return (this._givenUp.get(id) ?? 0) >= 2
+  }
+
+  /** an attacker that hit the bot in the last 2 s from within melee reach while `target` is out of it */
+  betterTarget (target) {
+    const combat = require('./skills/combat')
+    if (combat.hitboxDistance(this.bot, target) <= 3.5) return false
+    const now = Date.now()
+    for (const [e, until] of this.attackers) {
+      if (e === target || !this.bot.entities[e.id]) continue
+      if (until - 20000 > now - 2000 && combat.hitboxDistance(this.bot, e) <= 3) return true
+    }
+    return false
   }
 
   /**

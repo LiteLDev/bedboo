@@ -10,6 +10,7 @@
  *   M2                          iron tools, bucket
  *   gear                        iron for the trip: iron armor (helmet, chestplate, leggings, boots) and a shield, worn;
  *                               the second bucket and the iron ingot of N1M3's flint and steel; the camp's meat cooked
+ *   down to the diamonds        a safe shaft to y -54 (M3 checks a deepslate diamond ore is among its three)
  *   M3 → M4 → M5                diamonds, the house at the spawn, every overworld ore
  *   provisions                  back to the spawn; ≥ 8 food items (hunted and cooked; fishing when no animal is left)
  *   N1M3                        U18's nether entry from the M3 state (second bucket, iron ingot, back to the spawn,
@@ -60,9 +61,12 @@ const GEAR = [
   { item: 'iron_pickaxe', count: 2, ingots: 3 },
   { item: 'bucket', count: 2, ingots: 3 }
 ]
+const GEAR_ROUNDS = [['iron_chestplate', 'iron_leggings'], ['iron_helmet', 'iron_boots', 'shield', 'iron_pickaxe', 'bucket']]
 const ARMOR_SLOT = { iron_helmet: 5, iron_chestplate: 6, iron_leggings: 7, iron_boots: 8 }
 /** a bed takes 3 wool of one colour */
 const WOOL = ['white', 'light_gray', 'gray', 'black', 'brown', 'pink', 'orange', 'magenta', 'light_blue', 'yellow', 'lime', 'cyan', 'purple', 'blue', 'green', 'red'].map((c) => `${c}_wool`)
+/** extra time for the End fight: the walk from the arrival platform to the island top (see the E1 phases below) */
+const END_WALK_MS = 5 * MINUTES
 /** food items to carry into the Nether */
 const PROVISIONS = 8
 
@@ -121,7 +125,8 @@ async function finalChain ({ log = () => {}, cfg = config(), netherOres = false,
     /** 3 wool of one colour from sheep (the plains around the spawn have flocks), then the bed is crafted */
     const bed = async (ms) => {
       if (Math.max(...WOOL.map((w) => inventory.count(bot, w))) < 3) {
-        await task('hunt', { mobs: ['sheep'], item: WOOL, count: 3, total: true, radius: 48, explore: true, timeout: ms }, { name: 'wool for a bed', timeout: ms + 10000, retries: 0 })
+        // (not too far: the next phases mine around the spawn)
+        await task('hunt', { mobs: ['sheep'], item: WOOL, count: 3, total: true, radius: 48, explore: true, maxDistance: 96, timeout: ms }, { name: 'wool for a bed', timeout: ms + 10000, retries: 0 })
           .catch(() => {})
       }
       return task('obtain', { item: 'bed', count: 1 }, { name: 'a bed', timeout: 2 * MINUTES, retries: 0 })
@@ -143,8 +148,11 @@ async function finalChain ({ log = () => {}, cfg = config(), netherOres = false,
           await task('gather', { item: 'log', count: 8 - logs() }, { name: 'camp: logs', timeout: 90000, retries: 0 }).catch((err) => { out.logs = err.message })
         }
         // meat for later (cooked in the gear phase): the animals in sight
-        await task('food', { min: 0, items: 6, stock: true, radius: 48, explore: false, fishing: false, timeout: 55000 }, { name: 'camp: meat', timeout: 60000, retries: 0 })
+        // (the flocks around the spawn are thinnest late in the chain: what the camp takes now is what provisions miss)
+        await task('food', { min: 0, items: 10, stock: true, radius: 48, explore: false, fishing: false, timeout: 75000 }, { name: 'camp: meat', timeout: 80000, retries: 0 })
           .then((r) => { out.food = r }, (err) => { out.food = err.message })
+        // back to the spawn: M2 and the gear phase mine the iron around it (the hunt may have led far away)
+        await task('navigate', { spawn: true, range: 24 }, { name: 'camp: back to the spawn', timeout: 2 * MINUTES, retries: 0 }).catch(() => {})
         return out
       }
     })
@@ -152,30 +160,35 @@ async function finalChain ({ log = () => {}, cfg = config(), netherOres = false,
     plan.push({
       name: 'gear',
       run: async () => {
-        await agent.maintain()
-        // all the iron in one trip and one (3-furnace) smelt: armor, shield, N1M3's second bucket and flint and steel
-        const missing = GEAR.filter((g) => inventory.count(bot, g.item) < (g.count ?? 1))
-        const ingots = missing.reduce((n, g) => n + g.ingots * ((g.count ?? 1) - inventory.count(bot, g.item)), 0) + 1
-        if (inventory.count(bot, 'iron_ingot') < ingots) {
-          // coal for the smelt first: without it the planner burns the carried logs, and the shield's planks and the
-          // sticks of a later pickaxe are then a climb to the surface away
-          const smelt = require('../../src/skills/smelt')
-          const raw = ingots - inventory.count(bot, 'iron_ingot')
-          const coal = smelt.fuelFor(smelt.split(raw, Math.min(3, Math.ceil(raw / 8))), 8) + 1
-          if (inventory.count(bot, 'coal') < coal) {
-            await task('obtain', { item: 'coal', count: coal }, { name: 'gear: coal', timeout: 2 * MINUTES, retries: 0 }).catch(() => {})
-          }
-          await task('obtain', { item: 'iron_ingot', count: ingots }, { name: `gear: ${ingots} iron ingots`, timeout: 9 * MINUTES, retries: 1 })
-        }
         const made = []
         const failed = {}
-        for (const g of missing) {
-          if (inventory.count(bot, g.item) >= (g.count ?? 1)) continue
-          // the armor is what this phase is for; the rest (shield, spares) is best effort
-          const r = task('obtain', { item: g.item, count: g.count ?? 1 }, { name: `gear: ${g.item}`, timeout: 3 * MINUTES, retries: 0 })
-          if (ARMOR_SLOT[g.item]) await r
-          else if (await r.then(() => false, (err) => { failed[g.item] = err.message; return true })) continue
-          made.push(g.item)
+        // two rounds: the chestplate and the leggings first (15 ingots — worn as soon as they exist: the iron is mined
+        // in caves, where mobs live day and night), then the rest; each round one trip and one (≤ 3-furnace) smelt
+        for (const round of GEAR_ROUNDS) {
+          await agent.maintain()
+          const missing = GEAR.filter((g) => round.includes(g.item) && inventory.count(bot, g.item) < (g.count ?? 1))
+          if (!missing.length) continue
+          const ingots = missing.reduce((n, g) => n + g.ingots * ((g.count ?? 1) - inventory.count(bot, g.item)), 0) + (round === GEAR_ROUNDS.at(-1) ? 1 : 0)
+          if (inventory.count(bot, 'iron_ingot') < ingots) {
+            // coal for the smelt first: without it the planner burns the carried logs, and the shield's planks and
+            // the sticks of a later pickaxe are then a climb to the surface away
+            const smelt = require('../../src/skills/smelt')
+            const raw = ingots - inventory.count(bot, 'iron_ingot')
+            const coal = smelt.fuelFor(smelt.split(raw, Math.min(3, Math.ceil(raw / 8))), 8) + 1
+            if (inventory.count(bot, 'coal') < coal) {
+              await task('obtain', { item: 'coal', count: coal }, { name: 'gear: coal', timeout: 2 * MINUTES, retries: 0 }).catch(() => {})
+            }
+            await task('obtain', { item: 'iron_ingot', count: ingots }, { name: `gear: ${ingots} iron ingots`, timeout: 7 * MINUTES, retries: 1 })
+          }
+          for (const g of missing) {
+            if (inventory.count(bot, g.item) >= (g.count ?? 1)) continue
+            // the armor is what this phase is for; the rest (shield, spares) is best effort
+            const r = task('obtain', { item: g.item, count: g.count ?? 1 }, { name: `gear: ${g.item}`, timeout: 3 * MINUTES, retries: 0 })
+            if (ARMOR_SLOT[g.item]) await r
+            else if (await r.then(() => false, (err) => { failed[g.item] = err.message; return true })) continue
+            made.push(g.item)
+          }
+          await require('../../src/skills/combat').equipForCombat(bot, { shield: true }).catch(() => {})
         }
         // sticks for a pickaxe made later (deep in a mine a log is a long climb away)
         if (inventory.count(bot, 'stick') < 4) await task('obtain', { item: 'stick', count: 4 }, { name: 'gear: sticks', timeout: 2 * MINUTES, retries: 0 }).catch(() => {})
@@ -186,6 +199,12 @@ async function finalChain ({ log = () => {}, cfg = config(), netherOres = false,
         await task('food', { min: 0, items: 0, stock: true, explore: false, fishing: false, timeout: 90000 }, { name: 'gear: cook', timeout: 2 * MINUTES, retries: 0 }).catch(() => {})
         return { made, worn, shield: bot.inventory.slots[45]?.name ?? null, failed }
       }
+    })
+    plan.push({
+      name: 'down to the diamonds',
+      // the gear phase ends wherever the iron was (y 30–60): diamonds are a deepslate thing (most below y 0) — M3
+      // checks that a deepslate diamond ore is among the ones it mined; best effort, never fails the chain
+      run: () => task('descend', { y: -54 }, { name: 'down to the diamond level', timeout: 4 * MINUTES, retries: 1 }).catch((err) => ({ error: err.message }))
     })
     plan.push(milestone('M3'))
     plan.push(milestone('M4'))
@@ -217,7 +236,8 @@ async function finalChain ({ log = () => {}, cfg = config(), netherOres = false,
     plan.push({
       name: 'home',
       run: async () => {
-        const r = await task('nether', { targets: netherOres ? NETHER_ORES : {}, returnHome: true }, { name: 'back home', timeout: 14 * MINUTES, retries: 0 })
+        // retries 1: a death in the Nether ends in the overworld — the retry finds the bot home already (U18)
+        const r = await task('nether', { targets: netherOres ? NETHER_ORES : {}, returnHome: true }, { name: 'back home', timeout: 14 * MINUTES, retries: 1 })
         if (!r.returned || bot.game.dimension !== 'overworld') throw new Error(`not back in the overworld (${bot.game.dimension})`)
         return { mined: r.mined }
       }
@@ -234,7 +254,10 @@ async function finalChain ({ log = () => {}, cfg = config(), netherOres = false,
             if (/kill/.test(step.console) && !out.some((l) => /Killed/.test(l))) throw new Error(`${step.console}: ${out.join(' | ')}`)
             return out
           }
-          const r = await task(step.skill, step.args ?? {}, { name: `E1 ${step.name}`, timeout: step.timeout, retries: 0 })
+          // the fight's budget covers the walk up from the arrival platform too: U18's toIslandTop stalled ~5 min at
+          // x 89–95 (10 × "goto stalled") in 4 of 6 chained runs (30 s in E1A and the others) — reported to U18
+          const timeout = step.args?.phase === 'fight' ? step.timeout + END_WALK_MS : step.timeout
+          const r = await task(step.skill, step.args ?? {}, { name: `E1 ${step.name}`, timeout, retries: 0 })
           if (step.args?.phase === 'activate' && !r.entered) throw new Error('did not enter the End')
           if (step.args?.phase === 'fight' && (r.killed?.enderman ?? 0) < (step.args.endermen ?? 1)) throw new Error(`endermen killed: ${r.killed?.enderman ?? 0}`)
           if (step.args?.phase === 'exit' && (!r.exited || bot.game.dimension !== 'overworld')) throw new Error(`not back in the overworld (${bot.game.dimension})`)
@@ -249,6 +272,11 @@ async function finalChain ({ log = () => {}, cfg = config(), netherOres = false,
     for (const p of plan.slice(start, last + 1)) {
       // the night before the phase: asleep in the bed, or (no bed, no armor) in a shelter
       await agent.restIfNight()
+      // room in the inventory: junk and surplus go; after M5 the milestones' ores and most building stone too
+      // (a full inventory drops what /give hands over at the stronghold — the eyes of ender)
+      const late = plan.indexOf(p) > plan.findIndex((q) => q.name === 'M5')
+      const tossed = await inventory.declutter(bot, { minFree: late ? 12 : 6, late }).catch(() => ({}))
+      if (Object.keys(tossed).length) agent.event('tossed', { items: tossed, phase: p.name })
       if (!await phase(p.name, p.run)) break
     }
     plan.splice(last + 1)

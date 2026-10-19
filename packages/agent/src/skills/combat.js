@@ -304,6 +304,7 @@ function sleepTicks (bot, ticks) {
  * @param {number} [opts.maxChase=Infinity] end the fight ('escaped') when the target is this far from the fight's start
  * @param {number} [opts.giveUpMs=Infinity] end the fight ('unreachable') after this long without a hit or getting closer
  * @param {boolean} [opts.eat=false] eat while retreating when the target is out of reach
+ * @param {() => boolean} [opts.stop] checked every tick: truthy ends the fight ('switched')
  * @param {AbortSignal} [opts.signal]
  * @param {(msg: string) => void} [opts.log]
  * @returns {Promise<{ outcome: 'killed'|'gone'|'died'|'timeout'|'aborted', byBot: boolean, targetDied: boolean, name: string,
@@ -325,6 +326,7 @@ async function fight (bot, target, opts = {}) {
     maxChase = Infinity,
     giveUpMs = Infinity,
     eat = false,
+    stop = null,
     log = () => {}
   } = opts
   const isCreeper = target.name === 'creeper'
@@ -395,7 +397,9 @@ async function fight (bot, target, opts = {}) {
     }
     return Date.now() - progress.at > giveUpMs
   }
-  const done = () => state.dead || state.gone || state.botDied || !bot.entities[target.id] || signal?.aborted || Date.now() - started > timeout || escaped() || unreachable()
+  // `stop()`: the caller ends the fight (another mob hits the bot while this one is out of reach: 'switched')
+  let switched = false
+  const done = () => state.dead || state.gone || state.botDied || !bot.entities[target.id] || signal?.aborted || Date.now() - started > timeout || escaped() || unreachable() || (switched ||= !!(stop && stop()))
 
   /** attack once the target's hurt cooldown is over */
   function tryAttack () {
@@ -580,6 +584,7 @@ async function fight (bot, target, opts = {}) {
   else if (state.dead) stats.outcome = 'killed'
   else if (state.gone || !bot.entities[target.id]) stats.outcome = 'gone'
   else if (signal?.aborted) stats.outcome = 'aborted'
+  else if (switched) stats.outcome = 'switched'
   else if (escaped()) stats.outcome = 'escaped'
   else if (Date.now() - progress.at > giveUpMs) stats.outcome = 'unreachable'
   return stats

@@ -224,7 +224,7 @@ async function obtain (bot, { item, count = 1, maxSteps = 80, signal } = {}) {
       const k = failureKey(step)
       // a fight / a lava escape in the middle (the furnace window closed, the path stopped) is not this way's fault
       // (at most 3 times per way, so a way that keeps failing during fights is still dropped eventually)
-      const interrupted = !!safety && (safety.busy || safety.interventions.length > interventionsBefore || safety.recentlyBusy(3000)) &&
+      const interrupted = !!safety && (safety.interventions.length > interventionsBefore || safety.recentlyIntervened(3000)) &&
         !['NO_PLAN', 'MISSING'].includes(err.code) && (forgiven.get(k) ?? 0) < 3
       if (interrupted) forgiven.set(k, (forgiven.get(k) ?? 0) + 1)
       else failures.set(k, (failures.get(k) ?? 0) + 1)
@@ -273,7 +273,7 @@ const skill = defineSkill('obtain', (bot, args) => obtain(bot, args), {
  * of items: `count` of any one of them; `total`: until that many are carried); when none is in sight, walk a spiral
  * on the surface until one is. result: { collected: { [item]: n }, killed }
  */
-async function huntSkill (bot, { mobs, item, count = 1, total = false, radius = 48, explore: mayExplore = true, timeout = 150000, signal } = {}) {
+async function huntSkill (bot, { mobs, item, count = 1, total = false, radius = 48, explore: mayExplore = true, maxDistance = 160, timeout = 150000, signal } = {}) {
   if (!mobs?.length || !item) throw new SkillError('hunt needs args.mobs and args.item', { code: 'FAILED' })
   const started = Date.now()
   const items = [].concat(item)
@@ -290,7 +290,7 @@ async function huntSkill (bot, { mobs, item, count = 1, total = false, radius = 
     if (!inSight()) {
       if (!mayExplore) break
       log(bot, `hunt: no ${mobs.join('/')} in sight; exploring`)
-      const r = await require('./explore').explore(bot, { until: inSight, maxDistance: 160, leg: 32, signal, timeout: Math.max(15000, timeout - (Date.now() - started)) })
+      const r = await require('./explore').explore(bot, { until: inSight, maxDistance, leg: 32, signal, timeout: Math.max(15000, timeout - (Date.now() - started)) })
       if (!r.found) break
     }
     try {

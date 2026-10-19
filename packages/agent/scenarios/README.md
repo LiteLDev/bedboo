@@ -7,7 +7,7 @@ milestone ≤ 10 min.
 
 | Directory | Owner | |
 |---|---|---|
-| `overworld/` | U17 | M1–M5 (`milestones.js`), the e2e harness (`harness.js`, `milestones.e2e.js`), `full-run.js`, `seed.json` |
+| `overworld/` | U17 | M1–M5 (`milestones.js`), the e2e harness (`harness.js`, `milestones.e2e.js`), `full-run.js`, the final chain (`final-chain.js`: M1 → camp → M2 → gear → M3 → M4 → M5 → provisions → N1M3 → home → E1, see [../README.md](../README.md#the-final-chain)), `seed.json` |
 | `combat/`, `nether/`, `end/` | U18 | C1 / N1 / N2 / E1 / chain scenarios + their `*.e2e.js`, `seed.json` per directory (section below) |
 
 e2e files are `*.e2e.js` (`corepack pnpm --filter @bedboo/agent test:e2e`, config `.mocharc.e2e.json`); unit tests

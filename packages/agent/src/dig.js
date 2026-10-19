@@ -81,6 +81,8 @@ async function collectBlocks (bot, { item = null, count = 1, blocks, maxDistance
   let dug = 0
   const tried = new Set()
   let failures = 0
+  let interruptions = 0
+  let fruitless = 0 // blocks dug that gave nothing (the drops fell into water / out of reach)
   const progressDone = () => item ? inventory.count(bot, item) - startCount >= count : dug >= count
   if (!biomes) {
     const hints = blocks.map((b) => data.NATURAL[b]?.biomes).filter(Boolean)
@@ -111,11 +113,22 @@ async function collectBlocks (bot, { item = null, count = 1, blocks, maxDistance
     }
     const pos = list[0]
     const name = bot.blockAt(pos)?.name
+    const had = item ? inventory.count(bot, item) : 0
     try {
       if (await mineAt(bot, pos, { signal, item })) {
         mined[name] = (mined[name] ?? 0) + 1
         dug++
         failures = 0
+        if (item && inventory.count(bot, item) <= had) {
+          // dug, nothing picked up: three in a row → this spot loses its drops (water under the ore, a ledge):
+          // leave it for ten minutes and look elsewhere
+          if (++fruitless >= 3) {
+            log(bot, `${fruitless} ${name} dug around ${navigate.fmt(pos)} without a single ${item}: leaving the spot`)
+            for (let dx = -5; dx <= 5; dx++) for (let dy = -5; dy <= 5; dy++) for (let dz = -5; dz <= 5; dz++) tried.add(key(pos.offset(dx, dy, dz)))
+            agentOf(bot)?.state?.traps?.push({ x: pos.x, y: pos.y, z: pos.z, until: Date.now() + 10 * 60 * 1000 })
+            fruitless = 0
+          }
+        } else fruitless = 0
       } else {
         tried.add(key(pos)) // gone before the bot got there (or a liquid now)
         await sleep(50, signal)
@@ -123,8 +136,9 @@ async function collectBlocks (bot, { item = null, count = 1, blocks, maxDistance
     } catch (err) {
       if (isAbort(err) || err.code === 'DIED' || err.code === 'MISSING') throw err
       const safety = agentOf(bot)?.safety
-      if (safety?.busy || safety?.recentlyBusy?.(3000)) {
+      if ((safety?.recentlyIntervened?.(3000) ?? (safety?.busy || safety?.recentlyBusy?.(3000))) && interruptions++ < 8) {
         // a fight / flight took the controls mid-way (pathfinder stopped, "Digging aborted"): try the same block again
+        // (a meal is no interruption: auto-eat does not stop the path)
         log(bot, `mining ${name} interrupted (${err.message}); resuming`)
         await safety.idle(signal)
         continue
@@ -278,10 +292,17 @@ async function digDown (bot, targetY, { signal, maxSteps = 400 } = {}) {
       if (!(await staircaseStep(bot, signal))) throw new SkillError(`unsafe to dig below ${navigate.fmt(feet)} and no safe step aside`, { code: 'UNSAFE' })
       continue
     }
-    await digBlock(bot, blockBelow, signal)
+    const below0 = blockBelow.name
+    if (await digBlock(bot, blockBelow, signal)) oreDug(bot, below0, below)
     await waitTicks(bot, 2, signal)
   }
   throw new SkillError(`digDown: too many steps (at ${navigate.fmt(bot.entity.position)})`, { code: 'FAILED' })
+}
+
+/** an ore dug on the way down (a shaft through a vein): mined like any other — the milestones count these events */
+function oreDug (bot, name, pos) {
+  if (!/_ore$/.test(name) || bot.blockAt(pos)?.name === name) return
+  progress(bot, 'mine', { block: name, at: { x: pos.x, y: pos.y, z: pos.z }, shaft: true })
 }
 
 /** from an air cell `p`: the first solid block below within 3 cells, and no liquid on the way */
@@ -315,7 +336,7 @@ async function staircaseStep (bot, signal) {
       for (let k = 0; k < 8; k++) { // gravel / sand keeps falling into the cell
         const b = bot.blockAt(c)
         if (!b || world.isPassable(b)) break
-        await digBlock(bot, b, signal)
+        if (await digBlock(bot, b, signal)) oreDug(bot, b.name, c)
         await waitTicks(bot, 3, signal)
       }
     }
