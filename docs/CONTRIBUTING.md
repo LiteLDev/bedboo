@@ -287,7 +287,7 @@ Additions/precisions to the tables above; all live on `main` since PR #5.
 - **Entities (U7)**: `entities.js` handles all non-self entities (self skipped via `ids.isSelf`). Wire positions verified
   live: `add_player` **feet**; other players' `move_player` eye-level; `add_entity`/`add_item_entity`/`move_entity(_delta)`
   feet + per-type offset (item 0.125, TNT/falling block 0.49, boat 0.375, minecart 0.35). `move_entity_delta` = absolute
-  optional coords + byte rotations. A killing blow emits `entityHurt` then `entityDead`. `attack/useOn/mount` look at the
+  optional coords + byte rotations. A killing blow emits `entityHurt` then `entityDead`. `attack/useOn/mount` (since W3-FIX-B: **no longer rotate the bot**; they wait on `afterControlsSent`) previously looked at the
   target, `mouseOver`, then `item_use_on_entity` with `heldNetworkItem()`. `generic.armor`/`generic.armorToughness`
   synthesized from equipment. prismarine-entity patch: Bedrock `getDroppedItem()` (from `add_item_entity`),
   `getCustomName()`. Helpers: `summon` (spawn events, name tags, aliases e.g. `villager_v2`→`villager`), `killEntity`,
@@ -348,6 +348,48 @@ Additions/precisions to the tables above; all live on `main` since PR #5.
   - **Physics events:** a throwing `physicsTick` listener no longer aborts the tick (the error is emitted after the
     input is sent); `look()` / `lookAt()` resolve once the rotation was really sent (also from tick / move listeners);
     a jump queued between ticks survives replays; `entityElytraFlew(bot.entity)` fires on the server's gliding flag.
+
+### As implemented in wave 4 (U10–U14, W3-FIX-A/B) — read before building on them
+
+- **Digging (U10)**: `bot.dig` sends one `start_break` (no per-tick `continue_break` — BDS treats it as a restart),
+  waits for BDS's own per-tick break-progress reports and sends `predict_break` when the server is one tick from done
+  (client-count fallback when no reports), completes on the server's `update_block`, then sends `abort_break` to release
+  the server's break state (otherwise BDS also breaks the next block placed there). No `mine_block` request (BDS damages
+  the tool itself). Creative: `start_break` + `predict_break` in one input; swords/tridents/maces can't break in creative
+  (`digTime = Infinity`). Speed model in `lib/bedrock/dig_speed.js` (Bedrock effect factors: Haste/Conduit Power
+  ×(1+0.2h)·1.2^h, Mining Fatigue ×0.21^f) — prismarine-block's `block.digTime` keeps Java effect factors (pathfinder/
+  mineflayer-tool cost estimates under effects are off; U15 may patch). Diagnostics: `bot._bedrock.digging`. BDS sends
+  the destroyed block's update more than once within ~1 tick.
+- **Placing (U11)**: `_genericPlace` = `start_item_use_on` → `click_block` (exact held item, clicked block runtime id,
+  click point, face, hotbar slot, hand, eye-level player pos) → `stop_item_use_on` 150 ms later; BDS replies
+  `inventory_content` + `update_block` burst (clicked block, then the target) even for refusals → upstream
+  `place_block.js` vendored verbatim. Sneak-placing against interactive blocks holds sneak and awaits `controlsSent()`.
+  BDS refuses any block overlapping the player's server hitbox (never pushes out); the click waits for an input whose
+  hitbox clears the target while rising. `bot._bedrock.placement.useOnLookedAtBlock(item, offHand)` handles buckets/
+  boats (BDS ignores their `click_air`; `activateItem` routes there). Off-hand placement is impossible on Bedrock.
+  Pathfinder bridging gets ~3 corrections from pathfinder's own client-side recentring (U15 may patch).
+- **Crafting (U12)**: recipes from `crafting_data` (`lib/bedrock/recipes.js`, `bot._bedrock.recipes`), tags from
+  `lib/bedrock/item_tags.js` (pmmp/BedrockData CC0, live-verified), `bot.registry.recipes` replaced per bot in Java
+  shape. Request: `place`×n → `crafting_input` (2×2 ui 28–31 needs the inventory screen; table ui 32–40 row-major),
+  `craft_recipe`, `results_deprecated`, `consume` per grid cell, `create {result_slot_id}` before each of several
+  results, take/place from `creative_output` 50. ≤1 stack per result per request; all results must be taken.
+- **Stations (U13)**: furnace progress buffered by window id (properties 0/1/2; total cook time by block type);
+  enchanting = `craft_recipe` with the zigzag option id + consume lapis/item + place (result predicted; `xpseed` = -1);
+  anvil = `optional` request with custom names (Bedrock anvil cost calculator in-repo); trading window opened by
+  `update_trade` (no `container_open`), ingredients ui 4/5, one `craft_recipe` per use. Shared helpers in
+  `lib/bedrock/stations.js`.
+- **Survival (U14)**: books must be opened with an item use first, edits are acked by the resend on close; `fish()`
+  bite = `entity_event fish_hook_hook`; sleep/wake per upstream; elytra boost tracked from metadata key 18
+  (`minecart_has_display`, the boosted player's unique id; `owner_eid` is -1).
+- **Inventory model (W3-FIX-B)**: per-slot request chains (responses applied in order, rollbacks per request);
+  `inventoryModel.execute()` passes `customNames`, `cause`, `requestId`; raw actions may be a function of the request
+  id; items can be dropped from created output. `openBlock/openEntity/activateBlock/activateEntity` close any open
+  container first. `bot._bedrock.commands.request` resolves ~100 ms after `command_executed` for commands without
+  output. Liquid layer (waterlogging) predicted on block updates with sub-chunk re-request when uncertain.
+- **Physics (W3-FIX-A)**: `abilities.js` is the single parser of `update_abilities`; physics follows `bot.abilities`.
+  Riding reports the vehicle seat (vehicle pos + `rider_seat_position`). `spawn` waits (≤2 s) for a real position, never
+  the 32767 search height. A throwing `physicsTick` listener no longer stops ticking. `creative.startFlying` no longer
+  touches gravity. Plain fireworks/banners/firework stars resolve to the creative default variant.
 
 ## Ownership
 
