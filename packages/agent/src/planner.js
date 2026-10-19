@@ -57,7 +57,6 @@ class Planner {
     this.world = world
     this.maxDepth = maxDepth
     this.memo = new Map()
-    this.cuts = 0
     this.cache = { recipes: new Map(), smelting: new Map(), sources: new Map(), mobs: new Map() }
     this.fuels = (world.fuels ?? []).filter((f) => f.perItem > 0)
   }
@@ -79,48 +78,81 @@ class Planner {
 
   /**
    * Estimated seconds to obtain ONE more `item` from scratch (inventory ignored, except tools and stations already
-   * owned). Cycles count as impossible. Memoized unless a cycle cut influenced the value.
+   * owned). All estimates are computed together as a fixpoint over the items reachable from `item` (recipes,
+   * furnace inputs, fuels, harvest tools, stations): every cost starts at what can be dug / hunted, then recipes and
+   * furnace recipes lower it until nothing changes — cycles (planks ↔ logs ↔ wood, ingot ↔ block) can never lower a
+   * cost, so they need no special casing.
    */
-  estimate (item, visiting = new Set()) {
-    if (this.memo.has(item)) return this.memo.get(item)
-    if (visiting.has(item) || visiting.size > this.maxDepth) { this.cuts++; return Infinity }
-    const cutsBefore = this.cuts
-    visiting.add(item)
-    let best = Infinity
-    const inv = this.world.inventory ?? {}
-    for (const r of this.recipes(item)) {
-      let c = CRAFT_COST
-      for (const [ing, n] of Object.entries(r.ingredients)) {
-        c += this.estimate(ing, visiting) * n
-        if (!Number.isFinite(c)) break
-      }
-      if (r.requiresTable && !this.hasStation('crafting_table', inv)) c += this.estimate('crafting_table', visiting) + PLACE_COST
-      best = Math.min(best, c / r.result.count)
-    }
-    for (const s of this.smelting(item)) {
-      let c = SMELT_COST + this.estimate(s.input, visiting) + this.fuelCostPerItem(visiting)
-      if (!this.hasStation('furnace', inv)) c += this.estimate('furnace', visiting) + PLACE_COST
-      best = Math.min(best, c / s.count)
-    }
-    for (const src of this.sources(item)) {
-      if (!(src.yield > 0) || !Number.isFinite(src.cost)) continue
-      let c = src.cost / src.yield
-      if (src.tools && !src.tools.some((t) => (inv[t] ?? 0) > 0)) c += Math.min(...src.tools.map((t) => this.estimate(t, visiting)))
-      best = Math.min(best, c)
-    }
-    for (const m of this.mobs(item)) {
-      if (!(m.yield > 0) || !Number.isFinite(m.cost)) continue
-      best = Math.min(best, m.cost / m.yield)
-    }
-    visiting.delete(item)
-    if (this.cuts === cutsBefore) this.memo.set(item, best)
-    return best
+  estimate (item) {
+    if (!this.memo.has(item)) this.computeEstimates(item)
+    return this.memo.get(item)
   }
 
-  fuelCostPerItem (visiting) {
-    let best = Infinity
-    for (const f of this.fuels) best = Math.min(best, this.estimate(f.name, visiting) / f.perItem)
-    return best
+  /** the items whose cost `item`'s cost depends on (transitively), `item` included */
+  reachable (item) {
+    const seen = new Set()
+    const queue = [item, 'crafting_table', 'furnace', ...this.fuels.map((f) => f.name)]
+    while (queue.length) {
+      const it = queue.pop()
+      if (seen.has(it) || this.memo.has(it)) continue
+      seen.add(it)
+      for (const r of this.recipes(it)) for (const ing of Object.keys(r.ingredients)) queue.push(ing)
+      for (const sm of this.smelting(it)) queue.push(sm.input)
+      for (const src of this.sources(it)) for (const t of src.tools ?? []) queue.push(t)
+    }
+    return seen
+  }
+
+  computeEstimates (root) {
+    const items = [...this.reachable(root)]
+    const inv = this.world.inventory ?? {}
+    const est = new Map(items.map((it) => [it, Infinity]))
+    const get = (it) => this.memo.has(it) ? this.memo.get(it) : (est.get(it) ?? Infinity)
+    const relax = (item) => {
+      let best = Infinity
+      for (const r of this.recipes(item)) {
+        let c = CRAFT_COST
+        for (const [ing, n] of Object.entries(r.ingredients)) {
+          c += get(ing) * n
+          if (!Number.isFinite(c)) break
+        }
+        if (r.requiresTable && !this.hasStation('crafting_table', inv)) c += get('crafting_table') + PLACE_COST
+        best = Math.min(best, c / r.result.count)
+      }
+      if (this.smelting(item).length) {
+        let fuel = Infinity
+        for (const f of this.fuels) fuel = Math.min(fuel, get(f.name) / f.perItem)
+        for (const sm of this.smelting(item)) {
+          let c = SMELT_COST + get(sm.input) + fuel
+          if (!this.hasStation('furnace', inv)) c += get('furnace') + PLACE_COST
+          best = Math.min(best, c / sm.count)
+        }
+      }
+      for (const src of this.sources(item)) {
+        if (!(src.yield > 0) || !Number.isFinite(src.cost)) continue
+        let c = src.cost / src.yield
+        if (src.tools && !src.tools.some((t) => (inv[t] ?? 0) > 0)) c += Math.min(...src.tools.map(get))
+        best = Math.min(best, c)
+      }
+      for (const m of this.mobs(item)) {
+        if (!(m.yield > 0) || !Number.isFinite(m.cost)) continue
+        best = Math.min(best, m.cost / m.yield)
+      }
+      return best
+    }
+    // Bellman-Ford style: at most |items| rounds, usually a handful
+    for (let round = 0; round <= items.length; round++) {
+      let changed = false
+      for (const it of items) {
+        const c = relax(it)
+        if (c < est.get(it) - 1e-9) {
+          est.set(it, c)
+          changed = true
+        }
+      }
+      if (!changed) break
+    }
+    for (const [it, c] of est) this.memo.set(it, c)
   }
 
   run (item, count) {
@@ -147,10 +179,10 @@ class Planner {
       let c = CRAFT_COST
       for (const [ing, n] of Object.entries(r.ingredients)) {
         if (ing === item || stack.includes(ing)) { c = Infinity; break }
-        c += more(n * times - (inv[ing] ?? 0), this.estimate(ing, new Set(stack)))
+        c += more(n * times - (inv[ing] ?? 0), this.estimate(ing))
         if (!Number.isFinite(c)) break
       }
-      if (r.requiresTable && !this.hasStation('crafting_table', inv)) c += this.estimate('crafting_table', new Set(stack)) + PLACE_COST
+      if (r.requiresTable && !this.hasStation('crafting_table', inv)) c += this.estimate('crafting_table') + PLACE_COST
       if (Number.isFinite(c)) options.push({ cost: c, kind: 'craft', recipe: r, times })
     }
     if (this.recipes(item).length && !options.some((o) => o.kind === 'craft')) why.push('no craftable recipe')
@@ -158,11 +190,11 @@ class Planner {
     for (const s of this.smelting(item)) {
       if (s.input === item || stack.includes(s.input)) continue
       const k = Math.ceil(missing / s.count)
-      let c = SMELT_COST * k + more(k - (inv[s.input] ?? 0), this.estimate(s.input, new Set(stack)))
+      let c = SMELT_COST * k + more(k - (inv[s.input] ?? 0), this.estimate(s.input))
       const fuel = this.chooseFuel(k, inv, stack, s.input)
       if (!fuel) continue
       c += fuel.cost
-      if (!this.hasStation('furnace', inv)) c += this.estimate('furnace', new Set(stack)) + PLACE_COST
+      if (!this.hasStation('furnace', inv)) c += this.estimate('furnace') + PLACE_COST
       if (Number.isFinite(c)) options.push({ cost: c, kind: 'smelt', smelt: s, k, fuel })
     }
 
@@ -175,7 +207,7 @@ class Planner {
         let best = Infinity
         for (const t of src.tools) {
           if (stack.includes(t)) continue
-          const e = this.estimate(t, new Set(stack))
+          const e = this.estimate(t)
           if (e < best) { best = e; tool = t }
         }
         if (!tool) { why.push(`no tool for ${src.blocks.join('/')}`); continue }
@@ -238,7 +270,7 @@ class Planner {
       if (stack.includes(f.name)) continue
       const units = Math.ceil(k / f.perItem)
       const spare = Math.max(0, (inv[f.name] ?? 0) - (f.name === input ? k : 0))
-      const c = more(units - spare, this.estimate(f.name, new Set(stack)))
+      const c = more(units - spare, this.estimate(f.name))
       if (!Number.isFinite(c)) continue
       if (!best || c < best.cost || (c === best.cost && units < best.units)) best = { name: f.name, units, cost: c }
     }
