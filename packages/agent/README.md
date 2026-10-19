@@ -153,15 +153,15 @@ node packages/agent/scenarios/overworld/final-chain.js --log          # M1→M5 
 | M5 | M4's end | coal, copper, iron; emerald (mountains); lapis, gold, redstone, diamond | one new item from each of the 8 ores |
 
 Gate on BDS 1.26.51.1 (2026-10-19, seed 1234, easy, 5 runs each from the previous milestone's snapshot; failure
-reasons and timings in `$AGENT_REPORT_DIR/runs.jsonl`):
+reasons and timings in `$AGENT_REPORT_DIR/runs.jsonl`; this code minus the later climb-out of the water in `unstick`):
 
 | | passed | wall time per run (s) | notes |
 |---|---|---|---|
-| M1 | 5/5 | 91, 86, 80, 93, 88 | |
-| M2 | 5/5 | 220, 252, 227, 195, 223 | night falls: zombies fought |
-| M3 | 5/5 | 159, 90, 121, 120, 121 | diamonds at y 3–4 (deepslate diamond ore) |
-| M4 | 5/5 | 185, 176, 200, 188, 172 | 125 cells verified; spiders, zombies, creepers fought |
-| M5 | 5/5 | 361, 327, 424, 316, 506 | two runs survived a death (respawn, walk back, drops recovered) |
+| M1 | 5/5 | 101, 113, 88, 100, 97 | |
+| M2 | 5/5 | 217, 222, 218, 261, 230 | night falls: zombies fought; run 5 re-run (the first try got no BDS slot) |
+| M3 | 5/5 | 92, 100, 94, 115, 91 | diamonds at y 3–4 (deepslate diamond ore) |
+| M4 | 5/5 | 180, 295, 253, 206, 182 | 125 cells verified; two runs survived a death at night |
+| M5 | 4/5 | 459, 358, 600 ✗, 307, 352 | deaths survived in 3 runs (drops recovered); ✗: stuck at the lake west of the spawn on the way to the emerald, out of time |
 
 World: the scouted seed in `scenarios/overworld/seed.json` (default generator), survival, difficulty
 `AGENT_DIFFICULTY` (default `easy`), vanilla gamerules (mobs spawn, day and night pass). Each milestone runs on a
