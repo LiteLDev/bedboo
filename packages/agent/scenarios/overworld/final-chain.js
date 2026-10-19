@@ -235,7 +235,8 @@ async function finalChain ({ log = () => {}, cfg = config(), netherOres = false,
     plan.push({
       name: 'home',
       run: async () => {
-        const r = await task('nether', { targets: netherOres ? NETHER_ORES : {}, returnHome: true }, { name: 'back home', timeout: 14 * MINUTES, retries: 0 })
+        // retries 1: a death in the Nether ends in the overworld — the retry finds the bot home already (U18)
+        const r = await task('nether', { targets: netherOres ? NETHER_ORES : {}, returnHome: true }, { name: 'back home', timeout: 14 * MINUTES, retries: 1 })
         if (!r.returned || bot.game.dimension !== 'overworld') throw new Error(`not back in the overworld (${bot.game.dimension})`)
         return { mined: r.mined }
       }

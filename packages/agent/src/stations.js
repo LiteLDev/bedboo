@@ -111,8 +111,10 @@ async function placeNear (bot, name, { signal, avoid } = {}) {
     for (const spot of placeSpots(bot, { avoid }).slice(0, 6)) {
       checkAbort(signal)
       try {
-        await inventory.equip(bot, name)
-        await bot.placeBlock(spot.ref, spot.face)
+        await require('./skill').withoutMeals(bot, async () => {
+          await inventory.equip(bot, name)
+          await bot.placeBlock(spot.ref, spot.face)
+        })
       } catch (err) {
         lastErr = err
       }

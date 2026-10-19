@@ -523,6 +523,8 @@ class Agent extends EventEmitter {
   async maintain ({ timeout = 90000 } = {}) {
     const bot = this.bot
     if (!bot?.entity) return
+    // a meal now, standing still, rather than one auto-eat starts in the middle of the next step's climb or placement
+    await require('./skill').eatNow(bot, { below: 16 })
     // between steps: a sleep only (a whole night in a shelter would eat the scenario's budget)
     await this.restIfNight({ timeout: Math.max(timeout, 45000), shelter: false })
     // room for what the next step digs up

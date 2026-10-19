@@ -396,6 +396,8 @@ function dryColumn (bot, feet, radius = 16) {
  */
 async function climbUp (bot, { targetY, signal, timeout = 240000, maxSteps = 400 } = {}) {
   const started = Date.now()
+  // eat before the climb (standing still), not in the middle of a jump
+  await require('../skill').eatNow(bot, { below: 18 })
   let interrupted = 0
   for (let i = 0; i < maxSteps; i++) {
     checkAbort(signal)
@@ -472,7 +474,12 @@ async function clearCell (bot, pos, signal) {
 }
 
 /** one pillar step: clear the cell over the head, centre, jump, place a filler block under the feet */
-async function pillarStep (bot, signal, { exclude = [] } = {}) {
+async function pillarStep (bot, signal, opts = {}) {
+  // the block in the hand from the equip to the placement: no meal swapped in halfway
+  return require('../skill').withoutMeals(bot, () => pillarStepOnce(bot, signal, opts))
+}
+
+async function pillarStepOnce (bot, signal, { exclude = [] } = {}) {
   const feet = bot.entity.position.floored()
   await clearCell(bot, feet.offset(0, 2, 0), signal)
   const fill = inventory.FILLER.filter((n) => !exclude.includes(n)).map((n) => inventory.find(bot, n)).find(Boolean) ?? null

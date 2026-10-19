@@ -280,10 +280,17 @@ async function digDown (bot, targetY, { signal, maxSteps = 400 } = {}) {
       if (!(await staircaseStep(bot, signal))) throw new SkillError(`unsafe to dig below ${navigate.fmt(feet)} and no safe step aside`, { code: 'UNSAFE' })
       continue
     }
-    await digBlock(bot, blockBelow, signal)
+    const below0 = blockBelow.name
+    if (await digBlock(bot, blockBelow, signal)) oreDug(bot, below0, below)
     await waitTicks(bot, 2, signal)
   }
   throw new SkillError(`digDown: too many steps (at ${navigate.fmt(bot.entity.position)})`, { code: 'FAILED' })
+}
+
+/** an ore dug on the way down (a shaft through a vein): mined like any other — the milestones count these events */
+function oreDug (bot, name, pos) {
+  if (!/_ore$/.test(name) || bot.blockAt(pos)?.name === name) return
+  progress(bot, 'mine', { block: name, at: { x: pos.x, y: pos.y, z: pos.z }, shaft: true })
 }
 
 /** from an air cell `p`: the first solid block below within 3 cells, and no liquid on the way */
@@ -317,7 +324,7 @@ async function staircaseStep (bot, signal) {
       for (let k = 0; k < 8; k++) { // gravel / sand keeps falling into the cell
         const b = bot.blockAt(c)
         if (!b || world.isPassable(b)) break
-        await digBlock(bot, b, signal)
+        if (await digBlock(bot, b, signal)) oreDug(bot, b.name, c)
         await waitTicks(bot, 3, signal)
       }
     }

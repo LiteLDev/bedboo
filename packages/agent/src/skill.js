@@ -143,6 +143,44 @@ function withTimeout (promise, ms, { signal, message, onTimeout } = {}) {
   })
 }
 
+/**
+ * Run `fn` with mineflayer-auto-eat's automatic mode off (a meal in progress is let finish first, ≤ 4 s): a step that
+ * needs a block or a tool in the hand (a pillar jump, a placement) must not have it swapped for food halfway — and
+ * a meal that a tool swap cancels is restarted on the next tick by auto-eat, a livelock (food 12, rotten flesh, a
+ * climb that never ends).
+ */
+async function withoutMeals (bot, fn) {
+  const ae = bot.autoEat
+  if (!ae?.enabled) return fn()
+  for (let i = 0; i < 80 && ae.isEating; i++) await new Promise((resolve) => setTimeout(resolve, 50))
+  ae.disableAuto()
+  try {
+    return await fn()
+  } finally {
+    ae.enableAuto()
+  }
+}
+
+/**
+ * Eat now, standing still, when the food bar is below `below` and something edible (not banned) is carried — before
+ * a climb or a long walk, so auto-eat has no reason to start a meal in the middle of it. Best effort (≤ 6 s).
+ */
+async function eatNow (bot, { below = 16 } = {}) {
+  const ae = bot.autoEat
+  if (!ae || typeof ae.eat !== 'function' || bot.food >= below || ae.isEating || bot.food >= 20) return false
+  try { bot.pathfinder?.setGoal(null) } catch {}
+  try { bot.clearControlStates() } catch {}
+  let timer
+  try {
+    await Promise.race([ae.eat({}), new Promise((resolve, reject) => { timer = setTimeout(() => reject(new Error('meal timed out')), 6000) })])
+    return true
+  } catch {
+    return false
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 /** wait `n` physics ticks (wall clock fallback: no physicsTick while dead / unloaded) */
 function waitTicks (bot, n, signal) {
   const ticks = Math.max(1, Math.round(n))
@@ -152,4 +190,4 @@ function waitTicks (bot, n, signal) {
     .finally(() => clearTimeout(timer))
 }
 
-module.exports = { stubSkill, defineSkill, setContext, context, log, progress, heartbeat, agentOf, sleep, withTimeout, waitTicks }
+module.exports = { stubSkill, defineSkill, setContext, context, log, progress, heartbeat, agentOf, sleep, withTimeout, waitTicks, withoutMeals, eatNow }
