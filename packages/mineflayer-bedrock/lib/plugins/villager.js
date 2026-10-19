@@ -70,6 +70,14 @@ function inject (bot) {
     }
 
     if (!ready) await once(villager, 'ready')
+    // a trade window opens with empty input slots on Java (the server returned them when the last one closed). On
+    // Bedrock they are the player's ui slots: items a dead trader's window left there (BDS refuses to return them from
+    // that screen, docs/differences/U16a.md#container-gone) show up here — put them back into the inventory (U16a)
+    const model = bot._bedrock.inventoryModel
+    const stuck = [0, 1].filter((slot) => villager.slots[slot]).map((slot) => model.keyOf(villager, slot)).filter(Boolean)
+    if (stuck.length > 0 && bot.currentWindow === villager) {
+      await model.returnItems(villager, stuck).catch((err) => bot._warn(`returning the items left in the trade slots: ${err.message}`))
+    }
     return villager
 
     async function gotTrades (packet) {

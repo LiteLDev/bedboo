@@ -7,4 +7,7 @@ export interface BedrockExtras {
   // U9 (player state): the server's game rules, Bedrock names as sent (start_game.gamerules + game_rules_changed),
   // e.g. `doDayLightCycle`, `keepInventory`, `randomTickSpeed` (docs/differences/U9.md#game-rules)
   gameRules: { [name: string]: boolean | number }
+  // U16 (parity hardening): ids of the Bedrock blocks Java models as one block with a state (`furnace` →
+  // [furnace, lit_furnace]), for findBlock/findBlocks `matching` (docs/differences/U16a.md#block-variants)
+  blockVariants: (block: string | number) => number[]
 }

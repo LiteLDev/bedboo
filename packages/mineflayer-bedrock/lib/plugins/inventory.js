@@ -62,6 +62,19 @@ const REOPEN_DELAY = 100
 
 /** Bedrock blocks whose activation opens a window (containers and stations) */
 const WINDOW_BLOCKS = /(?:^|_)(?:chest|barrel|shulker_box|furnace|smoker|crafting_table|anvil|enchanting_table|brewing_stand|hopper|dispenser|dropper|beacon|grindstone|stonecutter_block|loom|cartography_table|smithing_table|crafter|lectern)$/
+/**
+ * update_trade.villager_unique_id: BDS writes a zigzag varint (gophertunnel Varint64), bedrock-protocol's
+ * `varint64` reads it unsigned (-4294967294 arrives as 8589934587): decode it (an already signed value passes)
+ */
+function zigzagUniqueId (value) {
+  if (value === undefined || value === null) return value
+  const v = BigInt(value)
+  return v < 0n ? v : (v >> 1n) ^ -(v & 1n)
+}
+
+/** a container block name without its lit / copper state prefixes (lit_furnace and furnace are one window) */
+const windowFamily = (name) => String(name ?? '').replace(/^lit_/, '').replace(/^(?:exposed_|weathered_|oxidized_|waxed_)+/, '')
+  .replace(/^(?:chipped_|damaged_|deprecated_)anvil$/, 'anvil')
 /** Bedrock entities whose interaction opens a window (trading, storage minecarts and boats) */
 const WINDOW_ENTITIES = /^(?:villager|villager_v2|wandering_trader|chest_minecart|minecart_chest|hopper_minecart|chest_boat|\w+_chest_boat)$/
 
@@ -649,7 +662,7 @@ function inject (bot) {
     const id = windowIdOf(packet.window_id)
     if (bot.currentWindow || pendingOpen) return
     if (model.closingWindow?.id === id || model.screen.closeWaiters.has(id)) return // being closed / not echoed yet
-    onContainerOpen({ window_id: packet.window_id, window_type: 'trading', runtime_entity_id: packet.villager_unique_id })
+    onContainerOpen({ window_id: packet.window_id, window_type: 'trading', runtime_entity_id: zigzagUniqueId(packet.villager_unique_id) })
   })
   // inventory_content for a window that is not open yet (container_open first, contents right after)
   bot.on('_bedrockWindowContent', (id) => {
@@ -669,6 +682,41 @@ function inject (bot) {
       bot.emit('windowClose', oldWindow)
     }
   })
+
+  // The container's entity or block is gone (a trader killed or despawned, an anvil broken, a chest minecart destroyed):
+  // BDS sends no container_close (1.26.51.1), Java's server closes the menu (stillValid) and the vanilla Bedrock client
+  // closes the screen. Like a server close: windowClose, currentWindow null, then container_close so the server's
+  // screen state matches — without returning the station's input items first, BDS refuses any request on that dead
+  // screen (status 49, invalid source slot). Items left in the trade / station input slots (the player's ui
+  // container) stay there server side: the next window using those slots shows them (openVillager returns them at
+  // once) — docs/differences/U16a.md#container-gone (U16a).
+  function abandonWindow (window, reason) {
+    if (!window || bot.currentWindow !== window) return
+    bot.currentWindow = null
+    lastClosedWindow = window
+    if (model.cursor) bot._warn(`window ${window.id} closed (${reason}) while an item was carried`)
+    bot.emit('windowClose', window)
+    const bedrock = window.bedrock
+    model.sendClose(window.id, bedrock ? bedrock.id : window.id, bedrock ? bedrock.windowType : 'none')
+      .catch(err => bot._warn(`closing window ${window.id}: ${err.message}`))
+  }
+  bot.on('entityGone', (entity) => {
+    const window = bot.currentWindow
+    const owner = window?.bedrock?.entityUniqueId
+    if (owner === null || owner === undefined || entity?.uniqueId === undefined) return
+    if (BigInt(entity.uniqueId) === BigInt(owner)) abandonWindow(window, `${entity.name} gone`)
+  })
+  bot.on('blockUpdate', (oldBlock, newBlock) => {
+    const window = bot.currentWindow
+    const at = window?.bedrock?.coordinates
+    if (!at || window.bedrock.entityUniqueId !== null || !oldBlock || !newBlock) return
+    const p = newBlock.position
+    if (!p || p.x !== at.x || p.y !== at.y || p.z !== at.z || oldBlock.type === newBlock.type) return
+    // the container block was replaced: another block (air, a lit furnace is still a furnace-like window)
+    if (WINDOW_BLOCKS.test(newBlock.name) && windowFamily(oldBlock.name) === windowFamily(newBlock.name)) return
+    abandonWindow(window, `${oldBlock.name} became ${newBlock.name}`)
+  })
+  if (bot._bedrock) bot._bedrock.abandonWindow = abandonWindow
 
   bot._client.on('inventory_content', (packet) => model.onInventoryContent(packet))
   bot._client.on('inventory_slot', (packet) => model.onInventorySlot(packet))

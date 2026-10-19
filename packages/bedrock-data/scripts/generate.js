@@ -154,9 +154,21 @@ function buildBlocks (report) {
   }
   for (const [name, n] of Object.entries(overridden)) report.push(`blockCollisionShapes: ${name} ${n} state(s) from Cloudburst`)
 
-  // 3. cross-checks (warnings only): hardness and the "requires correct tool" flag
+  // 3. documented field fixes (tables.BLOCK_FIXES)
+  for (const [name, fix] of Object.entries(tables.BLOCK_FIXES)) {
+    const block = blocks.find(b => b.name === name)
+    if (!block) throw new Error(`BLOCK_FIXES: no block ${name}`)
+    for (const [field, value] of Object.entries(fix)) {
+      if (block[field] === value) throw new Error(`BLOCK_FIXES: ${name}.${field} is already ${value} (remove the fix)`)
+      report.push(`blocks: ${name}.${field} ${block[field]} -> ${value} (tables.BLOCK_FIXES)`)
+      block[field] = value
+    }
+  }
+
+  // 4. cross-checks (warnings only): hardness and the "requires correct tool" flag
   for (const block of blocks) {
     const cb = cloudburst[block.defaultState]
+    if (tables.BLOCK_FIXES[block.name]?.hardness !== undefined) continue
     if (Math.abs(cb.hardness - block.hardness) > 1e-3) report.push(`WARN ${block.name}: hardness ${block.hardness} vs Cloudburst ${cb.hardness}`)
   }
 

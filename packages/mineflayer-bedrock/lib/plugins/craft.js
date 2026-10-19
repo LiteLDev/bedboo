@@ -109,18 +109,24 @@ function inject (bot) {
     const leftovers = grid.filter(key => model.read(key))
     if (leftovers.length > 0) await model.returnItems(window, leftovers)
 
-    const plan = planCraft({
-      registry: bot.registry,
-      Item,
-      recipe: target,
-      bedrock,
-      read: (key) => model.read(key),
-      grid,
-      width,
-      remaining,
-      created: (wire) => fromNetwork(bot.registry, { ...wire, has_stack_id: false })
-    })
-    await model.execute(window, plan.steps, { timeout: CRAFT_TIMEOUT })
+    // planned when the request is built: after the inventory screen opened for the 2×2 grid (a pickup meanwhile can
+    // fill the slot the result was planned for) and again on the status-7 retry; `plan` is the one that was sent (U16a)
+    let plan = null
+    const replan = () => {
+      plan = planCraft({
+        registry: bot.registry,
+        Item,
+        recipe: target,
+        bedrock,
+        read: (key) => model.read(key),
+        grid,
+        width,
+        remaining,
+        created: (wire) => fromNetwork(bot.registry, { ...wire, has_stack_id: false })
+      })
+      return plan.steps
+    }
+    await model.execute(window, replan, { timeout: CRAFT_TIMEOUT })
     // the result did not fit into the inventory: toss what is carried, like upstream's putSelectedItemRange
     if (plan.overflow && model.cursor) await model.returnCursor(window)
     return plan.times

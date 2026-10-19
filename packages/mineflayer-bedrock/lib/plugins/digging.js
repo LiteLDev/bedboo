@@ -98,6 +98,14 @@ function inject (bot) {
     return best && best.t >= 0 ? best.face : BlockFaces.TOP
   }
 
+  /** the air block to complete a dig of `block` with when there is nothing to break (it or the world's block is air) */
+  function airAt (block, position) {
+    const air = airType()
+    if (block.type === air) return bot.blockAt(position) ?? block
+    const now = bot.blockAt(position)
+    return now && now.type === air ? now : null
+  }
+
   function isBroken (newBlock, dug) {
     if (newBlock.type === airType() || LIQUIDS.has(newBlock.name)) return true
     return PARTIAL_BREAKS.has(dug.name) && newBlock.type === dug.type && newBlock.stateId !== dug.stateId
@@ -243,8 +251,20 @@ function inject (bot) {
     if (bot.targetDigBlock) bot.stopDigging()
     bot.targetDigFace = face
 
-    const task = createTask()
     const position = new Vec3(Math.floor(block.position.x), Math.floor(block.position.y), Math.floor(block.position.z))
+    const air = airAt(block, position)
+    if (air) {
+      // Nothing to break (the block was air, or is gone by now: another player, a door's other half, a decayed leaf).
+      // Upstream sends start/finish, sets air locally and completes on that block update within a tick; BDS would
+      // never report a break of air, so complete at once with the same events (U16a).
+      bot.targetDigBlock = null
+      bot.targetDigFace = null
+      bot.lastDigTime = performance.now()
+      bot.emit('diggingCompleted', air)
+      return
+    }
+
+    const task = createTask()
     const creative = bot.game?.gameMode === 'creative'
     // the speed as of now (after the look): it decides the instant break and drives the per-tick progress
     const delta = currentDelta(block)

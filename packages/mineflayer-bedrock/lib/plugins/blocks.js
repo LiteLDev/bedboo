@@ -36,6 +36,7 @@
 //   right after the update_block). Signs: block.signText / getSignText() read FrontText/BackText (prismarine-block
 //   patch); sign editing is sign.js.
 'use strict'
+const { performance } = require('perf_hooks')
 const { Vec3 } = require('vec3')
 const { onceWithCleanup } = require('mineflayer/lib/promise_utils')
 const { DIMENSION_HEIGHTS, dimensionName, dimensionId, subChunkRange } = require('../bedrock/constants')
@@ -269,6 +270,24 @@ function inject (bot) {
   const liquidRefreshes = new Map()
   const LIQUID_REFRESH_RETRY_MS = 5000
   const LIQUID_REFRESH_RETRIES = 3
+  /**
+   * A block's liquid layer is asked for at most LIQUID_ASKS times per LIQUID_ASK_WINDOW_MS (a block that keeps
+   * changing every round trip would otherwise be asked for forever, U16a); beyond that the prediction stands.
+   * 'x,y,z' → { n, at }
+   */
+  const LIQUID_ASKS = 3
+  const LIQUID_ASK_WINDOW_MS = 30000
+  const liquidAsks = new Map()
+  function mayAskLiquid (point) {
+    const now = performance.now()
+    if (liquidAsks.size > 256) for (const [k, rec] of liquidAsks) if (now - rec.at >= LIQUID_ASK_WINDOW_MS) liquidAsks.delete(k)
+    const key = point.toString()
+    let rec = liquidAsks.get(key)
+    if (!rec || now - rec.at >= LIQUID_ASK_WINDOW_MS) liquidAsks.set(key, rec = { n: 0, at: now })
+    if (rec.n >= LIQUID_ASKS) return false
+    rec.n++
+    return true
+  }
   function sendLiquidRefresh (refresh) {
     refresh.outstanding++
     clearTimeout(refresh.timer)
@@ -286,7 +305,9 @@ function inject (bot) {
     bot._client.queue('subchunk_request', { dimension: dimensionId(dimension), requests: [{ x: 0, y: refresh.sy, z: 0 }], origin: { x: refresh.cx, y: 0, z: refresh.cz } })
   }
   /** ask for the sub-chunk of `points` (blocks of one sub-chunk) */
-  function refreshLiquidLayer (...points) {
+  function refreshLiquidLayer (...all) {
+    const points = all.filter(mayAskLiquid)
+    if (points.length === 0) return
     const [point] = points
     const cx = Math.floor(point.x / 16)
     const cz = Math.floor(point.z / 16)
@@ -345,8 +366,9 @@ function inject (bot) {
     }
     for (const point of positions.values()) {
       const local = new Vec3(point.x & 15, point.y, point.z & 15)
-      // layer 0 changed again since (its update is on the way): that update decides
-      if ((layerStateId(fresh, local, 0)) !== (column.getBlockStateId(local) ?? air())) continue
+      // layer 0 became another block since (its update is on the way): that update decides; a state change of the
+      // same block (a trapdoor toggling) keeps the layer, so the answer still holds
+      if (stateIdType(layerStateId(fresh, local, 0)) !== stateIdType(column.getBlockStateId(local) ?? air())) continue
       const server1 = layerStateId(fresh, local, 1)
       if (server1 === layerStateId(column, local, 1)) continue
       const oldBlock = column.getBlock(local)
@@ -370,7 +392,7 @@ function inject (bot) {
         const old0 = pending.column.getBlockStateId(local) ?? air()
         const rule = liquidLayerRule(old0, layerStateId(pending.column, local, 1), stateId)
         const { layer1 } = rule
-        const confirm = rule.confirm || liquidRefreshPending(point.floored())
+        const confirm = rule.confirm || (stateIdType(old0) !== stateIdType(stateId) && liquidRefreshPending(point.floored()))
         const stale = staleBlockEntity(pending.column, local, stateId)
         pending.column.setBlockStateId(local, stateId)
         if (layer1 !== undefined) setLayerStateId(pending.column, local, 1, layer1)
@@ -386,10 +408,12 @@ function inject (bot) {
     }
     const column = bot.world.getColumnAt(point)
     const stale = staleBlockEntity(column, local, stateId)
-    const rule = liquidLayerRule(column.getBlockStateId(local) ?? air(), layerStateId(column, local, 1), stateId)
+    const old0 = column.getBlockStateId(local) ?? air()
+    const rule = liquidLayerRule(old0, layerStateId(column, local, 1), stateId)
     const { layer1 } = rule
-    // a block whose check is out changed again: its answer may predate the change, ask again
-    const confirm = rule.confirm || liquidRefreshPending(point.floored())
+    // a block whose check is out became another block: its answer may predate the change, ask again (a state change of
+    // the same block keeps the layer: no new request, U16a)
+    const confirm = rule.confirm || (stateIdType(old0) !== stateIdType(stateId) && liquidRefreshPending(point.floored()))
     if (layer1 === undefined) {
       updateBlockState(point, stateId) // 'blockUpdate' with the old block still carrying its block entity
     } else {
@@ -680,9 +704,37 @@ function inject (bot) {
     }
   }
 
+  /**
+   * Bedrock extra (U16a, docs/differences/U16a.md#block-variants): the ids of the Bedrock blocks that Java models as
+   * one block with a state — a burning furnace is `lit_furnace`, a powered repeater `powered_repeater` — so
+   * `bot.findBlock({ matching: bot.bedrock.blockVariants('furnace') })` also finds a furnace while it burns.
+   * Accepts a block name or id; any other block → [its id]; unknown → [].
+   */
+  function blockVariants (block) {
+    const def = typeof block === 'number' ? bot.registry.blocks[block] : bot.registry.blocksByName[block]
+    if (!def) return []
+    const group = BLOCK_VARIANTS.find((names) => names.includes(def.name)) ?? [def.name]
+    return group.map((name) => bot.registry.blocksByName[name]?.id).filter((id) => id !== undefined)
+  }
+  if (bot.bedrock) bot.bedrock.blockVariants = blockVariants
+
   bot.findBlock = findBlock
   bot.canSeeBlock = canSeeBlock
   bot.blockAt = blockAt
   bot._updateBlockState = updateBlockState
   bot.waitForChunksToLoad = waitForChunksToLoad
 }
+
+/** Bedrock blocks that are one Java block with a `lit` / `powered` / `inverted` state (the Java name first) */
+const BLOCK_VARIANTS = [
+  ['furnace', 'lit_furnace'],
+  ['blast_furnace', 'lit_blast_furnace'],
+  ['smoker', 'lit_smoker'],
+  ['redstone_ore', 'lit_redstone_ore'],
+  ['deepslate_redstone_ore', 'lit_deepslate_redstone_ore'],
+  ['redstone_lamp', 'lit_redstone_lamp'],
+  ['redstone_torch', 'unlit_redstone_torch'],
+  ['unpowered_repeater', 'powered_repeater'],
+  ['unpowered_comparator', 'powered_comparator'],
+  ['daylight_detector', 'daylight_detector_inverted']
+]

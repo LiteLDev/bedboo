@@ -39,11 +39,13 @@ const { moveVector, rawMoveVector, buildFlags } = require('../physics/input')
 const conv = require('../bedrock/conversions')
 const { toBigInt } = require('./abilities')
 const { resetGliding } = require('../bedrock/entity_data')
-const { EYE_HEIGHT } = require('../bedrock/constants')
+const { EYE_HEIGHT, PLAYER_HEIGHT, PLAYER_WIDTH } = require('../bedrock/constants')
 const { POSITION_OFFSETS } = require('./entities')
 const { createDoneTask, createTask } = require('mineflayer/lib/promise_utils')
 
 const CONTROLS = ['forward', 'back', 'left', 'right', 'jump', 'sprint', 'sneak']
+/** BDS's seat of boats and minecarts (rider_seat_position, eye level above the vehicle's wire position) */
+const DEFAULT_SEAT = Object.freeze({ x: 0, y: 1.02, z: 0 })
 const DEFAULT_REWIND_HISTORY = 40
 const HISTORY_MARGIN = 20
 /** creative flyTo: arrival tolerance (blocks), lookahead ticks, ticks without progress before giving up */
@@ -826,12 +828,22 @@ function inject (bot, { physicsEnabled }) {
   // the latest of its move_entity (bot.vehicle.position) and BDS's vehicle corrections (every 6 ticks). Every input
   // reports that seat and bot.entity.position follows it, so a dismount without a server teleport (boats) leaves the
   // rider next to the vehicle, not where it mounted.
+  // BDS sends rider_seat_position only when it changes (the join's actor data has (0, 0, 0)): it is kept across rides —
+  // boat → boat, minecart → boat send no new value (U16a). Should it be unknown, the seat of the vehicle type is used.
   let vehicleBase = null // { vehicle, entityPos: vehicle.position it was taken from, pos: vehicle wire position }
+
+  function seatOf (vehicle) {
+    const seat = bot.entity?.metadata?.rider_seat_position
+    if (seat && typeof seat.y === 'number') return seat
+    if (/boat|minecart/.test(vehicle.name ?? '')) return DEFAULT_SEAT
+    // anything else: feet on top of the vehicle's box
+    return { x: 0, y: (vehicle.height ?? 0) - (POSITION_OFFSETS[vehicle.name] ?? 0) + EYE_HEIGHT, z: 0 }
+  }
 
   function followSeat () {
     const vehicle = bot.vehicle
-    const seat = bot.entity?.metadata?.rider_seat_position
-    if (!vehicle?.position || !seat || typeof seat.y !== 'number') return
+    if (!vehicle?.position) return
+    const seat = seatOf(vehicle)
     if (!vehicleBase || vehicleBase.vehicle !== vehicle || !vehicle.position.equals(vehicleBase.entityPos)) {
       vehicleBase = { vehicle, entityPos: vehicle.position.clone(), pos: vehicle.position.offset(0, POSITION_OFFSETS[vehicle.name] ?? 0, 0) }
     }
@@ -847,13 +859,64 @@ function inject (bot, { physicsEnabled }) {
     entity.velocity.set(0, 0, 0)
   }
 
-  bot.on('dismount', () => {
+  bot.on('dismount', (vehicle) => {
     vehicleBase = null
-    // the next vehicle's seat comes with its own set_entity_data (sent before the link)
-    if (bot.entity?.metadata) delete bot.entity.metadata.rider_seat_position
     vehicleInput = { left: 0, forward: 0 }
     bot._bedrock?.input?.setVehicle(null)
+    placeAfterDismount(vehicle)
   })
+
+  // ---- getting off (U16a) ------------------------------------------------------------------------------
+  // BDS teleports nobody off a boat or minecart: the rider stays at its seat, which is inside the block under a
+  // minecart on rails or a boat on land (feet 0.1 / 0.225 down). BDS itself lifts its copy of the rider straight up out
+  // of that block (measured on 1.26.51.1: a correction to the seat x/z on top of the block when the client reports
+  // anything else); the client did not, so it fell to the block below and stayed buried one block down. Like BDS: the
+  // seat position raised until the player's box is free (a seat that is free — a boat on water — stays). The move is
+  // reported like a server teleport (forcedMove) and goes out with the next input.
+  function placeAfterDismount (vehicle) {
+    const entity = bot.entity
+    if (!entity || !vehicle?.position || !bot.world?.getColumnAt?.(entity.position)) return
+    // a teleport that ended the ride (move_player before the link removal) already placed the rider elsewhere
+    if (entity.position.distanceTo(vehicle.position) > 4) return
+    const spot = liftedOutOfBlocks(entity.position)
+    if (!spot || spot.y === entity.position.y) return
+    entity.position.set(spot.x, spot.y, spot.z)
+    entity.velocity.set(0, 0, 0)
+    entity.onGround = true
+    emitForcedMove()
+  }
+
+  /** `feet` raised onto the blocks the player's box intersects there (≤ 2 blocks), or null when it never fits */
+  function liftedOutOfBlocks (feet) {
+    const pos = feet.clone()
+    for (let i = 0; i < 8; i++) {
+      const tops = overlapping(pos).map((b) => b[4])
+      if (tops.length === 0) return pos
+      pos.y = Math.max(...tops)
+      if (pos.y - feet.y > 2) return null
+    }
+    return null
+  }
+
+  /** collision boxes (world coordinates) of the blocks that intersect the standing player's box at `feet` */
+  function overlapping (feet) {
+    const h = PLAYER_WIDTH / 2
+    const box = [feet.x - h, feet.y, feet.z - h, feet.x + h, feet.y + PLAYER_HEIGHT, feet.z + h]
+    const eps = 1e-7
+    const hits = []
+    for (let x = Math.floor(box[0]); x <= Math.floor(box[3] - eps); x++) {
+      for (let y = Math.floor(box[1]); y <= Math.floor(box[4] - eps); y++) {
+        for (let z = Math.floor(box[2]); z <= Math.floor(box[5] - eps); z++) {
+          const block = bot.blockAt(new Vec3(x, y, z), false)
+          for (const s of block?.shapes ?? []) {
+            const b = [x + s[0], y + s[1], z + s[2], x + s[3], y + s[4], z + s[5]]
+            if (b[0] < box[3] - eps && b[3] > box[0] + eps && b[1] < box[4] - eps && b[4] > box[1] + eps && b[2] < box[5] - eps && b[5] > box[2] + eps) hits.push(b)
+          }
+        }
+      }
+    }
+    return hits
+  }
 
   const isSelf = (runtimeId) => !!bot.entity && !!bot._bedrock?.ids?.isSelf(runtimeId)
 

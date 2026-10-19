@@ -134,16 +134,23 @@ function resolveIngredient (registry, desc, tags) {
   return { key: `i:${item.id}:${metadata}`, options: [{ id: item.id, metadata }] }
 }
 
-/** cells (resolved ingredients) → list of concrete cell assignments ({ id, metadata } | null per cell) */
-function expandCells (cells) {
+/**
+ * cells (resolved ingredients) → list of concrete cell assignments ({ id, metadata } | null per cell).
+ * Shaped recipes use the same member in every cell of a tag (upstream's Java recipes do: a crafting table is 4 planks
+ * of one wood). Shapeless recipes expand each tag cell on its own when that stays within MAX_VARIANTS: BDS matches
+ * every cell independently and Java's shapeless recipes mix too (mushroom stew = brown + red mushroom + bowl, U16a).
+ */
+function expandCells (cells, { shapeless = false } = {}) {
+  const independent = shapeless && cells.reduce((n, cell) => cell && cell.options.length > 1 ? n * cell.options.length : n, 1) <= MAX_VARIANTS
+  const cellKey = (cell, i) => independent ? `c:${i}` : cell.key
   const keys = []
   const lists = []
-  for (const cell of cells) {
-    if (cell && cell.options.length > 1 && !keys.includes(cell.key)) {
-      keys.push(cell.key)
+  cells.forEach((cell, i) => {
+    if (cell && cell.options.length > 1 && !keys.includes(cellKey(cell, i))) {
+      keys.push(cellKey(cell, i))
       lists.push(cell.options)
     }
-  }
+  })
   let combos = [[]]
   const product = lists.reduce((n, list) => n * list.length, 1)
   if (product <= MAX_VARIANTS) {
@@ -152,9 +159,9 @@ function expandCells (cells) {
     const n = Math.max(...lists.map(list => list.length))
     combos = Array.from({ length: n }, (_, i) => lists.map(list => list[i % list.length]))
   }
-  return combos.map(combo => cells.map(cell => {
+  return combos.map(combo => cells.map((cell, i) => {
     if (!cell) return null
-    const k = keys.indexOf(cell.key)
+    const k = keys.indexOf(cellKey(cell, i))
     return k === -1 ? cell.options[0] : combo[k]
   }))
 }
@@ -205,7 +212,7 @@ function parseBedrockRecipes (registry, packet, { tags = ITEM_TAGS } = {}) {
     const [main, ...extra] = results
     const result = { id: main.item.id, count: main.o.count, metadata: main.o.metadata ?? 0 }
     const extraResults = extra.map(({ item, o }) => ({ id: item.id, count: o.count, metadata: o.metadata ?? 0 }))
-    for (const assignment of expandCells(cells)) {
+    for (const assignment of expandCells(cells, { shapeless: !r.shaped })) {
       const entry = { result: { ...result }, networkId: r.networkId }
       if (r.shaped) {
         entry.inShape = Array.from({ length: r.height }, (_, y) => Array.from({ length: r.width }, (_, x) => {

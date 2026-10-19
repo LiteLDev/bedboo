@@ -201,21 +201,28 @@ function inject (bot) {
     // we are sneaking while doing this")
     const releaseSneak = await sneakForClick(referenceBlock)
     try {
-      // Bedrock: a jump-placement under the feet waits until the hitbox rose out of the destination (right before the
-      // click: nothing else is awaited after it)
-      await waitForClearance(pos.plus(faceVector))
+      // Bedrock: the previous click must have been answered (its new held-item stack id) before this one goes out
+      // (U16a: back-to-back / concurrent placements)
+      const releaseTurn = await placer.acquire()
+      try {
+        // Bedrock: a jump-placement under the feet waits until the hitbox rose out of the destination (right before
+        // the click: nothing else is awaited after it)
+        await waitForClearance(pos.plus(faceVector))
 
-      if (options.swingArm) {
-        bot.swingArm(options.swingArm, options.showHand)
+        if (options.swingArm) {
+          bot.swingArm(options.swingArm, options.showHand)
+        }
+
+        placer.click({
+          position: pos,
+          face: vectorToDirection(faceVector),
+          cursor: { x: dx, y: dy, z: dz },
+          hand: handToPlaceWith,
+          heldItem: handToPlaceWith === 'off_hand' ? offhandNetworkItem() : undefined
+        })
+      } finally {
+        releaseTurn()
       }
-
-      placer.click({
-        position: pos,
-        face: vectorToDirection(faceVector),
-        cursor: { x: dx, y: dy, z: dz },
-        hand: handToPlaceWith,
-        heldItem: handToPlaceWith === 'off_hand' ? offhandNetworkItem() : undefined
-      })
     } finally {
       // the release reaches the server with the next input, after the click (packets keep their order)
       releaseSneak()
@@ -241,24 +248,67 @@ function inject (bot) {
     return clickLookedAt(target.liquids, offHand)
   }
 
-  /** click the face of the first block along the look (`liquids`: see placement.raycast); false when none in reach */
+  /**
+   * click the face of the first block along the look (`liquids`: see placement.raycast); false when none in reach. The
+   * target is taken now; the click goes out once the previous click was answered (at once when none is pending).
+   */
   function clickLookedAt (liquids, offHand) {
     const hit = placement.raycast(bot, { liquids })
     if (!hit) return false
-    placer.click({
+    const click = () => placer.click({
       position: hit.position,
       face: hit.face,
       cursor: { x: hit.cursor.x, y: hit.cursor.y, z: hit.cursor.z },
       hand: offHand ? 'off_hand' : 'main_hand',
       heldItem: offHand ? offhandNetworkItem() : undefined
     })
+    if (!placer.waiting()) {
+      click() // nothing unanswered: synchronous, like the click_air it replaces
+      return true
+    }
+    placer.acquire().then((releaseTurn) => {
+      try {
+        click()
+      } finally {
+        releaseTurn()
+      }
+    }).catch((err) => bot.emit('error', err))
     return true
+  }
+
+  /**
+   * Bedrock recovery around the vendored place_block.js (U16a): BDS refuses a click whose block runtime id is not the
+   * server's state of the clicked block — which happens when the server changed it right before (farmland and grass
+   * paths turn into dirt under a placed block one tick after the placement). The answer to the click discloses it
+   * (placer.stale): such a refusal is retried once with the block as it is now.
+   */
+  function withStaleRetry (placeBlockWithOptions) {
+    return async function _placeBlockWithOptions (referenceBlock, faceVector, options) {
+      try {
+        return await placeBlockWithOptions(referenceBlock, faceVector, options)
+      } catch (err) {
+        if (!/^Server refused to place/.test(err?.message ?? '') || !placer.stale(referenceBlock.position)) throw err
+        const fresh = bot.blockAt(referenceBlock.position)
+        if (!fresh || fresh.type === bot.registry.blocksByName.air?.id) throw err
+        return await placeBlockWithOptions(fresh, faceVector, options)
+      }
+    }
+  }
+  if (implemented(bot._placeBlockWithOptions)) {
+    // place_block.js is injected before this plugin (loader order); its placeBlock calls its own copy, so both go
+    const placeBlockWithOptions = withStaleRetry(bot._placeBlockWithOptions)
+    bot._placeBlockWithOptions = placeBlockWithOptions
+    bot.placeBlock = async function placeBlock (referenceBlock, faceVector) {
+      await placeBlockWithOptions(referenceBlock, faceVector, { swingArm: 'right' })
+    }
   }
 
   bot._genericPlace = _genericPlace
   if (bot._bedrock) {
     bot._bedrock.placement = {
       click: placer.click,
+      acquire: placer.acquire,
+      stale: placer.stale,
       flushStop: placer.flushStop,
       raycast: (opts) => placement.raycast(bot, opts),
       isInteractive: placement.isInteractive,

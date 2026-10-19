@@ -27,6 +27,10 @@ const { viewDirection } = require('./conversions')
 
 /** ms between start_item_use_on and stop_item_use_on (vanilla client) */
 const STOP_DELAY_MS = tx.DEFAULT_STOP_DELAY_MS
+/** ms to wait at most for BDS's answer to a click before the next click goes out anyway (U16a) */
+const ANSWER_TIMEOUT_MS = 500
+/** ms a click's answer is remembered for stale() */
+const STALE_MEMORY_MS = 5000
 /** survival block interaction range (Bedrock: 6 creative / 4.5 + margin survival — the client picks within 6) */
 const PICK_RANGE = 6
 
@@ -160,10 +164,112 @@ function raycast (bot, { maxDistance = PICK_RANGE, liquids = 'none' } = {}) {
 
 /**
  * Click sender with the vanilla start/stop pairing.
+ *
+ * Clicks wait for the server's answer to the previous one (U16a, wave-4 review): BDS gives the held stack a new stack
+ * id after every use (inventory_content, sent right before its update_block answer), and a click carrying the old one
+ * is refused — so back-to-back or concurrent placements wait until the held item was updated, the clicked block was
+ * answered, or ANSWER_TIMEOUT_MS: `const release = await placer.acquire(); try { placer.click(…) } finally { release() }`
+ * (`placer.waiting()`: whether acquire() would wait now).
+ * The answer (the first update_block for the clicked block) also tells whether the click carried a stale block runtime
+ * id (the server changed the block meanwhile, e.g. farmland turned into dirt under a placed block): BDS refuses such a
+ * click; `stale(position)` reports it so the caller can click again with the fresh block.
  * @param {object} bot
  */
 function createPlacer (bot) {
   let pendingStop = null // { timer, packet }
+  let turn = Promise.resolve() // settles when the last click that took a turn may be followed by the next one
+  let lastClick = null // the latest click's entry
+  const unanswered = new Map() // 'x,y,z' → { runtimeId, heldKey, ready, settleReady, readyDone, timer }
+  const answers = new Map() // 'x,y,z' → { stale, at }: the latest answered click per clicked block
+
+  const keyOf = (p) => `${Math.floor(p.x)},${Math.floor(p.y)},${Math.floor(p.z)}`
+  const heldKey = () => {
+    const provider = bot._bedrock?.heldNetworkItem
+    const item = typeof provider === 'function' && !provider.notImplemented ? provider() : null
+    return item ? `${item.network_id}:${item.stack_id ?? ''}:${item.count}` : ''
+  }
+
+  function settleReady (entry) {
+    if (entry.readyDone) return
+    entry.readyDone = true
+    entry.settleReady()
+  }
+
+  /** `runtimeId`: the clicked block's state in the answer (undefined: no answer, the timeout or a reset) */
+  function finish (key, entry, runtimeId) {
+    if (unanswered.get(key) === entry) unanswered.delete(key)
+    clearTimeout(entry.timer)
+    if (runtimeId !== undefined) {
+      const now = Date.now()
+      for (const [k, a] of answers) if (now - a.at > STALE_MEMORY_MS) answers.delete(k)
+      answers.set(key, { stale: runtimeId !== entry.runtimeId, at: now })
+    }
+    settleReady(entry)
+  }
+
+  bot._client?.on?.('update_block', (packet) => {
+    if (packet.layer !== undefined && packet.layer !== 0) return
+    const key = keyOf(packet.position)
+    const entry = unanswered.get(key)
+    if (entry) finish(key, entry, packet.block_runtime_id)
+  })
+  // the held item's new copy (inventory_content / inventory_slot come before the block answer): the next click may go
+  const heldChanged = () => {
+    const now = heldKey()
+    for (const entry of unanswered.values()) if (now !== entry.heldKey) settleReady(entry)
+  }
+  // the inventory plugin's listener runs first (injected earlier); check again once everything applied the packet
+  const onInventory = () => {
+    heldChanged()
+    setImmediate(heldChanged)
+  }
+  bot._client?.on?.('inventory_content', onInventory)
+  bot._client?.on?.('inventory_slot', onInventory)
+
+  /** wait for the previous click's answer; → release(), to call after this caller's click (or when it did not click) */
+  function acquire () {
+    const previous = turn
+    let release
+    turn = new Promise((resolve) => { release = resolve })
+    return previous.then(() => {
+      const before = lastClick
+      let done = false
+      return () => {
+        if (done) return
+        done = true
+        // the next turn starts once this caller's click (if it clicked) may be followed
+        release(lastClick && lastClick !== before ? lastClick.ready : undefined)
+      }
+    })
+  }
+
+  /** whether a click now would carry the held item of a click the server did not answer yet */
+  function waiting () {
+    if (!lastClick || lastClick.readyDone) return false
+    if (heldKey() !== lastClick.heldKey) {
+      settleReady(lastClick)
+      return false
+    }
+    return true
+  }
+
+  function track (position, runtimeId) {
+    const key = keyOf(position)
+    const previous = unanswered.get(key)
+    if (previous) finish(key, previous)
+    const entry = { runtimeId, heldKey: heldKey(), settleReady: null, readyDone: false, timer: null }
+    entry.ready = new Promise((resolve) => { entry.settleReady = resolve })
+    entry.timer = setTimeout(() => finish(key, entry), ANSWER_TIMEOUT_MS)
+    entry.timer.unref?.()
+    unanswered.set(key, entry)
+    lastClick = entry
+  }
+
+  /** whether the latest answered click on the block at `position` carried another block state than the server's */
+  function stale (position) {
+    const a = answers.get(keyOf(position))
+    return !!a && a.stale && Date.now() - a.at <= STALE_MEMORY_MS
+  }
 
   function send (name, params) {
     try {
@@ -194,6 +300,7 @@ function createPlacer (bot) {
     if (heldItem) transaction.transaction.transaction_data.held_item = heldItem
     if (lifecycle) send('player_action', start)
     send('inventory_transaction', transaction)
+    track(position, transaction.transaction.transaction_data.block_runtime_id)
     if (lifecycle) {
       const timer = setTimeout(flushStop, STOP_DELAY_MS)
       timer.unref?.()
@@ -205,9 +312,10 @@ function createPlacer (bot) {
   function reset () {
     if (pendingStop) clearTimeout(pendingStop.timer)
     pendingStop = null
+    for (const [key, entry] of [...unanswered]) finish(key, entry)
   }
 
-  return { click, flushStop, reset, hasPendingStop: () => pendingStop !== null }
+  return { click, acquire, waiting, stale, flushStop, reset, hasPendingStop: () => pendingStop !== null }
 }
 
 module.exports = {
@@ -221,5 +329,6 @@ module.exports = {
   raycast,
   createPlacer,
   STOP_DELAY_MS,
+  ANSWER_TIMEOUT_MS,
   PICK_RANGE
 }
