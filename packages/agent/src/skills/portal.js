@@ -477,6 +477,7 @@ async function fillBucket (bot, liquid, { signal, guard, maxDistance = 128, near
       // swim in lava" at 8 hp)
         const goal = liquid === 'lava' ? lavaSafeGoal(bot, p, goals) : reachGoal(p, goals)
         await u.goto(bot, goal, { signal, timeout: Math.max(5000, Math.min(45000, timeout - (Date.now() - started))), retries: 1 })
+        await settle(bot, { signal })
         const block = bot.blockAt(p)
         if (!isSource(block)) {
           skip.add(p.toString())
@@ -500,7 +501,7 @@ async function fillBucket (bot, liquid, { signal, guard, maxDistance = 128, near
           for (const [k, n] of Object.entries(others)) if (u.count(bot, k) < n) u.log(bot, `bucket desync: a ${k} was used on ${p} instead of the empty bucket`)
           throw err
         })
-        u.log(bot, `filled a ${filled} at ${p}`)
+        u.log(bot, `filled a ${filled} at ${p} from ${bot.entity.position.floored()}`)
         return p
       } catch (err) {
         if (signal?.aborted) throw err
@@ -536,9 +537,32 @@ function lavaAround (bot, feet) {
 function lavaSafeGoal (bot, p, goals, { reach = 4.0 } = {}) {
   const target = u.vec(p).offset(0.5, 0.5, 0.5)
   const goal = new goals.GoalNear(p.x, p.y + 1, p.z, 4) // its heuristic: the distance to the cell above the source
-  goal.isEnd = (node) => new Vec3(node.x + 0.5, node.y + 1.62, node.z + 0.5).distanceTo(target) <= reach &&
-    !lavaAround(bot, new Vec3(node.x, node.y, node.z))
+  goal.isEnd = (node) => {
+    const n = new Vec3(node.x, node.y, node.z)
+    return n.offset(0.5, 1.62, 0.5).distanceTo(target) <= reach && !lavaAround(bot, n) && !dropBeside(bot, n)
+  }
   return goal
+}
+
+/**
+ * A drop of 2+ blocks next to the feet cell `n` (diagonals included): the bot's momentum at the end of a walk carried
+ * it off such a rim into the hole a taken source left, and lava flowed in (N1 seed 35, every run at 90 s)
+ */
+function dropBeside (bot, n) {
+  for (let dx = -1; dx <= 1; dx++) {
+    for (let dz = -1; dz <= 1; dz++) {
+      if (!dx && !dz) continue
+      const c = n.offset(dx, 0, dz)
+      if (u.isClear(bot.blockAt(c)) && !u.isSolid(bot.blockAt(c.offset(0, -1, 0))) && !u.isSolid(bot.blockAt(c.offset(0, -2, 0)))) return true
+    }
+  }
+  return false
+}
+
+/** stop and let the bot come to rest (its momentum at the end of a walk) — at most `ms` */
+async function settle (bot, { signal, ms = 1000 } = {}) {
+  try { bot.clearControlStates() } catch {}
+  await u.waitFor(() => bot.entity.onGround && Math.hypot(bot.entity.velocity?.x ?? 0, bot.entity.velocity?.z ?? 0) < 0.02, { timeout: ms, interval: 50, signal }).catch((err) => { if (signal?.aborted) throw err })
 }
 
 /** the same reach test for water (a lake's bank) */
@@ -657,9 +681,14 @@ async function castAtPool (bot, pool, n, ctx) {
   // (N1 seed 35 #1 / #2 and N1M5 #5: "tried to swim in lava" walking between two fills)
   const offPool = poolExclusion(bot, pool)
   const stopLavaWatch = lavaWatch(bot, guard)
+  // BEDBOO_PORTAL_TRACE=1: where the bot stands every 500 ms while casting (debugging walks near the pool)
+  const trace = process.env.BEDBOO_PORTAL_TRACE
+    ? setInterval(() => { const f = bot.entity?.position?.floored(); if (f) u.log(bot, `trace ${bot.entity.position.x.toFixed(2)},${bot.entity.position.y.toFixed(2)},${bot.entity.position.z.toFixed(2)} feet ${bot.blockAt(f)?.name} below ${bot.blockAt(f.offset(0, -1, 0))?.name} goal ${bot.pathfinder?.goal ? 'set' : '-'}`) }, 500)
+    : null
   try {
     return await castLoop()
   } finally {
+    clearInterval(trace)
     stopLavaWatch()
     offPool.remove()
   }
@@ -1609,6 +1638,7 @@ module.exports = Object.assign(portalSkill, {
   holdBucket,
   lowHealthPause,
   lavaSafeGoal,
+  dropBeside,
   reachGoal,
   poolExclusion,
   ensureWaterBucket,

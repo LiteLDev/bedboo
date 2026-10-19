@@ -63,8 +63,18 @@ describe('U18 lava pools (FINAL-FIX-AGENT-B)', () => {
     assert.strictEqual(goal.isEnd(new Vec3(5, 64, 1)), true, 'one block back, still in reach')
     assert.strictEqual(goal.isEnd(new Vec3(9, 64, 1)), false, 'out of reach')
     // a bank high above the pool: near the cell over the source, but the eyes are 4.8+ blocks from it (N1M5 #1)
-    assert.strictEqual(goal.isEnd(new Vec3(5, 66, 1)), false, 'on a bank 3 blocks up, 2 out')
-    assert.strictEqual(goal.isEnd(new Vec3(5, 65, 1)), true, 'on a bank 2 blocks up, 2 out')
+    const bank = { ...blocks }
+    for (let x = 5; x < 10; x++) for (let z = 0; z < 4; z++) for (const y of [64, 65]) bank[`${x},${y},${z}`] = 'dirt'
+    const bankGoal = portal.lavaSafeGoal({ blockAt: world(bank) }, new Vec3(3, 63, 1), require('mineflayer-pathfinder').goals)
+    assert.strictEqual(bankGoal.isEnd(new Vec3(5, 66, 1)), false, 'on a bank 3 blocks up, 2 out: out of reach')
+    // a rim (a bank 1 up) over an emptied source's hole, 2 deep: the walk's momentum carried the bot into it (N1 seed 35)
+    const rim = { ...blocks }
+    for (let x = 5; x < 10; x++) for (let z = 0; z < 4; z++) rim[`${x},64,${z}`] = 'dirt'
+    const goals = require('mineflayer-pathfinder').goals
+    assert.strictEqual(portal.lavaSafeGoal({ blockAt: world(rim) }, new Vec3(3, 63, 2), goals).isEnd(new Vec3(5, 65, 1)), true, 'the rim, solid ground beside')
+    const holed = { ...rim, '4,63,1': 'air' }
+    assert.strictEqual(portal.dropBeside({ blockAt: world(holed) }, new Vec3(5, 65, 1)), true)
+    assert.strictEqual(portal.lavaSafeGoal({ blockAt: world(holed) }, new Vec3(3, 63, 2), goals).isEnd(new Vec3(5, 65, 1)), false, 'the rim over the hole at (4, 63, 1)')
   })
 
   it('ranks open-sky pools first unless a cave pool is far nearer; skips given-up pools and pools with too few sources', () => {
