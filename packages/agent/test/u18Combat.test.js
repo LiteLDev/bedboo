@@ -306,10 +306,19 @@ describe('U18 dims/util goto with a guard', () => {
       setTimeout(() => { bot.entity.position = bot.entity.position.offset(0, 0, -10); moving = false }, 50)
       return Promise.reject(e)
     }
-    bot.pathfinder.next.push(timeoutErr, timeoutErr, timeoutErr)
+    // the final search reaches the goal
+    const arrive = () => { bot.entity.position = bot.entity.position.offset(0, 0, -10); return Promise.resolve() }
+    bot.pathfinder.next.push(timeoutErr, timeoutErr, timeoutErr, arrive)
     await util.goto(bot, far, { retries: 0, timeout: 10000 })
     assert.strictEqual(bot.pathfinder.calls.length, 4, 'three partial walks, then the final search')
-    assert.ok(bot.entity.position.z <= -29, `${bot.entity.position}`)
+    assert.ok(bot.entity.position.z <= -39, `${bot.entity.position}`)
+  })
+
+  it('a search that resolves short of the goal is a failed attempt, not an arrival', async () => {
+    const bot = pathBot()
+    const far = { isEnd: () => false, heuristic: (p) => Math.abs(p.z - -40) }
+    await assert.rejects(util.goto(bot, far, { retries: 1, timeout: 5000 }), /stopped .* short of the goal/)
+    assert.strictEqual(bot.pathfinder.calls.length, 2)
   })
 
   it('without a guard a stopped path counts as a failed attempt', async () => {

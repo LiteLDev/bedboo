@@ -62,10 +62,13 @@ describe('U18 lava pools (FINAL-FIX-AGENT-B)', () => {
     assert.strictEqual(goal.isEnd(new Vec3(4, 64, 1)), false, 'the rim, next to the source')
     assert.strictEqual(goal.isEnd(new Vec3(5, 64, 1)), true, 'one block back, still in reach')
     assert.strictEqual(goal.isEnd(new Vec3(9, 64, 1)), false, 'out of reach')
+    // a bank high above the pool: near the cell over the source, but the eyes are 4.8+ blocks from it (N1M5 #1)
+    assert.strictEqual(goal.isEnd(new Vec3(5, 66, 1)), false, 'on a bank 3 blocks up, 2 out')
+    assert.strictEqual(goal.isEnd(new Vec3(5, 65, 1)), true, 'on a bank 2 blocks up, 2 out')
   })
 
   it('ranks open-sky pools first unless a cave pool is far nearer; skips given-up pools and pools with too few sources', () => {
-    const pool = (key, x, n, sky) => ({ key, sky, reachable: Array.from({ length: n }, (_, i) => new Vec3(x + i, 62, 0)), sources: [] })
+    const pool = (key, x, n, sky) => ({ key, sky, center: new Vec3(x, 62, 0), reachable: Array.from({ length: n }, (_, i) => new Vec3(x + i, 62, 0)), sources: [] })
     const cave = pool('cave', 13, 40, 0) // run 4's pool next to the spawn: 13 blocks, no sky
     const open = pool('open', 58, 40, 20) // the surface pool 58 blocks away
     const from = new Vec3(0, 64, 0)
@@ -75,6 +78,9 @@ describe('U18 lava pools (FINAL-FIX-AGENT-B)', () => {
     assert.deepStrictEqual(portal.rankPools([tiny, open], { from, need: 10 }).map((p) => p.key), ['open'])
     // one cast left: a one-source pool next to the bot is fine
     assert.deepStrictEqual(portal.rankPools([tiny, open], { from, need: 1 }).map((p) => p.key), ['tiny', 'open'])
+    // a deep cave lake (no sky, below y 40) is never worth the walk
+    const deep = { ...pool('deep', 5, 40, 0), center: new Vec3(5, -55, 0) }
+    assert.deepStrictEqual(portal.rankPools([deep, open], { from, need: 10 }).map((p) => p.key), ['open'])
   })
 })
 
