@@ -44,6 +44,7 @@ BEDBOO_U18_RUNS=5 corepack pnpm --filter @bedboo/agent test:e2e -- --grep N1    
 BEDBOO_U18_RUNS=5 corepack pnpm --filter @bedboo/agent test:e2e -- --grep N2      # nether/n2.e2e.js: nether ores, back home
 BEDBOO_U18_RUNS=5 corepack pnpm --filter @bedboo/agent test:e2e -- --grep E1      # end/e1.e2e.js: the End (cheat-assisted)
 BEDBOO_U18_CHAIN=1 corepack pnpm --filter @bedboo/agent test:e2e -- --grep CHAIN  # nether/chain.e2e.js: N1 → N2 → E1 in one world
+BEDBOO_U18_FROM_M3=1 corepack pnpm --filter @bedboo/agent test:e2e -- --grep N1M3 # nether/n1-from-m3.e2e.js: N1 from U17's M3 snapshot
 ```
 
 The scenarios run on their own servers through `test/u18/harness.js` (a mineflayer-bedrock bot with the `bot.test`
@@ -54,5 +55,7 @@ guard (`combat.guardFor`).
 |---|---|---|
 | C1 survive the night | flat, normal, midnight, natural spawns | kit, time |
 | N1 nether entry | seed 35 (lava pool 28 blocks from the spawn) | kit (stands in for U17's M3 end state) |
+| N1M3 nether entry from M3 | U17's seed 1234, M3 snapshot, U17's Agent | nothing: second bucket and an iron ingot via U17's `obtain`, back to the spawn, `portal` |
 | N2 nether ores | seed 35, normal | kit, the overworld portal frame (`/setblock`) |
 | E1 the End | seed 35 (stronghold portal room at 1703, -4, -869), normal | `/locate` + teleports into the portal room, kit (12 eyes), `/kill` of the ender dragon |
+| chain | seed 35, easy | N1's kit, then E1's stronghold teleport + eyes and the dragon kill |
