@@ -19,12 +19,15 @@ function plain (p) {
 }
 
 /**
- * Progress log of the agent: emitted as `agent_log` on the bot (scenario harnesses collect it) and printed when
- * `BEDBOO_AGENT_LOG` is set.
+ * Progress log of the agent: emitted as `agent_log` on the bot (scenario harnesses collect it); under U17's Agent it
+ * goes to the Agent's event stream, otherwise it is printed when `BEDBOO_AGENT_LOG` is set.
  */
 function log (bot, ...parts) {
   const msg = parts.map((p) => typeof p === 'string' ? p : JSON.stringify(p)).join(' ')
   try { bot.emit('agent_log', msg) } catch {}
+  // under U17's Agent: its event stream / report
+  const skill = require('../skill')
+  if (skill.agentOf(bot)) return skill.log(bot, msg)
   if (process.env.BEDBOO_AGENT_LOG) console.log(`      [agent ${new Date().toISOString().slice(11, 19)}] ${msg}`)
 }
 
