@@ -13,7 +13,7 @@
  *   when none is in range the bot goes down to y 15 and branch-mines (a straight tunnel) until one shows up.
  *   Nether gold comes last and never in sight of a piglin (mining gold angers them).
  * - Safety: a gold armor piece (golden helmet/boots/…) is worn when the bot has one, so piglins stay neutral;
- *   combat.defend() guards the whole trip: it retaliates against any mob that hurt the bot (piglins, hoglins,
+ *   combat.guardFor() (the Agent's safety under an Agent, else combat.defend()) guards the whole trip: it retaliates against any mob that hurt the bot (piglins, hoglins,
  *   zombified piglins only then), fights hostiles that come close (hoglins, magma cubes, …), knocks ghast fireballs back,
  *   eats; ghasts are never chased without a bow. Fights never step into lava (combat.hazardAhead).
  * - Home: the arrival portal (remembered by portal.enterPortal, or `args.home`); the bot walks back to it and goes
@@ -292,7 +292,7 @@ async function netherSkill (bot, args) {
   u.ensurePathfinder(bot, { fresh: true })
   const gold = await wearGold(bot)
   u.log(bot, `nether: home portal ${JSON.stringify(home)}, gold armor ${gold ?? 'none'}`)
-  const guard = combat.defend(bot, {
+  const guard = combat.guardFor(bot, {
     radius: 10,
     retaliate: true,
     // ghasts hover out of reach: only with a bow; never provoke neutral mobs

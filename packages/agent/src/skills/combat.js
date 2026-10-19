@@ -879,6 +879,56 @@ class Guard extends EventEmitter {
 }
 
 /**
+ * The guard a skill runs under: the running Agent's safety behaviours (src/safety.js, U17) when the skill runs inside
+ * an Agent — one background fighter, not two —, else a {@link defend} guard of its own. Both have `busy`, `idle()`,
+ * `pause()` / `resume()`, `stop()` and 'busy' / 'idle' events.
+ */
+function guardFor (bot, opts = {}) {
+  const safety = require('../skill').agentOf(bot)?.safety
+  if (safety?.enabled) return new SafetyGuard(bot, safety)
+  return defend(bot, opts)
+}
+
+/** {@link guardFor}'s adapter around the Agent's Safety */
+class SafetyGuard extends EventEmitter {
+  constructor (bot, safety) {
+    super()
+    this.bot = bot
+    this.safety = safety
+    this.delegated = true
+    this.stats = { delegated: 'agent safety' }
+    this._paused = null
+    this._onBusy = (type) => this.emit('busy', type)
+    this._onIdle = () => this.emit('idle')
+    safety.on('busy', this._onBusy)
+    safety.on('idle', this._onIdle)
+    util.setGuard(bot, this)
+  }
+
+  get busy () { return !!this.safety.busy }
+  idle () { return this.safety.idle() }
+  pause () {
+    if (this._paused !== null) return
+    this._paused = this.safety.enabled
+    this.safety.enabled = false
+  }
+
+  resume () {
+    if (this._paused === null) return
+    this.safety.enabled = this._paused
+    this._paused = null
+  }
+
+  async stop () {
+    this.resume()
+    this.safety.removeListener('busy', this._onBusy)
+    this.safety.removeListener('idle', this._onIdle)
+    if (util.guardOf(this.bot) === this) util.setGuard(this.bot, null)
+    return { delegated: 'agent safety', interventions: this.safety.interventions?.length ?? 0 }
+  }
+}
+
+/**
  * Run `fn` (an async action that moves / digs), pausing it while the guard fights: when `fn` fails while (or right
  * after) the guard interrupted it, wait for the guard and run `fn` again (at most `retries` times).
  */
@@ -1005,6 +1055,10 @@ async function survive (bot, { durationMs = 180000, radius = 16, signal, post, .
   await equipForCombat(bot)
   const { goals } = util.ensurePathfinder(bot)
   const home = post ? util.vec(post) : bot.entity.position.floored()
+  // standing guard is this skill's own job: an Agent's safety behaviours step back meanwhile
+  const agentSafety = require('../skill').agentOf(bot)?.safety
+  const safetyWas = agentSafety?.enabled
+  if (agentSafety) agentSafety.enabled = false
   // the bow for mobs 10+ blocks away, melee (shield when cornered) closer
   const guard = defend(bot, { radius, retaliate: true, ...guardOpts, fight: { bowRange: [10, 40], ...guardOpts.fight } })
   const started = Date.now()
@@ -1022,6 +1076,7 @@ async function survive (bot, { durationMs = 180000, radius = 16, signal, post, .
   } finally {
     bot.removeListener('death', onDeath)
     await guard.stop()
+    if (agentSafety) agentSafety.enabled = safetyWas
   }
   return { survived: !state.died, stats: guard.stats, ms: Date.now() - started }
 }
@@ -1058,7 +1113,9 @@ async function combatSkill (bot, args) {
 module.exports = Object.assign(combatSkill, {
   // U18 (wave 6) skill API
   defend,
+  guardFor,
   Guard,
+  SafetyGuard,
   guarded,
   approachEntity,
   fightNearby,

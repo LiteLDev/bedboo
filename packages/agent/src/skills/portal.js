@@ -767,7 +767,8 @@ async function enterPortal (bot, portal, { signal, timeout = 120000 } = {}) {
 /**
  * The portal skill: obsidian (bucket casting) → frame → flint and steel → light → (enter).
  * A frame that already stands at `origin` only gets its missing blocks (an intact frame is just lit). The whole skill
- * runs under combat.defend(): mobs that come close are fought, the interrupted phase resumes.
+ * runs under combat.guardFor() (the Agent's safety, or a combat.defend() guard): mobs that come close are fought,
+ * the interrupted phase resumes.
  * args: `{ obsidian?: number (10), origin?: {x,y,z}, axis?: 'x'|'z', side?: 1|-1 (build side of an `origin` frame),
  *   enter?: boolean (true), guard?: boolean (true) }`
  *   + `signal`
@@ -779,7 +780,7 @@ async function portalSkill (bot, args) {
   const { signal, origin, axis, enter = true } = args
   const timings = {}
   u.ensurePathfinder(bot, { fresh: true })
-  const guard = args.guard === false ? null : combat.defend(bot, { radius: 8, retaliate: true, signal })
+  const guard = args.guard === false ? null : combat.guardFor(bot, { radius: 8, retaliate: true, signal })
   const result = {}
   let frame
   try {

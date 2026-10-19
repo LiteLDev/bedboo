@@ -302,7 +302,7 @@ async function endSkill (bot, args) {
       if (bot.game.dimension !== 'the_end') {
         u.ensurePathfinder(bot, { fresh: true })
         // silverfish (the portal room's spawner), cave mobs: fought while the eyes go in
-        const guard = combat.defend(bot, { radius: 6, retaliate: true, signal })
+        const guard = combat.guardFor(bot, { radius: 6, retaliate: true, signal })
         let a
         try {
           a = await activatePortal(bot, { signal, guard })
@@ -319,7 +319,7 @@ async function endSkill (bot, args) {
       if (bot.game.dimension !== 'the_end') throw new Error('not in The End')
       // no parkour over the void
       u.ensurePathfinder(bot, { fresh: true, allowParkour: false, maxDropDown: 3 })
-      const guard = combat.defend(bot, { radius: 8, retaliate: true, includeNeutral: false, signal })
+      const guard = combat.guardFor(bot, { radius: 8, retaliate: true, includeNeutral: false, signal })
       try {
         const t0 = Date.now()
         result.onTop = await toIslandTop(bot, { signal, guard })
@@ -340,7 +340,7 @@ async function endSkill (bot, args) {
     } else if (phase === 'exit') {
       if (bot.game.dimension !== 'the_end') throw new Error('not in The End')
       // provoked endermen may follow the bot to the fountain
-      const guard = combat.defend(bot, { radius: 6, retaliate: true, includeNeutral: false, signal })
+      const guard = combat.guardFor(bot, { radius: 6, retaliate: true, includeNeutral: false, signal })
       let r
       try {
         r = await combat.guarded(guard, () => exitEnd(bot, { signal, exitTimeout: args.exitTimeout, guard }), { retries: 5 })

@@ -38,12 +38,17 @@ cheat steps run by the harness) and `check`. E2E on BDS, a fresh server per run 
 gate, `BEDBOO_U18_REPORT=<file>` appends every run as JSON, `BEDBOO_AGENT_LOG=1` streams the agent's log):
 
 ```sh
-cd packages/agent
-BEDBOO_U18_RUNS=5 npx mocha --no-config --timeout 0 test/u18/combat.e2e.js     # C1 survive the night
-BEDBOO_U18_RUNS=5 npx mocha --no-config --timeout 0 test/u18/nether-n1.e2e.js  # N1 portal → nether
-BEDBOO_U18_RUNS=5 npx mocha --no-config --timeout 0 test/u18/nether-n2.e2e.js  # N2 nether ores, back home
-BEDBOO_U18_RUNS=5 npx mocha --no-config --timeout 0 test/u18/end-e1.e2e.js     # E1 the End (cheat-assisted)
+export BEDBOO_MAX_SERVERS=10 BEDBOO_WORKER_SLOTS=2
+BEDBOO_U18_RUNS=5 corepack pnpm --filter @bedboo/agent test:e2e -- --grep C1      # combat/night.e2e.js: survive the night
+BEDBOO_U18_RUNS=5 corepack pnpm --filter @bedboo/agent test:e2e -- --grep N1      # nether/n1.e2e.js: portal → nether
+BEDBOO_U18_RUNS=5 corepack pnpm --filter @bedboo/agent test:e2e -- --grep N2      # nether/n2.e2e.js: nether ores, back home
+BEDBOO_U18_RUNS=5 corepack pnpm --filter @bedboo/agent test:e2e -- --grep E1      # end/e1.e2e.js: the End (cheat-assisted)
+BEDBOO_U18_CHAIN=1 corepack pnpm --filter @bedboo/agent test:e2e -- --grep CHAIN  # nether/chain.e2e.js: N1 → N2 → E1 in one world
 ```
+
+The scenarios run on their own servers through `test/u18/harness.js` (a mineflayer-bedrock bot with the `bot.test`
+helpers, the skills through `runSkill`); under U17's `Agent` the same skills use the Agent's safety behaviours as their
+guard (`combat.guardFor`).
 
 | scenario | world | cheat-assisted |
 |---|---|---|

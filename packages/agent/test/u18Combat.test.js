@@ -190,6 +190,43 @@ describe('U18 combat skill: defend (background guard)', () => {
     assert.strictEqual(stats.fights, 1)
   })
 
+  it('guardFor: under an Agent the skill uses the Agent\'s safety behaviours (one background fighter), else defend()', async () => {
+    const { setContext } = require('../src/skill')
+    const util = require('../src/dims/util')
+    const bot = fakeBot()
+    const own = combat.guardFor(bot, { interval: 10, eat: false })
+    assert.ok(own instanceof combat.Guard)
+    await own.stop()
+    const safety = new EventEmitter()
+    safety.enabled = true
+    safety.busy = null
+    safety.interventions = [1, 2]
+    safety.idle = () => safety.busy ? new Promise((resolve) => safety.once('idle', resolve)) : Promise.resolve()
+    setContext(bot, { agent: { safety }, log: () => {}, progress: () => {} })
+    const g = combat.guardFor(bot, {})
+    assert.ok(g instanceof combat.SafetyGuard)
+    assert.strictEqual(util.guardOf(bot), g, 'util.goto waits for it')
+    const seen = []
+    g.on('busy', () => seen.push('busy'))
+    g.on('idle', () => seen.push('idle'))
+    safety.busy = { type: 'fight' }
+    safety.emit('busy', 'fight')
+    assert.strictEqual(g.busy, true)
+    const idle = g.idle()
+    safety.busy = null
+    safety.emit('idle')
+    await idle
+    g.pause()
+    assert.strictEqual(safety.enabled, false)
+    g.resume()
+    assert.strictEqual(safety.enabled, true)
+    g.pause()
+    assert.deepStrictEqual(await g.stop(), { delegated: 'agent safety', interventions: 2 })
+    assert.strictEqual(safety.enabled, true, 'stop() resumes the safety')
+    assert.strictEqual(util.guardOf(bot), null)
+    assert.deepStrictEqual(seen, ['busy', 'idle'])
+  })
+
   it('guarded(): an action interrupted by a fight waits for the guard, then runs again', async () => {
     const guard = new EventEmitter()
     guard.busy = false
