@@ -248,6 +248,17 @@ describe('wave-4 review fixes (U16a)', function () {
       await done
       assert.strictEqual(bot._bedrock.digging.last.serverSpeedData, null)
       assert.strictEqual(bot._bedrock.digging.last.outcome, 'completed')
+      // the dug block's own instant report is kept (digOres compares it), also after the water's
+      serverSets(bot, client, pos, 'short_grass')
+      const again = bot.dig(bot.blockAt(pos), true)
+      await settle()
+      tick(1)
+      client.receive('level_event', { event: 'block_start_break', position: { x: 2, y: -60, z: 0 }, data: 21 })
+      client.receive('level_event', { event: 'block_start_break', position: { x: 2, y: -60, z: 0 }, data: 65535 })
+      serverSets(bot, client, pos, 'water')
+      tick(2)
+      await again
+      assert.strictEqual(bot._bedrock.digging.last.serverSpeedData, 65535)
     })
   })
 
