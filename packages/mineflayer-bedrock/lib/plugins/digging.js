@@ -98,12 +98,15 @@ function inject (bot) {
     return best && best.t >= 0 ? best.face : BlockFaces.TOP
   }
 
-  /** the air block to complete a dig of `block` with when there is nothing to break (it or the world's block is air) */
+  /**
+   * the air block to complete a dig of `block` with when there is nothing to break: the world's block there is air
+   * (whatever `block` says: a stale Block of a block that is gone by now), or `block` is air and its chunk is unknown
+   */
   function airAt (block, position) {
     const air = airType()
-    if (block.type === air) return bot.blockAt(position) ?? block
     const now = bot.blockAt(position)
-    return now && now.type === air ? now : null
+    if (now) return now.type === air ? now : null
+    return block.type === air ? block : null
   }
 
   function isBroken (newBlock, dug) {

@@ -886,11 +886,14 @@ function inject (bot, { physicsEnabled }) {
     emitForcedMove()
   }
 
-  /** `feet` raised onto the blocks the player's box intersects there (≤ 2 blocks), or null when it never fits */
+  /**
+   * `feet` raised onto the blocks the feet are in (boxes starting at or below the feet; a roof above the head does not
+   * lift the rider onto it), ≤ 2 blocks; null when that does not free the feet
+   */
   function liftedOutOfBlocks (feet) {
     const pos = feet.clone()
     for (let i = 0; i < 8; i++) {
-      const tops = overlapping(pos).map((b) => b[4])
+      const tops = overlapping(pos).filter((b) => b[1] <= pos.y + 1e-7).map((b) => b[4])
       if (tops.length === 0) return pos
       pos.y = Math.max(...tops)
       if (pos.y - feet.y > 2) return null

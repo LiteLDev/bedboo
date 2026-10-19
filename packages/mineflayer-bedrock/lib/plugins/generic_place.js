@@ -231,6 +231,12 @@ function inject (bot) {
     return pos
   }
 
+  /** the server copy of the item in hotbar slot `slot` (undefined: let the transaction take the held item) */
+  function slotNetworkItem (slot) {
+    const provider = bot._bedrock?.heldNetworkItem
+    return typeof slot === 'number' && typeof provider?.slot === 'function' ? provider.slot(slot) : undefined
+  }
+
   function offhandNetworkItem () {
     const provider = bot._bedrock?.heldNetworkItem
     return typeof provider?.offhand === 'function' ? provider.offhand() : undefined
@@ -255,12 +261,15 @@ function inject (bot) {
   function clickLookedAt (liquids, offHand) {
     const hit = placement.raycast(bot, { liquids })
     if (!hit) return false
+    // a deferred click keeps the hotbar slot of the call (its item as the server has it by then)
+    const hotbarSlot = bot.quickBarSlot
     const click = () => placer.click({
       position: hit.position,
       face: hit.face,
       cursor: { x: hit.cursor.x, y: hit.cursor.y, z: hit.cursor.z },
       hand: offHand ? 'off_hand' : 'main_hand',
-      heldItem: offHand ? offhandNetworkItem() : undefined
+      hotbarSlot,
+      heldItem: offHand ? offhandNetworkItem() : slotNetworkItem(hotbarSlot)
     })
     if (!placer.waiting()) {
       click() // nothing unanswered: synchronous, like the click_air it replaces

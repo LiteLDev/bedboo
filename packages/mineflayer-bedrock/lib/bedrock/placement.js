@@ -178,6 +178,7 @@ function raycast (bot, { maxDistance = PICK_RANGE, liquids = 'none' } = {}) {
 function createPlacer (bot) {
   let pendingStop = null // { timer, packet }
   let turn = Promise.resolve() // settles when the last click that took a turn may be followed by the next one
+  let turnsTaken = 0 // acquire() calls not released yet (queued or holding the turn)
   let lastClick = null // the latest click's entry
   const unanswered = new Map() // 'x,y,z' → { runtimeId, heldKey, ready, settleReady, readyDone, timer }
   const answers = new Map() // 'x,y,z' → { stale, at }: the latest answered click per clicked block
@@ -231,12 +232,14 @@ function createPlacer (bot) {
     const previous = turn
     let release
     turn = new Promise((resolve) => { release = resolve })
+    turnsTaken++
     return previous.then(() => {
       const before = lastClick
       let done = false
       return () => {
         if (done) return
         done = true
+        turnsTaken--
         // the next turn starts once this caller's click (if it clicked) may be followed
         release(lastClick && lastClick !== before ? lastClick.ready : undefined)
       }
@@ -245,6 +248,7 @@ function createPlacer (bot) {
 
   /** whether a click now would carry the held item of a click the server did not answer yet */
   function waiting () {
+    if (turnsTaken > 0) return true // a placement holds or waits for the turn
     if (!lastClick || lastClick.readyDone) return false
     if (heldKey() !== lastClick.heldKey) {
       settleReady(lastClick)
@@ -290,13 +294,14 @@ function createPlacer (bot) {
 
   /**
    * Click `face` of the block at `position` with the held item (queued now, returns synchronously).
-   * @param {{ position: Vec3, face: number, cursor?: {x,y,z}, hand?: 'main_hand'|'off_hand', heldItem?: object,
-   *   lifecycle?: boolean }} opts `heldItem` overrides the wire item (off-hand), `lifecycle: false` = bare click
+   * @param {{ position: Vec3, face: number, cursor?: {x,y,z}, hand?: 'main_hand'|'off_hand', hotbarSlot?: number,
+   *   heldItem?: object, lifecycle?: boolean }} opts `heldItem` overrides the wire item (off-hand, a pinned hotbar
+   *   slot), `lifecycle: false` = bare click
    * @returns {object} the inventory_transaction params that were queued
    */
-  function click ({ position, face, cursor, hand = 'main_hand', heldItem, lifecycle = true }) {
+  function click ({ position, face, cursor, hand = 'main_hand', hotbarSlot, heldItem, lifecycle = true }) {
     flushStop()
-    const { start, transaction, stop } = tx.buildUseItemOn(bot, { position, face, cursor, hand })
+    const { start, transaction, stop } = tx.buildUseItemOn(bot, { position, face, cursor, hand, hotbarSlot })
     if (heldItem) transaction.transaction.transaction_data.held_item = heldItem
     if (lifecycle) send('player_action', start)
     send('inventory_transaction', transaction)

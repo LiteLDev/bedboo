@@ -272,11 +272,12 @@ function inject (bot) {
   const LIQUID_REFRESH_RETRIES = 3
   /**
    * A block's liquid layer is asked for at most LIQUID_ASKS times per LIQUID_ASK_WINDOW_MS (a block that keeps
-   * changing every round trip would otherwise be asked for forever, U16a); beyond that the prediction stands.
+   * changing type every round trip would otherwise be asked for forever, U16a; placing and breaking at one spot stays
+   * well below); beyond that the prediction stands.
    * 'x,y,z' → { n, at }
    */
-  const LIQUID_ASKS = 3
-  const LIQUID_ASK_WINDOW_MS = 30000
+  const LIQUID_ASKS = 8
+  const LIQUID_ASK_WINDOW_MS = 10000
   const liquidAsks = new Map()
   function mayAskLiquid (point) {
     const now = performance.now()

@@ -16,7 +16,7 @@
  */
 const assert = require('assert')
 const { Vec3 } = require('vec3')
-const { once } = require('mineflayer/lib/promise_utils')
+const { once, onceWithCleanup } = require('mineflayer/lib/promise_utils')
 const { useBot } = require('./common')
 const { queryTargetPosition } = require('./common/helpers/base')
 
@@ -289,9 +289,9 @@ describe('hardening (U16a): wave-4 review fixes on BDS', function () {
       const villager = await bot.openVillager(first)
       await bot.moveSlotItem(villager.findInventoryItem(emerald).slot, 0)
       assert.strictEqual(villager.slots[0]?.count, 10)
-      const closed = once(bot, 'windowClose')
+      const closed = onceWithCleanup(bot, 'windowClose', { timeout: 5000 })
       await server.commandOutput('kill @e[type=wandering_trader]')
-      const [window] = await Promise.race([closed, sleep(5000).then(() => { throw new Error('no windowClose within 5 s') })])
+      const [window] = await closed
       assert.strictEqual(window, villager)
       assert.strictEqual(bot.currentWindow, null)
       assert.strictEqual(bot.inventory.count(emerald), 0, 'still in the server\'s trade slot')

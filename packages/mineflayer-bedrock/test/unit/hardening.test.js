@@ -113,6 +113,25 @@ describe('wave-4 review fixes (U16a)', function () {
       tick(2)
       assert.ok(actions().every((a) => a.length === 0))
     })
+
+    it('a stale air Block whose position holds a block by now is not "completed": the dig goes to the server', async () => {
+      const { bot, client, actions, tick } = await spawned()
+      bot.game.gameMode = 'survival'
+      const pos = new Vec3(2, -60, 0)
+      const staleAir = bot.blockAt(pos)
+      assert.strictEqual(staleAir.name, 'air')
+      serverSets(bot, client, pos, 'stone')
+      let completed = false
+      bot.once('diggingCompleted', () => { completed = true })
+      const done = bot.dig(staleAir, true)
+      done.catch(() => {})
+      await settle()
+      tick(1)
+      assert.strictEqual(completed, false)
+      assert.ok(actions().some((a) => a.includes('start_break')), 'sent to the server')
+      bot.stopDigging()
+      await assert.rejects(done, /Digging aborted/)
+    })
   })
 
   describe('#12 books longer than BDS keeps', () => {
@@ -298,16 +317,16 @@ describe('wave-4 review fixes (U16a)', function () {
       assert.strictEqual(view(4, 4), 'trapdoor+water')
     })
 
-    it('a block changing type every round trip is asked for at most 3 times in 30 s, then the prediction stands', async () => {
+    it('a block changing type every round trip is asked for at most 8 times in 10 s, then the prediction stands', async () => {
       const { client, layer0, answer, refreshes } = await liquidSetup()
       layer0(6, 6, 'water')
       client.clearSent()
       layer0(6, 6, 'torch')
-      for (let i = 0; i < 20; i++) {
+      for (let i = 0; i < 40; i++) {
         layer0(6, 6, i % 2 === 0 ? 'oak_fence' : 'torch')
         await answer([[6, 6, i % 2 === 0 ? 'torch' : 'oak_fence', null, 'water']])
       }
-      assert.strictEqual(refreshes().length, 3, 'asked 3 times in 30 s, then the prediction stands')
+      assert.strictEqual(refreshes().length, 8, 'asked 8 times in 10 s, then the prediction stands')
     })
   })
 
@@ -465,7 +484,7 @@ describe('wave-4 review fixes (U16a)', function () {
       assert.strictEqual(server.requests[0].actions[0].source.slot_type.container_id, 'trade2_ingredient1')
     })
 
-    it('a station block that is gone (an anvil broken) closes its window; a furnace lighting up does not', async () => {
+    it('a station block that is gone (a furnace broken) closes its window; the furnace lighting up does not', async () => {
       const created = await joined()
       const { bot, client, activations } = created
       const rid = (name) => bot.registry.runtimeIdByStateId[bot.registry.blocksByName[name].defaultState]

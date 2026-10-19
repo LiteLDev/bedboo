@@ -66,10 +66,11 @@ const WINDOW_BLOCKS = /(?:^|_)(?:chest|barrel|shulker_box|furnace|smoker|craftin
  * update_trade.villager_unique_id: BDS writes a zigzag varint (gophertunnel Varint64), bedrock-protocol's
  * `varint64` reads it unsigned (-4294967294 arrives as 8589934587): decode it (an already signed value passes)
  */
-function zigzagUniqueId (value) {
+function zigzagUniqueId (value, known = () => false) {
   if (value === undefined || value === null) return value
   const v = BigInt(value)
-  return v < 0n ? v : (v >> 1n) ^ -(v & 1n)
+  if (v < 0n || known(v)) return v // already signed (a fixed protocol definition, or a test's packet)
+  return (v >> 1n) ^ -(v & 1n)
 }
 
 /** a container block name without its lit / copper state prefixes (lit_furnace and furnace are one window) */
@@ -662,7 +663,7 @@ function inject (bot) {
     const id = windowIdOf(packet.window_id)
     if (bot.currentWindow || pendingOpen) return
     if (model.closingWindow?.id === id || model.screen.closeWaiters.has(id)) return // being closed / not echoed yet
-    onContainerOpen({ window_id: packet.window_id, window_type: 'trading', runtime_entity_id: zigzagUniqueId(packet.villager_unique_id) })
+    onContainerOpen({ window_id: packet.window_id, window_type: 'trading', runtime_entity_id: zigzagUniqueId(packet.villager_unique_id, (id) => !!bot._bedrock.ids?.uniqueToRuntime?.has(id)) })
   })
   // inventory_content for a window that is not open yet (container_open first, contents right after)
   bot.on('_bedrockWindowContent', (id) => {
@@ -697,7 +698,8 @@ function inject (bot) {
     if (model.cursor) bot._warn(`window ${window.id} closed (${reason}) while an item was carried`)
     bot.emit('windowClose', window)
     const bedrock = window.bedrock
-    model.sendClose(window.id, bedrock ? bedrock.id : window.id, bedrock ? bedrock.windowType : 'none')
+    // the next opener waits for this close's echo (prepareInteraction), like after closeWindow
+    closing = model.sendClose(window.id, bedrock ? bedrock.id : window.id, bedrock ? bedrock.windowType : 'none')
       .catch(err => bot._warn(`closing window ${window.id}: ${err.message}`))
   }
   bot.on('entityGone', (entity) => {
