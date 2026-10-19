@@ -25,7 +25,7 @@ each unit documents its own in `docs/differences/<unit>.md` (format: [`differenc
 | U16 | [`U16-transport.md`](differences/U16-transport.md) | 4 | 0 |
 | U16 | [`U16a.md`](differences/U16a.md) | 20 | 2 |
 | U17 | [`U17.md`](differences/U17.md) | 8 | 4 |
-| U18 | [`U18.md`](differences/U18.md) | 8 | 3 |
+| U18 | [`U18.md`](differences/U18.md) | 10 | 3 |
 | ? | [`W3FIX.md`](differences/W3FIX.md) | 7 | 0 |
 | ? | [`W3FIXB.md`](differences/W3FIXB.md) | 4 | 0 |
 
@@ -2835,10 +2835,13 @@ scenarios.
   armor — is given with `/give`, standing in for the end state of U17's overworld milestones (M3 "diamond"); `time
   set day` / `weather clear` with the day and weather cycles off. Obsidian (bucket casting at a lava pool, mined with
   the diamond pickaxe), water (filled at a lake), flint (gravel dug by the bot), the flint and steel (crafted), the
-  frame, the lighting and the trip are the bot's own work. **N1M3** (`scenarios/nether/n1-from-m3.js`) is the same
-  milestone with no cheat at all: U17's M3 end-state snapshot (seed 1234) under U17's Agent, which obtains a second
-  bucket and an iron ingot itself, walks back to the spawn and runs `portal` (measured: 5 min in all, portal step
-  185 s).
+  frame, the lighting and the trip are the bot's own work. **N1M3** / **N1M5** (`scenarios/nether/n1-from-m3.js`) are
+  the same milestone with no command at all: U17's M3 / M5 end-state snapshots (seed 1234) under U17's Agent, which
+  obtains a second bucket and an iron ingot itself and runs `portal`. The one assist is knowledge, not a command: the
+  portal step gets seed 1234's scouted surface lava pool (-459, 62, 83) and lake (-536, 62, 80) as `lava` / `water`
+  hints (`scenarios/nether/seed-1234.json`, from `scout.js --pools`) — a player who remembers where the lava was. The
+  skill still finds, ranks and checks every pool itself and only walks to a hint when no usable pool is loaded (M5
+  ends ≈ 135 blocks west of the spawn, deep under the meadow, with no reachable lava within 128 blocks).
 - **N2 (nether ores):** the kit (diamond pickaxe and sword, diamond armor, a golden helmet for piglin neutrality, a shield,
   food, cobblestone, a flint and steel) with `/give`, and the overworld portal FRAME placed with `/setblock` next to
   the spawn (N1 covers building one); the bot lights it, goes through, mines and comes back on its own. Difficulty
@@ -2849,7 +2852,14 @@ scenarios.
   food, cobblestone) with `/give`; the ender dragon is killed with `execute in the_end run kill @e[type=ender_dragon]`
   right after the bot arrived, which opens the exit portal (the dragon fight is not attempted). Filling the 12 frames
   (`activateBlock` with an eye), entering, the endermen fights and the exit (credits acknowledged by
-  mineflayer-bedrock) are the bot's own actions.
+  mineflayer-bedrock) are the bot's own actions. When the ring is not in the chunks loaded at the locate point, the
+  bot is teleported around it (64 and 128 blocks out) until it is.
+- **E1 in the final chain's world (seed 1234, E1A: `scenarios/end/e1-agent.js`):** the same steps under U17's Agent,
+  as `scenarios/overworld/final-chain.js` runs them. `locate structure stronghold` answers (-878, 194), 389 blocks
+  from the spawn; the portal room's ring is at (-872, -34, 198), 7 blocks from that point, no eyes in it, walk-in
+  spot (-875, -33, 197). The chain's kit there is 12 eyes of ender and 16 cooked beef (`e1.CHAIN_KIT`); E1A also
+  gives the gear the chain's bot carries at that point (iron sword, diamond and iron pickaxes, 64 cobblestone, a
+  bucket: `CHAIN_GEAR`), standing in for M1–M5 and the Nether.
 - **C1 (survive the night):** the kit (iron sword, shield, iron armor, bow, 64 arrows, food) with `/give`; `time set
   midnight` with the day cycle off. Mobs spawn naturally (`domobspawning` true, difficulty normal); nothing is summoned.
 
@@ -2879,6 +2889,34 @@ scenarios.
   as soon as a search runs out of think time ("Took to long to decide path to goal!") although the pathfinder then
   walks the best partial path, and nothing re-plans at its end: the agent's `goto` waits for that walk and searches
   again from there (a long way home through the Nether's netherrack failed without this).
+
+#### mineflayer-auto-eat against the pathfinder's held item  {#auto-eat-livelock}
+- **Affects:** agent skills that dig or place while hungry (the portal skill's bucket casting), with
+  mineflayer-auto-eat enabled (U17's Agent)
+- **Java / Bedrock:** identical upstream behaviour. auto-eat starts a meal on any physics tick where the food level is
+  under `minHunger` and something edible is carried (it equips the food and holds "use"); it gives the meal up with
+  "Item switched early" as soon as the held item changes. mineflayer-pathfinder equips a tool to dig and a block to
+  place — on the next tick auto-eat equips the food again. A hungry bot whose path needs digging or a block placed does
+  neither (measured in the final chain, run 4: the bot stood 12 min next to the lava pool, food 4, nine rotten flesh
+  carried, every walk to the mold timing out). The Agent's safety marks the meal as busy ('eat'); U18's cast loop took
+  every busy as a fight interrupting the cast, did not count the failure, and started again — forever.
+- **agent:** the portal skill eats first, standing still (`portal.feed`: auto-eat's own `eat()` with the pathfinder
+  stopped) before every trip to the lava and every cast; only a fight interrupts a cast (`util.busyKind`: the 'eat'
+  claim is not one), interruptions are bounded, `util.goto`'s stall detection keeps running during a meal, and
+  `util.fightGuarded` (portal / nether / end) re-runs an action after a fight only. The obsidian search is bounded:
+  each lava pool is left after 150 s without a new obsidian, the whole search after 10 min, every bucket fill after 6
+  walks / 150 s, and the error says what was tried.
+
+#### Waiting for a tick across a dimension change  {#dimension-change-ticks}
+- **Affects:** code that walks into a portal with `await bot.waitForTicks(1)` in its loop (U18's portal / end skills)
+- **Java:** physics ticks go on through a respawn into another dimension.
+- **Bedrock:** mineflayer-bedrock pauses physics while the player changes dimension (change_dimension → dimension
+  change ack → player_spawn; the End exit also shows the credits): `bot.waitForTicks(1)` waits through the change and
+  rejects after 5 s ("Timeout waiting for 1 ticks") — the End skill's activate phase could fail although the bot
+  arrived.
+- **agent:** `util.tick(bot)` resolves on the next tick or on the lifecycle's 'game' (the dimension switched), 'spawn',
+  'respawn' or 'death' event, and never rejects; the walks into nether and end portals use it, and the arrival is
+  awaited on 'spawn' in the new dimension.
 
 ## W3FIX.md
 

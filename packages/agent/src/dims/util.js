@@ -215,6 +215,55 @@ function guardOf (bot) {
 }
 
 /**
+ * What the guard is busy with: `'eat'` (the Agent's safety while mineflayer-auto-eat eats), `'fight'` (anything else:
+ * a fight, a flight, out of lava, …) or null when it is idle. Only a fight stops the bot's own moves: an `'eat'` claim
+ * leaves the pathfinder running (and must not hide a stalled walk).
+ */
+function busyKind (guard) {
+  if (!guard?.busy) return null
+  return guard.safety?.busy?.type === 'eat' ? 'eat' : 'fight'
+}
+
+/**
+ * Run `fn` (an action that moves / digs) and run it again when a FIGHT of the guard interrupted it (at most `retries`
+ * times, never after `deadline`). Unlike combat.guarded, the Agent's 'eat' claims do not count: a failure while
+ * mineflayer-auto-eat ate is a failure, not a reason to start a long action over.
+ */
+async function fightGuarded (guard, fn, { retries = 5, deadline = Infinity } = {}) {
+  for (let attempt = 0; ; attempt++) {
+    if (guard) await guard.idle()
+    let fought = false
+    const onBusy = () => { if (busyKind(guard) !== 'eat') fought = true }
+    guard?.on('busy', onBusy)
+    try {
+      return await fn()
+    } catch (err) {
+      if (!guard || err.name === 'AbortError' || (!fought && busyKind(guard) !== 'fight') || attempt >= retries || Date.now() > deadline) throw err
+      log(guard.bot ?? {}, `interrupted by a fight (${err.message}): again`)
+    } finally {
+      guard?.removeListener('busy', onBusy)
+    }
+  }
+}
+
+/**
+ * An AbortSignal that aborts with `signal` or after `ms` (`done()` clears the timer). @returns {{ signal, done, timedOut }}
+ */
+function deadlineSignal (signal, ms) {
+  const controller = new AbortController()
+  const state = { timedOut: false }
+  const onAbort = () => controller.abort(signal.reason)
+  if (signal?.aborted) controller.abort(signal.reason)
+  else signal?.addEventListener('abort', onAbort, { once: true })
+  const timer = setTimeout(() => { state.timedOut = true; controller.abort(new AbortedError(`timed out after ${ms} ms`)) }, ms)
+  return {
+    signal: controller.signal,
+    get timedOut () { return state.timedOut },
+    done () { clearTimeout(timer); signal?.removeEventListener('abort', onAbort) }
+  }
+}
+
+/**
  * Bedrock: BDS refuses a block that overlaps the player's server-side hitbox, so a 1×1 tower step (jump, place under
  * the feet) needs the feet to rise a full block — and on Bedrock the bot is not re-centred on the pillar (the patched
  * pathfinder's fullStop no longer teleports it), so its hitbox also spans the neighbouring columns: any block two or
@@ -286,7 +335,8 @@ async function goto (bot, goal, { signal, timeout = 90000, retries = 3, movement
           let last = bot.entity.position.clone()
           let lastMoveAt = Date.now()
           stallTimer = setInterval(() => {
-            if (guardOf(bot)?.busy) { lastMoveAt = Date.now(); return }
+            // a fight holds the bot (not a stall); an 'eat' claim does not stop the walk, so it does not count
+            if (busyKind(guardOf(bot)) === 'fight') { lastMoveAt = Date.now(); return }
             if (bot.entity.position.distanceTo(last) > 1) {
               last = bot.entity.position.clone()
               lastMoveAt = Date.now()
@@ -505,6 +555,29 @@ async function waitForBlock (bot, pos, check, { timeout = 5000, signal } = {}) {
   return waitFor(() => { const b = bot.blockAt(p); return b && check(b) ? b : null }, { timeout, interval: 50, signal, message: `block at ${p}` })
 }
 
+/**
+ * One physics tick — or less when the bot's lifecycle moves on: physics ticks pause while the bot changes dimension
+ * (and while it is dead), and a bare `bot.waitForTicks(1)` across a portal waits through the change and rejects after
+ * 5 s ("Timeout waiting for 1 ticks"). Resolves on the next tick, on 'game' (the dimension switched), 'spawn',
+ * 'respawn' or 'death', or after `ms`; never rejects.
+ */
+function tick (bot, { ms = 1000 } = {}) {
+  return new Promise((resolve) => {
+    const events = ['game', 'spawn', 'respawn', 'death']
+    let done = false
+    const finish = () => {
+      if (done) return
+      done = true
+      clearTimeout(timer)
+      for (const e of events) bot.removeListener(e, finish)
+      resolve()
+    }
+    const timer = setTimeout(finish, ms)
+    for (const e of events) bot.on(e, finish)
+    Promise.resolve().then(() => bot.waitForTicks(1)).then(finish, finish)
+  })
+}
+
 /** wait for the bot to spawn in `dimension` ('overworld' | 'the_nether' | 'the_end') */
 function waitForDimension (bot, dimension, { timeout = 60000, signal } = {}) {
   if (bot.game.dimension === dimension) return Promise.resolve()
@@ -529,6 +602,9 @@ module.exports = {
   ensurePathfinder,
   setGuard,
   guardOf,
+  busyKind,
+  fightGuarded,
+  deadlineSignal,
   goto,
   stopMoving,
   liquidLevel,
@@ -546,5 +622,6 @@ module.exports = {
   dropsNear,
   collectDrops,
   waitForBlock,
+  tick,
   waitForDimension
 }
