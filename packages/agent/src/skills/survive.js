@@ -256,7 +256,13 @@ async function escape (bot, { signal, timeout = 150000, away } = {}) {
     }
     if (inWater(bot)) await navigate.unstick(bot, { signal }).catch((err) => { if (isAbort(err)) throw err })
   }
-  if (!underOpenSky(bot) && left() > 10000) {
+  const deep = bot.entity.position.y < 40 && !inWater(bot)
+  if (!underOpenSky(bot) && left() > 10000 && deep) {
+    // deep in a mine (the task works down here): out of the pit only — 8 blocks up the column, not all the way
+    log(bot, `escape: up out of the pit at ${navigate.fmt(bot.entity.position)}`)
+    await climbUp(bot, { targetY: Math.floor(bot.entity.position.y) + 8, signal, timeout: Math.min(60000, left()) })
+      .catch((err) => { if (isAbort(err)) throw err; log(bot, `escape: ${err.message}`) })
+  } else if (!underOpenSky(bot) && left() > 10000) {
     log(bot, `escape: up to the sky from ${navigate.fmt(bot.entity.position)}`)
     await surface(bot, { signal, timeout: left() }).catch((err) => { if (isAbort(err)) throw err; log(bot, `escape: ${err.message}`) })
   }
