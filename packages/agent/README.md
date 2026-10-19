@@ -212,7 +212,7 @@ and no reconnects:
 | provisions | back to the spawn; ≥ 8 food items (hunted around the spawn, exploring for animals; fishing when none is left; cooked) | 5 + 2×4 min |
 | N1M3 | U18's nether entry: second bucket, iron ingot (both carried by then), bucket-cast obsidian at a lava pool, frame, flint and steel, into the Nether | 45 min |
 | home | U18's nether skill: back through the bot's own portal (`--nether-ores`: N2's quartz, nether gold and ancient debris on the way) | 14 min |
-| E1 | U18's End part — the stronghold portal room reached with cheats (locate + teleport, eyes of ender given; docs/differences/U18.md), the bot fills the frames, enters the End, the dragon is killed by `/kill` (cheat), the bot fights two endermen and leaves through the exit portal | 4 + 8 + 4 min |
+| E1 | U18's End part — the stronghold portal room reached with cheats (locate + teleport, eyes of ender given; docs/differences/U18.md), the bot fills the frames, enters the End, the dragon is killed by `/kill` (cheat), the bot fights two endermen and leaves through the exit portal | 4 + 13 + 4 min (the fight's budget includes ~5 min for U18's walk up from the arrival platform, which stalls in most chained runs) |
 
 Between scenario steps the Agent sleeps through a night in its bed (and before every phase; without a bed and
 without armor it would wait in its house or a sealed hole), tosses junk when the inventory fills up, hunts when

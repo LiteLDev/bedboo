@@ -65,6 +65,8 @@ const GEAR_ROUNDS = [['iron_chestplate', 'iron_leggings'], ['iron_helmet', 'iron
 const ARMOR_SLOT = { iron_helmet: 5, iron_chestplate: 6, iron_leggings: 7, iron_boots: 8 }
 /** a bed takes 3 wool of one colour */
 const WOOL = ['white', 'light_gray', 'gray', 'black', 'brown', 'pink', 'orange', 'magenta', 'light_blue', 'yellow', 'lime', 'cyan', 'purple', 'blue', 'green', 'red'].map((c) => `${c}_wool`)
+/** extra time for the End fight: the walk from the arrival platform to the island top (see the E1 phases below) */
+const END_WALK_MS = 5 * MINUTES
 /** food items to carry into the Nether */
 const PROVISIONS = 8
 
@@ -250,7 +252,10 @@ async function finalChain ({ log = () => {}, cfg = config(), netherOres = false,
             if (/kill/.test(step.console) && !out.some((l) => /Killed/.test(l))) throw new Error(`${step.console}: ${out.join(' | ')}`)
             return out
           }
-          const r = await task(step.skill, step.args ?? {}, { name: `E1 ${step.name}`, timeout: step.timeout, retries: 0 })
+          // the fight's budget covers the walk up from the arrival platform too: U18's toIslandTop stalled ~5 min at
+          // x 89–95 (10 × "goto stalled") in 4 of 6 chained runs (30 s in E1A and the others) — reported to U18
+          const timeout = step.args?.phase === 'fight' ? step.timeout + END_WALK_MS : step.timeout
+          const r = await task(step.skill, step.args ?? {}, { name: `E1 ${step.name}`, timeout, retries: 0 })
           if (step.args?.phase === 'activate' && !r.entered) throw new Error('did not enter the End')
           if (step.args?.phase === 'fight' && (r.killed?.enderman ?? 0) < (step.args.endermen ?? 1)) throw new Error(`endermen killed: ${r.killed?.enderman ?? 0}`)
           if (step.args?.phase === 'exit' && (!r.exited || bot.game.dimension !== 'overworld')) throw new Error(`not back in the overworld (${bot.game.dimension})`)
