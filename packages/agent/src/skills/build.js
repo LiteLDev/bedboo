@@ -57,7 +57,7 @@ function findSite (bot, size, { radius = 24, avoid = () => false } = {}) {
       if (hs.some((h) => Math.abs(h - y0) > 1)) continue
       const origin = new Vec3(x0, y0, z0)
       if (avoid(origin)) continue
-      let cost = hs.reduce((s, h) => s + Math.abs(h - y0) * 2, 0)
+      let cost = hs.reduce((s, h) => s + (h < y0 ? 12 : h > y0 ? 2 : 0), 0)
       // things in the volume to dig (trees, tall plants are passable and cheap)
       for (let x = x0; x < x0 + size.x; x++) {
         for (let z = z0; z < z0 + size.z; z++) {
@@ -124,6 +124,20 @@ function buildMovements (bot, compiled) {
   })
   buildMoves.set(compiled, moves)
   return moves
+}
+
+/**
+ * In a dip under the floor level inside the footprint (floor blocks all around, too high to jump out, and the build
+ * movements may neither dig nor scaffold there): pillar one block up, which fills the dip with a filler block.
+ */
+async function outOfDip (bot, compiled, signal) {
+  const feet = bot.entity.position
+  if (!insideFootprint(compiled, feet) || feet.y >= compiled.bounds.min.y - 0.01) return
+  const survive = require('./survive')
+  log(bot, `build: in a dip under the floor at ${navigate.fmt(feet)}; pillaring out`)
+  for (let i = 0; i < 3 && bot.entity.position.y < compiled.bounds.min.y - 0.01; i++) {
+    await survive.pillarStep(bot, signal).catch((err) => { if (isAbort(err)) throw err; log(bot, `build: ${err.message}`) })
+  }
 }
 
 /** whether a position (feet) is within the structure's x/z footprint */
@@ -201,6 +215,7 @@ async function placeCell (bot, placement, compiled, { signal }) {
   for (let attempt = 0; attempt < 4; attempt++) {
     checkAbort(signal)
     await agentOf(bot)?.safety?.idle(signal)
+    await outOfDip(bot, compiled, signal)
     const current = bot.blockAt(pos)
     if (current && names.includes(current.name)) return true
     if (current && !world.isPassable(current)) {
