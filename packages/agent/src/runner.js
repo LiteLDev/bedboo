@@ -49,9 +49,10 @@ async function runSkill (bot, name, args = {}, { skills = defaultSkills, timeout
   const onAbort = () => controller.abort(signal.reason)
   signal?.addEventListener('abort', onAbort, { once: true })
   let timer
+  const running = skill(bot, { ...args, signal: controller.signal })
   try {
     return await Promise.race([
-      skill(bot, { ...args, signal: controller.signal }),
+      running,
       new Promise((resolve, reject) => {
         timer = setTimeout(() => {
           controller.abort(new Error('timeout'))
@@ -59,6 +60,15 @@ async function runSkill (bot, name, args = {}, { skills = defaultSkills, timeout
         }, timeout)
       })
     ])
+  } catch (err) {
+    // the skill saw the abort: let it unwind (it may be mid-dig / mid-path) so it cannot fight the next task over the
+    // controls; at most a few seconds
+    if (controller.signal.aborted) {
+      let wait
+      await Promise.race([running.catch(() => {}), new Promise((resolve) => { wait = setTimeout(resolve, 5000) })])
+      clearTimeout(wait)
+    }
+    throw err
   } finally {
     clearTimeout(timer)
     signal?.removeEventListener('abort', onAbort)

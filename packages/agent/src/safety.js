@@ -30,7 +30,7 @@ class Safety extends EventEmitter {
   constructor (bot, opts = {}) {
     super()
     this.bot = bot
-    this.opts = { engageRadius: 5, alertRadius: 12, fleeHealth: 4, fightTimeout: 25000, ignoreMs: 20000, ...opts }
+    this.opts = { engageRadius: 5, alertRadius: 12, fleeHealth: 4, fightTimeout: 15000, ignoreMs: 60000, ...opts }
     this.ignored = new Map() // entity id → until (fights that timed out: the mob cannot get at the bot either)
     this.lastBusyEnd = 0
     this.log = opts.log ?? (() => {})
