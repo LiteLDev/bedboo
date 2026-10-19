@@ -85,6 +85,26 @@ describe('final fix (agent): safety under U18 guards', () => {
     assert.strictEqual(safety.attackers.size, 0)
   })
 
+  it('a mob given up on stays ignored even next to the bot until it hurts it (a zombie behind a wall); creepers never', () => {
+    const bot = fakeBot()
+    const safety = new Safety(bot)
+    safety.enabled = true
+    safety.check = () => {}
+    const zombie = mob(7, 'zombie', new Vec3(3.5, 0, 0.5), { kind: 'Hostile mobs' })
+    bot.entities[7] = zombie
+    assert.strictEqual(safety.threat(false)?.target, zombie)
+    safety.ignored.set(7, Date.now() + 60000)
+    assert.strictEqual(safety.threat(false), null, 'ignored at 3 blocks')
+    safety.onHurt() // it hit the bot after all: an attacker again
+    assert.strictEqual(safety.threat(true)?.target, zombie)
+    const creeper = mob(8, 'creeper', new Vec3(2.5, 0, 0.5), { kind: 'Hostile mobs' })
+    delete bot.entities[7]
+    bot.entities[8] = creeper
+    safety.attackers.clear()
+    safety.ignored.set(8, Date.now() + 60000)
+    assert.strictEqual(safety.threat(false)?.target, creeper, 'a close creeper is fought anyway')
+  })
+
   it('a ghast fireball within reach is hit back', async () => {
     const bot = fakeBot()
     const safety = new Safety(bot)
