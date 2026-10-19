@@ -106,9 +106,11 @@ src/safety.js runs during every task. When it takes over, pathfinder and digging
 - in lava: jump towards the nearest solid ground; low on air: swim up (centred in the water column); a falling
   block in the head cell (gravel, sand): dig it out (never towards lava);
 - mineflayer-auto-eat eats when the food level drops below 16 (rotten flesh too when starving); between tasks the
-  agent hunts passive animals in sight when hungry and out of food, and cooks the meat in its furnace;
-- a death aborts the task; after the respawn the agent walks back (a shaft for a death deep underground, when it still
-  has a pickaxe), picks up its drops and retries the task; a lost tool is obtained again by the mine step that needs it;
+  agent hunts passive animals in sight when hungry and out of food (chased with the pathfinder around fences and
+  ledges), and cooks the meat in its furnace;
+- a death aborts the task; after the respawn the agent walks back (a shaft for a death deep underground, after making
+  a wooden pickaxe if none is left), picks up its drops and retries the task; a lost tool is obtained again by the mine
+  step that needs it;
 - digging never opens a cell next to lava or water, never drops into a cave deeper than 3 blocks, never digs what the
   agent built (protected zones), and pathfinder never breaks stations / chests / doors;
 - the event log records every damage taken (health, food, the blocks at the feet and the head, the nearest hostile)
@@ -176,7 +178,7 @@ Env: `AGENT_RUNS` (runs per milestone), `AGENT_DIFFICULTY`, `AGENT_REPORT_DIR` (
 
 `scenarios/overworld/final-chain.js` (`corepack pnpm --filter @bedboo/agent final-chain`, or
 `AGENT_FINAL_CHAIN=1 … test:e2e -- --grep "final chain"`) runs everything in one world with one bot and no reconnects:
-M1 → M5, U18's N1M3 (second bucket, iron ingot, back to the spawn, bucket-cast obsidian portal, into the Nether), back
+M1 → M5, provisions (meat hunted and cooked for the trip, best effort), U18's N1M3 (second bucket, iron ingot, back to the spawn, bucket-cast obsidian portal, into the Nether), back
 home through the bot's own portal (`--nether-ores`: N2's quartz, nether gold and ancient debris on the way), then
 U18's End part — the stronghold portal room is reached with cheats (locate + teleport, eyes of ender given; see
 docs/differences/U18.md), the bot fills the frames, enters the End, the dragon is killed by `/kill` (cheat), the bot

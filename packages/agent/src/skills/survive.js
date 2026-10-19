@@ -3,8 +3,9 @@
 /**
  * Survival chores.
  *
- * Skill `food` — args: { min?: 8 }: make sure the bot carries food worth `min` hunger points (hunts passive animals
- *   in sight — exploring a little for them — and picks up the meat; mineflayer-auto-eat eats it when hungry).
+ * Skill `food` — args: { min?: 8, stock?: false }: make sure the bot carries food worth `min` hunger points (hunts
+ *   passive animals in sight — exploring a little for them — picks up the meat and cooks it when there is time;
+ *   mineflayer-auto-eat eats it when hungry). A well-fed bot is done unless `stock` (provisions for a long trip).
  *   result: { foodPoints, hunted: { [mob]: n } }
  * Skill `surface` — args: {}: get out of a mine to the open sky above (pathfinder towers / digs up; the shaft the
  *   bot came down is fine). result: { position }
@@ -30,9 +31,9 @@ function foodPoints (bot) {
 
 const PREY = ['cow', 'pig', 'sheep', 'mooshroom', 'chicken', 'rabbit']
 
-function nearestPrey (bot, radius = 64) {
+function nearestPrey (bot, radius = 64, filter = () => true) {
   const { preyOk } = require('./obtain')
-  return bot.nearestEntity((e) => PREY.includes(e.name) && preyOk(bot, e) && e.position.distanceTo(bot.entity.position) <= radius) ?? null
+  return bot.nearestEntity((e) => PREY.includes(e.name) && preyOk(bot, e) && e.position.distanceTo(bot.entity.position) <= radius && filter(e)) ?? null
 }
 
 const COOKED = { beef: 'cooked_beef', porkchop: 'cooked_porkchop', mutton: 'cooked_mutton', chicken: 'cooked_chicken', rabbit: 'cooked_rabbit' }
@@ -57,27 +58,43 @@ async function cook (bot, { signal, deadline }) {
   }
 }
 
-async function food (bot, { min = 8, signal, timeout = 150000, explore: mayExplore = true, radius = 64 } = {}) {
+async function food (bot, { min = 8, stock = false, signal, timeout = 150000, explore: mayExplore = true, radius = 64 } = {}) {
   const started = Date.now()
   const hunted = {}
   const explore = require('./explore')
   const { hunt } = require('./obtain')
-  // mineflayer-auto-eat eats what the hunt brings while the bot is hungry: a well-fed bot counts as done
-  while (foodPoints(bot) < min && bot.food < 18) {
+  const stations = require('../stations')
+  // raw chicken is not eaten (food poisoning): it only counts — and chickens are only worth hunting — when it can be
+  // cooked afterwards (a furnace carried or nearby)
+  const canCook = () => inventory.count(bot, 'furnace') > 0 || !!stations.stationNear(bot, 'furnace')
+  const carried = () => foodPoints(bot) + (canCook() ? 2 * inventory.count(bot, 'chicken') : 0)
+  // mineflayer-auto-eat eats what the hunt brings while the bot is hungry: a well-fed bot counts as done (unless it is
+  // stocking up for a long trip)
+  const enough = () => carried() >= min || (!stock && bot.food >= 18)
+  while (!enough()) {
     checkAbort(signal)
     if (Date.now() - started > timeout) break
-    let prey = nearestPrey(bot, radius)
+    // from a mine, the animals on the surface far above are out of reach (the chase does not dig)
+    let open = underOpenSky(bot)
+    const cooking = canCook()
+    const inReach = (e) => (cooking || e.name !== 'chicken') && (open || Math.abs(e.position.y - bot.entity.position.y) < 8)
+    let prey = nearestPrey(bot, radius, inReach)
     log(bot, `food: ${foodPoints(bot)} points carried; prey ${prey ? `${prey.name} at ${prey.position.distanceTo(bot.entity.position).toFixed(0)}` : 'none in sight'}`)
     if (!prey) {
       if (!mayExplore) break
       await surface(bot, { signal }).catch((err) => { if (isAbort(err)) throw err })
-      const r = await explore.explore(bot, { until: () => nearestPrey(bot, 48), maxDistance: 160, signal, timeout: Math.max(20000, timeout - (Date.now() - started)) })
-      prey = r.found ? nearestPrey(bot) : null
+      const until = () => {
+        open = underOpenSky(bot)
+        return nearestPrey(bot, 48, inReach)
+      }
+      const r = await explore.explore(bot, { until, maxDistance: 160, signal, timeout: Math.max(20000, timeout - (Date.now() - started)) })
+      open = underOpenSky(bot)
+      prey = r.found ? nearestPrey(bot, radius, inReach) : null
       if (!prey) break
     }
     const drop = prey.name === 'sheep' ? 'mutton' : prey.name === 'pig' ? 'porkchop' : prey.name === 'chicken' ? 'chicken' : prey.name === 'rabbit' ? 'rabbit' : 'beef'
     try {
-      await hunt(bot, { mobs: [prey.name], item: drop, count: 1, signal, radius })
+      await hunt(bot, { mobs: [prey.name], item: drop, count: 1, signal, radius, filter: inReach })
       hunted[prey.name] = (hunted[prey.name] ?? 0) + 1
     } catch (err) {
       if (isAbort(err) || err.code === 'DIED') throw err

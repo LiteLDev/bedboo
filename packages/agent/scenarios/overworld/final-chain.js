@@ -5,6 +5,7 @@
  * The final acceptance chain, ONE world (seed.json, seed 1234), ONE bot, no reconnects:
  *
  *   M1 → M2 → M3 → M4 → M5      U17's overworld milestones (cheat-free)
+ *   provisions                  hunt (and cook) meat for the trip (best effort: never fails the chain)
  *   N1M3                        U18's nether entry from the M3 state (cheat-free: second bucket, iron ingot, back to the
  *                               spawn, bucket-cast obsidian, build + light the portal, enter the Nether)
  *   home                        back through the bot's own portal (U18's nether skill; `--nether-ores` also mines
@@ -70,6 +71,12 @@ async function finalChain ({ log = () => {}, cfg = config(), netherOres = false 
       ok = await phase(m.id, () => scenario(m))
       if (!ok) break
     }
+    // best effort (never fails the chain): meat for the long trip, the Nether part has no animals and starving bots die
+    ok = ok && await phase('provisions', async () => {
+      const r = await agent.run('food', { min: 12, stock: true, radius: 48, timeout: 170000 }, { name: 'provisions', timeout: 180000, retries: 0 })
+        .catch((err) => ({ error: err.message }))
+      return { ...r, carried: require('../../src/skills/survive').foodPoints(bot) }
+    })
     ok = ok && await phase('N1M3', () => scenario(N1M3))
     ok = ok && await phase('home', async () => {
       const r = await agent.run('nether', { targets: netherOres ? NETHER_ORES : {}, returnHome: true }, { name: 'back home', timeout: 14 * 60 * 1000, retries: 0 })
@@ -102,7 +109,7 @@ async function finalChain ({ log = () => {}, cfg = config(), netherOres = false 
     await agent?.stop().catch(() => {})
     await server.stop().catch(() => {})
   }
-  const expected = MILESTONES.length + 3 + require('../end/e1-end').steps.length
+  const expected = MILESTONES.length + 4 + require('../end/e1-end').steps.length
   const ok = phases.length === expected && phases.every((p) => p.ok)
   const file = path.join(cfg.reportDir, `final-chain-${new Date().toISOString().replace(/[:.]/g, '-')}.json`)
   fs.mkdirSync(cfg.reportDir, { recursive: true })

@@ -15,7 +15,7 @@
  *                  result: { item, count, steps: [{ action, item, count, ms }], ms }
  */
 const { SkillError, checkAbort, isAbort } = require('../errors')
-const { defineSkill, log, progress, agentOf } = require('../skill')
+const { defineSkill, log, progress, agentOf, waitTicks } = require('../skill')
 const inventory = require('../inventory')
 const knowledge = require('../knowledge')
 const planner = require('../planner')
@@ -64,30 +64,119 @@ function preyOk (bot, e) {
   return !(until > Date.now())
 }
 
-/** kill passive mobs in sight for their drops (mineflayer combat helpers of skills/combat.js) */
-async function hunt (bot, { mobs, item, count, signal, radius = 64 }) {
+/**
+ * Chase an animal with the pathfinder (a hit animal flees; fences, ledges and water are walked around, nothing is
+ * dug) and hit it whenever it is in reach. skills/combat.js `fight` walks straight at its target, which suits a
+ * hostile coming at the bot but loses a chicken behind the first fence. Safety (a hostile, lava, …) takes the
+ * controls when it must; the chase goes on afterwards.
+ * @returns {Promise<'killed'|'gone'|'timeout'|'died'>}
+ */
+async function strike (bot, target, { signal, timeout = 20000 } = {}) {
   const combat = require('./combat')
-  const start = inventory.count(bot, item)
-  let kills = 0
-  for (let i = 0; i < count * 3 && inventory.count(bot, item) - start < count; i++) {
-    checkAbort(signal)
-    const target = bot.nearestEntity((e) => mobs.includes(e.name) && preyOk(bot, e) && e.position.distanceTo(bot.entity.position) <= radius)
-    if (!target) throw new SkillError(`no ${mobs.join('/')} in sight`, { code: 'NOT_FOUND' })
-    const r = await combat.fight(bot, target, { signal, timeout: 15000 }) // a fleeing animal is not worth more
-    if (r.outcome === 'died') throw new SkillError('died while hunting', { code: 'DIED' })
-    if (r.outcome === 'timeout') {
-      // behind a fence / across water: leave that one alone for a while
-      if (!unreachablePrey.has(bot)) unreachablePrey.set(bot, new Map())
-      unreachablePrey.get(bot).set(target.id, Date.now() + 120000)
-    }
-    if (r.outcome === 'killed') {
-      kills++
-      await dig.pickupNear(bot, target.position.clone(), { signal, item, radius: 4 })
-    }
+  const navigate = require('./navigate')
+  const { goals } = require('mineflayer-pathfinder')
+  const dead = combat.deadEntities(bot)
+  const safety = agentOf(bot)?.safety
+  // the chase's own movements (no digging, no towering) must not outlive it: later goto calls may rely on the default
+  const movementsBefore = bot.pathfinder.movements
+  /** the best melee weapon in the hand (auto-eat puts food there to eat) */
+  const arm = async () => {
+    const weapon = combat.bestWeapon(bot)
+    if (weapon && bot.heldItem !== weapon && !bot.autoEat?.isEating) await bot.equip(weapon, 'hand').catch(() => {})
   }
-  const collected = inventory.count(bot, item) - start
-  if (collected <= 0) throw new SkillError(`killed ${kills} ${mobs.join('/')} but picked up no ${item}`, { code: 'FAILED' })
-  return { killed: kills, collected: { [item]: collected } }
+  await arm()
+  let until = Date.now() + timeout
+  let following = false
+  let nextHit = 0
+  // no path: a closed door next to the bot (its own house) may be the way out — pathfinder does not always take it
+  let noPath = false
+  let nextDoorTry = 0
+  const onPath = (r) => { if (r.status === 'noPath' && following) noPath = true }
+  bot.on('path_update', onPath)
+  try {
+    for (;;) {
+      checkAbort(signal)
+      if (bot.health <= 0) return 'died'
+      if (dead.has(target)) return 'killed'
+      if (!bot.entities[target.id]) return 'gone'
+      if (Date.now() > until) return 'timeout'
+      if (safety?.busy) {
+        // a fight / lava escape: not the animal's fault, the time does not count
+        following = false
+        const t = Date.now()
+        await safety.idle(signal)
+        until += Date.now() - t
+        noPath = false
+        continue
+      }
+      if (noPath && Date.now() >= nextDoorTry) {
+        noPath = false
+        nextDoorTry = Date.now() + 3000
+        bot.pathfinder.setGoal(null)
+        following = false
+        await navigate.throughDoor(bot, bot.entity.position.floored(), signal, target.position)
+        continue
+      }
+      if (!following) {
+        bot.pathfinder.setMovements(navigate.movements(bot, { canDig: false, allow1by1towers: false }))
+        bot.pathfinder.setGoal(new goals.GoalFollow(target, 1), true)
+        following = true
+      }
+      if (combat.hitboxDistance(bot, target) <= 2.9 && Date.now() >= nextHit) {
+        await arm()
+        await bot.lookAt(target.position.offset(0, combat.hitboxSize(target).height * 0.6, 0), true)
+        bot.attack(target)
+        nextHit = Date.now() + 500 // the hurt cooldown (10 ticks)
+      }
+      await waitTicks(bot, 1, signal)
+    }
+  } finally {
+    bot.removeListener('path_update', onPath)
+    if (!safety?.busy) try { bot.pathfinder.setGoal(null) } catch {}
+    if (movementsBefore) bot.pathfinder.setMovements(movementsBefore)
+  }
+}
+
+/** kill passive mobs in sight for their drops (chased with the pathfinder, see strike) */
+async function hunt (bot, { mobs, item, count, signal, radius = 64, filter = () => true }) {
+  const start = inventory.count(bot, item)
+  // a hungry bot eats the meat as soon as it is picked up (mineflayer-auto-eat): that counts as collected
+  // ('eatFinish' also follows a failed meal: 'eatFail' comes right before it then)
+  let eaten = 0
+  let failed = false
+  const onFail = () => { failed = true }
+  const onEat = (o) => {
+    if (!failed && o?.food?.name === item) eaten++
+    failed = false
+  }
+  bot.autoEat?.on?.('eatFail', onFail)
+  bot.autoEat?.on?.('eatFinish', onEat)
+  const collected = () => inventory.count(bot, item) - start + eaten
+  let kills = 0
+  try {
+    for (let i = 0; i < count * 3 && collected() < count; i++) {
+      checkAbort(signal)
+      const target = bot.nearestEntity((e) => mobs.includes(e.name) && preyOk(bot, e) && e.position.distanceTo(bot.entity.position) <= radius && filter(e))
+      if (!target) throw new SkillError(`no ${mobs.join('/')} in sight`, { code: 'NOT_FOUND' })
+      const outcome = await strike(bot, target, { signal, timeout: 20000 }) // a fleeing animal is not worth more
+      log(bot, `hunt: ${target.name} at ${target.position.floored()} → ${outcome}`)
+      if (outcome === 'died') throw new SkillError('died while hunting', { code: 'DIED' })
+      if (outcome === 'timeout') {
+        // behind a fence / across water: leave that one alone for a while
+        if (!unreachablePrey.has(bot)) unreachablePrey.set(bot, new Map())
+        unreachablePrey.get(bot).set(target.id, Date.now() + 120000)
+      }
+      if (outcome === 'killed') {
+        kills++
+        await dig.pickupNear(bot, target.position.clone(), { signal, item, radius: 4 })
+      }
+    }
+  } finally {
+    bot.autoEat?.removeListener?.('eatFail', onFail)
+    bot.autoEat?.removeListener?.('eatFinish', onEat)
+  }
+  if (collected() <= 0) throw new SkillError(`killed ${kills} ${mobs.join('/')} but picked up no ${item}`, { code: 'FAILED' })
+  return { killed: kills, collected: { [item]: collected() } }
 }
 
 /**

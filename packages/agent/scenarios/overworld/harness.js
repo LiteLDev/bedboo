@@ -102,7 +102,8 @@ async function runMilestone (milestone, { snapshotAfter = null, run = 1, cfg = c
 
 /** one line per run for the log / runs.jsonl */
 function summary (report, file) {
-  const failed = report.tasks?.find((t) => !t.ok)
+  // the last one: maintenance (food) and recovery tasks that failed on the way are not why the run failed
+  const failed = report.tasks?.findLast((t) => !t.ok)
   return {
     at: new Date().toISOString(),
     milestone: report.milestone,

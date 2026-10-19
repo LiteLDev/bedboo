@@ -175,7 +175,8 @@ class Safety extends EventEmitter {
   async fight (target) {
     const combat = require('./skills/combat')
     await combat.equipForCombat(this.bot, { shield: true }).catch(() => {})
-    const r = await combat.fight(this.bot, target, { timeout: this.opts.fightTimeout, log: this.log })
+    // safe: the fight's own moves (approach, strafe, retreat) never step into lava / fire or off a ledge over 3 blocks
+    const r = await combat.fight(this.bot, target, { timeout: this.opts.fightTimeout, safe: true, log: this.log })
     if (r.outcome === 'timeout') this.ignored.set(target.id, Date.now() + this.opts.ignoreMs)
     return r.outcome
   }
