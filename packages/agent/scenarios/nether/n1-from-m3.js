@@ -16,7 +16,8 @@ const N1M3 = {
   steps: [
     { skill: 'obtain', name: 'second bucket', args: { item: 'bucket', count: 2 }, timeout: 8 * 60 * 1000 },
     { skill: 'obtain', name: 'iron ingot for the flint and steel', args: { item: 'iron_ingot', count: 1 }, timeout: 6 * 60 * 1000 },
-    { skill: 'navigate', name: 'back to the spawn', args: { spawn: true }, timeout: 4 * 60 * 1000 },
+    // the spawn's x / z (bot.spawnPoint's y is BDS's 32767 search height on a default world: 'xz')
+    { skill: 'navigate', name: 'back to the spawn', args: { spawn: true, goal: 'xz', range: 4 }, timeout: 4 * 60 * 1000 },
     { skill: 'portal', name: 'portal', args: { obsidian: 10, enter: true }, timeout: 14 * 60 * 1000 }
   ],
   timeout: 30 * 60 * 1000,

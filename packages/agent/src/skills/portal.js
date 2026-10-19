@@ -677,6 +677,32 @@ function exitSpot (bot, portalPos) {
   return best?.p ?? null
 }
 
+/** pathfinder into the portal block at `target` (a Movements copy that does not avoid portal blocks) */
+async function intoPortal (bot, target, { signal } = {}) {
+  const { goals, movements } = u.ensurePathfinder(bot)
+  const pf = require('mineflayer-pathfinder')
+  const m = new pf.Movements(bot)
+  Object.assign(m, { canDig: false, allowParkour: false, maxDropDown: 3, scafoldingBlocks: movements.scafoldingBlocks, infiniteLiquidDropdownDistance: false })
+  for (const id of movements.blocksToAvoid) m.blocksToAvoid.add(id)
+  m.blocksToAvoid.delete(bot.registry.blocksByName.portal.id)
+  try {
+    await u.goto(bot, new goals.GoalBlock(target.x, target.y, target.z), { signal, timeout: 15000, retries: 0, movements: m })
+  } finally {
+    bot.pathfinder.setMovements(movements)
+  }
+}
+
+/** the blocks around a portal block (diagnostics) */
+function describeAround (bot, p) {
+  const out = []
+  for (let dy = -1; dy <= 2; dy++) {
+    const row = []
+    for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) row.push((bot.blockAt(p.offset(dx, dy, dz))?.name ?? '?').slice(0, 6))
+    out.push(`y${p.y + dy}: ${row.join(' ')}`)
+  }
+  return out.join(' | ')
+}
+
 /**
  * Walk into a lit nether portal and wait until the bot spawned in the other dimension; then step out of the arrival
  * portal. Remembers both portals.
@@ -742,7 +768,16 @@ async function enterPortal (bot, portal, { signal, timeout = 120000 } = {}) {
       await bot.waitForTicks(1)
     }
     bot.setControlState('forward', false)
-    if (!inside() && bot.game.dimension === from) continue
+    if (!inside() && bot.game.dimension === from) {
+      // walking straight in did not work (a step, a slab, a bump in the way): let the pathfinder take the bot into the
+      // portal block itself (its movements avoid portals: a copy that does not)
+      u.log(bot, `portal: could not walk into ${target} from ${bot.entity.position.floored()}, pathfinding in`)
+      await intoPortal(bot, target, { signal }).catch((err) => u.log(bot, `portal: ${err.message}`))
+      if (!inside() && bot.game.dimension === from) {
+        u.log(bot, `portal: around ${target}: ${describeAround(bot, target)}`)
+        continue
+      }
+    }
     // a survival player crosses after ≈4 s in the portal
     const until = Date.now() + 12000
     while (bot.game.dimension === from && inside() && Date.now() < until) await u.sleep(200, signal)
