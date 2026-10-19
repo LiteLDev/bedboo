@@ -1,0 +1,8 @@
+{
+  "seed": "35",
+  "world": "default",
+  "bds": "1.26.51.1",
+  "why": "the same world as the nether milestones (one chained run); `locate structure stronghold` answers block 1666, -830 (1861 blocks from the spawn) and the portal room's frame ring is 54 blocks from that point, below it at y -4, centre (1703, -4, -869): found in the chunks around the locate point with no exploration",
+  "stronghold": { "locate": { "x": 1666, "z": -830 }, "portalRing": { "x": 1703, "y": -4, "z": -869 }, "eyesPresent": 0, "walkIn": { "x": 1702, "y": -3, "z": -866 } },
+  "end": { "arrival": "obsidian platform (100, 49, 0)", "exitFountain": "(0, ~64, 0)" }
+}

@@ -36,7 +36,9 @@ const { placeBackPlan, armorSlotFor, sameItem } = require('./click')
 const IDLE_CLOSE_MS = 100
 /** item_stack_response status BDS answers when the request needs a screen the player does not have open */
 const NO_SCREEN_STATUS = 7
-const SCREEN_TIMEOUT_MS = 5000
+const SCREEN_TIMEOUT_MS = 8000
+/** the open request is repeated this often while unanswered (BDS ignores it while the player is in a portal) */
+const SCREEN_RESEND_MS = 1500
 const CLOSE_ECHO_TIMEOUT_MS = 1000
 
 /** bedrock-protocol WindowID enum names → numbers */
@@ -716,19 +718,25 @@ function createInventoryModel (bot, { Item, Window }) {
       clearTimeout(screen.idleTimer)
       if (screen.id !== null || currentWindow()) return
       if (!screen.opening) {
-        screen.opening = new Promise((resolve, reject) => {
-          const timer = setTimeout(() => {
-            screen.openWaiter = null
-            reject(new Error('the server did not open the inventory screen'))
-          }, SCREEN_TIMEOUT_MS)
-          timer.unref?.()
-          screen.openWaiter = () => { clearTimeout(timer); resolve() }
-        }).finally(() => { screen.opening = null })
-        bot._client.queue('interact', {
+        const request = () => bot._client.queue('interact', {
           action_id: 'open_inventory',
           target_entity_id: bot._bedrock.ids?.selfRuntimeId?.() ?? bot.entity?.runtimeId ?? 0n,
           has_position: false
         })
+        screen.opening = new Promise((resolve, reject) => {
+          // U18: BDS drops the request while the player stands in a nether portal and for ~1–2 s after it stepped
+          // out of the arrival portal (no container_open at all): ask again every 1.5 s until the timeout
+          const resend = setInterval(request, SCREEN_RESEND_MS)
+          resend.unref?.()
+          const timer = setTimeout(() => {
+            clearInterval(resend)
+            screen.openWaiter = null
+            reject(new Error('the server did not open the inventory screen'))
+          }, SCREEN_TIMEOUT_MS)
+          timer.unref?.()
+          screen.openWaiter = () => { clearTimeout(timer); clearInterval(resend); resolve() }
+        }).finally(() => { screen.opening = null })
+        request()
       }
       await screen.opening
     },

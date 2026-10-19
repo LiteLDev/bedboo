@@ -52,9 +52,9 @@ function mob (id, name, position, extra = {}) {
 }
 
 describe('combat library (U16b seed of skills/combat.js)', () => {
-  it('keeps the skill a U18 stub but exposes the helpers', async () => {
-    assert.strictEqual(combat.notImplemented, true)
-    await assert.rejects(combat({}, {}), (err) => err.notImplemented && err.unit === 'U18')
+  it('the skill (U18) is implemented and still exposes the helpers', async () => {
+    assert.notStrictEqual(combat.notImplemented, true)
+    assert.strictEqual(combat.length, 2)
     for (const fn of ['fight', 'fightAll', 'nearestHostile', 'equipForCombat', 'bowAim', 'hitboxDistance']) assert.strictEqual(typeof combat[fn], 'function', fn)
   })
 
