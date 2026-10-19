@@ -656,9 +656,11 @@ async function castAtPool (bot, pool, n, ctx) {
   // the pathfinder, with no lava next to it once its neighbours are taken too — until the pool's lava flows back in
   // (N1 seed 35 #1 / #2 and N1M5 #5: "tried to swim in lava" walking between two fills)
   const offPool = poolExclusion(bot, pool)
+  const stopLavaWatch = lavaWatch(bot, guard)
   try {
     return await castLoop()
   } finally {
+    stopLavaWatch()
     offPool.remove()
   }
 
@@ -696,6 +698,9 @@ async function castAtPool (bot, pool, n, ctx) {
         for (let i = 0; i < wanted && u.count(bot, 'bucket') > 0; i++) {
           try {
             lastLava = await u.fightGuarded(guard, () => fillBucket(bot, 'lava', { signal, guard, sources: pool.sources, skip: state.skip, tries: 4, timeout: Math.max(10000, Math.min(120000, ctx.deadline - Date.now())) }), { deadline: ctx.deadline })
+            // standing down at the lava's level in the pool's footprint (a hole a taken source left): out of it before
+            // the pool's lava flows back in (N1 seed 35 #1 / #2: filled from (22, 68, 20), in lava 1.7 s later)
+            await leavePoolLevel(bot, pool, { signal })
           } catch (err) {
             if (signal?.aborted) throw err
             if (i === 0) return done(`lava: ${err.message}`)
@@ -762,6 +767,66 @@ async function castAtPool (bot, pool, n, ctx) {
     }
     return done(null)
   }
+}
+
+/**
+ * Out of lava when nothing else gets the bot out: the Agent's safety does it ('lava'); without an Agent (U18's harness,
+ * combat.defend's guard) nobody did — N1 seed 35 stood 4 s in the lava retrying its fills. Every 100 ms: in lava →
+ * stop, jump towards the nearest standable cell with no lava. @returns {() => void} stop
+ */
+function lavaWatch (bot, guard) {
+  if (guard?.delegated) return () => {}
+  let busy = false
+  const timer = setInterval(async () => {
+    if (busy || !bot.entity || bot.health <= 0) return
+    const feet = bot.blockAt(bot.entity.position.floored())
+    if (!bot.entity.isInLava && !u.isLava(feet)) return
+    busy = true
+    try {
+      u.log(bot, `portal: in lava at ${bot.entity.position.floored()}: getting out`)
+      u.stopMoving(bot)
+      const here = bot.entity.position.floored()
+      let best = null
+      for (let dx = -4; dx <= 4; dx++) {
+        for (let dz = -4; dz <= 4; dz++) {
+          for (let dy = -1; dy <= 2; dy++) {
+            const p = here.offset(dx, dy, dz)
+            if (!u.isClear(bot.blockAt(p)) || !u.isClear(bot.blockAt(p.offset(0, 1, 0))) || !u.isStandable(bot.blockAt(p.offset(0, -1, 0)))) continue
+            const d = Math.hypot(dx, dz) + Math.abs(dy)
+            if (!best || d < best.d) best = { p, d }
+          }
+        }
+      }
+      for (let i = 0; i < 60 && bot.health > 0; i++) {
+        const f = bot.blockAt(bot.entity.position.floored())
+        if (!bot.entity.isInLava && !u.isLava(f)) break
+        if (best) await bot.lookAt(best.p.offset(0.5, 1.6, 0.5), true)
+        bot.setControlState('forward', !!best)
+        bot.setControlState('jump', true)
+        await u.tick(bot)
+      }
+    } catch {} finally {
+      try { bot.clearControlStates() } catch {}
+      busy = false
+    }
+  }, 100)
+  return () => clearInterval(timer)
+}
+
+/** feet at / below the lava's level inside the pool's footprint (a taken source's hole): to a cell off the pool */
+async function leavePoolLevel (bot, pool, { signal } = {}) {
+  const cells = new Set((pool.blocks ?? []).map((p) => u.vec(p).floored().toString()))
+  const feet = bot.entity.position.floored()
+  const inPool = [0, -1].some((dy) => cells.has(feet.offset(0, dy, 0).toString()))
+  if (!inPool) return
+  const { goals } = u.ensurePathfinder(bot)
+  const goal = new goals.GoalNear(feet.x, feet.y + 1, feet.z, 4)
+  goal.isEnd = (node) => {
+    const n = new Vec3(node.x, node.y, node.z)
+    return !cells.has(n.toString()) && !cells.has(n.offset(0, -1, 0).toString()) && !lavaAround(bot, n)
+  }
+  u.log(bot, `portal: standing in the pool's footprint at ${feet}: stepping out`)
+  await u.goto(bot, goal, { signal, timeout: 15000, retries: 1 }).catch((err) => { if (signal?.aborted) throw err; u.log(bot, `portal: out of the pool: ${err.message}`) })
 }
 
 /**
