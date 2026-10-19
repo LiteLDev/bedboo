@@ -59,7 +59,7 @@ class Safety extends EventEmitter {
     this.bot = bot
     this.opts = { engageRadius: 5, alertRadius: 12, fleeHealth: 4, fightTimeout: 25000, fightGiveUpMs: 12000, maxChase: 24, ignoreMs: 60000, pickupDrops: true, ...opts }
     this.ignored = new Map() // entity id → until (fights given up: the mob cannot get at the bot either)
-    this._givenUp = new Map() // entity id → fights given up on it
+    this._givenUp = new Map() // entity id → { n: fights given up on it (within GIVEN_UP_MS of each other), at: the last }
     this.attackers = new Map() // entity → until: mobs that hurt the bot (retaliation)
     this.swings = new WeakMap() // entity → time of its last arm swing
     this.guards = [] // option sets of U18 skills running under combat.guardFor()
@@ -82,12 +82,12 @@ class Safety extends EventEmitter {
     on(this.bot, 'entitySwingArm', (e) => { if (e !== this.bot.entity) this.swings.set(e, Date.now()) })
     on(this.bot, 'physicsTick', () => this.onTick())
     on(this.bot, 'health', () => this.tuneEating())
-    // auto-eat's automatic mode as the runner set it up: the meal holds (suppressMeals) restore it; meals that failed
-    // after they started are reported by runner.js guardAutoEat (auto-eat's strictErrors throws, no 'eatFail')
-    this._autoEatWanted = !!this.bot.autoEat?.enabled
-    if (this.bot.autoEat) this.bot.autoEat._bedbooOnFail = () => this.mealFailed()
+    // auto-eat's automatic mode as the runner set it up (once: a restart during a hold sees it off): the meal holds
+    // (suppressMeals) restore it
+    this._autoEatWanted ??= !!this.bot.autoEat?.enabled
     if (this.bot.autoEat) {
-      // a meal that starts or ends is no stuck one (back-to-back meals keep isEating set for long)
+      // a meal that starts or ends is no stuck one (back-to-back meals keep isEating set for long); 'eatFail' under
+      // auto-eat's strictErrors comes from runner.js guardAutoEat
       on(this.bot.autoEat, 'eatStart', () => { this._eatingSince = 0; this.claim('eat') })
       on(this.bot.autoEat, 'eatFinish', () => { this._eatingSince = 0; this.release('eat') })
       on(this.bot.autoEat, 'eatFail', () => { this._eatingSince = 0; this.release('eat'); this.mealFailed() })
@@ -97,7 +97,11 @@ class Safety extends EventEmitter {
 
   stop () {
     this.enabled = false
-    if (this.bot.autoEat?._bedbooOnFail) this.bot.autoEat._bedbooOnFail = null
+    if (this._mealPause) {
+      clearTimeout(this._mealPause.timer)
+      this._mealPause.release()
+      this._mealPause = null
+    }
     for (const [emitter, event, fn] of this._listeners) emitter.removeListener(event, fn)
     this._listeners = []
     this.release(this.busy?.type)
@@ -201,11 +205,14 @@ class Safety extends EventEmitter {
     const now = Date.now()
     this._mealFails = (this._mealFails ?? []).filter((t) => now - t < 15000)
     this._mealFails.push(now)
-    if (this._mealFails.length < 3 || this._mealPause) return
+    // (meals eaten by hand while automatic mode is off are no reason to pause it)
+    if (this._mealFails.length < 3 || this._mealPause || !this.bot.autoEat?.enabled) return
     this.log('safety: meals keep failing; auto-eat paused for 10 s')
     this._mealFails = []
     const release = this.suppressMeals()
-    this._mealPause = setTimeout(() => { this._mealPause = null; release() }, 10000)
+    const timer = setTimeout(() => { this._mealPause = null; release() }, 10000)
+    timer.unref?.()
+    this._mealPause = { timer, release }
   }
 
   /**
@@ -383,11 +390,11 @@ class Safety extends EventEmitter {
   async fight (target) {
     const bot = this.bot
     const combat = require('./skills/combat')
-    await combat.equipForCombat(bot, { shield: true }).catch(() => {})
     // auto-eat would swap the weapon for food mid-fight: the fight eats itself (while it retreats, out of reach)
     const releaseMeals = this.suppressMeals()
     let r
     try {
+      await combat.equipForCombat(bot, { shield: true }).catch(() => {})
       // safe: the fight's own moves (approach, strafe, retreat) never step into lava / fire / a portal or off a ledge
       // over 3 blocks; a mob it cannot get at (across lava, up a wall) is given up after fightGiveUpMs
       r = await combat.fight(bot, target, {
@@ -418,10 +425,12 @@ class Safety extends EventEmitter {
     return r.outcome
   }
 
-  /** a mob given up on twice within 3 minutes: no exception for it any more (until it hurts the bot) */
+  /**
+   * a mob given up on twice within 3 minutes: no exception for it any more while it is ignored (until it hurts the
+   * bot); the count starts over when the last time is older (fight)
+   */
   hardIgnored (id) {
-    const g = this._givenUp.get(id)
-    return !!g && g.n >= 2 && Date.now() - g.at < GIVEN_UP_MS
+    return (this._givenUp.get(id)?.n ?? 0) >= 2
   }
 
   /** an attacker that hit the bot in the last 2 s from within melee reach while `target` is out of it */

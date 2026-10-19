@@ -191,7 +191,7 @@ async function finalChain ({ log = () => {}, cfg = config(), netherOres = false,
           await require('../../src/skills/combat').equipForCombat(bot, { shield: true }).catch(() => {})
         }
         // N1M3's flint and steel needs an ingot: the last round adds one, but only when it smelted at all
-        if (inventory.count(bot, 'iron_ingot') < 1) await task('obtain', { item: 'iron_ingot', count: 1 }, { name: 'gear: an iron ingot', timeout: 3 * MINUTES, retries: 0 }).catch(() => {})
+        if (inventory.count(bot, 'iron_ingot') < 1 && !inventory.count(bot, 'flint_and_steel')) await task('obtain', { item: 'iron_ingot', count: 1 }, { name: 'gear: an iron ingot', timeout: 3 * MINUTES, retries: 0 }).catch(() => {})
         // sticks for a pickaxe made later (deep in a mine a log is a long climb away)
         if (inventory.count(bot, 'stick') < 4) await task('obtain', { item: 'stick', count: 4 }, { name: 'gear: sticks', timeout: 2 * MINUTES, retries: 0 }).catch(() => {})
         await require('../../src/skills/combat').equipForCombat(bot, { shield: true })

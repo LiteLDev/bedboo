@@ -105,11 +105,11 @@ describe('final fix (agent): safety under U18 guards', () => {
     assert.strictEqual(safety.threat(false)?.target, creeper, 'a close creeper is fought anyway')
     creeper.position = new Vec3(4.5, 0, 0.5)
     assert.strictEqual(safety.threat(false)?.target, creeper, 'within 5 blocks')
-    // given up on twice (behind a wall): ignored — for 3 minutes
+    // given up on twice (behind a wall): ignored
+    safety._givenUp.set(8, { n: 1, at: Date.now() })
+    assert.strictEqual(safety.threat(false)?.target, creeper, 'once is not enough')
     safety._givenUp.set(8, { n: 2, at: Date.now() })
     assert.strictEqual(safety.threat(false), null)
-    safety._givenUp.set(8, { n: 2, at: Date.now() - 4 * 60 * 1000 })
-    assert.strictEqual(safety.threat(false)?.target, creeper, 'the hard ignore decays')
   })
 
   it('meal holds are counted (auto-eat back on with the last one); three failed meals pause auto-eat', () => {
@@ -130,14 +130,14 @@ describe('final fix (agent): safety under U18 guards', () => {
     placement()
     assert.strictEqual(ae.enabled, true)
     // meals that began and failed, as runner.js guardAutoEat reports them
-    ae._bedbooOnFail()
-    ae._bedbooOnFail()
+    ae.emit('eatFail')
+    ae.emit('eatFail')
     assert.strictEqual(ae.enabled, true)
-    ae._bedbooOnFail()
+    ae.emit('eatFail')
     assert.strictEqual(ae.enabled, false, 'paused')
-    clearTimeout(safety._mealPause)
     safety.stop()
-    assert.strictEqual(ae._bedbooOnFail, null)
+    assert.strictEqual(safety._mealPause, null)
+    assert.strictEqual(ae.enabled, true, 'the pause ends with the agent')
   })
 
   it('a fight against a mob out of reach gives way to one hitting the bot from up close', () => {
@@ -305,7 +305,7 @@ describe('final fix (agent): mineflayer-auto-eat guard', () => {
       throw new Error('Eating was cancelled')
     }
     let fails = 0
-    ae._bedbooOnFail = () => fails++
+    ae.on('eatFail', () => fails++)
     guardAutoEat(ae)
     await assert.rejects(ae.eat(), /cancelled/)
     assert.strictEqual(fails, 1)
