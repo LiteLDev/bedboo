@@ -71,7 +71,7 @@ A skill is `async (bot, args) => result` (`args.signal` is the runner's AbortSig
 | `craft` | `{ item, count }` | `bot.recipesFor` / `bot.craft`, 2×2 or a crafting table (placed and taken back) |
 | `smelt` | `{ item, count, input?, fuel? }` | `bot.openFurnace`; the furnace is placed and taken back |
 | `build` | `{ blueprint, origin?, radius? }` | builds a blueprint near the bot, verifies it block by block |
-| `navigate` | `{ position \| spawn: true, goal?, range? }` | pathfinder with re-planning, legs for far goals, unsticking |
+| `navigate` | `{ position \| spawn: true, goal?, range? }` | pathfinder with re-planning, legs for far goals, unsticking (own door, head block, out of the water onto a bank, a side dug open) |
 | `explore` | `{ blocks?, biomes?, maxDistance? }` | spiral walk until a block / biome is loaded |
 | `surface` | `{}` | out of a mine: pillar up (staircase where liquid is above, around lakes) |
 | `food` | `{ min }` | hunt passive animals for food |
