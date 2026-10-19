@@ -206,7 +206,7 @@ async function finalChain ({ log = () => {}, cfg = config(), netherOres = false,
         return { mined: r.mined }
       }
     })
-    plan.push({ name: 'E1 stronghold (cheat-assisted)', run: () => e1.toPortalRoom(ctx, { kit: [['ender_eye', 12], ['cooked_beef', 16]] }) })
+    plan.push({ name: 'E1 stronghold (cheat-assisted)', run: () => e1.toPortalRoom(ctx, { kit: e1.CHAIN_KIT }) })
     for (const step of e1.steps) {
       plan.push({
         name: `E1 ${step.name}`,
