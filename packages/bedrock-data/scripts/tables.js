@@ -188,4 +188,14 @@ const BIOMES_ADDED = {
   dappled_forest: { displayName: 'Dappled Forest', category: 'forest' }
 }
 
-module.exports = { BIOME_IDS_ADDED, BIOMES_ADDED, EFFECTS, ENTITY_SIZES, ENCHANTMENTS_ADDED, ATTRIBUTES_JAVA, ATTRIBUTES_BEDROCK_ONLY, ENTITY_JAVA_NAMES, ENTITY_DUPLICATES, ENTITIES_MANUAL }
+/**
+ * Block fields corrected after minecraft-data PR #1335 (field → value, with the reason):
+ * - air: PR #1335 (and BDS's own dump, Cloudburst `hardness` -1) give hardness -1 (unbreakable); raw minecraft-data
+ *   bedrock and Java have 0. mineflayer relies on 0: `bot.digTime(air)` is 0 and `bot.dig(air)` resolves at once;
+ *   with -1 digTime is Infinity and dig throws (U16a, wave-4 review). Nothing on Bedrock digs air either way.
+ */
+const BLOCK_FIXES = {
+  air: { hardness: 0 }
+}
+
+module.exports = { BLOCK_FIXES, BIOME_IDS_ADDED, BIOMES_ADDED, EFFECTS, ENTITY_SIZES, ENCHANTMENTS_ADDED, ATTRIBUTES_JAVA, ATTRIBUTES_BEDROCK_ONLY, ENTITY_JAVA_NAMES, ENTITY_DUPLICATES, ENTITIES_MANUAL }

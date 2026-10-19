@@ -143,8 +143,13 @@ function inject (bot) {
     return [...(option.equip_enchants ?? []), ...(option.held_enchants ?? []), ...(option.self_enchants ?? [])]
   }
 
-  /** the item the server makes of `target` with `option` (a book becomes an enchanted book) */
+  /**
+   * the item the server makes of `target` with `option` (a book becomes an enchanted book). BDS also offers options
+   * that apply no enchantment (a fishing rod or carrot on a stick at a table without bookshelves): it charges for them
+   * and leaves the item as it was, so the prediction is the item unchanged, without an empty `ench` list (U16a).
+   */
   function enchanted (target, option) {
+    if (enchantsOf(option).length === 0) return withNbt(Item, target, (value) => value, { count: 1 })
     const book = target.name === 'book'
     const type = book ? bot.registry.itemsByName.enchanted_book.id : target.type
     return withNbt(Item, target, (value) => {

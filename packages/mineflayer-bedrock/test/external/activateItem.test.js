@@ -3,13 +3,13 @@
 /**
  * Port of mineflayer 4.39.0 test/externalTests/activateItem.js. Bedrock: activateItem = item_use click_air;
  * the throw direction comes from the rotation of the same tick's player_auth_input (the transaction has no
- * rotation field). The verbatim test reads the snowball through U7's entitySpawn / entity velocity and is
- * skipped until U7 lands; the raw analog reads the same thing from add_entity / set_entity_motion.
+ * rotation field). The verbatim test reads the snowball through U7's entitySpawn / entity velocity; the raw analog
+ * reads the same thing from add_entity / set_entity_motion.
  */
 const assert = require('assert')
 const { Vec3 } = require('vec3')
 const { onceWithCleanup } = require('mineflayer/lib/promise_utils')
-const { useBot, implemented } = require('./common')
+const { useBot } = require('./common')
 
 describe('activateItem', function () {
   this.timeout(120000)
@@ -19,8 +19,6 @@ describe('activateItem', function () {
 
   it('activateItem', async function () {
     const { bot } = ctx
-    // snowball entities (entitySpawn, entity.velocity) are U7's
-    if (!implemented(bot.nearestEntity)) this.skip()
     const Item = require('prismarine-item')(bot.registry)
 
     await bot.test.becomeCreative()

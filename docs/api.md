@@ -135,6 +135,7 @@ Bedrock-only additions live under `bot.bedrock` — never as new top-level `bot`
 | member | type | |
 |---|---|---|
 | `bot.bedrock.gameRules` | `{ [name: string]: boolean \| number }` | the server's game rules by Bedrock name (`doDayLightCycle`, `keepInventory`, `randomTickSpeed`, …), from `start_game` and `game_rules_changed` ([U9](differences/U9.md#game-rules)) |
+| `bot.bedrock.blockVariants(block)` | `(block: string \| number) => number[]` | the ids of the Bedrock blocks Java models as one block with a state — a burning furnace is `lit_furnace`: `bot.findBlock({ matching: bot.bedrock.blockVariants('furnace') })` also finds it ([U16a](differences/U16a.md#block-variants)) |
 
 ## Internals
 

@@ -40,6 +40,9 @@ const upstream = () => async (bot) => {
   // restores; on a reused world a new run usually starts at a new spot
   bot.test.netherSpot ??= 16 * (1 + Math.floor(Math.random() * 8))
   await bot.test.teleport(new Vec3(bot.test.netherSpot + (attempt - 1) * 4, bot.test.groundY, 0))
+  // Bedrock (adapted, U16a): the spot is up to 128 blocks away — right after the teleport its chunk may not be loaded
+  // on the server yet, and the /setblock fails with commands.setblock.outOfWorld (seen in a full run under load)
+  await bot.waitForChunksToLoad()
   bot.chat(`/setblock ~ ~ ~ ${portalName}`)
   await onceWithCleanup(bot, 'spawn', { timeout: 30000 })
   const arrivedAt = Date.now()

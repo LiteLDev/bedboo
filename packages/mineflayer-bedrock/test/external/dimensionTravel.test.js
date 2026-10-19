@@ -4,7 +4,9 @@
  * Dimension travel against BDS 1.26.51.1 (Bedrock extra; the user requirement "every dimension must be enterable"):
  * - overworld → nether → overworld → end → overworld through `/execute in <dim> run tp @s …` (the bot's own command);
  * - stepping into portal blocks placed with /setblock at the bot's feet: `portal` (Bedrock's nether portal block, a
- *   survival player stands in it ~4 s) and `end_portal`;
+ *   survival player stands in it ~4 s) and `end_portal` (placed under the feet: the bot falls onto it — an end_portal
+ *   block has a 0.25-high collision box, and one set INSIDE the player raced BDS pushing the player out of it, which
+ *   left it next to the portal now and then; U16a);
  * - the End exit portal → overworld: BDS shows the credits (show_credits status 0) the first time and waits for the
  *   client's show_credits status 1 before the change_dimension; a second exit has no credits;
  * - a death in the nether → respawn in the overworld (the dimension change inside the respawn: no loading screen
@@ -219,7 +221,10 @@ describe('dimensionTravel', function () {
     const g = bot.test.groundY
     await bot.test.teleport(new Vec3(-24, g, 24))
     await bot.waitForChunksToLoad()
-    let events = await travel(say('/setblock ~ ~ ~ end_portal'), 'the_end')
+    // the portal replaces the block under the feet and the bot falls onto it (an end_portal set inside the player can
+    // lose the race against BDS pushing the player out of its 0.25-high box: U16a)
+    bot.creative.stopFlying()
+    let events = await travel(say('/setblock ~ ~-1 ~ end_portal'), 'the_end')
     await assertIn('the_end', events)
     const feet = bot.entity.position.floored()
     assert.strictEqual(bot.blockAt(feet.offset(0, -1, 0)).name, 'obsidian', 'the End spawn platform')
@@ -235,8 +240,9 @@ describe('dimensionTravel', function () {
       const moved = onceWithCleanup(bot, 'forcedMove', { timeout: 5000 })
       bot.chat(`/tp @s ${exit.x} ${exit.y} ${exit.z}`)
       await moved
+      bot.creative.stopFlying()
       await bot.test.wait(1000)
-      events = await travel(say(`/setblock ${exit.x} ${exit.y} ${exit.z} end_portal`), 'overworld', { timeout: 60000 })
+      events = await travel(say(`/setblock ${exit.x} ${exit.y - 1} ${exit.z} end_portal`), 'overworld', { timeout: 60000 })
       const [shown] = await credits
       assert.strictEqual(shown.status, 0)
       assert.deepStrictEqual(sent.map(p => p.status), [1])
@@ -251,8 +257,9 @@ describe('dimensionTravel', function () {
       const moved2 = onceWithCleanup(bot, 'forcedMove', { timeout: 5000 })
       bot.chat(`/tp @s ${exit2.x} ${exit2.y} ${exit2.z}`)
       await moved2
+      bot.creative.stopFlying()
       await bot.test.wait(1000)
-      events = await travel(say(`/setblock ${exit2.x} ${exit2.y} ${exit2.z} end_portal`), 'overworld', { timeout: 60000 })
+      events = await travel(say(`/setblock ${exit2.x} ${exit2.y - 1} ${exit2.z} end_portal`), 'overworld', { timeout: 60000 })
       await assertIn('overworld', events)
       assert.strictEqual(sent.length, 1, 'credits acked once')
     } finally {

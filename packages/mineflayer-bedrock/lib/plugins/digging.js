@@ -98,6 +98,17 @@ function inject (bot) {
     return best && best.t >= 0 ? best.face : BlockFaces.TOP
   }
 
+  /**
+   * the air block to complete a dig of `block` with when there is nothing to break: the world's block there is air
+   * (whatever `block` says: a stale Block of a block that is gone by now), or `block` is air and its chunk is unknown
+   */
+  function airAt (block, position) {
+    const air = airType()
+    const now = bot.blockAt(position)
+    if (now) return now.type === air ? now : null
+    return block.type === air ? block : null
+  }
+
   function isBroken (newBlock, dug) {
     if (newBlock.type === airType() || LIQUIDS.has(newBlock.name)) return true
     return PARTIAL_BREAKS.has(dug.name) && newBlock.type === dug.type && newBlock.stateId !== dug.stateId
@@ -243,8 +254,20 @@ function inject (bot) {
     if (bot.targetDigBlock) bot.stopDigging()
     bot.targetDigFace = face
 
-    const task = createTask()
     const position = new Vec3(Math.floor(block.position.x), Math.floor(block.position.y), Math.floor(block.position.z))
+    const air = airAt(block, position)
+    if (air) {
+      // Nothing to break (the block was air, or is gone by now: another player, a door's other half, a decayed leaf).
+      // Upstream sends start/finish, sets air locally and completes on that block update within a tick; BDS would
+      // never report a break of air, so complete at once with the same events (U16a).
+      bot.targetDigBlock = null
+      bot.targetDigFace = null
+      bot.lastDigTime = performance.now()
+      bot.emit('diggingCompleted', air)
+      return
+    }
+
+    const task = createTask()
     const creative = bot.game?.gameMode === 'creative'
     // the speed as of now (after the look): it decides the instant break and drives the per-tick progress
     const delta = currentDelta(block)
@@ -446,6 +469,14 @@ function inject (bot) {
     // (positions only: another player breaking the same block is indistinguishable; at worst predict_break goes out
     // early, BDS restores the block and the dig goes on until BDS breaks it)
     state.lastServerIndex = state.index
+    // an instant break (start + predict in one input; already predicted) has no progress to follow, and only an instant
+    // report (≥ 1 per tick) can be the dug block's: a slower one may be about what replaced it (the water a plant in a
+    // water source leaves, sometimes in the batch BEFORE the update_block) — it only shows the server is at it (U16a:
+    // seen once in digEverything › short_dry_grass after seagrass)
+    if (state.ticks === 0) {
+      if (state.serverData === null && data >= digSpeed.SPEED_SCALE) state.serverData = data
+      return
+    }
     // the first report is the dug block's (once it is destroyed BDS, still holding, reports what replaced it — e.g.
     // the water of ice — in the same batch as the update_block)
     if (state.serverData === null) state.serverData = data

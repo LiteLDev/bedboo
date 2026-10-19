@@ -12,9 +12,6 @@ const assert = require('assert')
 const { once } = require('mineflayer/lib/promise_utils')
 const { useBot } = require('./common')
 
-/** U9's block_actions plugin emits noteHeard; flip once it is on main (the coordinator re-runs this at the wave gate). */
-const NOTE_HEARD_READY = true
-
 describe('sound', function () {
   this.timeout(120000)
   const env = useBot({ server: { gamemode: 'creative' } })
@@ -116,7 +113,6 @@ describe('sound', function () {
   })
 
   it('sound noteHeard', async function () {
-    if (!NOTE_HEARD_READY) this.skip() // noteHeard is U9's (block_actions, wave 3)
     const { bot } = env
     // Test note block sounds
     const noteTest = async () => {

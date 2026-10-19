@@ -6,4 +6,2772 @@ The only allowed deviations of mineflayer-bedrock from mineflayer are inherent J
 each unit documents its own in `docs/differences/<unit>.md` (format: [`differences/README.md`](differences/README.md)).
 `adapted` and `n.a.` rows of the [parity matrix](parity.md) link the entries below.
 
-No unit has documented a difference yet.
+| unit | fragment | entries | parity rows linking it |
+|---|---|---|---|
+| U1 | [`U1.md`](differences/U1.md) | 7 | 0 |
+| U2 | [`U2.md`](differences/U2.md) | 7 | 4 |
+| U4 | [`U4.md`](differences/U4.md) | 21 | 44 |
+| U5 | [`U5.md`](differences/U5.md) | 9 | 21 |
+| U6 | [`U6.md`](differences/U6.md) | 15 | 44 |
+| U7 | [`U7.md`](differences/U7.md) | 17 | 23 |
+| U8 | [`U8.md`](differences/U8.md) | 13 | 22 |
+| U9 | [`U9.md`](differences/U9.md) | 15 | 41 |
+| U10 | [`U10.md`](differences/U10.md) | 8 | 5 |
+| U11 | [`U11.md`](differences/U11.md) | 9 | 8 |
+| U12 | [`U12.md`](differences/U12.md) | 5 | 5 |
+| U13 | [`U13.md`](differences/U13.md) | 7 | 25 |
+| U14 | [`U14.md`](differences/U14.md) | 5 | 9 |
+| U15 | [`U15.md`](differences/U15.md) | 12 | 13 |
+| U16 | [`U16-transport.md`](differences/U16-transport.md) | 4 | 0 |
+| U16 | [`U16a.md`](differences/U16a.md) | 16 | 2 |
+| ? | [`W3FIX.md`](differences/W3FIX.md) | 7 | 0 |
+| ? | [`W3FIXB.md`](differences/W3FIXB.md) | 4 | 0 |
+
+## U1
+
+<!-- from docs/differences/U1.md -->
+These concern the test helpers (`bot.test.*`, upstream `test/externalTests/plugins/testCommon.js`) and the
+test runner, not the library API. Helpers keep upstream names, signatures and semantics; the transport is
+the BDS console and raw Bedrock packets (never plugin APIs), so they work before the plugins exist.
+
+#### selfKill switches to survival  {#selfkill-switches-to-survival}
+- **Affects:** `bot.test.selfKill`, test `gamemode` › "after respawn"
+- **Java:** `/kill @p` kills the bot in any gamemode.
+- **Bedrock:** BDS 1.26.51.1 refuses: `Players cannot be killed while they are in Creative mode.`; creative
+  players are also immune to `/damage … void` and to the void at y = -200.
+- **mineflayer-bedrock:** `selfKill()` switches a creative/spectator bot to survival (console `gamemode`)
+  before `kill <bot>` and resolves once the death was observed. The bot respawns in survival.
+- **Tests:** a test asserting the gamemode kept across a creative death (upstream `gamemode` › "after
+  respawn") must be adapted by its owner (U9), e.g. kill in survival and assert survival after respawn.
+
+#### fly teleports  {#fly-teleports}
+- **Affects:** `bot.test.fly`
+- **Java:** `bot.creative.flyTo(position + delta)`.
+- **Bedrock:** creative flight is part of U5's physics; the console cannot make a player fly
+  (`/ability` is Education Edition only).
+- **mineflayer-bedrock:** `fly(delta)` teleports the bot by `delta` (console `tp`) and resolves on the
+  server's `move_player`; `resetState()` calls `bot.creative.startFlying()` only once it is implemented.
+
+#### placeBlock uses setblock  {#placeblock-uses-setblock}
+- **Affects:** `bot.test.placeBlock`
+- **Java:** selects hotbar `slot - 36` and calls `bot.placeBlock(blockBelow, up)`.
+- **Bedrock:** `bot.placeBlock` is U11's (Wave 4); helpers must not depend on plugin APIs.
+- **mineflayer-bedrock:** the block of the item in Java slot `slot` is set with
+  `execute as <bot> at @s run setblock X Y Z <item>`; `bot.setQuickBarSlot` is called once it is
+  implemented; the item is not consumed. U11 replaces the helper with the real API in `helpers/place.js`.
+
+#### setInventorySlot uses replaceitem  {#setinventoryslot-uses-replaceitem}
+- **Affects:** `bot.test.setInventorySlot`
+- **Java:** `bot.creative.setInventorySlot(slot, item)` (creative mode only).
+- **Bedrock:** `replaceitem entity <bot> slot.hotbar|slot.inventory|slot.armor.*|slot.weapon.offhand
+  <index> <name> <count> <data>`; works in every gamemode; NBT (enchantments, names, book contents) and
+  the ItemV4 `can_place_on`/`can_destroy` lists cannot be expressed. BDS 1.26.51.1 stores the data value
+  of a tool as its `Damage` NBT (metadata stays 0). Java slots 0–4 (crafting grid/result) have no
+  `replaceitem` target and throw.
+- **mineflayer-bedrock:** resolves after the server's `inventory_content` / `inventory_slot`. A tool's
+  `Damage` (`item.durabilityUsed`, metadata 0) is sent as the data value. Any other NBT throws
+  `setInventorySlot: NBT cannot be set with replaceitem; use bot.creative.setInventorySlot (U8) — <item>
+  carries NBT <keys>` before a command is sent, rather than placing the item without it (which made tests
+  fail later with misleading assertions). U8 switches the helper to `bot.creative.setInventorySlot` in
+  `helpers/inventory.js` (Wave 3); until then tests needing enchanted/named items wait for U8.
+- **Tests:** `test/unit/data/inventory-helper.test.js`; e2e `helpers.test.js` › "setInventorySlot: …".
+
+#### sayEverywhere chats as the bot  {#sayeverywhere-uses-the-console-say}
+- **Affects:** `bot.test.sayEverywhere`
+- **Java:** `bot.chat(message)` + `console.log`.
+- **Bedrock:** helpers must work before `bot.chat` exists (raw-client bots).
+- **mineflayer-bedrock:** like upstream, the bot sends it: a `/…` message runs as the bot's own command
+  (`command_request`, resolved on its `command_output`), anything else is chat (`bot.chat` when implemented,
+  else a raw `text` packet); plus `console.log`. Errors are logged, never thrown. (Wave 1 used the console
+  `say`; the wave-1 gate review moved it back to the bot, so `/kill <bot>` etc. run with the bot's permissions.)
+
+#### No packet trace file  {#no-packet-trace-file}
+- **Affects:** `bot.test.dumpMarker`
+- **Java:** writes markers into the upstream packet trace (`test/common/trace`).
+- **mineflayer-bedrock:** prints the marker when `BEDBOO_TRACE` is set; packet tracing is done with
+  `scripts/capture-fixtures.js` / `BEDBOO_BDS_LOG=1`.
+
+#### One server per test file  {#one-server-per-test-file}
+- **Affects:** the external test runner (`test/externalTest.js`)
+- **Java:** one server per supported version, every test file runs against it with the bot `flatbot`;
+  server.properties `spawn-animals/monsters=false`, `gamemode=1`, `level-type=FLAT`, `view-distance=8`.
+- **Bedrock:** BDS starts in ≈1 s, so each test file gets its own isolated server (`useBot`), started
+  from the golden cache in a host-wide slot. Bedrock has no `spawn-*` properties: the deterministic
+  profile sets gamerules (`domobspawning false`, `dodaylightcycle false`, `doweathercycle false`,
+  `randomtickspeed 0`, `doinsomnia false`, `dofiretick false`, `mobgriefing false`, `spawnradius 0`) plus
+  `difficulty=peaceful`, `gamemode=creative`, `level-type=FLAT`. The bot is an operator through
+  `default-player-permission-level=operator` (no `/op` round trip). Tests call `bot.test.resetState()` in
+  `beforeEach` like upstream's runner does before every test.
+
+## U2
+
+<!-- from docs/differences/U2.md -->
+Everything below was checked against BDS 1.26.51.1 (protocol 2193): the U0 capture
+(`packages/mineflayer-bedrock/test/fixtures/1.26.51/join_flat.jsonl.gz`), CloudburstMC/Data at
+`659ce1e2eee3a67045693f4fd5515c6ccf571953` (BDS dumps) and a live server (`packages/bedrock-data/scripts/probe-bds.js`,
+`live-check.js`). How the data is built: `packages/bedrock-data/NOTICE.md`.
+
+#### Bedrock block and item names and ids in `bot.registry` {#registry}
+- **Affects:** `bot.registry` / `require('minecraft-data')('bedrock_1.26.51')`, every API taking block or item
+  names or ids (`bot.blockAt().name`, `bot.findBlocks({ matching })`, `bot.inventory.items()[i].name`, recipes, …),
+  ported tests that hard-code Java names.
+- **Java:** Java names and ids (`grass_block`, `oak_door`, `zombified_piglin`, …).
+- **Bedrock:** Bedrock identifiers: 1,477 blocks / 22,091 block states / 2,076 items (minecraft-data PR #1335 for
+  1.26.51, every state matched to a BDS runtime id, every item matched name+id to BDS `item_registry`). Many names
+  equal Java's; others differ (`wooden_door` block and item for Java's `oak_door`, `noteblock`, `unpowered_repeater`,
+  `zombie_pigman` entity, `fishing_hook`, `fireworks_rocket`, …). Item ids are the server's network ids (block
+  items can be negative). Bedrock-only items/blocks exist (e.g. `element_*`, `hard_*_stained_glass`, `unknown`).
+- **mineflayer-bedrock:** `bot.registry` uses the Bedrock names and ids; items are re-keyed by the server's
+  `item_registry` (identity for vanilla BDS). Tests that hard-code Java names map them (documented per test).
+- **Tests:** `packages/bedrock-data/test/data.test.js`, `packages/mineflayer-bedrock/test/unit/data/registry.test.js`.
+
+#### Block state ids vs network runtime ids {#state-ids}
+- **Affects:** `Block.stateId`, `registry.blocksByStateId`, `bot.world.setBlockStateId`, everything decoding
+  `update_block` / sub-chunks or sending a `block_runtime_id`.
+- **Java:** the network carries global palette ids, the same numbers as `block.stateId`.
+- **Bedrock:** with `block_network_ids_are_hashes` (always on BDS 1.26.51) the network carries a 32-bit FNV-1a
+  hash of the block state NBT (signed int32 on the wire, e.g. stone = -2144268767).
+- **mineflayer-bedrock:** `block.stateId` stays the **sequential index into `registry.blockStates`**, so every
+  block's states are the contiguous `minStateId..maxStateId` range exactly like Java (mineflayer's `bed.js`,
+  prismarine-block metadata/shapes and mineflayer-pathfinder's `Block.fromStateId(x.minStateId)` keep working
+  unchanged). Network runtime ids are translated: `registry.blocksByRuntimeId[runtimeId] → { stateId, ...block }`
+  and `registry.runtimeIdByStateId[stateId]` (both built by `registry.handleStartGame(start_game)`), and
+  `block.hash` is the runtime id of a Block. prismarine-chunk does the translation itself when decoding/encoding
+  sub-chunks. This deliberately differs from prismarine-registry PR #57 (which makes `stateId` the hash and leaves
+  `minStateId` undefined, breaking pathfinder). `minecraft:unknown` is the one state whose runtime id is not its
+  hash: BDS reserves `0xFFFFFFFE` (-2) for it. Every `blockStates[i]` carries its runtime id as `hash`
+  (precomputed and verified by the generator), so `handleStartGame` does not hash 22k states.
+- **Tests:** `registry.test.js` › "start_game with hashes…", `chunk.test.js`, `block.test.js` › "block.hash…".
+
+#### Unknown block runtime ids decode to `minecraft:unknown` {#unknown-runtime-ids}
+- **Affects:** chunk decoding (`bot.blockAt`, `bot.world`) when a server sends block states the data does not
+  know (custom/add-on blocks from `start_game.block_properties`).
+- **Java:** n/a (registry codecs are sent by the server).
+- **Bedrock:** custom blocks are hashed like vanilla ones; their states are not in the 1.26.51 data.
+- **mineflayer-bedrock:** the sub-chunk decoder never throws: an unknown runtime id becomes a palette entry for
+  `minecraft:unknown` (BDS's own placeholder: solid full cube, hardness 0, so physics treats it as solid and
+  pathfinding as diggable) that keeps `entry.runtimeId`, and re-encoding writes the original id back. Vanilla
+  BDS never produced one in the live check (default overworld, nether, end). Custom blocks are not added to the
+  registry yet. Decoding network chunks before `registry.handleStartGame(start_game)` throws (no runtime-id map)
+  instead of silently producing placeholders.
+- **Tests:** `chunk.test.js` › "unknown runtime ids decode to the documented placeholder…".
+
+#### Collision boxes and friction from BDS {#collision}
+- **Affects:** `block.shapes` (physics, pathfinder, `bot.canSeeBlock`), `registry.blocksByName[x].friction`.
+- **Java:** Java collision boxes; slipperiness hard-coded in prismarine-physics.
+- **Bedrock:** the BDS dump differs from minecraft-data PR #1335 for 708 states: doors are 0.1875 (3/16) thick
+  (PR: 0.1825) and an `end_portal_frame` with an eye has the extra eye box. Friction per block: ice/packed/frosted
+  0.98, blue_ice 0.989, slime 0.8, **honey_block 0.8**, everything else 0.6 (air and `unknown` 0.899999).
+- **mineflayer-bedrock:** collision comes from PR #1335 except for an explicit allowlist taken from Cloudburst
+  `collisionShape` (`/_door$/`, `end_portal_frame`); the generator fails on any other disagreement. Every block
+  has a Bedrock `friction` field (new in the schema; U5's physics reads it).
+- **Tests:** `data.test.js` › "every block has friction…", "uses the BDS collision boxes for doors…".
+
+#### Datasets {#datasets}
+- **Affects:** `bot.registry.effects*`, `foods*`, `attributes*`, `enchantments*`, `entities*`, `particles*`,
+  `sounds*` and everything using them (`bot.entity.effects`, auto-eat, prismarine-physics `PlayerState`,
+  `digTime`, `item.enchants`, `bot.entities[x].name`, particle/sound events).
+- **Java / Bedrock / mineflayer-bedrock:**
+  - **effects:** Bedrock ids (`mob_effect.effect_id`: Speed 1 … SlowFalling 27, BadOmen 28, HeroOfTheVillage 29
+    (`village_hero`), Darkness 30, TrialOmen 31, WindCharged 32, Weaving 33, Oozing 34, Infested 35, RaidOmen 36,
+    BreathOfTheNautilus 37) with minecraft-data's Java-style `name`/`displayName`/`type`, so
+    `effectsByName.JumpBoost` etc. work; `bedrockName` is the command name. Bedrock-only: FatalPoison (25).
+    Java-only (absent): Glowing, Luck, BadLuck, DolphinsGrace. Ids verified with `/effect` on BDS.
+  - **enchantments:** Bedrock ids (minecraft-data bedrock 0..37 + wind_burst 38, density 39, breach 40, lunge 41,
+    verified with `/enchant`); names are the Java ones (`efficiency`, `binding_curse`, …). Java's `sweeping_edge`
+    does not exist on Bedrock.
+  - **attributes:** `resource` is the Java key (`bot.entity.attributes` is keyed by it, prismarine-physics reads
+    `attributesByName.movementSpeed.resource`), `bedrockName` the `update_attributes` name: maxHealth ←
+    `minecraft:health` (its `max` is the max health, `current` the health), movementSpeed ← `minecraft:movement`
+    (player default 0.1), followRange, knockbackResistance, attackDamage, maxAbsorption ← `minecraft:absorption`,
+    luck, jumpStrength ← `minecraft:horse.jump_strength`, spawnReinforcements ← `minecraft:zombie.spawn_reinforcements`.
+    Bedrock-only entries (`resource` = Bedrock name): underwaterMovement, lavaMovement, frictionModifier,
+    bounciness, airDragModifier, playerHunger, playerSaturation, playerExhaustion, playerLevel, playerExperience.
+    Java-only attributes (armor, stepHeight, gravity, …) are kept without `bedrockName`; BDS never sends them.
+  - **foods:** minecraft-data `foods` schema (Java field names) from the BDS `minecraft:food` item components:
+    `foodPoints` = nutrition, `saturation` = nutrition × modifier × 2, `saturationRatio` = modifier × 2,
+    `effectiveQuality` = foodPoints + saturation; 40 foods with Bedrock item ids.
+  - **entities:** the 137 BDS identifiers (Cloudburst `entity_identifiers.dat`); `id` = `internalId` = Bedrock's
+    numeric entity type (player 257). Sizes are the bounding boxes BDS reports for summoned entities (several
+    differ from Java: zombie/skeleton 0.6×1.9, chicken 0.6×0.8, …); slime/magma cube are given at size 1 and
+    shulker as 1×1 (BDS reports the default actor box for it); Education Edition entities (agent, balloon,
+    ice_bomb, tripod_camera) have no size (0×0). minecraft-data's bedrock-only `moving_block`, `item_frame`,
+    `glow_item_frame`, `chalkboard` are dropped (blocks/block entities on BDS, not entity identifiers).
+    minecraft-data bedrock 1.21.80 files Java-only variants under the identifier they map to (zombie: Zombie +
+    Giant, llama: Llama + Trader Llama, arrow: Arrow + Spectral Arrow, evocation_illager: Evoker + Illusioner,
+    plus placeholder rows for armor_stand and minecart); the generator takes the Bedrock entity's own row
+    (`tables.ENTITY_DUPLICATES`, an unlisted duplicate fails the generation), so `entitiesByName.zombie` is
+    Zombie, not Giant. Some identifiers keep minecraft-data's placeholder display name (= the identifier: `npc`,
+    `tnt`, `boat`, `egg`, `*_minecart`, …).
+  - **biomes:** keyed by the vanilla numeric ids that chunk biome palettes carry (ocean 0, plains 1, river 7,
+    hell 8, the_end 9, … soulsand_valley 178 … mangrove_swamp 191, cherry_grove 192, pale_garden 193,
+    sulfur_caves 194, dappled_forest 195): 89 biomes, the list BDS 1.26.51 sends in `biome_definition_list`.
+    minecraft-data's bedrock 1.21.60 list (what `bedrock_1.26.51` inherited) is numbered alphabetically
+    (0 bamboo_jungle, 1 bamboo_jungle_hills, plains 64), so every biome resolved to the wrong one (the flat
+    world's plains became bamboo_jungle_hills). BDS sends `biome_id` 65535 ("vanilla id") for every vanilla
+    biome and lists them in id order, so the client must know the numbering: ids from pmmp/BedrockData's
+    `biome_id_map.json` (CC0) plus dappled_forest 195 (new in 1.26.50), checked against minecraft-data bedrock
+    1.20.0, against the order of BDS's `biome_definition_list` (probe) and live (`live-check.js --biomes`: each
+    biome located with `/locate biome` has that id in the chunk). Schema as minecraft-data (`id`, `name`,
+    `category`, `temperature`, `has_precipitation`, `dimension` overworld/nether/the_end, `displayName`,
+    `color` = BDS map water colour like minecraft-data bedrock 1.21.60, plus `rainfall` and `depth`); climate
+    values are BDS's (CloudburstMC stripped_biome_definitions.json, equal to the packet); category and display
+    name from minecraft-data bedrock 1.20.0 (Java-style categories), newer biomes from a table. Custom
+    (data-driven) biomes are not in the registry. `bot.blockAt(p).biome` is built by prismarine-block 1.23.0
+    with `prismarine-biome(registry.version)`, which fills in only `id` (its `name` is `''`, the same on Java);
+    `bot.registry.biomes[block.biome.id]` is the biome.
+  - **particles:** Bedrock particle types (`level_event` `0x4000 | id`, e.g. bubble 1, heart 19).
+  - **sounds:** level sound event identifiers as sent in `level_sound_event.sound_id` (strings since 1.26.40,
+    e.g. `armor.equip_iron`); `id` is the legacy numeric LevelSoundEvent id (13 newer events got ids ≥ 615).
+  - **unchanged from minecraft-data:** language (1.21.70), recipes (1.19.10, superseded by `crafting_data`,
+    U12), windows, instruments, blocksB2J/J2B, protocol.
+- **Tests:** `packages/bedrock-data/test/data.test.js`; `packages/mineflayer-bedrock/test/unit/data/biomes.test.js`
+  (U0 capture: flat-world palette [1] → plains, `biome_definition_list` order and climate); live check (every
+  effect id, attribute name, sound name, entity identifier, item and chunk biome id seen on BDS resolves, biome
+  ids per dimension, `--biomes` tour).
+
+#### Items on the wire (ItemV4) {#items}
+- **Affects:** `Item.fromNotch` / `Item.toNotch` (prismarine-item) used by inventory, creative, transactions.
+- **Java:** `{ itemCount, itemId, components }`; an empty slot is `present: false` / count 0.
+- **Bedrock:** ItemV4 `{ network_id, count, metadata, has_stack_id, stack_id, block_runtime_id, extra }`; since
+  1.26.40 an empty slot still carries every field; block items carry the runtime id of the block state they
+  place (BDS compares held items exactly).
+- **mineflayer-bedrock:** `Item.toNotch(null)` is BDS's empty item; items keep the server's `stack_id`,
+  `blockRuntimeId` and `can_place_on`/`can_destroy` lists (`item.canPlaceOn`/`item.canDestroy`) so
+  `toNotch(fromNotch(x))` is byte-identical; new block items use `registry.items[id].blockStateId` (from BDS
+  creative data, new field) → runtime id. Before `registry.handleStartGame` new block items get 0.
+- **Tests:** `item.test.js`.
+
+#### Feature table (`bot.supportFeature`) {#feature-table}
+- **Affects:** `bot.supportFeature(name)`, the `supportFeature` export, every reused plugin/test branching on a
+  Java feature name.
+- **Java:** values from minecraft-data's Java feature list for the bot's version.
+- **Bedrock:** minecraft-data's Bedrock list knows none of the Java names.
+- **mineflayer-bedrock:** an explicit value for every Java name used by mineflayer 4.39.0 `lib/` and `examples/`, its external
+  tests and internal tests, pathfinder/pvp/collectblock/tool/armor-manager/auto-eat and the prismarine-* modules, plus all 17
+  minecraft-data Bedrock features with minecraft-data's own 1.26.51 values (`packages/bedrock-data/features.js`).
+  Unknown names return `false` with a one-time process warning (`BEDBOO_UNKNOWN_FEATURE`); with
+  `BEDBOO_STRICT_FEATURES=1` they throw. Rules:
+  1. **Game/data facts → the Bedrock truth**: `tallWorld`, `itemsAreNotBlocks` (and not `itemsAreAlsoBlocks`),
+     `blockSchemeIsFlat`, `blockStateId`, `doesntHaveChestType` (Bedrock chests have no `type` state),
+     `doesntHaveOffHandSlot: false`, `shieldSlot` (46-slot player window), `hasElytraFlying`, `mobSpawner`
+     (the block is `mob_spawner`; mineflayer's examples ask), `village&pillageInventoryWindows: false` (see below),
+     `noteBlockNameIsNoteBlock: false` (`noteblock`), `multiSidedSigns`, `furnaceNbtUsesSnakeCase: false`,
+     `creativeSleepNearMobs`, entity names (`enderCrystalNameEndsInErNoCaps`, `fireworkNamePlural`,
+     `fishingBobberCorrectlyNamed: false`), item NBT facts for prismarine-item (`itemsWithComponents: false`,
+     `booksUseStoredEnchantments: false`, `itemLoreIsAString: false`, …).
+  2. **Commands (checked on BDS 1.26.51.1)**: `hasExecuteCommand` (`execute in overworld run teleport …` works),
+     `hasItemCommand: false` (no `/item`), `replaceItemSlotIsPrefixed` (`/replaceitem … slot.container <n>`; the
+     slot index is a separate argument, so tests using `slot.container.<n>` are adapted), `hasDataCommand: false`,
+     `gameRuleUsesResourceLocation: false`, `effectAreNotPrefixed` (Bedrock is `/effect <target> hunger 1 255`:
+     neither `effect give` nor a `minecraft:` prefix is accepted, so `consume` is adapted),
+     `playsoundUsesResourceLocation: false`, `setBlockUsesMetadataNumber: false`.
+  3. **Java packet layouts → false** (`stateIdUsed`, `blockPlaceHas*`, `dimensionIsA*`, `dimensionDataInCodec`,
+     `titleUses*`, `updatedParticlesPacket`, `useItemWith*`, `teleportUsesOwnPacket`, `hasEditBookPacket`, …): the
+     plugins are reimplemented on Bedrock packets, and `false` keeps a vendored Java branch from being taken.
+     Exception: `positionUpdateSentEveryTick: true` (player_auth_input goes out every tick).
+  4. **API shape**: `tabCompleteHasAToolTip: true` (mineflayer ≥1.13 `[{ match, tooltip }]`), `lessCharsInChat:
+     false` (256-char chunks), `selectingTradeMovesItems: false` (no `select_trade` on Bedrock),
+     `fishingBiteDelayMaxTicks: 600` (Java's window; not measured on BDS, U14 to confirm).
+  5. **prismarine-windows**: `village&pillageInventoryWindows: false` selects its legacy window table (player
+     inventory 46 slots via `shieldSlot`). `true` would take the 1.14+ branch, whose
+     `registry.version['>='](differences/'1.20.3')` throws a RangeError for a Bedrock version. Bedrock containers are not
+     Java protocol windows: U8 registers every Bedrock container type (`bot._bedrock.windows`) and builds the
+     46-slot Java-layout player inventory itself. `netherUpdateInventoryWindows` is only read inside that 1.14+
+     branch (no effect on Bedrock).
+- **Tests:** `features.test.js` (scans every source above — mineflayer `lib/`, `examples/`, external and internal
+  tests, the plugins, prismarine-* — for literal `supportFeature('…')` names of any characters but quotes, and
+  fails on a missing name; prismarine-windows loads with a strict `supportFeature`), `data.test.js` › "agrees with
+  minecraft-data on every Bedrock feature".
+
+## U4
+
+<!-- from docs/differences/U4.md -->
+Observed against BDS 1.26.51.1 (protocol 2193, bedrock-protocol 3.60.1): the U0 capture
+(`packages/mineflayer-bedrock/test/fixtures/1.26.51/join_flat.jsonl.gz`) and live servers (`test/external/core*.test.js`).
+
+#### Versions  {#versions}
+- **Affects:** `bot.version`, `bot.majorVersion`, `bot.protocolVersion`, exports `testedVersions`,
+  `latestSupportedVersion`, `oldestSupportedVersion`, `supportFeature(feature, version)`.
+- **Java:** Java versions ('1.21.4', protocol 769); several supported.
+- **Bedrock:** Bedrock versions; only the latest is supported (user decision).
+- **mineflayer-bedrock:** `bot.version = '1.26.51'`, `majorVersion = '1.26'`, `protocolVersion = 2193`;
+  `testedVersions = ['1.26.51']`. `createBot({ version })` accepts `'1.26.51'` or `false` (auto) and throws like
+  mineflayer for anything else. The module-level `supportFeature(feature, version)` answers from the Bedrock feature
+  table (U2) for 1.26.51 / 'bedrock_1.26.51' / no version, without building a registry, and from minecraft-data for
+  other versions (as upstream).
+- **Tests:** `test/unit/core.test.js`.
+
+#### Protocol client and `connect`  {#client}
+- **Affects:** `bot._client`, `connect` event, `createBot` options `auth`, `host`, `port`, `profilesFolder`, `onMsaCode`.
+- **Java:** minecraft-protocol client; `connect` when the TCP socket connects.
+- **Bedrock:** bedrock-protocol `Client` (RakNet). No `connect` event: `loggingIn` fires once the RakNet connection
+  and network settings are done, when the login packet is sent.
+- **mineflayer-bedrock:** `bot._client` is the bedrock-protocol client (`on`, `queue`, `write`); `connect` is
+  emitted once on `loggingIn`. Defaults: host 127.0.0.1, port 19132, RakNet (raknet-native), `skipPing`,
+  `conLog: null`. `auth: 'offline'` is the default; `auth: 'microsoft'` is Xbox Live with prismarine-auth
+  (`profilesFolder`, `onMsaCode`, `authTitle`, `flow` passed through); `auth: 'mojang'` throws (no Mojang accounts on
+  Bedrock). An explicit bedrock-protocol `offline` option wins.
+- **Tests:** `test/unit/core.test.js`, `test/unit/smoke.test.js`.
+
+#### Level type  {#level-type}
+- **Affects:** `bot.game.levelType`.
+- **Java:** `'default'`, `'flat'`, `'largeBiomes'`, `'amplified'`, …
+- **Bedrock:** `start_game.generator`: 0 legacy, 1 infinite, 2 flat, 3 nether, 4 the end, 5 void.
+- **mineflayer-bedrock:** 1 → `'default'`, 2 → `'flat'`, 0 → `'legacy'`, 5 → `'void'`, 3/4 → `'nether'` / `'the_end'`.
+- **Tests:** `test/unit/game.test.js`, `test/external/coreJoin.test.js`.
+
+#### Dimensions  {#dimensions}
+- **Affects:** `bot.game.dimension`, `bot.game.minY`, `bot.game.height`, `bot._getDimensionName()`, internal test
+  "dimension type lookup uses worldType over worldName".
+- **Java:** dimension types and heights from the registry codec; world names `minecraft:overworld`,
+  `minecraft:the_nether`, `minecraft:the_end`; a `respawn` packet switches dimension.
+- **Bedrock:** no codec: dimension ids 0/1/2 (start_game maps them to 'overworld' / 'nether' / 'end'), fixed
+  heights (overworld -64..319, nether 0..127, end 0..255). A dimension change is `change_dimension`
+  `{ dimension, position (FEET level), loading_screen_id }`; the client acks with player_action
+  `dimension_change_ack`; BDS answers with its own `dimension_change_ack` (no play_status) once the new dimension is
+  ready, then the client sends `serverbound_loading_screen` 1 and 2.
+- **mineflayer-bedrock:** `bot.game.dimension` uses mineflayer's names ('overworld', 'the_nether', 'the_end'),
+  minY/height from the fixed table, `_getDimensionName()` returns `minecraft:<dimension>`. On `change_dimension`
+  the world is reset (every column unloaded → `chunkColumnUnload`, per-position `blockUpdate:` listeners called with
+  `null, null` and removed, like upstream's switchWorld), `game` is emitted, and the lifecycle emits `spawn` again
+  once the server acked (mineflayer emits `spawn` after a dimension change too, through health). U9 owns the rest of
+  the dimension flow (`respawn` event, End credits, …).
+- **Tests:** `test/unit/game.test.js`, `test/unit/lifecycle.test.js`, `test/external/coreJoin.test.js`.
+
+#### No player limit on the client  {#max-players}
+- **Affects:** `bot.game.maxPlayers`.
+- **Java:** the login packet carries the server's max players.
+- **Bedrock:** start_game has no player limit; it is only in the unconnected pong, which BDS does not send with
+  `enable-lan-visibility=false` (and the bot connects without a ping).
+- **mineflayer-bedrock:** `bot.game.maxPlayers` stays `undefined`.
+
+#### Server brand  {#server-brand}
+- **Affects:** `bot.game.serverBrand`.
+- **Java:** the `minecraft:brand` plugin channel ('vanilla', 'Paper', …).
+- **Bedrock:** no brand channel; start_game has an optional `server_identifier` (empty on BDS).
+- **mineflayer-bedrock:** `server_identifier` when set, else `'vanilla'` (BDS is the vanilla Bedrock server).
+- **Tests:** `test/unit/game.test.js`.
+
+#### Client settings  {#settings}
+- **Affects:** `bot.settings.*`, `bot.setSettings()`, `bot.game.serverViewDistance`.
+- **Java:** a `settings` packet (locale, view distance, chat mode, colours, skin parts, main hand, filtering,
+  server listing, particles).
+- **Bedrock:** only the chunk radius is negotiated (`request_chunk_radius` → `chunk_radius_update`); skin parts,
+  main hand etc. are part of the login skin data / not configurable.
+- **mineflayer-bedrock:** same `bot.settings` object, defaults and validation errors as upstream. `viewDistance`
+  ('far' 12, 'normal' 10, 'short' 8, 'tiny' 6 chunks, or a number) is the only setting sent: the join request is
+  bedrock-protocol's (it reads `client.viewDistance`, kept in sync), later `setSettings` calls send
+  `request_chunk_radius { chunk_radius, max_radius }`. `bot.game.serverViewDistance` is the radius granted by the
+  server (`chunk_radius_update`). Every other setting is kept locally only.
+- **Tests:** `test/unit/game.test.js`.
+
+#### Physics stub (until U5)  {#physics-stub}
+- **Affects:** `bot.physics.*`, `bot.controlState.*`, `bot.setControlState`, `bot.clearControlStates`,
+  `bot.jumpQueued`, `bot.jumpTicks`.
+- **Java:** prismarine-physics simulates walking, jumping, swimming, …; the bot sends position packets.
+- **Bedrock:** movement is server-authoritative: one `player_auth_input` per server tick, the server corrects.
+- **mineflayer-bedrock (wave 2):** the full surface exists (31 upstream fields with upstream values,
+  `simulatePlayer`, `adjustPositionHeight`, control states, look, waitForTicks, physicsTick / physicTick, move,
+  forcedMove) but the engine is a stub: the bot stands still, falls with simple Java gravity onto the block below
+  when in the air, and control states are recorded without moving the bot. U5 replaces the engine (Bedrock
+  physics, walking, flight) and these rows become `done`.
+- **Tests:** `test/unit/physics_stub.test.js`, `test/external/coreJoin.test.js`.
+
+#### Look  {#look}
+- **Affects:** `bot.look`, `bot.lookAt`.
+- **Java:** the yaw is sent in steps (yawSpeed) and `look()` resolves once the server got the final rotation.
+- **Bedrock:** every `player_auth_input` carries yaw, pitch, head yaw, interact rotation and camera orientation.
+- **mineflayer-bedrock:** same sensitivity rounding and `force` semantics; the new rotation goes out entirely in the
+  next `player_auth_input` and `look()` resolves once that packet was sent (≤ 1 tick).
+- **Tests:** `test/unit/physics_stub.test.js`, `test/external/coreJoin.test.js`.
+
+#### Spawn  {#spawn}
+- **Affects:** `spawn` event.
+- **Java:** emitted on the first health update after login / after respawn.
+- **Bedrock:** the join is start_game (spawn search height y 32769.62) → respawn state 0 ×2 → respawn state 1 (real
+  position) → client respawn state 2 → play_status player_spawn → client serverbound_loading_screen 1, 2 (without
+  them BDS does not simulate the player).
+- **mineflayer-bedrock:** `spawn` comes from the lifecycle (`lib/bedrock/lifecycle.js`, the only emitter) once the
+  real position is known and the loading screen is acked — after `login` and `game`, like mineflayer. It is emitted
+  again after a dimension change and (U9) after a respawn.
+- **Tests:** `test/unit/lifecycle.test.js`, `test/external/coreJoin.test.js`.
+
+#### Kick reason  {#kick-reason}
+- **Affects:** `kicked` event.
+- **Java:** `reason` is a JSON chat component (string, or an object since 1.20.3); `loggedIn` tells the play state
+  from the login state.
+- **Bedrock:** `disconnect { reason: <code>, hide_disconnect_reason, message }`; the message is free text or a
+  translation key (`disconnectionScreen.serverFull`), often empty (then only the code says why, e.g.
+  `server_id_conflict`, `missing_client`).
+- **mineflayer-bedrock:** `reason` = the message, or the reason code name when the message is empty or hidden;
+  `loggedIn` = start_game was received. bedrock-protocol closes the connection after a kick → `end`.
+- **Tests:** `test/unit/game.test.js`, `test/external/coreKick.test.js`.
+
+#### Keep-alive  {#keep-alive}
+- **Affects:** internal test "responds to ping / transaction packets".
+- **Java:** `ping` → `pong`, keep-alive packets.
+- **Bedrock:** `network_stack_latency { timestamp, needs_response }`.
+- **mineflayer-bedrock:** bedrock-protocol answers `network_stack_latency` with the same timestamp; game.js needs
+  no handler.
+- **Tests:** `test/unit/game.test.js`.
+
+#### Entity id at login  {#entity-id-login}
+- **Affects:** internal test "entity id changes on login".
+- **Java:** a proxy may send a second login packet with a new entity id.
+- **Bedrock:** start_game is sent once per connection; a server transfer is a new connection.
+- **mineflayer-bedrock:** `bot.entity.id = Number(start_game.runtime_entity_id)` (+ `bot.entity.uniqueId` =
+  `start_game.entity_id`); the re-login half of the upstream test cannot happen.
+- **Tests:** `test/unit/entities_self.test.js`.
+
+#### Entity metadata, attributes, effects of the local player  {#entity-metadata}
+- **Affects:** `bot.entity.metadata`, `bot.entity.attributes`, `bot.entity.effects`, `entityUpdate`,
+  `entityAttributes`, `entityEffect(End)`, `entityCrouch`/`Uncrouch`, `entityElytraFlew`, `entitySleep`/`Wake`.
+- **Java:** metadata indexed by number; attribute values are base values + modifiers.
+- **Bedrock:** metadata keys are names (`flags`, `flags_extended`, `air`, `nametag`, …); `update_attributes` sends
+  the CURRENT value (modifiers already applied) with min/max/default; effects use Bedrock ids.
+- **mineflayer-bedrock:** `bot.entity.metadata[<name>]` (named properties of prismarine-entity's metadata array);
+  flags drive `crouching`, `sprinting`, `swimming`, `onFire`, `elytraFlying`, sleeping events. Attributes are keyed
+  by the Java resource name (U2 dataset), `value` is the base value recovered from `current` and the modifiers
+  (`minecraft:health` → `minecraft:max_health` = its max), plus `current`, `min`, `max`, `default`; Bedrock-only
+  attributes keep their Bedrock name. Effects: `bot.entity.effects[<Bedrock id>] = { id, amplifier, duration }`.
+  `set_health` sets `bot.entity.health`.
+- **Tests:** `test/unit/entities_self.test.js`.
+
+#### Local player record  {#self-player}
+- **Affects:** `bot.player`, `bot.players[bot.username]`.
+- **Java:** from player_info (skin textures, ping, gamemode).
+- **Bedrock:** `player_list` (before start_game) with raw skin images and no ping.
+- **mineflayer-bedrock:** `{ username, uuid, displayName, gamemode, ping: 0, entity, skinData: undefined }`. U7 owns
+  every other player.
+- **Tests:** `test/unit/entities_self.test.js`.
+
+#### Waterlogging (block layer 1)  {#waterlogging}
+- **Affects:** `bot.blockAt`, `blockUpdate`, `bot.world`.
+- **Java:** a `waterlogged=true` block state.
+- **Bedrock:** a second block storage layer: layer 0 is the block, layer 1 the liquid (`update_block.layer`,
+  `update_subchunk_blocks.extra`, two-layer sub-chunks).
+- **mineflayer-bedrock:** `blockAt()` returns the layer-0 block; when layer 1 holds water it carries
+  `block.superimposed` (the layer-1 Block), `block.computedStates.waterlogged = true` and `block.isWaterlogged = true`
+  (prismarine-chunk's Bedrock representation; the U4 patch only superimposes non-air layer-1 entries). Layer-1
+  updates emit `blockUpdate` like layer 0. BDS sends only layer 0 when a block replaces water or a waterlogged block:
+  the liquid layer follows Bedrock's rule ([liquid layer](differences/W3FIXB.md#liquid-layer)).
+- **Tests:** `test/unit/blocks.test.js`.
+
+#### Commands  {#commands}
+- **Affects:** `bot.chat('/…')`.
+- **Java:** chat commands (`chat_command` packet).
+- **Bedrock:** `command_request { command, origin: { type: 'player', uuid, request_id, player_entity_id }, internal,
+  version }` → `command_output` (the origin uuid is echoed).
+- **mineflayer-bedrock:** `bot.chat('/…')` sends a `command_request` with a fresh origin uuid (never a chat
+  message); every `command_output` line becomes a `message` (position 'system', `translate` = its message id).
+  `bot._bedrock.commands.request(cmd)` resolves with the matching output (internal); a successful command without
+  output resolves with an empty one ([commands without output](differences/W3FIXB.md#silent-commands)).
+- **Tests:** `test/unit/chat.test.js`, `test/external/coreChat.test.js`.
+
+#### `/op` from a player  {#op-command}
+- **Affects:** ported tests that `bot.chat('/op …')` (exampleBee) and wait for `commands.op.success`.
+- **Java:** an operator player may op others.
+- **Bedrock:** BDS answers `commands.generic.error.permissions` to players with the 'operator' permission level
+  (the harness default); /op needs the console or a higher level.
+- **mineflayer-bedrock:** the output is still a `message`; tests op through the console (`bot.test.command`).
+- **Tests:** `test/external/coreChat.test.js`.
+
+#### Chat messages  {#chat-messages}
+- **Affects:** `message`, `messagestr`.
+- **Java:** player chat (signed) and system chat as JSON components.
+- **Bedrock:** `text` packets: chat / whisper / announcement (sender + § formatted text), raw / system / tip / popup
+  (§ text), translation / popup with `%key` references and parameters, json* (rawtext JSON).
+- **mineflayer-bedrock:** chat → `{ translate: 'chat.type.text', with: [name, message] }` ("<name> message",
+  position 'chat', sender = the player's uuid when known); whisper → `commands.message.display.incoming`;
+  announcement / json_whisper / json_announcement → 'chat'; raw / system / translation / json → 'system';
+  tip / popup / jukebox_popup → 'game_info'. `%key` and rawtext `translate` resolve through `registry.language`;
+  `verified` is null (no chat signing on Bedrock). U6 completes chat (patterns, whisper, actionBar, …).
+- **Tests:** `test/unit/chat.test.js`, `test/external/coreChat.test.js`.
+
+#### Language formats  {#language-formats}
+- **Affects:** every ChatMessage `toString()` of a Bedrock translation key.
+- **Java:** `%s` / `%1$s` formats.
+- **Bedrock:** the en_US language also uses `%1$d`, `%d`, `%.2f` and bare `%1`.
+- **mineflayer-bedrock:** `bot.registry.language` is normalized to the `%s` / `%N$s` forms prismarine-chat
+  substitutes (lib/registry.js), e.g. `commands.time.set` "Set the time to %1$s".
+- **Tests:** `test/unit/core.test.js`.
+
+#### Resource packs  {#resource-packs}
+- **Affects:** `resourcePack` event, `bot.acceptResourcePack()`, `bot.denyResourcePack()`.
+- **Java:** one pack per `resource_pack_send` / `add_resource_pack` (url + hash or uuid); the client answers
+  ACCEPTED + SUCCESSFULLY_LOADED or DECLINED; the server decides what a decline means.
+- **Bedrock:** all packs come in `resource_packs_info` during login (before start_game), with uuid, version and an
+  optional CDN url, no hash. The client answers `resource_pack_client_response` + a status name BDS checks:
+  'completed' (join), 'have_all_packs' (join without downloading; BDS sends resource_pack_stack, answered
+  'completed'), 'refused' / 'cancel' (BDS disconnects: `missing_client`, also for optional packs).
+- **mineflayer-bedrock:** `resourcePack(url, hash, uuid)` per pack with url = CDN url or '', hash = the Bedrock pack
+  id `<uuid>_<version>`. Without a listener the packs are accepted at once (as before); with one, the answer waits
+  for `acceptResourcePack()` ('completed') or `denyResourcePack()` ('have_all_packs' for optional packs = join
+  without them; 'refused' for required packs = BDS kicks, `kicked('missing_client', false)`). Packs are never
+  downloaded. Needs the bedrock-protocol patch (`client.holdResourcePacks` / `client.respondToResourcePacks`).
+- **Tests:** `test/unit/resource_pack.test.js`, `test/external/resourcePack.test.js`.
+
+## U5
+
+<!-- from docs/differences/U5.md -->
+Measured against BDS 1.26.51.1 (protocol 2193, bedrock-protocol 3.60.1). Method: the bot records every
+`player_auth_input` it sends and every `correct_player_move_prediction`; on a server started with
+`player-position-acceptance-threshold=0.001` and every sent position offset by +5 blocks the server never adopts the
+client position, so each correction (about every 6 ticks) carries the server's own simulation state. The engine was
+fitted until it reproduces those states offline; the recordings are kept as regression fixtures
+(`packages/mineflayer-bedrock/test/fixtures/physics/`, `test/unit/physics_traces.test.js`).
+
+#### Movement engine  {#engine}
+- **Affects:** `bot.physics` (and every field below), `bot.physics.simulatePlayer`, `bot.entity.velocity`,
+  mineflayer-pathfinder's simulations, `bot.physics.stepHeight`, `negligeableVelocity`, `soulsandSpeed`,
+  `honeyblockSpeed`, `honeyblockJumpSpeed`, `ladderMaxSpeed`, `playerHeight` (sneaking), `slowFalling`, `sprintingUUID`.
+- **Java:** prismarine-physics (Java 1.8–1.21 rules), client-authoritative position packets.
+- **Bedrock:** movement is server-authoritative with rewind: the client sends one `player_auth_input` per tick
+  (eye-level position, move vector, yaw, input flags, `delta`), BDS simulates the same inputs and corrects
+  positions that move further than its own result (or by more than the acceptance threshold). Measured rules that
+  differ from Java:
+  - float32 positions/velocities; the server takes the yaw from the float32 degrees on the wire and uses precise
+    sine/cosine (no 65536-entry table): a diagonal walk only matches with precise trigonometry;
+  - the move vector is normalized (a diagonal is (0.7071, 0.7071)), × 0.3 while sneaking, × 0.98;
+  - order of one tick: speed + friction from the previous tick's ground state → move vector → jump → climb → stuck
+    blocks → sneak edge avoidance → collide (Y, X, Z) with auto-step → step-on slowdown / bounce → gravity + drag →
+    friction; the reported `delta` is the velocity at the end of the tick (standing still: (0, −0.0784, 0));
+  - friction comes from the block at floor(pos − 0.5), else the block supporting the box, else 0.6 — standing on an
+    edge or walking off a ledge never uses air's 0.9;
+  - auto-step 0.5625 (Java 0.6); `negligeableVelocity` is 1e-6 (the velocity is only zeroed when |v|² < 1e-12);
+  - jump: vy = max(vy, 0.42 + 0.1 × jump boost), sprint-jump +0.2, 10-tick delay while held; honey jump × 0.6
+    (Java 0.5);
+  - sneak edge avoidance shrinks the box by 0.025, probes 1.01 × step height down and clips the velocity itself; the
+    sneaking box is 1.49 high (measured; `SNEAK_HEIGHT` in `lib/bedrock/constants.js`, also used for the
+    `height` of crouching players);
+  - climbing: falls at most 0.2/tick (Java 0.15); holding jump climbs 0.2/tick (then gravity: delta 0.1176); pushing
+    against the climbable keeps 0.2 as the end-of-tick velocity (delta 0.2); no horizontal clamp; sneaking holds on;
+  - collisions treat penetrations below 1e-4 as contact (float32 positions end up slightly inside the faces they rest
+    against);
+  - water gravity 0.005 (gravity / 16), lava 0.02; bubble columns act per block with the Java values;
+  - soul sand: ground speed × 0.544 (Java: velocity × 0.4); honey and slime: × (0.4 + 0.2 × |vy|) on the step
+    (Java honey: velocity × 0.4); slime bounces only when landing from the air;
+  - slow falling only while already falling (vy < 0) — the first tick from rest still uses 0.08;
+  - using an item (`bot.usingHeldItem` after a `click_air`: eating, drawing a bow, …): the impulse is clamped to ±0.1225
+    and sprinting stops (BDS drops the sprint modifier; the held sprint key sprints again afterwards); a raised shield
+    is a plain sneak ([W3-FIX-A](differences/W3FIX.md#item-use));
+  - BDS does not simulate the first input it processes after a teleport (see corrections);
+  - creative flight: +0.15 / −0.22 vertical per tick of jump / sneak, vertical drag 0.6, horizontal 0.91, no sprint
+    bonus, and an extra × 0.375 damping without input (flight stops within a few ticks).
+- **mineflayer-bedrock:** `lib/physics/engine.js` (prismarine-physics 1.11.1 fork) implements these rules with the
+  upstream module shape: `bot.physics` keeps the 31 upstream field names (Bedrock values: `stepHeight` 0.5625,
+  `negligeableVelocity` 1e-6, `soulsandSpeed` 0.544, `honeyblockSpeed` 0.4 = base of the step-on slowdown,
+  `honeyblockJumpSpeed` 0.6, `ladderMaxSpeed` 0.2, `waterGravity` 0.005, `sprintingUUID` = Bedrock's
+  "Sprinting speed boost" modifier); `simulatePlayer(state, world)` accepts prismarine-physics `PlayerState`s
+  (pathfinder) and our own (`require('mineflayer-bedrock/lib/physics').PlayerState`). `require('minecraft-data')
+  (bot.version)` resolves to the Bedrock data (upstream API contract) so prismarine-physics' `PlayerState` works.
+- **Tests:** `test/unit/physics.test.js`, `test/unit/physics_traces.test.js`, `test/unit/physics_contract.test.js`,
+  `test/external/physicsLoop.test.js` (60 s laps: 0 corrections at the default threshold, ≤ 1/100 ticks at 0.1).
+
+#### Server corrections, teleports, knockback, effects  {#corrections}
+- **Affects:** `forcedMove`, `move`, `bot.entity.position` / `velocity`, internalTest "absolute position & relative
+  position (velocity)".
+- **Java:** the server sends absolute/relative `position` packets; the client confirms the teleport.
+- **Bedrock:** `move_player` (teleport/reset) for teleports, `correct_player_move_prediction` (position at eye level,
+  `delta` = end-of-tick velocity, `on_ground`, `tick` of the corrected input) for mispredictions, `set_entity_motion`
+  for knockback. There are no relative teleports. Measured: `move_player.tick`, `set_entity_motion.tick`,
+  `mob_effect.tick` and `update_attributes.tick` are the last input the server had processed; it applies the change
+  from the next input on, and it does not simulate the first input it receives after a teleport.
+- **mineflayer-bedrock:** history of the last `rewind_history_size` (+20) inputs. A correction rewinds to its tick,
+  takes the server state and replays the inputs since (`forcedMove` is emitted). Teleports: position at the target,
+  velocity 0, `handled_teleport` in the next input; inputs already in flight are re-simulated from the target, else the
+  next input is not simulated. Knockback / effects / movement speed with a `tick` rewrite the inputs already sent from
+  that tick on and re-simulate them (the server still sends one correction for the input in flight; its state equals
+  ours). Velocity "relative" teleports do not exist; `set_entity_motion` sets the velocity.
+- **Tests:** `test/unit/physics_plugin.test.js` (rewind, teleport, knockback, effects), `test/external/physicsBlocks.test.js`.
+
+#### Input stream and suspension  {#input}
+- **Affects:** internalTests "no physics if there is no chunk", "no movement packets during a server transfer
+  configuration phase".
+- **Java:** position packets only when something changed (or once a second); no packets during the configuration
+  phase; no physics without a chunk.
+- **Bedrock:** one `player_auth_input` per server tick, always (the server drives the player from it); no
+  configuration phase — loading screens, dimension changes and death suspend the stream (`bot._bedrock.input.suspend`).
+- **mineflayer-bedrock:** without a loaded column the bot neither simulates nor emits `physicsTick` but keeps sending
+  its unchanged position; while the input queue is suspended nothing is sent.
+- **Tests:** `test/unit/physics_plugin.test.js` › "internalTest › physics › …".
+
+#### Looking  {#look}
+- **Affects:** `bot.look`, `bot.lookAt`, `bot.physics.yawSpeed`, `bot.physics.pitchSpeed`.
+- **Java:** the yaw sent to the server turns by at most `yawSpeed` per tick; `look` resolves once it arrived.
+- **Bedrock:** the rotation is part of every `player_auth_input`; the server moves the player with that yaw.
+- **mineflayer-bedrock:** the new yaw/pitch is sent in the next input (no gradual turn — the movement of that tick
+  already uses it, exactly as the server does); `look` resolves once that input was sent, `force` at once.
+  `yawSpeed`/`pitchSpeed` keep their upstream values but are unused.
+- **Tests:** `test/unit/physics_stub.test.js` › "look / lookAt …".
+
+#### Creative flight and flyTo  {#flight}
+- **Affects:** `bot.creative.flyTo` / `startFlying` / `stopFlying` (U8 delegates), `bot._bedrock.physics.setFlying`.
+- **Java:** the client toggles `abilities.flying` itself; upstream `flyTo` moves the bot in 0.5-block steps by
+  setting its position (no physics).
+- **Bedrock:** BDS starts/stops flight on `request_ability flying` (the auth-input `start_flying` flag alone is
+  ignored) and reports it with `update_abilities`; flight is simulated server-side (rules above). Double-tapping jump
+  (two presses a few ticks apart) toggles flight on the server too.
+- **mineflayer-bedrock:** `setFlying(on)` sends `request_ability` right before the next input (+ `start_flying` /
+  `stop_flying`) and follows `bot.abilities` (abilities.js parses `update_abilities` and derives game mode changes;
+  server-side changes send no request back — [W3-FIX-A](differences/W3FIX.md#abilities)). `flyTo(destination)` flies with real inputs: every tick it picks
+  forward-toward-the-target × jump / sneak / nothing by simulating each choice (then idle until stopped) with the
+  engine, never re-presses jump within 12 ticks, and resolves once stopped within 0.15 block (upstream: exactly at
+  the destination); it rejects when flight stops, on a teleport, or when blocked for 60 ticks.
+- **Tests:** `test/external/physicsFlight.test.js` (15 s hover + two flyTo with zero corrections),
+  `test/unit/physics_plugin.test.js`.
+
+#### Elytra  {#elytra}
+- **Affects:** `bot.elytraFly`, `bot.entity.elytraFlying`.
+- **Java:** `entity_action start_elytra_flying`.
+- **Bedrock:** `start_gliding` in `player_auth_input`; BDS only accepts it together with a jump press
+  (`jump_pressed_raw`, `jumping`, `start_jumping`, …) and confirms with the `gliding` actor flag; it can end the glide
+  (flag cleared). The glide itself follows the Java formula.
+- **mineflayer-bedrock:** same checks and errors as upstream (the chest slot is read from `bot.inventory` or, before
+  U8, from the raw armor window); gliding is predicted from the next input on and dropped when the server clears the
+  flag (rewinding from that tick) or has not confirmed it after 20 ticks.
+- **Tests:** `test/external/physicsFlight.test.js`, `test/unit/physics_plugin.test.js`.
+
+#### Vehicles  {#vehicles}
+- **Affects:** `bot.moveVehicle` (seed owner U7).
+- **Java:** `steer_vehicle` / `player_input`.
+- **Bedrock:** the rider's `player_auth_input` carries the move vector, `client_predicted_vehicle` with the vehicle's
+  unique id and rotation, and paddle flags for boats.
+- **mineflayer-bedrock:** `moveVehicle(left, forward)` keeps the input until changed (upstream semantics) and the
+  provider sends it every tick while `bot.vehicle` is set; no player physics while riding.
+- **Tests:** `test/external/vehicles.test.js` › "moveVehicle steers the boat (physics plugin, U5)",
+  `test/unit/physics_plugin.test.js`.
+
+#### Known residuals  {#residuals}
+- Approximate (a correction is possible; the server state is then taken over and replayed): landing on honey while
+  jumping, slime bounce heights (within 0.01 block), bubble column surfaces, powder snow (< 2 mm per 6 ticks), taking
+  off from the ground in creative flight (one 3 cm correction at the default threshold; the strict probe agrees).
+- Not modelled: swimming (sprinting in water does not start swimming), crawling / gliding poses (box height), being
+  pushed out of blocks (BDS pushes 0.1/tick), scaffolding, entity collisions (boats, shulkers), double-tap-jump
+  flight toggles in creative (the server's update_abilities is followed), float32 precision far from the origin.
+- `bot._bedrock.input` (input_queue.js) is unchanged: the clock is not re-anchored by corrections — tick numbers only
+  identify inputs for the server's rewind, and one engine step runs per sent tick, so a skipped (catch-up) tick is
+  skipped on both sides.
+
+#### Recorded traces  {#traces}
+`packages/mineflayer-bedrock/test/fixtures/physics/<scenario>.json.gz` (26 scenarios: walk, sprint, jump, sprint-jump,
+sneak, diagonal, stairs, slabs, ledge, sneak edge, ladder, vine, water, lava, cobweb, soul sand, honey, slime, powder
+snow, bubble columns, effects, knockback, creative flight phases, flyTo, elytra, walking / sprinting with a drawn
+bow): the console commands that built the world, every input (controls, yaw/pitch, move vector, flight/glide state,
+effects, movement speed, item use), and every server correction / teleport / motion / effect with its tick.
+`test/unit/physics_traces.test.js` replays each interval between two server states: 20 scenarios match to 1e-5 in
+every interval; the limits of the 6 others are listed in the test (residuals above). The bubble column trace covers
+the upward column only (BDS forms a column when the soul sand / magma goes under existing water; replacing the base
+later did not convert it); the downward column is covered by `test/external/physicsBlocks.test.js`.
+
+## U6
+
+<!-- from docs/differences/U6.md -->
+Observed against BDS 1.26.51.1 (protocol 2193, bedrock-protocol 3.60.1): the U0 capture
+(`packages/mineflayer-bedrock/test/fixtures/1.26.51/join_flat.jsonl.gz`), packet probes of every command below on a
+live server (shapes recorded in `test/unit/hud.test.js`), and the `test/external/{chat,complete,title,bossBar,
+scoreboard,sound,particles,team,tablist}.test.js` suites.
+
+#### Chat messages and text types  {#chat-messages}
+- **Affects:** `message`, `messagestr`, `chat`, `whisper`, `actionBar` (positions and rendering).
+- **Java:** player chat (signed) and system chat as JSON components; `/tellraw` is system chat; the action bar is
+  system chat with `overlay`.
+- **Bedrock:** `text` packets: `chat` / `whisper` (`source_name` + text), `announcement` (`/say`: "[name] text"),
+  `raw` / `system` / `tip` (§ text), `translation` / `popup` / `jukebox_popup` (`%key` + parameters), `json` /
+  `json_whisper` / `json_announcement` (rawtext). `/tellraw` arrives as `json_whisper`; `/me` as `chat` with an
+  empty `source_name` and the message "* name action"; `/tell` as `whisper` to the target and a
+  `commands.message.display.outgoing` command_output to the sender.
+- **mineflayer-bedrock:** everything becomes a prismarine-chat `ChatMessage` (`lib/bedrock/text.js`): chat →
+  `{ translate: 'chat.type.text', with: [name, text] }` ("<name> text"), whisper → `commands.message.display.incoming`
+  ("name whispers to you: text"), `/me` → the message as sent, `%key` / rawtext `translate` through
+  `registry.language` (literal rawtext formats: `%%s` / `%1` placeholders). Positions: chat / whisper /
+  announcement → `chat`; raw / system / translation / json / json_whisper (tellraw) / json_announcement → `system`;
+  tip / popup / jukebox_popup → `game_info` (+ `actionBar`). `verified` is always null (no chat signing). The sender
+  uuid is passed when `bot.players` knows the sender.
+- **Tests:** `test/unit/text.test.js`, `test/unit/chat_patterns.test.js`, `test/external/chat.test.js`.
+
+#### `§` formatting codes  {#formatting}
+- **Affects:** `ChatMessage` styles of every Bedrock text (`toMotd`, `toAnsi`, `color`, …); `toString()` is the same.
+- **Java:** `§0`–`§f` colours, `§k` `§l` `§m` (strikethrough) `§n` (underline) `§o`, `§r`; a colour code resets the
+  formats.
+- **Bedrock:** additional material colours `§g` `§h` `§i` `§j` `§m` `§n` `§p` `§q` `§s` `§t` `§u` `§v` (so `§m` and
+  `§n` are colours, there is no strikethrough/underline), and colour codes do not reset bold/italic/obfuscated.
+- **mineflayer-bedrock:** text.js parses § codes itself (no prismarine-chat patch): material colours become hex
+  colours (`§g` → `#DDD605`, …), formats persist over colour codes, `§r` resets, unknown codes are dropped.
+- **Tests:** `test/unit/text.test.js` › "§ codes with Bedrock semantics…".
+
+#### Default chat patterns (`chat` / `whisper` events)  {#default-chat-patterns}
+- **Affects:** `chat`, `whisper`, `bot.chatAddPattern`, `bot.addChatPattern`, `bot.removeChatPattern`.
+- **Java:** mineflayer registers three deprecated regex patterns (two whisper formats and the legacy
+  "<name> text" chat format) and emits `chat` / `whisper` (username, message, translate, jsonMsg) when a
+  `messagestr` matches.
+- **Bedrock:** player chat, whispers and `/say` announcements (`source_name: name, message: '[name] text'`) name their
+  sender in the packet; Bedrock gamertags may contain spaces, which `(\w+)` cannot capture.
+- **mineflayer-bedrock:** the same three default patterns are registered (same names and indices, removable,
+  `defaultChatPatterns: false` disables them). For a `chat` / `whisper` / `announcement` packet with a sender they take
+  username and message from the packet (one event per packet); an announcement is the message
+  `{ translate: 'chat.type.announcement', with: [name, text] }` ("[name] text") and its `chat` event carries that
+  translate, like Java's say_command chat type (W3-FIX-B). Every other message goes through the upstream regexes
+  (e.g. `/tellraw` "<U9G> Hello"). User patterns always use their regexes.
+  Pattern bookkeeping (repeat, parse, sets, removal by name/number, return values) is upstream's code.
+- **Tests:** `test/unit/chat_patterns.test.js`, `test/external/chat.test.js` › "chat / whisper events from a second
+  player…", `test/external/chatCommands.test.js` › "/say → chat …".
+
+#### `unmatchedMessage`  {#unmatched-message}
+- **Affects:** `unmatchedMessage` event.
+- **Java:** declared in mineflayer 4.39.0's index.d.ts (`(stringMsg, jsonMsg)`) but never emitted by its plugins.
+- **Bedrock:** —
+- **mineflayer-bedrock:** emitted for every message that no chat pattern matched (the pre-4.x mineflayer meaning of the
+  declared event), after `messagestr`.
+- **Tests:** `test/unit/chat_patterns.test.js` › "unmatchedMessage…", `test/external/chat.test.js` › "actionBar…".
+
+#### `bot.whisper`  {#whisper}
+- **Affects:** `bot.whisper(username, message)`.
+- **Java:** `chatWithHeader('/tell <username> ', message)`.
+- **Bedrock:** `/tell <target> <message>` (aliases `/w`, `/msg`); a target with spaces must be quoted.
+- **mineflayer-bedrock:** upstream's `/tell` header (sent as command requests), a player name quoted when it is not a
+  plain word; a selector (`@p`, `@a[r=5]`, …) is sent verbatim like upstream (a quoted `"@p"` matches no target on
+  BDS; W3-FIX-B). When the header alone reaches `chatLengthLimit`, upstream splits forever; mineflayer-bedrock throws
+  instead.
+- **Tests:** `test/unit/chat_patterns.test.js` › "whisper(username, message)…", `test/unit/chat.test.js` ›
+  "bot.whisper: selectors verbatim …", `test/external/chat.test.js`, `test/external/chatCommands.test.js` ›
+  "bot.whisper('@p', …) …".
+
+#### Ported chat test  {#chat-tests}
+- **Affects:** test `chat` (externalTests/chat.js).
+- **Java:** `/tellraw @p {"translate":…}` (a JSON component); "test message event" translates `language.name` →
+  "English".
+- **Bedrock:** `/tellraw` only takes rawtext (`{"rawtext":[…]}`; a component is refused with
+  `commands.tellraw.error.notArray`); the Bedrock language has no `language.name`.
+- **mineflayer-bedrock:** the test wraps each component in `{"rawtext":[…]}` and translates `options.language`
+  ("Language"); everything else is verbatim (bot named `flatbot`, the same patterns and strings).
+- **Tests:** `test/external/chat.test.js`.
+
+#### `bot.tabComplete`  {#tab-complete}
+- **Affects:** `bot.tabComplete(str, assumeCommand, sendBlockInSight, timeout)`, test `complete`.
+- **Java:** a `tab_complete` request answered by the server (brigadier suggestions for the last word, with the
+  looked-at block for block positions).
+- **Bedrock:** no tab-complete packet; the client completes from the `available_commands` tree (enums, soft enums
+  updated by `update_soft_enum`, chained subcommands for /execute, command aliases).
+- **mineflayer-bedrock:** completes client-side from `available_commands` (`lib/bedrock/commands.js`) with upstream's
+  shape (`tabCompleteHasAToolTip` → `[{ match, tooltip: undefined }]`): command names/aliases, enum values, soft
+  enums, player names + selectors (`@a @e @initiator @p @r @s`) for targets, `~` forms for coordinates, `/execute …
+  run <command>` recursively; plain chat completes online player names. It waits up to `timeout` for
+  `available_commands` (rejecting like upstream). `sendBlockInSight` has no effect. Results follow Bedrock's command
+  set: `/weather ` → clear, **query**, rain, thunder (the ported test expects `query` too).
+- **Tests:** `test/unit/tab_complete.test.js`, `test/external/complete.test.js`.
+
+#### Titles  {#titles}
+- **Affects:** `title`, `title_times`, `title_clear`.
+- **Java:** `set_title_text` / `set_title_subtitle` (JSON components), `set_title_time`, `clear_titles`.
+- **Bedrock:** `set_title { type: set_title | set_subtitle | set_title_json | set_subtitle_json | set_durations |
+  clear | reset | action_bar_message(_json), text, fade_in_time, stay_time, fade_out_time }` (`/title` sends the
+  rest of the line as text, `/titleraw` rawtext).
+- **mineflayer-bedrock:** set_title / set_subtitle → `title(parseTitle(text), 'title'|'subtitle')` with upstream's
+  parseTitle (so `/title @a title {"text":"Test Title"}` gives "Test Title" and the upstream test runs verbatim;
+  plain text keeps its § codes like upstream's raw text); *_json → the rawtext rendered as plain text;
+  set_durations → `title_times`; clear and reset → `title_clear`; action bar → `actionBar` (see below).
+- **Tests:** `test/unit/hud.test.js`, `test/external/title.test.js`.
+
+#### Action bar  {#action-bar}
+- **Affects:** `actionBar` event.
+- **Java:** system chat with `overlay` → `message` + `messagestr` (game_info) + `actionBar`; `/title … actionbar`
+  (set_action_bar_text) emits nothing in mineflayer 4.39.0.
+- **Bedrock:** `text` tip / popup / jukebox_popup and `set_title` action_bar_message(_json) all show on the action
+  bar.
+- **mineflayer-bedrock:** each of them → `message` + `messagestr` at `game_info`, then `actionBar(jsonMsg, null)`.
+- **Tests:** `test/unit/chat_patterns.test.js` › "actionBar…", `test/external/chat.test.js` › "actionBar…".
+
+#### Boss bars  {#boss-bars}
+- **Affects:** `bot.bossBars`, `bossBarCreated`, `bossBarUpdated`, `bossBarDeleted`, `BossBar` fields, test `bossBar`.
+- **Java:** `/bossbar` creates server-side bars (uuid, title, health, colour, style, flags); `boss_bar` actions add /
+  remove / update.
+- **Bedrock:** no `/bossbar`; bars belong to boss entities (wither, ender dragon). `boss_event { target_entity_id,
+  type, title, progress, color, overlay }`: BDS sends `show_bar` when the boss appears and then again about once a
+  second with the current progress; it never sent `hide_bar` in our probes — the client drops the bar with the
+  entity (`remove_entity` after the death animation, or when the boss leaves the view). An unnamed boss's title is
+  a translation key (`entity.wither.name`); a name tag replaces it (except the ender dragon's). Colours: pink, blue,
+  red, green, yellow, purple, **rebecca_purple** (the wither), white. A wither despawns on peaceful.
+- **mineflayer-bedrock:** the first `show_bar` per boss → `bossBarCreated`; a later `show_bar` that changes a field
+  (the once-a-second repeats usually do not, like Java only sends changes) and set_bar_progress / set_bar_title /
+  update_properties / texture → `bossBarUpdated`; `hide_bar`, `remove_entity` of the boss and a
+  dimension change → `bossBarDeleted`. `entityUUID` = the boss's unique id (string), `title` a ChatMessage
+  (translated), `health` = progress, `dividers` from the overlay (0, 6, 10, 12, 20), `color` = the Bedrock colour
+  name (BossBar subclass; typed in index.d.ts), flags from the boss type when the entity is known (wither: darken
+  sky; ender dragon: dragon bar + fog), else 0.
+- **Tests:** `test/unit/hud.test.js`; `test/external/bossBar.test.js` (summoned wither on `easy`: create with a
+  name tag, update while it charges, delete with `/kill`; plus an unnamed wither teleported out of view).
+
+#### Scoreboards  {#scoreboards}
+- **Affects:** `bot.scoreboards`, `bot.scoreboard`, `scoreboardCreated`, `scoreboardDeleted`,
+  `scoreboardTitleChanged`, `scoreUpdated`, `scoreRemoved`, `scoreboardPosition`, test `scoreboard`.
+- **Java:** every objective is sent to every client (`scoreboard_objective`), scores by entity name, display slots
+  0 list / 1 sidebar / 2 belowName (+ team sidebars).
+- **Bedrock:** a client only learns about **displayed** objectives: `set_display_objective { display_slot: list |
+  sidebar | belowname, objective_name, display_name, criteria_name, sort_order }` (an empty name clears the slot),
+  then `set_score` with the objective's scores; `set_score` entries are keyed by a scoreboard id (player / entity:
+  unique id; fake player: custom name; `remove` entries carry only the id); `remove_objective`. Only the `dummy`
+  criterion exists; no team sidebars.
+- **mineflayer-bedrock:** an objective appears in `bot.scoreboards` when it is first displayed (`scoreboardCreated`;
+  `title` = the plain display name, also when it looks like JSON, e.g. "2024"), a changed display name →
+  `scoreboardTitleChanged`, `scoreboardPosition(position, scoreboard, previous)` with Java's slot numbers; clearing a
+  slot empties it (no event). An objective displayed in ascending order (`sort_order` 0) lists `items` lowest first,
+  like the Bedrock client (Java has only descending). Scores: `scoreUpdated` / `scoreRemoved` with upstream's
+  ScoreBoard items; item names = fake player name, player username (self, player_list, bot.players), or an entity's
+  unique id. `remove_objective` → `scoreboardDeleted` and clears its slots. The upstream test body is commented out
+  (ported as is); its scenario runs adapted (dummy objectives, `/scoreboard players add|set|reset` instead of
+  health/deathCount and `/kill`).
+- **Tests:** `test/unit/hud.test.js`, `test/external/scoreboard.test.js`.
+
+#### Sounds  {#sounds}
+- **Affects:** `soundEffectHeard`, `hardcodedSoundEffectHeard`, test `sound`.
+- **Java:** `sound_effect` (registry id or named sound, category, position × 8, volume, pitch).
+- **Bedrock:** `play_sound { name, coordinates (× 8), volume, pitch }` for `/playsound` (BDS forwards any name, e.g.
+  `note.harp`, `gui.button.press`); `level_sound_event { sound_id (name, e.g. 'armor.equip_iron'), position,
+  extra_data, entity_type, … }` for the game's own sounds, without volume or pitch.
+- **mineflayer-bedrock:** play_sound → `soundEffectHeard(name, position, volume, pitch)`; level_sound_event →
+  `soundEffectHeard(name, position, 1, pitch)` (pitch 1, or Java's note pitch for note blocks), an id that cannot be
+  named → `hardcodedSoundEffectHeard(id, 'master', position, 1, pitch)` (no categories on Bedrock). The `noteHeard`
+  part of the upstream test belongs to U9 (block_actions): `sound.test.js` › "sound noteHeard".
+- **Tests:** `test/unit/hud.test.js`, `test/external/sound.test.js`.
+
+#### Particles  {#particles}
+- **Affects:** `particle` event, `Particle` export, test `particles`.
+- **Java:** `world_particles` (particle type, position, offset, count, speed, long distance); `/particle <name> x y z
+  dx dy dz speed count force`.
+- **Bedrock:** `/particle <effect> [x y z]` only → `spawn_particle_effect { dimension, entity_id, position,
+  particle_name, molang_variables }` (BDS forwards any effect name); particles the game spawns itself use
+  `level_event` `add_particle_<type>` (0x4000 | type). No offset, count, speed or long-distance flag on the wire.
+  Particle type ids start at 1.
+- **mineflayer-bedrock:** `Particle` (export and event) is mineflayer's class extended with a Bedrock
+  `fromNetwork`: spawn_particle_effect → `id` = the effect name, resolved through `registry.particles` when it is a
+  particle type name (`bubble` → id 1), else the identifier stays the `id` and becomes the `name` too
+  (`minecraft:heart_particle`); level_event `add_particle_*` → the type id and name (the two particle events outside
+  the 0x4000 range, `add_particle_smash_attack_ground_dust` / `add_particle_creaking_heart_trail`, keep their name as
+  id). `offset` (0, 0, 0), `count` 1,
+  `movementSpeed` 0, `longDistanceRender` false. The ported test uses `registry.particlesArray[0]`, asserts id, name
+  and position (within 0.01) and the default offset/count/speed.
+- **Tests:** `test/unit/hud.test.js`, `test/unit/core.test.js`, `test/external/particles.test.js`.
+
+#### No teams  {#no-teams}
+- **Affects:** `bot.teams`, `bot.teamMap`, `teamCreated`, `teamRemoved`, `teamUpdated`, `teamMemberAdded`,
+  `teamMemberRemoved`, test `team`.
+- **Java:** `/team` (or `/scoreboard teams`) and the `teams` packet.
+- **Bedrock:** no teams at all: `/team` is an unknown command, `/scoreboard teams` a syntax error, no team packet.
+- **mineflayer-bedrock:** `bot.teams = {}` and `bot.teamMap = {}` forever; team events are never emitted.
+  ScoreBoard items' `displayName` falls back to the plain name (upstream's no-team path).
+- **Tests:** `test/external/team.test.js` (upstream test skipped; a Bedrock test asserts the refused commands and the
+  empty properties), `test/unit/hud.test.js`.
+
+#### No tab-list header / footer  {#no-tablist-header}
+- **Affects:** `bot.tablist.header`, `bot.tablist.footer`, internal test "tablist › handles newlines in header and
+  footer".
+- **Java:** `playerlist_header` sets the header and footer of the tab list.
+- **Bedrock:** the player list has no header or footer (no such packet in protocol 2193).
+- **mineflayer-bedrock:** `bot.tablist = { header, footer }` stay empty ChatMessages.
+- **Tests:** `test/unit/tablist.test.js`, `test/external/tablist.test.js`.
+
+## U7
+
+<!-- from docs/differences/U7.md -->
+Observed against BDS 1.26.51.1 (protocol 2193, bedrock-protocol 3.60.1) with wire probes (two bots, `/summon`,
+`/querytarget`, `/ride`, `/damage`, `/kill`, `setblock … destroy`) and the e2e suites
+`packages/mineflayer-bedrock/test/external/{entities,players,vehicles,animals,mobFights,displayName}.test.js`; the
+packet handling is unit-tested in `packages/mineflayer-bedrock/test/unit/entities.test.js` (recorded `join_flat`
+capture + synthesized packets).
+
+#### Entity positions on the wire  {#positions}
+- **Affects:** `entity.position` of every entity but the bot, `entitySpawn`, `entityMoved`.
+- **Java:** spawn / move / teleport packets carry the feet position (or deltas of it).
+- **Bedrock (measured):** `add_player` is **feet** level (a player standing on y = -59: `add_player.position.y = -59`,
+  `/querytarget` eye -57.38), but `move_player` of other players is **eye** level (feet + 1.62, also while sneaking).
+  `add_entity`, `add_item_entity`, `move_entity` and `move_entity_delta` are feet level plus a per-type offset:
+  item 0.125, primed TNT and falling blocks 0.49, boats and chest boats 0.375, minecarts (all kinds) 0.35, every mob,
+  armor stand, XP orb, arrow, end crystal 0. `move_entity_delta` (1.26.40+) carries ABSOLUTE coordinates, each one
+  optional (absent = unchanged), and byte rotations (×360/256: `rot_x` pitch, `rot_y` yaw, `rot_z` head yaw; `/tp …
+  90 30` of an armor stand → `rot_x` 21, `rot_y` 64). `move_entity.rotation` is already in degrees, in the same wire
+  order (pitch, yaw, head yaw — PocketMine / gophertunnel / dragonfly) although bedrock-protocol labels the three
+  bytes `yaw`, `pitch`, `head_yaw`; BDS 1.26.51.1 itself sent only `move_entity_delta` in every probe (teleported mobs,
+  armor stands, minecarts, boats, arrows). Bedrock clients simulate items between sparse updates
+  (`set_entity_motion`), so an item's last reported position can lag its resting place by a few tenths of a block.
+- **mineflayer-bedrock:** `entity.position` is always the feet position: the per-type offsets
+  (`POSITION_OFFSETS` in `lib/plugins/entities.js`) and the player eye height are removed per packet. Yaw / pitch /
+  `headYaw` are radians (mineflayer's notchian conversions); `move_entity`'s labelled `yaw` byte is read as the pitch
+  and `pitch` as the yaw (W3-FIX-B).
+- **Tests:** `test/unit/entities.test.js` › "positions: …"; `test/external/entities.test.js` (feet y of every family,
+  before and after a teleport), `test/external/players.test.js` › "entityMoved: a teleport …".
+
+#### Entity ids  {#entity-ids}
+- **Affects:** `entity.id`, `bot.entities` keys, every entity event.
+- **Java:** one int entity id per entity; packets for unknown ids create the entity on the fly (`fetchEntity`).
+- **Bedrock:** a runtime id (varint64, most packets) and a unique id (zigzag64; `remove_entity`, `set_entity_link`,
+  `player_list`, `update_player_game_type`; `add_player.unique_id` is an li64 that protodef reads as `[high, low]`).
+- **mineflayer-bedrock:** `entity.id = Number(runtime id)`; `entity.runtimeId` / `entity.uniqueId` are BigInt and the
+  pair is tracked in `bot._bedrock.ids`. Packets about runtime ids that were never added are ignored instead of
+  creating empty entities at (0, 0, 0). After a dimension change every other entity is dropped (`entityGone` each),
+  like the Java client discarding its old world.
+- **Tests:** `test/unit/entities.test.js` › "positions: …" (no ghost entities), "nearestEntity skips the bot; …
+  dimension change drops the entities".
+
+#### Entity names, types and metadata  {#metadata}
+- **Affects:** `entity.name`, `displayName`, `type`, `kind`, `entityType`, `entity.metadata`, `entity.uuid`,
+  `entity.getCustomName()`, internal test "metadata".
+- **Java:** registry names/ids, metadata indexed by number, a UUID for every entity.
+- **Bedrock:** identifiers like `minecraft:villager_v2`, `minecraft:xp_orb`; metadata keys are names (`flags`,
+  `nametag`, `variant`, …); only players have a UUID on the wire.
+- **mineflayer-bedrock:** name / displayName / type / kind / entityType / width / height come from
+  `registry.entitiesByName` (Bedrock names, U2 data; types `hostile`, `animal`, `passive`, `ambient`, `mob`, `living`,
+  `projectile`, `other`, `player` like modern Java; an unknown identifier → type `other`, name/displayName `unknown`,
+  `entityType` = the identifier). `entity.metadata[<Bedrock key>]` (named properties of the metadata array, merged per
+  packet). `entity.uuid` is set for players only. `getCustomName()` reads the `nametag` key ('' = none) — a
+  prismarine-entity patch. Bedrock mobs such as foxes use the same sneaking flag as players: `entityCrouch` /
+  `entityUncrouch` fire for them, but only players get the crouching hitbox (1.5 high, eyes at 1.27).
+  Extras: `entity.health` (current health of living entities, from `minecraft:health`),
+  `entity.count` of XP orbs (`experience_value`), `entity.sleeping`.
+- **Tests:** `test/unit/entities.test.js` › "internalTest › entities › metadata"; `test/external/entities.test.js`
+  (registry data per family, name tags).
+
+#### Display names  {#display-name}
+- **Affects:** `player.displayName`, test `displayName`, internal test "player displayName".
+- **Java:** player_info carries an optional display name (team prefixes, `update_display_name`).
+- **Bedrock:** `player_list` has no display name; name tags are entity metadata.
+- **mineflayer-bedrock:** `player.displayName` is always the username (a ChatMessage, like upstream's default).
+- **Tests:** `test/external/displayName.test.js` (verbatim), `test/unit/entities.test.js` › "internalTest › entities ›
+  player displayName".
+
+#### Skins  {#skin-data}
+- **Affects:** `player.skinData`, internal tests "does not crash when skin texture is mojangson format / valid JSON".
+- **Java:** a `textures` property (base64 JSON or mojangson) → `{ url, model, capeUrl }`.
+- **Bedrock:** `player_list` carries raw skin images (RGBA buffers, geometry JSON), no texture URL.
+- **mineflayer-bedrock:** `skinData` is `undefined` for every player; malformed or truncated skin records never throw.
+- **Tests:** `test/unit/entities.test.js` › "internalTest › entities › player_list skin data does not crash".
+
+#### Player list  {#player-list}
+- **Affects:** `bot.players`, `bot.player`, `bot.uuidToUsername`, `playerJoined`, `playerUpdated`, `playerLeft`,
+  `player.ping`, `player.gamemode`.
+- **Java:** player_info add / update_game_mode / update_latency / update_display_name / remove.
+- **Bedrock:** `player_list` add / remove only — the players already online arrive BEFORE `start_game`, the last
+  record of a packet may be truncated (`maybeIncompleteArray`); no latency; game mode changes come as
+  `update_player_game_type { gamemode, player_unique_id }` (BDS sends it to every player); a re-sent record (the
+  full list after the bot's own join) is an update.
+- **mineflayer-bedrock:** records received before `start_game` are applied after its reset (upstream resets the
+  lists on login), once that login's `login` and `game` events were handled (upstream's order: player_info follows
+  the login packet, so `bot.game` is set) — `playerJoined` fires for each, the bot included (W3-FIX-B); truncated
+  records are ignored; `ping` is 0;
+  `gamemode` starts at the world default (the bot: its start_game mode) and follows `update_player_game_type`
+  (`playerUpdated`); `playerUpdated` never fires for latency / display names.
+- **Tests:** `test/unit/entities.test.js` › "player_list: before start_game …", "player_list: playerJoined (the bot
+  and the players already online) comes after login and game, like upstream"; `test/external/players.test.js`,
+  `test/external/entityExtras.test.js` › "a joining bot: login → game → playerJoined …".
+
+#### Hurt and death  {#hurt-death}
+- **Affects:** `entityHurt`, `entityDead`.
+- **Java:** `damage_event` (1.20+; with the source entity) for every damage, `entity_status 3` for the death.
+- **Bedrock:** `entity_event hurt_animation` (data = damage cause, no source entity) for non-lethal damage;
+  the lethal hit (and `/kill`) sends `death_animation` only.
+- **mineflayer-bedrock:** `hurt_animation` → `entityHurt(entity)` (no `source` argument: Bedrock does not say who hit);
+  `death_animation` → `entityHurt(entity)` for the killing blow (unless a hurt_animation for it came in the same packet
+  batch, i.e. the same server tick — batches are counted at bedrock-protocol's batch entry points, not per event-loop
+  turn, so batches read back to back stay apart) then `entityDead(entity)`, matching Java's damage_event + status
+  order. The local player gets both too.
+- **Tests:** `test/unit/entities.test.js` › "entity_event / animate → …", "killing blow: the extra entityHurt depends
+  on the packet batch …"; `test/external/entities.test.js` (every
+  living family: `/damage` → entityHurt, `/kill` → entityHurt, entityDead, entityGone), `test/external/mobFights.test.js`.
+
+#### Entity events  {#entity-events}
+- **Affects:** `entityTaming`, `entityTamed`, `entityShakingOffWater`, `entityEatingGrass`, `entityEat`,
+  `entitySwingArm`, `entityWake`, `entityCriticalEffect`, `entityMagicCriticalEffect`.
+- **Java:** `entity_status` 6/7/8/10 and `animation` 0/2/3/4/5.
+- **Bedrock:** `entity_event` `tame_fail` / `tame_success` / `shake_wet` / `eat_grass_animation` / `eating_item` /
+  `arm_swing` (mob attacks) and `animate` `swing_arm` / `wake_up` / `critical_hit` / `magic_critical_hit`.
+- **mineflayer-bedrock:** mapped one to one. `entityEat` comes from `eating_item`, which BDS sends for animals eating
+  (a wolf fed a bone) — upstream's `entityEat` (animation 3) never fires on modern Java either. Like Java, the bot's
+  own swing is not echoed as `entitySwingArm`. `entityWake` fires once per wake-up (the metadata or the animation).
+- **Tests:** `test/unit/entities.test.js`; `test/external/animals.test.js` (fed wolf: entityEat, entityTaming,
+  entityTamed; wet wolf; baby sheep; horse tamed by riding), `test/external/players.test.js` (swing, sleep / wake).
+
+#### Hand swap  {#hand-swap}
+- **Affects:** `entityHandSwap`.
+- **Java:** `entity_status 55` when a player swaps main hand and off-hand.
+- **Bedrock:** there is no such event; the swap shows up as `mob_equipment` changes.
+- **mineflayer-bedrock:** `entityHandSwap` never fires; `entityEquip` reports the new equipment.
+- **Tests:** none possible (n.a.).
+
+#### Sleeping players  {#sleep}
+- **Affects:** `entitySleep`, `entityWake`, `entity.sleeping`.
+- **Java:** metadata pose = sleeping; animation 2 on wake-up.
+- **Bedrock (measured):** a sleeping player has `player_flags` bit 1 (value 2) and `player_bed_position`; the
+  `flags_extended` "sleeping" bit (as named by bedrock-protocol) stays clear for players. Other entities: `flags_extended`.
+- **mineflayer-bedrock:** `entitySleep` / `entityWake` on the transitions of `player_flags` for players and of
+  `flags_extended`.sleeping for other entities (an update without the key changes nothing). The bot itself follows
+  `player_flags` too once it has seen one (`lib/bedrock/entity_data.js`).
+- **Tests:** `test/unit/entities.test.js` › "set_entity_data of others: …", `test/external/players.test.js` ›
+  "entitySleep / entityWake: …".
+
+#### Swinging the arm  {#swing-arm}
+- **Affects:** `bot.swingArm(arm, showHand)`.
+- **Java:** `arm_animation` with the hand (main / off-hand), or no hand on 1.8.
+- **Bedrock:** a single `animate swing_arm` (no off-hand swing animation, no hidden swing); 1.21.130+ adds an optional
+  swing source.
+- **mineflayer-bedrock:** `swingArm()` sends `animate swing_arm` for either arm; `arm` / `showHand` are accepted and
+  ignored. `attack` swings with source `attack` like the vanilla client.
+- **Tests:** `test/unit/entities.test.js` › "actions: …", `test/external/players.test.js` › "entitySwingArm: …".
+
+#### Attacking and using entities  {#interact}
+- **Affects:** `bot.attack`, `bot.useOn`, `bot.mount`, `bot.dismount`.
+- **Java:** `use_entity` (attack / interact) or the 1.21.2+ `attack` packet; dismount with the jump input.
+- **Bedrock:** `inventory_transaction item_use_on_entity` (attack / interact) carrying the exact held item and the
+  player position; the vanilla client hovers the entity first (`interact mouse_over_entity`); getting off is
+  `interact leave_vehicle`.
+- **mineflayer-bedrock:** like upstream the bot's view is left alone (BDS accepts attacks and interactions whatever
+  the player faces, verified live: an attack on a zombie behind the bot, a boat mounted behind it); the bot hovers
+  the target when it changed, then sends the transaction (`click_pos` relative to the target's feet; held item from
+  `bot._bedrock.heldNetworkItem()`); `attack` swings first (vanilla order). The packets go through
+  `bot._bedrock.physics.afterControlsSent` (W3-FIX-A): at once, or — while a sneak / sprint change is not in a sent
+  player_auth_input yet — right after the next one (upstream sends entity_action synchronously in setControlState).
+  Same synchronous API and return value as upstream. `dismount()`
+  without a vehicle emits `error` like upstream.
+- **Tests:** `test/unit/entities.test.js` › "actions: …"; `test/external/entityExtras.test.js` › "attack while facing
+  away: …"; `test/external/mobFights.test.js` (bare-handed kills),
+  `test/external/vehicles.test.js`, `test/external/animals.test.js` (useOn: feeding bones).
+
+#### Vehicles  {#vehicles}
+- **Affects:** `bot.vehicle`, `entity.vehicle`, `entity.passengers`, `mount`, `dismount`, `entityAttach`,
+  `entityDetach`, `bot.moveVehicle`.
+- **Java:** `attach_entity` / `set_passengers`.
+- **Bedrock:** `set_entity_link { ridden_entity_id, rider_entity_id (unique ids), type: 0 remove, 1 rider,
+  2 passenger }`, also inside `add_entity.links` / `add_player.links` for entities spawned riding.
+- **mineflayer-bedrock:** links update `vehicle` / `passengers` and emit `entityAttach(passenger, vehicle)` /
+  `entityDetach(passenger, vehicle)`; for the bot `bot.vehicle` + `mount` / `dismount(vehicle)`. A repeated link is
+  ignored. When the vehicle is removed under the bot, `dismount(vehicle)` fires (upstream registers that handler on
+  the protocol client, where `entityGone` never fires — the intended behaviour is implemented). `moveVehicle` drives
+  the vehicle through the per-tick input (`bot._bedrock.input.setVehicle`) and belongs to the physics plugin (U5).
+- **Tests:** `test/unit/entities.test.js` › "set_entity_link → …"; `test/external/vehicles.test.js`,
+  `test/external/players.test.js` › "entityAttach / entityDetach: …".
+
+#### Equipment and armor attributes  {#equipment}
+- **Affects:** `entity.equipment`, `entity.heldItem`, `entityEquip`, `bot.getExplosionDamages(entity, …)`.
+- **Java:** `entity_equipment` slots 0 main hand, 1 off-hand, 2 feet … 5 head, 6 body; armor / armor toughness are
+  synced attributes.
+- **Bedrock:** `mob_equipment` (window `inventory` = main hand, `offhand`) and `mob_armor_equipment { helmet,
+  chestplate, leggings, boots, body }`; no armor attributes are sent.
+- **mineflayer-bedrock:** same equipment indexes as upstream (0 hand, 1 off-hand, 2 boots, 3 leggings, 4 chestplate,
+  5 helmet, 6 body). Living entities, players and the bot get live `generic.armor` / `generic.armorToughness`
+  (what upstream's explosion plugin reads) and `minecraft:armor` / `minecraft:armor_toughness` attributes computed
+  from the worn items (armor points and toughness per item from minecraft.wiki; enchantments not counted, as
+  upstream). Non-living entities have none (getExplosionDamages returns null for them, like upstream).
+- **Tests:** `test/unit/entities.test.js` › "update_attributes / set_entity_motion of others; synthesized armor …";
+  `test/external/entities.test.js` › "entityEquip: …", `test/external/players.test.js` › "entityEquip: …".
+
+#### Dropped items  {#dropped-items}
+- **Affects:** `entity.getDroppedItem()`, `itemDrop`, `playerCollect`, internal test "'itemDrop' event".
+- **Java:** the item stack is an item entity metadata entry; `itemDrop` fires on that metadata; `collect` packet.
+- **Bedrock:** `add_item_entity` carries the item (ItemV4); `take_item_entity { runtime_entity_id: the item, target:
+  the collector }`, then `remove_entity`. Stacks lying close together merge: `entity_event item_entity_merge
+  { data: the new stack size }` on the surviving item, then `remove_entity` of the absorbed one (no metadata update).
+- **mineflayer-bedrock:** the wire item is kept as `entity.metadata.item`; the prismarine-entity patch makes
+  `getDroppedItem()` read it on Bedrock (prismarine-item `fromNotch`); `itemDrop` fires right after the item's
+  `entitySpawn`; a merge sets the new count and fires `entityUpdate` + `itemDrop` like Java's item stack metadata
+  update (W3-FIX-B); `playerCollect(collector, collected)` with the item still readable.
+- **Tests:** `test/unit/entities.test.js` › "internalTest › entities › 'itemDrop' event", "item stacks merging …",
+  "take_item_entity → …"; `test/external/entityExtras.test.js` › "itemDrop + getDroppedItem().count follow BDS item
+  merges";
+  `test/external/entities.test.js` › "xp orbs and items: …", `test/external/players.test.js` › "itemDrop +
+  playerCollect: …".
+
+#### Paintings  {#paintings}
+- **Affects:** `bot.blockAt(pos, true).painting`, mineflayer's `Painting`.
+- **Java:** `spawn_entity_painting` (≤ 1.18; title / motive id, block position, direction) — 1.19+ paintings are
+  ordinary entities.
+- **Bedrock:** `add_painting { coordinates (the painting's center), direction 0-3, title }` (titles `Kebab`,
+  `SkullAndRoses`, …).
+- **mineflayer-bedrock:** both: a `painting` entity in `bot.entities` (entitySpawn / entityGone) and a
+  `Painting(id, floored center, name, direction vector)` registered in the world; `name` is the modern Java variant
+  name (`kebab`, `skull_and_roses`, …), the direction vector uses upstream's table.
+- **Tests:** `test/unit/entities.test.js` › "add_painting → …", `test/external/entities.test.js` › "paintings: …".
+
+#### Firework boosts  {#fireworks}
+- **Affects:** `usedFirework`, `bot.fireworkRocketDuration`.
+- **Java:** the rocket's `attached_to_target` metadata names the boosted player.
+- **Bedrock:** a boosting rocket has `owner_eid` -1 and names the boosted player's unique id in metadata key 18
+  (`minecart_has_display` in bedrock-protocol's names, a long for rockets; observed live by U14); its item NBT is the
+  display item (metadata key 16).
+- **mineflayer-bedrock:** a `fireworks_rocket` attached to (key 18), owned or shot by the bot while the bot is gliding
+  counts as a boost: `usedFirework(rocketId)` once per rocket and the upstream duration formula from the item's
+  `Flight` (key 18 read since W3-FIX-B).
+- **Tests:** `test/unit/entities.test.js` › "fireworks boosting the bot while it glides → …";
+  `test/external/elytra.test.js` › "elytra" (`usedFirework`).
+
+## U8
+
+<!-- from docs/differences/U8.md -->
+Observed on BDS 1.26.51.1 (protocol 2193). The Java-layout API (`bot.inventory`, `bot.currentWindow`, slot numbers,
+`clickWindow`, `transfer`, `deposit`/`withdraw`, events) is unchanged; these entries record what the Bedrock
+protocol forces underneath and the few visible consequences.
+
+#### Server-authoritative inventory: clickWindow is emulated with item stack requests  {#click-window}
+- **Affects:** `bot.clickWindow`, and everything built on it (`transfer`, `putAway`, `moveSlotItem`,
+  `putSelectedItemRange`, `toss`, `tossStack`, `equip`, `unequip`, `simpleClick`, window `deposit`/`withdraw`)
+- **Java:** the client sends `window_click` (slot, button, mode); the server runs the click and syncs the window.
+- **Bedrock:** there is no click packet. The client sends `item_stack_request` actions (`take`, `place`, `swap`,
+  `drop`, `destroy`, `craft_creative`, …) between explicit container slots (`hotbar`, `inventory`, `armor`, `offhand`,
+  `cursor`, `container`, `barrel`, `shulker`, furnace/brewing/station ui slots) and the server answers with an
+  `item_stack_response` (ok + resulting counts / stack ids, or an error code). It does not resend the inventory after
+  a request. Cursor and cross-container moves and `craft_creative` are only accepted while a screen is open
+  (status 7/50 otherwise).
+- **mineflayer-bedrock:** `lib/bedrock/click.js` plans the Java (vanilla 1.21 `doClick` / `quickMoveStack`) result of
+  modes 0 (left/right, outside = drop), 1 (shift, Java's per-menu rules incl. armor → armor slot; the station rules —
+  furnace fuel vs ingredient, brewing bottles/ingredient/fuel, enchanting lapis, loom, cartography, smithing,
+  beacon — come from the window specs and use item-name lists, as there is no smelting/brewing recipe data here),
+  2 (number keys, 40 = off-hand), 3 (creative clone) and 4 (drop key) as stack request steps; the model predicts the
+  result (one
+  `updateSlot` per changed slot, like Java 1.17+), sends one request per click and waits for the response, which
+  updates counts and stack ids (an answer that arrives after the 5 s timeout is still applied). Clicks may overlap:
+  see [overlapping requests](differences/W3FIXB.md#overlapping-requests). A rejected request
+  is rolled back and `clickWindow` throws mineflayer's own message
+  `Server rejected transaction for clicking on slot <s>, on window with id <id>.` (no response:
+  `Server didn't respond to transaction …`). Clicks on `bot.inventory` open the player's own inventory screen
+  (`interact open_inventory`) and close it 100 ms after the last click when the cursor is empty. Modes 5 (drag) and 6
+  (double click) throw "not implemented", as prismarine-windows does. Clicking a crafting/trade result slot needs the
+  craft request of `bot.craft` (U12) and throws. Java's server silently ignores an invalid placement (e.g. dirt into an
+  armor slot); the planner applies Java's `Slot.mayPlace` for armor slots and result slots, anything else BDS refuses
+  surfaces as the rejection error.
+- **Tests:** `test/unit/click.test.js`, `test/unit/inventory.test.js`, `test/external/useChests.test.js`
+  (testClickTransitions verbatim), `test/external/inventoryFlows.test.js`.
+
+#### Closing a window: the carried item and station inputs are put back by the client  {#close-window}
+- **Affects:** `bot.closeWindow`, window `close()`, test `playerInventory`
+- **Java:** on close the server returns the carried item (and crafting grid / anvil / enchanting inputs) to the
+  player inventory (`placeItemBackInInventory`).
+- **Bedrock:** BDS keeps them: the carried item stays in the `cursor` (ui slot 0), station inputs stay in their ui
+  slots (observed after `container_close`).
+- **mineflayer-bedrock:** like upstream, `closeWindow` clears `bot.currentWindow` and emits `windowClose` at once;
+  it then moves those items with one stack request following Java's rule (selected hotbar slot, off-hand and stacks
+  with room first, then the first empty slot, the rest is dropped) and sends
+  `container_close { window_id, window_type, server: false }`; the returned promise resolves on the server's echo,
+  and openers wait for it — plus 100 ms (2 ticks): BDS silently drops a container activation that arrives in the
+  tick its previous container closed (no container_open, no resync) — before activating the next container. Block entities (chests, furnaces, brewing stands, …)
+  keep their contents as on Java. `bot.closeWindow(bot.inventory)` closes the inventory screen if the bot opened it.
+- **Tests:** `test/external/playerInventory.test.js` (verbatim), `test/external/containerWindows.test.js`
+  › "closing a crafting table puts the grid items back into the inventory (Java semantics; BDS keeps them)".
+
+#### Off-hand: only off-hand items  {#offhand}
+- **Affects:** `bot.equip(item, 'off-hand')`, `bot.clickWindow` on slot 45, test `exampleInventory` flows
+- **Java:** any item can be put into the off-hand slot.
+- **Bedrock:** the off-hand only takes items with the off-hand component (shield, totem, arrows, firework rockets,
+  maps, nautilus shell, …); BDS rejects anything else (status 50). On the wire the off-hand slot is
+  `offhand` slot **1** for stack requests (slot 0 is rejected) while inventory_content/slot use index 0.
+- **mineflayer-bedrock:** slot 45 maps to `offhand` 1; equipping a non-off-hand item rejects with the click error.
+- **Tests:** `test/external/inventoryFlows.test.js` › "a click the server rejects throws and is rolled back"
+  (dirt), › "exampleInventory flows: …" (uses arrows for the example's off-hand step).
+
+#### Creative inventory: craft_creative instead of set_creative_slot  {#creative}
+- **Affects:** `bot.creative.setInventorySlot`, `bot.creative.clearSlot`, `bot.creative.clearInventory`,
+  test helper `bot.test.setInventorySlot`
+- **Java:** `set_creative_slot` writes any item (with any NBT) into a player slot.
+- **Bedrock:** a creative player creates items with an item stack request in the inventory screen: `craft_creative
+  { item_id: <creative_content entry id> }` (+ `place` from `creative_output` slot 50 with the request id as stack id);
+  `destroy` deletes. Only the items of the server's creative inventory (`creative_content`: every base item plus the
+  listed NBT variants, e.g. enchanted books) can be created — arbitrary NBT (custom names, other enchantments,
+  damage) cannot; a legacy creative `inventory_transaction` is rejected by BDS (it resends the inventory).
+  `craft_creative` is refused while a container is open (status 7).
+- **mineflayer-bedrock:** same signature and guards as upstream (same item → no-op, a second concurrent call on the
+  slot → `Setting slot <n> cancelled …`); replacing an occupied slot is `destroy` + `craft_creative` + `place` in one
+  request; slot 45 (off-hand) is accepted too; an item not in the creative inventory, slot 0 (crafting result) or an
+  open window reject with an explanatory error. `waitTimeout` is unused (the server always answers). The creative index
+  is `bot._bedrock.creativeItems`. The test helper `bot.test.setInventorySlot` uses it in creative mode and falls back
+  to the console `replaceitem`.
+- **Tests:** `test/external/creative.test.js`, `test/unit/inventory.test.js` › "creative.setInventorySlot: …".
+
+#### Creative flight  {#flight}
+- **Affects:** `bot.creative.startFlying`, `bot.creative.stopFlying`, `bot.creative.flyTo`
+- **Java:** mineflayer zeroes `bot.physics.gravity` (and flyTo moves the position in steps).
+- **Bedrock:** flight is server-authoritative movement state (auth-input flags / abilities), owned by the physics
+  engine (U5).
+- **mineflayer-bedrock:** `bot._bedrock.physics.setFlying(on)` without touching `bot.physics.gravity` (W3-FIX-A:
+  [gravity](differences/W3FIX.md#flight-gravity); upstream's gravity handling only without the hook); `flyTo` delegates to
+  `bot._bedrock.physics.flyTo(destination)` when U5 provides it (upstream's step loop otherwise).
+- **Tests:** `test/unit/inventory.test.js` › "creative flight: …"; `test/external/creative.test.js` › "startFlying /
+  stopFlying / flyTo (flight: U5 physics hook)".
+
+#### Item use, eating and the shield  {#item-use}
+- **Affects:** `bot.activateItem`, `bot.deactivateItem`, `bot.consume`, `bot.usingHeldItem`, internal test
+  `activateItem rotation`
+- **Java:** `use_item` (hand, sequence, rotation) / `block_dig` status 5; eating ends with `entity_status` 9.
+- **Bedrock:** `inventory_transaction item_use click_air` (held item = the server's exact copy; no rotation field —
+  the direction is the rotation of the same tick's `player_auth_input`), `item_release release`; one click_air eats:
+  after 32 ticks the server sends `completed_using_item { use_method: 'eat' }` and the shrunk stack. Shields have no
+  use action: a Bedrock player blocks while sneaking with a shield in either hand.
+- **mineflayer-bedrock:** `activateItem(offHand)` sends click_air (`hand: off_hand` + the off-hand item for
+  `offHand`); with a shield it holds sneak instead (`deactivateItem` releases it); `completed_using_item` (or a
+  held-stack change, like upstream) finishes `consume()` and clears `usingHeldItem`. Java's `set_cooldown` handling
+  has no counterpart: Bedrock item cooldowns are client side (no server packet in protocol 2193).
+- **Tests:** `test/external/activateItem.test.js`, `test/external/consume.test.js`, `test/unit/inventory.test.js`
+  › "internalTest › activateItem rotation".
+
+#### Windows: Java types for Bedrock containers  {#window-types}
+- **Affects:** `windowOpen`, `bot.currentWindow`, `bot.openBlock`, `bot.openEntity`, `bot.openContainer`
+  (`openChest`, `openDispenser`), the wave-4 openers
+- **Java:** `open_window` carries the Java window type; `window_items` the slots.
+- **Bedrock:** `container_open { window_id, window_type, coordinates, runtime_entity_id }` + `inventory_content` of
+  that window id; every chest-like block (chest, trapped/ender/copper chest, barrel, shulker box) is
+  `window_type: 'container'` and is told apart by the block at `coordinates`; station inputs (crafting grid, anvil,
+  enchanting, grindstone, stonecutter, loom, cartography, smithing, beacon, trading) live in the `ui` container.
+- **mineflayer-bedrock:** the registry `bot._bedrock.windows` maps every container type to the Java window type and
+  slot layout of Java 1.21 (`minecraft:generic_9x3`/`9x6`/`3x3`, `hopper`, `shulker_box`, `crafting`, `furnace`,
+  `blast_furnace`, `smoker`, `brewing_stand`, `enchantment`, `anvil`, `merchant`, `beacon`, `grindstone`,
+  `stonecutter`, `loom`, `cartography`, `smithing` (1.20+ template/base/addition/result), `crafter_3x3`,
+  `lectern`, `HorseWindow`), so `openContainer`'s and the station openers' type checks pass unchanged. The player
+  part of a window mirrors `bot.inventory`. `openContainer` also accepts the Bedrock block names
+  `undyed_shulker_box` and the copper chests. Not verified on BDS yet: trading (needs a villager, U13), horse
+  (U14), lectern. Opening a window while a container window is open closes that one first, like Java's server
+  ([window switching](differences/W3FIXB.md#window-switch)).
+- **Tests:** `test/unit/windows.test.js`, `test/external/containerWindows.test.js`, `test/external/useChests.test.js`.
+
+#### updateSlot fires on changes only  {#update-slot}
+- **Affects:** window `updateSlot` / `updateSlot:<n>` events, `heldItemChanged`
+- **Java:** every `set_slot` / `window_items` calls `updateSlot` (even for unchanged slots).
+- **Bedrock:** BDS resends every inventory window (`inventory_content` × 4) after each command, gamemode change and
+  rejected transaction.
+- **mineflayer-bedrock:** a resend that only changes stack ids replaces the Item silently; `updateSlot` (and thus
+  `heldItemChanged`) fires when type, count, metadata or NBT change.
+- **Tests:** `test/unit/inventory.test.js` › "inventory_content of the inventory / armor / off-hand / ui windows → …".
+
+#### No client-initiated window resync  {#resync}
+- **Affects:** `bot._syncWindow` (internal)
+- **Java (1.17.1+):** an impossible click makes the server resend the window.
+- **Bedrock:** no such request exists, and BDS does not resend anything after a rejected item stack request (verified
+  live by the wave-3 review: only the error response arrives).
+- **mineflayer-bedrock:** `_syncWindow` resolves at once; the model rolls the rejected prediction back itself (see
+  [overlapping requests](differences/W3FIXB.md#overlapping-requests)).
+- **Tests:** `test/unit/inventory.test.js` › "_setSlot emits setSlot:<window id> and heldItemChanged; _syncWindow …".
+
+#### Held item selection  {#held-item}
+- **Affects:** `bot.quickBarSlot`, `bot.setQuickBarSlot`, `heldItemChanged`
+- **Java:** `held_item_slot` both ways.
+- **Bedrock:** the server selects with `player_hotbar { selected_slot, select_slot }` (`select_slot: false` is only
+  informative); the client announces its selection with `mob_equipment` carrying the exact held item.
+- **mineflayer-bedrock:** as described; `bot._bedrock.heldNetworkItem()` returns the exact wire item of the held slot
+  from the inventory model (used by every inventory_transaction).
+- **Tests:** `test/unit/inventory.test.js` › "held item: …", `test/external/heldItemChanged.test.js`.
+
+#### Ported tests  {#ported-tests}
+- **creative:** body verbatim (ids 1-4 are Bedrock stone, grass_block, dirt, cobblestone); upstream's concurrent second
+  call is wrapped in a try/catch that cannot catch the async rejection (it is unhandled) — the port awaits and asserts
+  the rejection instead.
+- **consume:** verbatim body (the `/effect @s hunger 1 255` branch of feature effectAreNotPrefixed); the server runs
+  on difficulty easy because on peaceful Bedrock never lets the food level drop (the effect only empties the
+  saturation). The Bedrock extra "consume a golden apple at full hunger" asserts the same state transitions with an
+  always-consumable item.
+- **activateItem:** verbatim (the snowball comes through U7's `entitySpawn` / entity velocity); a raw analog asserts
+  the same directions from `add_entity`.
+- **heldItem:** verbatim; upstream's `bot.heldItem.id === bot.stoneId` compares two undefined values, so the item type
+  is asserted as well.
+- **exampleInventory:** the example script (examples/, U15) is not run; `inventoryFlows` performs its flows with the
+  bot API, using arrows for the off-hand step (see [off-hand](#offhand)); crafting the ladder is U12's.
+
+#### useChests staging  {#use-chests}
+- **Affects:** test `useChests`
+- **Java:** the chests are placed with `bot.test.placeBlock` (bot.placeBlock).
+- **Bedrock:** placement is U11's (wave 4); `/setblock` pairs two adjacent chests when they face the same way
+  along the axis perpendicular to their facing (default facing north → pairs along x).
+- **mineflayer-bedrock:** the port sets the chests with the console (the large trapped chest, along z, facing east)
+  and removes the chest items the placement would have consumed; `fillChest` uses Bedrock's
+  `/replaceitem block … slot.container <n> <item> <count>`; the `chestLidMove` assertions (U9's block actions) run
+  when the event fires. Everything else is verbatim; U11 re-runs the placeBlock version in wave 4.
+- **Tests:** `test/external/useChests.test.js` › "useChests" (the chestLidMove assertions run with U9's block actions).
+
+#### internalTest analogs  {#internal-tests}
+- **closeWindow:** Java < 1.17 follows `close_window` with a no-op click; Bedrock has neither: `closeWindow` sends
+  only `container_close` (no item stack request).
+- **heldItemChanged via set_slot:** Bedrock has no `set_slot`; `inventory_slot` / `inventory_content` of the held
+  slot emit it.
+- **early window items / trailing sync:** Bedrock sends a window's contents with its own window id right after
+  `container_open` (an early content for a reused id is buffered and used), and syncs the player inventory as its own
+  container (`inventory`), so a trailing update after a close always reaches `bot.inventory`.
+- **activateItem rotation:** the click_air transaction has no rotation; the same tick's `player_auth_input` carries
+  the bot's yaw/pitch (notchian degrees).
+- **Tests:** `test/unit/windows.test.js`, `test/unit/inventory.test.js` (named after the upstream tests).
+
+## U9
+
+<!-- from docs/differences/U9.md -->
+Observed against BDS 1.26.51.1 (protocol 2193, bedrock-protocol 3.60.1) with live probes and the e2e suites
+(`packages/mineflayer-bedrock/test/external/{time,rain,experience,gamemode,breath,spawnEvent,dimensionData,dimensionName,commandBlock,rayTrace,blockActions,blockEntities,health,playerState,dimensionTravel}.test.js`)
+plus the U0 capture (`test/fixtures/1.26.51/join_flat.jsonl.gz`).
+
+#### Respawn handshake  {#respawn}
+- **Affects:** `bot.respawn()`, `respawn` option, `isAlive`, `death` / `respawn` / `spawn` events, tests `gamemode`,
+  `spawnEvent`.
+- **Java:** death = update_health ≤ 0; `client_command` (perform respawn) → server `respawn` packet → update_health → `spawn`.
+- **Bedrock:** death = own `entity_event death_animation` + `minecraft:health` attribute 0 (no set_health 0), then
+  `respawn` state 0 (searching) at the death position. Respawning is a 3-step handshake: client `respawn` state 2
+  (client_ready — ignored by BDS when sent before the server's state 0) → server `respawn` state 0 + state 1 (ready,
+  eye-level spawn position) → client `player_action respawn` → server `entity_event respawn` + `set_health 20`. A
+  respawn into another dimension (death in the nether, spawn in the overworld) puts a `change_dimension` **without
+  loading_screen_id** between the client state 2 and the server state 1; answering it with `serverbound_loading_screen`
+  gets the client disconnected (`unexpected_packet`).
+- **mineflayer-bedrock:** same API and event order as upstream (`health` → `death`; `respawn` at the server's state 1 —
+  the analog of Java's respawn packet; `spawn` once the server's health update says the player is alive, from the
+  lifecycle). `bot.respawn()` sends state 2 once per death (waiting for the server's state 0 if needed); the
+  `respawn: false` option keeps the bot on the death screen. The lifecycle sends no loading screen ack for a
+  change_dimension without loading_screen_id and completes a dimension change during a respawn without `spawn`: one
+  `respawn` and one `spawn` per death, also across dimensions. The join's and the End exit's respawn packets are not
+  deaths.
+- **Tests:** `test/external/health.test.js`, `gamemode.test.js`, `spawnEvent.test.js`, `dimensionTravel.test.js`
+  ("a death in the nether…"), `test/unit/health.test.js`.
+
+#### Creative players cannot die  {#creative-death}
+- **Affects:** tests `gamemode` ("after respawn"), `spawnEvent`.
+- **Java:** `/kill` kills a creative player; the upstream tests kill the creative test bot.
+- **Bedrock:** "Players cannot be killed while they are in Creative mode" (not even /damage or the void), and a game
+  mode cannot be set on a dead player ("No targets matched selector").
+- **mineflayer-bedrock:** nothing to change in the library. The tests kill the bot in survival/adventure:
+  `gamemode after respawn` checks that the respawned bot keeps adventure mode (the non-default mode survives the
+  respawn, the property upstream checks with creative); `spawnEvent` switches to survival before `/kill`.
+
+#### Dimension change, End credits  {#dimension-change}
+- **Affects:** `bot.game.dimension`, `respawn` / `game` / `spawn` events on a dimension change, the End exit portal.
+- **Java:** a `respawn` packet with another dimension (+ `game_state_change win_game` for the credits, skipped with
+  `client_command`).
+- **Bedrock:** `change_dimension` (feet position for `/execute in … tp`, a junk position followed by a `move_player`
+  reset for portals) → client `player_action dimension_change_ack` → server `dimension_change_ack` → client
+  `serverbound_loading_screen` 1/2 with the loading_screen_id. Leaving the End through the exit portal: BDS first sends
+  `show_credits {status: 0}` (only the first time a player leaves the End) and waits — forever — for the client's
+  `show_credits {status: 1}` before the `change_dimension` (`respawn: true`) to the overworld.
+- **mineflayer-bedrock:** like upstream: `game` then `respawn` (isAlive false) at the change, `spawn` (isAlive true)
+  when the new dimension is loaded; the credits are skipped at once (show_credits status 1), like upstream's
+  client_command. Portal travel works by standing in `portal` (nether, Bedrock's name; a survival player ~4 s, creative
+  ~1.5 s) and `end_portal` blocks.
+- **Tests:** `test/external/dimensionTravel.test.js`, `test/unit/dimension.test.js`.
+
+#### World time  {#world-time}
+- **Affects:** `bot.time.*`, `time` event, test `time`.
+- **Java:** `update_time` every 20 ticks (world age + day time; 26.1: per-dimension clocks).
+- **Bedrock:** no set_time packet at all: the `minecraft:overworld` world clock of `sync_world_clocks`
+  (initialize_registry with time markers, sync_state on `/time set|add` and occasionally); the daylight cycle is the
+  `doDayLightCycle` game rule; no world age.
+- **mineflayer-bedrock:** `bot.time.time` = the world clock (absolute day time, every dimension), the derived fields
+  as upstream; `doDaylightCycle` from the game rule (a change emits `time`); `bigAge`/`age` = the server tick
+  (start_game.current_tick + elapsed ticks). Between syncs the clock runs locally (while the cycle is on and the clock
+  is not paused) and `time` is emitted every 20 physics ticks like Java's broadcast. `bot.time.clocks` holds the
+  Bedrock clocks keyed by name (`overworld`): upstream's `{ id, totalTicks, partialTick, rate }` + `name`, `paused`,
+  `timeMarkers`.
+- **Tests:** `test/external/time.test.js` (verbatim + clock checks), `test/unit/weather.test.js`.
+
+#### Weather levels  {#weather}
+- **Affects:** `bot.rainState`, `bot.thunderState`, `weatherUpdate`.
+- **Java:** `game_state_change` start/stop raining + rain/thunder level changes while the server fades them.
+- **Bedrock:** `level_event` start_rain / stop_rain / start_thunder / stop_thunder with the *target* level × 65535;
+  clients fade locally. At join, `start_game.rain_level` / `lightning_level` carry the current (fading) levels and no
+  level_event follows.
+- **mineflayer-bedrock:** `isRaining` / `rain` exactly as upstream (zero crossings, one event per change);
+  `rainState` / `thunderState` are the target levels of the level events (0 or 1 on BDS) and the start_game levels at
+  join; one `weatherUpdate` per level event.
+- **Tests:** `test/external/rain.test.js`, `test/unit/weather.test.js`.
+
+#### Experience points  {#experience-points}
+- **Affects:** `bot.experience.points`.
+- **Java:** the server sends the total experience.
+- **Bedrock:** `update_attributes` `minecraft:player.level` and `minecraft:player.experience` (bar progress) only.
+- **mineflayer-bedrock:** points = XP needed for the level + progress × the XP of the next level (the curve Bedrock
+  shares with Java; `/xp 10` → level 1 + 3/9 → 10 points). Points spent on enchanting are not distinguishable.
+- **Tests:** `test/external/experience.test.js` (adapted `/xp` syntax), `test/unit/player_state.test.js`.
+
+#### Game rules  {#game-rules}
+- **Affects:** `bot.bedrock.gameRules` (Bedrock extra).
+- **Java:** no client-side game rule state (only reducedDebugInfo / immediate respawn through game events).
+- **Bedrock:** every game rule in `start_game.gamerules` and `game_rules_changed`.
+- **mineflayer-bedrock:** `bot.bedrock.gameRules` (`{ [Bedrock name]: boolean | number }`, e.g. `doDayLightCycle`,
+  `keepInventory`); `bot.game.enableRespawnScreen` from `doImmediateRespawn` at join, like upstream's login field.
+- **Tests:** `test/external/playerState.test.js`, `test/unit/dimension.test.js`.
+
+#### Spawn point  {#spawn-point}
+- **Affects:** `bot.spawnPoint`.
+- **Java:** `spawn_position` = the world spawn (compass target), with its real height.
+- **Bedrock:** `start_game.spawn_position` (world spawn; y = 32767 while the height is not fixed: the server searches
+  the highest safe block when someone spawns there) and `set_spawn_position` with `spawn_type` `world`
+  (/setworldspawn) or `player` (bed, respawn anchor, /spawnpoint — never sent by Java).
+- **mineflayer-bedrock:** `bot.spawnPoint` = the world spawn (start_game, then `world` updates + `game`); the player's
+  own respawn point does not change it.
+- **Tests:** `test/external/playerState.test.js`, `test/unit/player_state.test.js`.
+
+#### Abilities  {#abilities}
+- **Affects:** `bot.abilities`, `abilities` event.
+- **Java:** an `abilities` packet with flag bits on join and on every game mode change.
+- **Bedrock:** `update_abilities` with ability layers (base, spectator, commands, editor, loading screen — allowed /
+  enabled sets, fly/walk speeds) at join and on permission changes; on `/gamemode` only when the flight changes (the
+  client derives the game mode's abilities itself; W3-FIX-A measured the repeats, see
+  [abilities events](differences/W3FIX.md#abilities)).
+- **mineflayer-bedrock:** the layers are merged (a layer decides the flags it allows; later layers override); on a game
+  mode change the abilities follow the Java server's `GameType.updatePlayerAbilities` (creative: mayFly, instantBuild,
+  invulnerable; spectator: + flying, no instantBuild; survival/adventure: none) and `abilities` is emitted, like Java;
+  an `update_abilities` that changes nothing emits nothing.
+- **Tests:** `test/external/playerState.test.js`, `test/unit/player_state.test.js`.
+
+#### Signs  {#signs}
+- **Affects:** `bot.updateSign`, `signOpen`, `block.signText`, test `sign`.
+- **Java:** `open_sign_entity`; `update_sign` with four lines; the server echoes `tile_entity_data`.
+- **Bedrock:** `open_sign { position, is_front }`, sent when the player places a sign or interacts with an unwaxed
+  sign; one edit per opening. The edit is a `block_entity_data` with the whole sign compound: `FrontText` / `BackText`
+  compounds, each with one `Text` string (lines joined by `\n`) and style fields.
+- **mineflayer-bedrock:** `updateSign(block, text, back)` keeps upstream's validation (4 lines, 45 characters) and
+  sends the block's current sign compound with that side's `Text` replaced. prismarine-block's Bedrock sign helpers are
+  patched to read/write FrontText/BackText (`getSignText()` → `[front, back]` like Java's multi-sided signs; upstream
+  read a top-level `Text` and threw). The upstream `sign` test (placeBlock) runs since U11.
+- **Tests:** `test/external/blockEntities.test.js`, `test/external/sign.test.js`, `test/unit/block_actions.test.js`.
+
+#### Command blocks  {#command-block}
+- **Affects:** `bot.setCommandBlock`, test `commandBlock`.
+- **Java:** `update_command_block` (mode, flags); the server answers with `advMode.setCommand.success`.
+- **Bedrock:** `command_block_update` with mode names (`impulse` / `repeat` / `chain` — the mode is the block:
+  `repeating_command_block`, `chain_command_block`), `needs_redstone`, `conditional`, `should_track_output`. BDS sends
+  no message: the updated block entity comes back (`Command`, `auto`, `conditionalMode`, `TrackOutput`). It ignores
+  updates of command blocks out of the player's reach.
+- **mineflayer-bedrock:** same signature, options and checks (creative mode via `bot.game.gameMode`); mode 0/1/2 →
+  chain/repeat/impulse, `alwaysActive` → `!needs_redstone`. Upstream also accepts a non-object `options` (its test
+  passes `false`).
+- **Tests:** `test/external/commandBlock.test.js` (adapted: waits for the block entity; the block is placed in reach),
+  `test/unit/player_state.test.js`.
+
+#### Explosion damages  {#explosion}
+- **Affects:** `bot.getExplosionDamages`.
+- **Java:** entities carry a `generic.armor` attribute; without it upstream returns `null` (not rawDamages).
+- **Bedrock:** no armor attribute on the wire.
+- **mineflayer-bedrock:** the vendored upstream plugin also accepts Java resource names (`minecraft:armor`, …) and the
+  attribute U7 synthesizes; a living entity (player / mob) without any armor attribute counts as unarmored instead of
+  `null`. Same formula otherwise (Bedrock's explosion damage follows it).
+- **Tests:** `test/external/rayTrace.test.js` (extra), `test/unit/player_state.test.js`.
+
+#### Block actions  {#block-actions}
+- **Affects:** `noteHeard`, `pistonMove`, `chestLidMove`, `blockBreakProgressObserved`, `blockBreakProgressEnd`.
+- **Java:** `block_action` (note block, piston, chest with player count) and `block_break_animation` (stage 0–9 with the
+  breaker's entity id).
+- **Bedrock:** note blocks: `block_event { type: instrument, data: pitch }` (Bedrock instrument ids, e.g. 6 bell);
+  chests: `block_event { type: change_state, data: open count }`, double chests paired through their block entities
+  (`pairx`/`pairz`); pistons send no event: their `PistonArm` block entity goes NewState 0 → 1 → 2 → 3 → 0;
+  `facing_direction` of pistons is 0 down, 1 up, 2 south, 3 north, 4 east, 5 west. Breaking: `level_event`
+  block_start_break / block_break_speed (progress per tick × 65535) / block_stop_break, without breaker and stage — and
+  sent to the breaking player too.
+- **mineflayer-bedrock:** `noteHeard(block, registry.instruments[type], pitch)`; `chestLidMove(block, count, block2)`
+  once per change, block2 = the paired half; `pistonMove(block, 0 | 1, Java face index)` at the push / pull start;
+  break progress: stage 0 at the start, then one `blockBreakProgressObserved` per new stage computed from the speed,
+  `blockBreakProgressEnd` on stop or block change; the entity is the nearest other player within 8 blocks (undefined
+  when none / before U7); the bot's own digging position (`bot.targetDigBlock`) is skipped.
+- **Tests:** `test/external/blockActions.test.js`, `test/unit/block_actions.test.js`.
+
+#### Beds and spawnReset  {#beds}
+- **Affects:** `bot.isABed`, `bot.parseBedMetadata`, `spawnReset`.
+- **Java:** 16 coloured bed blocks with facing/part/occupied states; `game_state_change no_respawn_block_available`.
+- **Bedrock:** one `bed` block (colour in the block entity; plus `straw_bed`) with `direction` (0 south, 1 west,
+  2 north, 3 east), `head_piece_bit`, `occupied_bit`. A respawn whose bed / anchor is gone is announced with the
+  `tile.bed.notValid` / `tile.respawn_anchor.notValid` message — and not at all when the fallback is the bed spawn's
+  own position.
+- **mineflayer-bedrock:** `isABed` matches `bed` and `*_bed`; `parseBedMetadata` returns upstream's shape from the
+  Bedrock states; `spawnReset` on those messages.
+- **Tests:** `test/external/playerState.test.js`, `test/unit/bed.test.js`.
+
+#### Ray trace at pitch / yaw 0 (upstream bug fixed)  {#ray-trace}
+- **Affects:** `bot.blockAtEntityCursor`, `bot.blockAtCursor`, `bot.blockInSight`, `bot.entityAtCursor`.
+- **Java:** mineflayer 4.39.0 returns `null` when the entity's pitch or yaw is exactly 0 (`!entity.pitch ||
+  !entity.yaw`): a level look, or facing north — the default orientation — never hits a block.
+- **Bedrock:** not a protocol difference.
+- **mineflayer-bedrock:** the vendored plugin only returns `null` for a missing pitch / yaw; everything else is
+  unchanged (the upstream `rayTrace` test passes verbatim).
+- **Tests:** `test/unit/player_state.test.js` ("ray trace + explosion …": a wall straight ahead at pitch 0, yaw 0).
+
+## U10
+
+<!-- from docs/differences/U10.md -->
+Observed against BDS 1.26.51.1 (protocol 2193, bedrock-protocol 3.60.1) with live probes (a bot driving
+`player_auth_input` block actions by hand, reading `level_event` / `update_block` / inventory packets and
+`testforblock`) and the e2e suites `packages/mineflayer-bedrock/test/external/{digWaterSpeed,digEverything,digOres,digging}.test.js`.
+Unit tests: `packages/mineflayer-bedrock/test/unit/digging.test.js`.
+
+#### Server-authoritative block breaking  {#protocol}
+- **Affects:** `bot.dig`, `bot.stopDigging`, `diggingCompleted`, `diggingAborted`, `bot.targetDigBlock`.
+- **Java:** the client sends `block_dig` start (status 0), waits `digTime` ms itself, sends finish (status 2) and sets
+  the block to air locally; cancel = status 1.
+- **Bedrock:** `start_game.server_authoritative_block_breaking` is true on BDS. Block actions ride
+  `player_auth_input.block_action` (one input per tick). Measured behaviour:
+  - `start_break` = the mouse goes down on the block. From that input on, BDS adds the break progress itself every
+    tick — **the start tick counts** — using its own copy of the held item, effects, on-ground and eyes-in-water
+    state, and destroys the block in the input where the progress reaches 1 (`ceil(1/speed)` inputs after and
+    including the start one) **as long as the break is held**: no other action is needed. It reports the speed to
+    every viewer (`level_event block_start_break` then `block_break_speed` every tick, data = progress per tick ×
+    65535, floored) and the destruction with `update_block` (air) + `particle_destroy`, then the drops
+    (`add_item_entity`).
+  - `predict_break` (the client's "it broke") is accepted from that same input on; one input earlier BDS answers
+    with an `update_block` restoring the block (and, while the break is held, still destroys it a tick later).
+  - `continue_break` restarts the break on BDS: every one makes it send `block_stop_break` + `block_start_break`
+    to all viewers (another player's crack animation and mineflayer's `blockBreakProgressObserved` restart every
+    tick). `crack_break` is accepted and changes nothing.
+  - `abort_break` ends the break. `stop_break` does **not**: after a completed break BDS keeps "holding" the
+    position and destroys the next block placed there (even by `/setblock`) on its own.
+  - The face and the look direction are not validated (any face, looking away, reach up to ~7 blocks all break).
+  - Creative: `start_break` alone breaks instantly (no drops); `player_action creative_player_destroy_block` alone
+    does nothing.
+- **mineflayer-bedrock:** `start_break` (in the input after the look), nothing while the break is held,
+  `predict_break` once BDS' own per-tick progress reports (`block_break_speed`) show the break one tick from done —
+  i.e. in the very input BDS completes it while client and server run in step (the earliest input BDS accepts,
+  measured), later when the server runs behind, never early (a client-side tick count with one tick of margin is the
+  first idea, but on a loaded host BDS lags behind the client's input count and restored the block); when BDS sends
+  no reports, our own count with one tick of margin. Completion on the server's `update_block` (air, or a liquid for
+  waterlogged blocks / ice), then `abort_break` to release the break state; `dig` settles once the input carrying it
+  went out (≤ 1 tick later), so whatever the caller does next — placing a block at that spot, digging on — reaches BDS
+  after the release (measured: a `/setblock` right after the update was broken again by BDS). Creative and instant breaks (progress ≥ 1 in the first tick): `start_break` + `predict_break` in one input.
+  `stopDigging` / a new dig / death / a dimension change: `abort_break`. The speed BDS reports for the dug block
+  replaces the local estimate when they differ, so a mismatch never makes the client predict early. Upstream's swing
+  every 350 ms is kept (`animate`). Legacy (non server-authoritative) servers get `start_break`, `crack_break` every
+  tick, then `stop_break` + an `inventory_transaction` `break_block` after `digTime` and the block predicted locally
+  like upstream — not testable against BDS (always server-authoritative), unit-tested only.
+- **Tests:** `digging.test.js` (all), `digOres.test.js`, `digEverything.test.js` (BDS never restores a block, BDS'
+  speed = ours), unit `digging.test.js` › "dig: start_break, nothing while held, predict_break one tick after the
+  server completes, abort_break after the update", "dig: with BDS progress reports, predict_break waits for the
+  server …", e2e `digging.test.js` › "a block placed where one was just dug stays …".
+
+#### dig() completes on the server's confirmation  {#completion}
+- **Affects:** `bot.dig` (when the promise settles), `diggingCompleted`, `bot.lastDigTime`.
+- **Java:** the promise resolves when the client's own `digTime` timer fires (block set to air locally).
+- **Bedrock:** the server destroys the block; a client-side air would be a guess the server may contradict.
+- **mineflayer-bedrock:** `dig` resolves (and `diggingCompleted` fires with the air block) after the server's
+  `update_block`: it arrives `digTime` − 1 tick + the round trip after the start input (measured over 848 timed
+  digs on a local BDS: median −21 ms, −75…+44 ms vs `digTime`), and the dig settles with the release input up to one
+  tick later (see [protocol](#protocol)). BDS sends the destroyed block's `update_block` more than once within about
+  a tick (the destruction, the answers to `predict_break` / `abort_break`): code that waits for "the next update" at
+  that position (e.g. the console `setBlock` test helper) should let them pass first. "Broken" = air, a liquid (waterlogged blocks,
+  kelp, coral fans and ice leave water; a bubble column over soul sand / magma), or a turtle egg with one egg less. If
+  the server shows no sign of breaking the block for 40 ticks after `predict_break` (no update, no speed report —
+  BDS reports the speed every tick while it still breaks; e.g. adventure mode, protected or education-edition blocks)
+  the dig is aborted like `stopDigging` (`diggingAborted`, rejection `Digging aborted: the server did not break <name>
+  at <pos>`); upstream would resolve regardless. A disconnect also rejects a pending dig (`Digging aborted: the
+  connection ended`; upstream's timer would resolve it). `bot._bedrock.digging` (internal) keeps diagnostics of the last digs (start / end time, ticks, the
+  speed BDS reported, restores).
+- **Tests:** `digOres.test.js` (each full dig takes `digTime` within −100 / +200 ms + 3 %), `digging.test.js` ›
+  "dig: diggingCompleted (air block), targetDigBlock / targetDigFace while digging, lastDigTime", unit
+  `digging.test.js` › "dig: gives up when the server never breaks the block".
+
+#### Dig speed: Bedrock status-effect factors  {#dig-speed}
+- **Affects:** `bot.digTime`, and `block.digTime(...)` (prismarine-block) as called directly by
+  mineflayer-pathfinder / mineflayer-tool.
+- **Java:** Haste and Conduit Power multiply the speed by `1 + 0.2 × level`; Mining Fatigue by 0.3 / 0.09 / 0.0027 /
+  0.00081 (levels 1–4+).
+- **Bedrock (measured, `level_event` data):** Haste / Conduit Power (the higher level counts) multiply by
+  `(1 + 0.2 × level) × 1.2^level` (I 1.44, II 2.016, III 2.7648, V 4.9766); Mining Fatigue by `0.21^level`
+  (= 0.3^level × 0.7^level: I 0.21, II 0.0441, III 0.0093, IV 0.0019, V 0.0004). Everything else is Java's formula,
+  verified on BDS: tool multipliers per material (U2 data, incl. golden 12 and copper 5), the tool tier still speeds
+  up a non-harvesting tool (wooden pickaxe on iron ore), Efficiency `level² + 1` only when the tool multiplier is
+  above 1, Aqua Affinity on the helmet, eyes in water ÷5, not on ground ÷5 (both: ÷25), `canHarvest ? 30 : 100`,
+  hardness 0 = instant (BDS reports 65535 = 1.0), `ceil(1/speed)` ticks.
+- **mineflayer-bedrock:** `bot.digTime` uses `lib/bedrock/dig_speed.js` (the same structure as prismarine-block's
+  `digTime` with the Bedrock effect factors; without those effects it equals prismarine-block for every block × tool
+  × water / air / enchantment, unit-tested). prismarine-block's own `block.digTime` keeps Java's effect factors
+  (unpatched): pathfinder / tool cost estimates under Haste or Mining Fatigue are off by those factors (the dig itself
+  is right, it waits for the server).
+- **Tests:** unit `digging.test.js` › "reproduces every break speed measured on BDS 1.26.51.1 (level_event data)",
+  "equals prismarine-block digTime for every block × tool × water/air/efficiency without effects";
+  `digOres.test.js` › "modifiers: …"; `digEverything.test.js` (BDS' speed = ours for every block).
+
+#### Creative: no breaking with swords, the trident or the mace  {#creative-weapons}
+- **Affects:** `bot.digTime`, `bot.dig` in creative mode.
+- **Java:** `digTime` is 0 for everything in creative (Java creative players cannot break blocks with a sword either;
+  upstream ignores it and the server restores the block).
+- **Bedrock (measured):** BDS restores the block when a creative player breaks it holding any sword, the trident or
+  the mace; spears, tools, other items and the bare hand break instantly.
+- **mineflayer-bedrock:** `digTime` is `Infinity` in creative with those items, so `dig` rejects at once with
+  upstream's `dig time for <name> is Infinity` instead of waiting for the server.
+- **Tests:** unit `digging.test.js` › "creative: no breaking with a sword, the trident or the mace (BDS); a spear works".
+
+#### Eye-level water includes waterlogged blocks  {#eye-water}
+- **Affects:** `bot.digTime`, `bot._getBlockAtEyeLevel` (unchanged), test `digWaterSpeed`.
+- **Java:** upstream counts the eyes as under water when the eye-level block is `water` / `flowing_water`.
+- **Bedrock:** water can also be the block's second layer (waterlogged blocks, kelp, seagrass).
+- **mineflayer-bedrock:** `water`, `flowing_water`, or a block whose layer 1 is water (`block.isWaterlogged`).
+  `bot.entity.isInWater` is not used (same as upstream since the digWaterSpeed fix).
+- **Tests:** `digWaterSpeed.test.js` (verbatim + "digging with the eyes under water takes 5× longer and BDS agrees"),
+  unit `digging.test.js` › "internalTest › digTime › …".
+
+#### 'auto' dig face  {#dig-face}
+- **Affects:** `bot.targetDigFace`, the face of the block actions.
+- **Java:** `dig(block)` with `digFace` 'auto' looks at the block center and sends face 1 (top).
+- **Bedrock:** BDS does not validate the face, but the vanilla client sends the face under its crosshair and the
+  face drives the punch particles other players see.
+- **mineflayer-bedrock:** 'auto' (with a look) uses the face through which the line of sight from the eyes to the
+  block center enters the block (e.g. 4 = west when the bot is west of it, level with it). Face vectors, 'raycast'
+  and `forceLook: 'ignore'` (face 1) are upstream's.
+- **Tests:** `digging.test.js` › "dig: diggingCompleted …" (face 4), "digFace: a face vector, \"raycast\" …".
+
+#### Tool durability  {#durability}
+- **Affects:** `bot.heldItem` durability after a dig, `heldItemChanged`.
+- **Java:** the server damages the tool and sends `set_slot`.
+- **Bedrock:** the vanilla client attaches an `item_stack_request` `mine_block` { hotbar slot, predicted durability,
+  stack id } to its `predict_break`; BDS only accepts it in the exact input the break completes (one input later it
+  answers `status: error`) and then reports the durability in the response's `durability_correction` instead of
+  sending the slot. Without the request BDS damages the tool itself and sends `inventory_slot` with the new `Damage`.
+- **mineflayer-bedrock:** no `mine_block` request (the prediction lands in the completing input only while the
+  server runs in step, see [protocol](#protocol)); the inventory model applies the server's `inventory_slot`
+  (Damage +1 per block, the tool disappears when used up, `heldItemChanged` like Java's set_slot).
+- **Tests:** `digOres.test.js` (every tool dig), `digging.test.js` › "durability: every block costs the tool 1 and a
+  used-up tool breaks".
+
+#### digEverything: staging, tools and skipped blocks  {#dig-everything}
+- **Affects:** test `digEverything`.
+- **Java:** places every diggable block with the placeBlock helper and digs it with a diamond pickaxe; a hand-written
+  list excludes blocks that cannot be placed or dug.
+- **Bedrock:** 1,442 diggable blocks (many wooden ones: ~1 h with a pickaxe at hand speed). Some blocks cannot exist
+  where the test puts them or are refused by `/setblock`.
+- **mineflayer-bedrock:** each block is staged with `/setblock` two blocks east of the bot (the console helper is the
+  same `setblock`) and must still be there two ticks later; the bot picks the fastest of netherite pickaxe / axe /
+  shovel / hoe and shears (Efficiency V), a netherite sword and the bare hand. Attachments placed facing down by
+  default (buttons, item frames, banners, levers) are retried on the floor (`facing_direction` 1), then on a wall.
+  Skipped with the reason printed at the end (~230 of 1,442 on BDS 1.26.51.1): ids `/setblock` refuses (education
+  edition `element_*`, compounds and hardened glass, internal ids such as `unknown` / `info_update` / `reserved6`, and
+  the `*_concrete_double_slab` / `*_wool_double_slab` states BDS 1.26.51.1 does not know), blocks that do not stay
+  (coral wall fans, tripwire hooks, soul fire, bubble columns, …), `frosted_ice` (melts during the dig) and the
+  education-edition `allow` / `deny` / `border_block` (BDS never breaks them in survival). "Gone" = air or a liquid
+  (ice, kelp, sea grass, coral fans and sea pickles leave water). Every dug block is also checked against BDS'
+  reported speed and for restores.
+- **Tests:** `digEverything.test.js`.
+
+## U11
+
+<!-- from docs/differences/U11.md -->
+Observed on BDS 1.26.51.1 (protocol 2193). `bot.placeBlock` / `bot._placeBlockWithOptions` are upstream's code
+(vendored verbatim), `bot._genericPlace` / `bot.placeEntity` keep upstream's checks, options, look and events; these
+entries record the Bedrock wire protocol underneath, what BDS answers, and the few visible consequences.
+
+#### Placement protocol: click_block wrapped in start/stop_item_use_on, BDS answers with update_block  {#placement-protocol}
+- **Affects:** `bot._genericPlace`, `bot.placeBlock`, `bot._placeBlockWithOptions`, `bot.placeEntity`, `blockPlaced`
+- **Java:** `block_place` (location, direction, hand, cursor); the server answers with `block_change` for the clicked
+  block and then the block across the face, whether or not it placed anything.
+- **Bedrock:** like the vanilla client, a click on a block face is `player_action start_item_use_on` (clicked block,
+  clicked block + face, face) → `inventory_transaction item_use click_block` (the exact server copy of the held item
+  incl. its stack id, the clicked block's runtime id, the click point on the face, the face, the hotbar slot, the hand,
+  the player position at EYE level, prediction `success`) → `player_action stop_item_use_on` (clicked block + face)
+  150 ms later. Measured answers (≈ 80–120 ms locally): the inventory first (`inventory_content` of every window: the
+  count, durability or new stack id after a use), then a burst of `update_block` — the clicked block, the block across
+  the face, the clicked block's lower neighbour, the block across the face again, its upper neighbour, the clicked block
+  again — and ~20 ms later the destination once more with the `place` sound. A refusal (an entity in the way, the
+  player's own hitbox, an item that is not a block, out of the world) gets the same burst with the destination
+  unchanged (plus a `set_entity_data` resync) and no inventory change.
+- **mineflayer-bedrock:** the answer has Java's shape (reference block first, then the destination), so upstream's
+  `place_block.js` runs unchanged with its error messages (`Server refused to place <item> at <pos>: the block is still
+  <name>`, `Server did not answer the placement at …`, `must be holding an item to place`). `_genericPlace` resolves as
+  soon as the click is queued (upstream: right after `block_place`), the stop of a click is sent before the start of the
+  next one (pairs never interleave). Placement is not predicted client-side (like upstream): the block appears with the
+  server's update.
+- **Tests:** `test/unit/placement.test.js`, `test/external/placeBlock.test.js` (the four upstream tests verbatim).
+
+#### Sneak-placing against interactive blocks  {#sneak-placing}
+- **Affects:** `bot._genericPlace` and everything built on it (`placeBlock`, `placeEntity`; mineflayer-pathfinder)
+- **Java:** mineflayer does not tell the server it sneaks ("TODO" in generic_place.js); pathfinder presses sneak itself
+  for its `interactable.json` (Java names).
+- **Bedrock:** BDS runs the clicked block's use action (open the chest / crafting table / furnace, toggle a door, open a
+  sign's editor, …) instead of placing unless the player sneaks; the sneak keys travel in `player_auth_input`, which the
+  server must have processed before the click (one input of ordering is enough; `set_entity_data` `sneaking` is the
+  acknowledgement). A flying player never gets the `sneaking` state but the raw sneak keys of the input count.
+- **mineflayer-bedrock:** when the reference block is interactive (`lib/bedrock/placement.js` `isInteractive`, Bedrock
+  names: containers, stations, doors / trapdoors / gates except iron, buttons, levers, repeaters, comparators, signs,
+  beds, cakes, item frames, …) `_genericPlace` holds the sneak control, waits until it went out with an input
+  (`bot._bedrock.physics.controlsSent()` when present, else the next sent input) and the server acknowledged it (not
+  while flying), clicks, then releases the sneak it pressed (a sneak the caller holds, e.g. pathfinder's, is kept).
+  While riding nothing is pressed (sneaking dismounts on Bedrock). While flying the bot may descend a little during
+  that tick (sneak = descend).
+- **Tests:** `test/external/placeBlock.test.js` › "survival: sneak-places on top of a chest / crafting_table / furnace /
+  wooden_door / standing_sign / barrel instead of using it", "creative flight: places against a chest (the raw sneak
+  keys count while flying)"; `test/unit/placement.test.js`.
+
+#### Pillaring and bridging (mineflayer-pathfinder scaffolding)  {#scaffolding}
+- **Affects:** `bot._genericPlace` (jump-placing), mineflayer-pathfinder `allow1by1towers` and bridging
+- **Java:** pathfinder jumps and calls `placeBlock` under its feet as soon as they left the ground; a refused click
+  resets the path (`place_error`) and it tries again.
+- **Bedrock:** BDS refuses any block that intersects the player's server-side hitbox (measured: an overlap of 0.01
+  block is refused; nothing is ever placed into the player, so there is no push-out). It processes a click after the
+  player inputs sent before it, so the click must follow an input whose hitbox is clear of the destination.
+- **mineflayer-bedrock:** while the bot rises out of the destination block, or keeps jumping (jump control held), the
+  click waits (≤ 20 inputs) for the first input with the hitbox clear of the block and follows it; a bot that will not
+  clear it clicks at once and gets the server's refusal like upstream. Measured (survival, gravity, local BDS):
+  manual pillar ×4 (place as soon as the feet left the ground): 0 refusals, 0 corrections; pathfinder pillar ×5:
+  0 `place_error`, 0 corrections (≈ 0.45 s per block, the click goes out 2 ticks after the feet leave the ground);
+  manual bridge ×4 (sneak backwards to the edge, place against the side of the block below): 0 corrections; pathfinder
+  bridge ×5–6: 3–4 corrections of 0.16–0.64 block — all from pathfinder's own `fullStop()`, which moves
+  `bot.entity.position` to the block centre client-side ("the server will not tell the difference" on Java; a
+  server-authoritative BDS does: it corrects the bot back, then it walks on). The corrections are absorbed (the goal is
+  reached); a pathfinder patch (U15) could skip the recentering on Bedrock.
+- **Tests:** `test/external/scaffold.test.js`, `test/unit/placement.test.js` › "_genericPlace while jumping out of the
+  destination (pathfinder pillar): the click follows the first input clear of it".
+
+#### No placement from the off-hand  {#offhand}
+- **Affects:** `bot._genericPlace` / `bot._placeBlockWithOptions` / `bot._placeEntityWithOptions` option `offhand`
+- **Java:** `hand: 1` places the off-hand item.
+- **Bedrock:** the off-hand only holds a few items (shield, totem, arrows, rockets, maps, …) and the player never uses
+  it on a block; a click with `hand: off_hand` and the off-hand item (or the main-hand item) places nothing (measured,
+  with a block forced into the off-hand by `/replaceitem`).
+- **mineflayer-bedrock:** the click is sent like the vanilla client would (hand `off_hand`, the off-hand's wire item),
+  the server refuses and `placeBlock` rejects with upstream's refusal message; upstream's check for an empty off-hand
+  is kept.
+- **Tests:** `test/external/placeBlock.test.js` › "_placeBlockWithOptions offhand: Bedrock places nothing from the
+  off-hand, the server refuses (inherent difference)".
+
+#### placeEntity  {#place-entity}
+- **Affects:** `bot.placeEntity`, `bot._placeEntityWithOptions`, `entityPlaced`, test `placeEntity`
+- **Java:** a click on the block (`block_place`); boats additionally `use_item` (a server raycast along the look); the
+  entity is found by name (`EnderCrystal`/`end_crystal`, `boat`, `armor_stand`, the spawn egg's mob) within 2 blocks
+  (3 for boats) of the destination; minecarts are not supported (assertion 'Unimplemented').
+- **Bedrock:** everything is a click on a block: armor stands, end crystals (obsidian / bedrock), spawn eggs, minecarts
+  (on a rail) and boats (BDS ignores a boat's `click_air`; the vanilla client clicks the water it aims at; boats can
+  also be placed on land). Entity names: `ender_crystal`, `boat` / `chest_boat` (chest boats, rafts), `armor_stand`,
+  `minecart` / `chest_minecart` / …, spawn eggs `villager` → `villager_v2`, `zombie_villager` → `zombie_villager_v2`,
+  `evoker` → `evocation_illager`, `tropical_fish` → `tropicalfish`. A hostile mob's spawn egg spawns nothing in
+  peaceful (the egg is used).
+- **mineflayer-bedrock:** upstream's code with: a boat whose reference block is a liquid clicks the liquid's top face
+  (it spawns centred on it whatever face was given; the look does not matter, so it never lands on the bot), minecarts
+  accepted, the Bedrock names above; upstream stops listening after the first `entitySpawn` even when it is another
+  entity (and then always times out after 5 s) — here the listener stays until the placed entity spawned or the
+  timeout ('Failed to place entity', unchanged).
+- **Tests:** `test/external/placeEntity.test.js`: the four upstream tests (server difficulty easy for the zombie egg;
+  the egg's command chain `registry.isOlderThan('1.9')`… throws for the Bedrock registry, the newest branch is taken),
+  plus minecart, chest boat on land, villager egg, the 'Unimplemented' / nothing-held checks and the peaceful refusal.
+
+#### Item use on blocks: buckets, flint and steel, bone meal, fireworks  {#item-use-on-blocks}
+- **Affects:** `bot.placeBlock` / `bot.activateBlock` / `bot.activateItem` with these items
+- **Java:** `activateItem` (`use_item`) uses a bucket or a boat on the block the player looks at (server raycast);
+  `placeBlock` / `activateBlock` with a bucket, flint and steel or bone meal acts on the clicked block.
+- **Bedrock:** BDS ignores `click_air` for buckets and boats (measured: nothing happens); the vanilla client clicks the
+  looked-at block (`click_block`: an empty bucket on the liquid source itself, a filled bucket on the solid block behind
+  the liquid, the liquid going across the face). `click_block` with flint and steel lights a fire (an obsidian frame
+  becomes `portal` blocks), bone meal grows the clicked plant, a firework rocket on a block launches it; like Java a
+  rocket used in the air without gliding does nothing.
+- **mineflayer-bedrock:** `placeBlock` with a water / lava bucket resolves with `blockPlaced(air, water|lava)`, with flint
+  and steel `blockPlaced(air, fire|portal)`; `activateBlock(<liquid source>)` with an empty bucket fills it.
+  `bot._bedrock.placement.useOnLookedAtBlock(item, offHand)` is the Bedrock form of a bucket / boat `activateItem`
+  (raycast along the look, liquids where the item acts on them, then the click); `bot.activateItem` (U8's
+  `lib/plugins/inventory.js`, not U11's file in wave 4) does not call it yet — a two-line hook is proposed to the
+  coordinator.
+- **Tests:** `test/external/placeBlock.test.js` › "buckets: …", "flint and steel: …", "bone meal: …";
+  `test/external/itemUse.test.js` (bow, snowball, firework); `test/external/portalIgnition.test.js`.
+
+#### nether test  {#nether-test}
+- **Affects:** test `nether`
+- **Java:** `/setblock ~ ~ ~ nether_portal` → nether; `/tp 0 128 0` onto the nether roof (bedrock at y 127) and a sign
+  placed at y 128; a portal block at the feet → back.
+- **Bedrock:** the nether ends at y 127 (build limit 128): a block at y 128 is outside the world. A portal block put
+  around a player during its post-teleport portal cooldown never takes it (measured: 1.2 s after the arrival → nothing
+  within 60 s; 2.7 s → back in 1 s). A lone portal block at an arbitrary nether spot such as (0, 100, 0) did not take the
+  player back either, and a nether spot that already took a player back once does not again (a rerun on the same
+  world).
+- **mineflayer-bedrock:** the port makes a sealed 1×2 pocket in netherrack at a random spot next to the arrival portal
+  (the bot's own `/fill` commands) and teleports into it instead of the roof, sets the portal back 4 s after the
+  arrival at the earliest, starts its overworld spots at a random multiple of 16 blocks east of the origin (outside the
+  area resetState restores; BDS links the trip back to the portals left there), skips the sign BLOCKS in the item
+  search (see the sign test). Everything else (signOpen, updateSign, the blockEntityData echo, activateBlock, the
+  `spawn` events) is verbatim.
+- **Tests:** `test/external/nether.test.js` › "nether".
+
+#### sign test  {#sign-test}
+- **Affects:** test `sign`
+- **Java:** the last item whose name contains `sign` (not `hanging`); the editor opens with `open_sign_entity`.
+- **Bedrock:** the item registry also lists the sign BLOCKS (`*_wall_sign`, `*_standing_sign`, `wall_sign`), which no
+  command can give (`replaceitem` → syntax error); the editor opens with `open_sign { position, is_front }`.
+- **mineflayer-bedrock:** the port skips `(wall|standing)_sign` names and listens to `open_sign`; it uses
+  `require('vec3')` (the factory, like upstream: `new Vec3(packet.position)` needs it — wave 3's port used the class).
+  Everything else is verbatim.
+- **Tests:** `test/external/sign.test.js` › "sign".
+
+#### useChests  {#use-chests}
+- **Affects:** test `useChests`
+- **Java:** chests placed with `bot.test.placeBlock`, `fillChest` with `/replaceitem block … slot.container.<n> …` on
+  pre-1.17 servers.
+- **Bedrock:** the placements are verbatim (bot.test.placeBlock = setQuickBarSlot + bot.placeBlock, survival: the chests
+  are used; Bedrock pairs the chests the same way). BDS's `/replaceitem` takes the slot index as its own argument
+  (`slot.container <n>`), which upstream's `replaceItemSlotIsPrefixed` branch does not build.
+- **mineflayer-bedrock:** verbatim except `fillChest`'s command (see [U8](differences/U8.md#use-chests)); the Bedrock extras (barrel,
+  shulker boxes, dispenser, dropper, hopper, ender chest) are placed with bot.test.placeBlock too.
+- **Tests:** `test/external/useChests.test.js`.
+
+## U12
+
+<!-- from docs/differences/U12.md -->
+Observed against BDS 1.26.51.1 (protocol 2193, bedrock-protocol 3.60.1) with live probes and the e2e suites
+(`packages/mineflayer-bedrock/test/external/{crafting,craftingMatrix,craftingTags}.test.js`), plus the U0 capture's
+`crafting_data` (`test/fixtures/1.26.51/join_flat.jsonl.gz`, used by `test/unit/recipes.test.js` and `craft.test.js`).
+
+#### Recipes come from the server's crafting_data  {#recipes}
+- **Affects:** `bot.recipesFor`, `bot.recipesAll`, `bot.registry.recipes`, `require('prismarine-recipe')(bot.registry)`.
+- **Java:** mineflayer reads minecraft-data's Java recipes (`registry.recipes[resultId]` = `{ result, inShape |
+  ingredients, outShape? }`, tags already expanded to one recipe per item) through prismarine-recipe's `Recipe.find`.
+- **Bedrock:** minecraft-data's Bedrock `recipes` have another shape (keyed by index, Bedrock names) and are not what
+  the server uses. BDS sends its recipes at join in `crafting_data` (1.26.51: typed arrays `shaped_recipes`,
+  `shapeless_recipes`, `shulker_box_recipes`, …): each with a `recipe_id`, a `network_id` (what crafting requests name),
+  a `block` tag, a `priority`, ingredient descriptors (`name` + metadata, 32767 = any; `item_tag`) and one or more
+  outputs (network-id items). Every crafting-grid recipe — 2×2 included — has `block: 'crafting_table'`; whether it fits
+  the 2×2 grid follows from its size. `deprecated` recipes are hidden legacy duplicates (BDS still accepts them);
+  furnace, smoker, blast furnace, campfire, stonecutter, cartography, smithing and potion recipes are not crafting-grid
+  recipes; `multi_recipes` (map cloning, fireworks, banner/book copies…) have no fixed inputs or outputs.
+- **mineflayer-bedrock:** lib/bedrock/recipes.js turns the `crafting_table` shaped / shapeless / shulker-box recipes
+  into prismarine-recipe `Recipe`s with the same fields (`result {id, count, metadata}`, `inShape`, `outShape`,
+  `ingredients`, `delta`, `requiresTable`) plus the Bedrock `networkId`. Tag ingredients are expanded like
+  minecraft-data's Java recipes: every cell of one tag gets the same member (13 stick recipes, one per plank type); two
+  tags in one recipe give the cartesian product (13 planks × 13 wooden slabs = 169 barrels); structurally identical
+  expansions are kept once (lower Bedrock `priority` first: the generic `minecraft:stick` beats
+  `stick_from_crimson_planks`; BDS accepts either id, and the other ids are kept for limited crafting). Like Java's
+  expanded recipes, one recipe never mixes members of a tag (2 oak + 2 birch planks give no crafting table recipe,
+  although BDS would accept that grid) — upstream's behaviour, kept. The fixture yields 4874 recipes from 4128 Bedrock recipes, none
+  skipped. `bot.registry.recipes` is replaced per bot by the same recipes in minecraft-data's Java shape (filled in place
+  on every crafting_data), so `require('prismarine-recipe')(bot.registry).Recipe.find(id)` works as on Java; those
+  Recipes lack `networkId` (prismarine-recipe drops unknown fields), so `bot.craft` matches them to the server recipe by
+  result and ingredients (also for Recipes built by hand). `recipesFor` / `recipesAll` are upstream's code over these
+  recipes, with one fix: the `metadata` argument filters on the result metadata (upstream's `Recipe.find` looks for a
+  `meta` key and never filters) — it matters on Bedrock, where e.g. the bed colour is the `bed` item's metadata (white
+  0, red 14). With the gamerule `doLimitedCrafting` on, only the recipes the server unlocked (`unlocked_recipes`) are
+  returned (a grid is available when any of its Bedrock recipes is unlocked, and crafted with that one). A Recipe kept
+  from an older crafting_data is matched again by result and ingredients. Netherite gear is a smithing-table upgrade, not crafting (and has no mineflayer API).
+- **Tests:** `test/unit/recipes.test.js`, `test/unit/craft.test.js`, `test/external/craftingMatrix.test.js`.
+
+#### Item tags are not on the wire  {#item-tags}
+- **Affects:** recipes with tag ingredients (planks, logs, wooden slabs, stone materials, coals, eggs, wool, nuggets, …).
+- **Java:** minecraft-data's recipes are already expanded; the tags exist in the data.
+- **Bedrock:** `crafting_data` names tags (`minecraft:planks`); BDS never sends their members (`item_registry` only lists
+  the tags of data-driven items, none of the vanilla ones above). 11 tags are used by 1.26.51's crafting recipes.
+- **mineflayer-bedrock:** lib/bedrock/item_tags.js: pmmp/BedrockData `item_tags.json` (BDS 1.26.30, CC0) for those 11
+  tags, verified member by member on BDS 1.26.51.1 by crafting every candidate item into a recipe using the tag
+  (accepted = member, status 35 = not). New in 1.26.51: the poplar wood family (planks, logs, wooden slabs) and
+  `minecraft:mushrooms_for_stew` (brown, red and shelf mushroom). A recipe with an unknown tag or item would be skipped
+  (`bot._bedrock.recipes.skipped`; empty on 1.26.51).
+- **Tests:** `test/external/craftingTags.test.js` (every member of every tag crafts on the server).
+
+#### Crafting is one item stack request per batch  {#craft-request}
+- **Affects:** `bot.craft`.
+- **Java:** mineflayer clicks the ingredients into the grid (window_click per click), takes the result from slot 0 and
+  puts it away, once per craft.
+- **Bedrock:** no click packet; the server crafts from an `item_stack_request` (server-authoritative inventory), and
+  only from the crafting grid: consuming straight from the hotbar is refused (`craft_recipe`: status 35 "mismatched
+  recipe for grid items"; `craft_recipe_auto`: status 27). The 2×2 grid is `crafting_input` ui 28-31 and needs the
+  player's inventory screen (status 7 without it), the crafting table's grid is ui 32-40 (row-major; shapes may sit
+  anywhere and mixed tag members are accepted). Verified request shape (one request, any number of crafts):
+  `place` × n (inventory → grid cell), `craft_recipe { recipe_network_id, times_crafted }` (legacy id 12),
+  `results_deprecated { result_items: [{ type: 'name', legacy_type: 1, name, metadata, count (per craft),
+  block_runtime_id, extra }], times_crafted }` (19), `consume` (5) × each grid cell (count = times), then per result
+  `place` (1) from `creative_output` 50 (stack id = the request id) into the inventory — or `take` to the cursor. The
+  created output holds at most one stack per request (16 logs → 64 planks in one request; 20 logs → status 14), every
+  result must be taken (status 17 otherwise), and a result may also be dropped from the created output (`drop`).
+  Bulk crafting = `times_crafted` > 1.
+- **mineflayer-bedrock:** `bot.craft(recipe, count, craftingTable)` keeps upstream's checks, errors and window handling
+  (`Recipe requires craftingTable, but one was not supplied: …`, `crafting: non craftingTable used as craftingTable`,
+  errors re-thrown as `new Error(err)` so a missing ingredient reads `Error: missing ingredient`, the table window is
+  opened once and closed at the end or on error). Each request crafts as many of the `count` crafts as the inventory,
+  one stack per grid cell and one stack of each result allow (`count` = 25 sticks → 2 requests of 16 and 9); when the
+  ingredients run out after some crafts it throws `missing ingredient` like upstream's next `craftOnce`. Ingredients
+  are taken in upstream's `findInventoryItem` order (main inventory, then hotbar; one kind of stack per cell), results
+  go where upstream's `putSelectedItemRange` puts them (stacks with room, then the first empty slot, main inventory
+  first). The request goes through U8's inventory model (prediction, rollback on rejection); items found in the grid
+  are returned first. A container window open when crafting in the 2×2 grid, or another window open when crafting at a
+  table, is closed first: the 2×2 grid only exists in the player's inventory screen (upstream would click into the open
+  container instead) and BDS ignores a container activation while another window is open. A table window already open
+  on the same block is reused and, like the one upstream's `activateBlock` would have opened in its place, closed at
+  the end.
+- **Tests:** `test/unit/craft.test.js` (request shapes, bedrock-protocol round trip), `test/unit/recipes.test.js`
+  (planner), `test/external/craftingMatrix.test.js`, `test/external/crafting.test.js`.
+
+#### Several results: buckets and bottles go to the inventory  {#remainders}
+- **Affects:** `bot.craft` / `recipe.delta` / `recipe.outShape` of the cake, honey block and honey bottle → sugar.
+- **Java:** the empty buckets / bottles stay in the crafting grid (minecraft-data's old `outShape`), and mineflayer puts
+  them away after the craft.
+- **Bedrock:** the recipe lists them as extra outputs (cake: `output: [cake, bucket × 3]`); the client selects each one
+  with `create { result_slot_id: k }` (legacy id 6) and takes it from the created output like the main result (the
+  vanilla client's request, confirmed on BDS: without `create` the take fails with status 49).
+- **mineflayer-bedrock:** the extra outputs are added to `recipe.delta` (positive counts); `outShape` stays null since
+  nothing remains in the grid. `bot.craft` emits `create` before taking each result when there are several.
+- **Tests:** `test/external/craftingMatrix.test.js` › "multi-result recipes: …", `test/unit/craft.test.js` › "crafting
+  table: …".
+
+#### A result that does not fit is carried, then tossed  {#overflow}
+- **Affects:** `bot.craft` with a full inventory.
+- **Java:** upstream's `putSelectedItemRange` tosses what it cannot put away (`tossLeftover`).
+- **Bedrock:** the result must be taken in the craft request itself.
+- **mineflayer-bedrock:** what does not fit is taken to the cursor in the same request, then U8's `returnCursor` puts
+  it back (Java's rule) and drops the rest — the same outcome as upstream (an `itemDrop`). Only one stack can be carried,
+  so a batch whose results overflow by more than that crafts fewer times (the rest in the next request); a single craft
+  that cannot place its results even so fails with `destination full` (upstream's message for a full range).
+- **Tests:** `test/external/craftingMatrix.test.js` › "a full inventory: the result goes where upstream puts it, what
+  does not fit is tossed".
+
+## U13
+
+<!-- from docs/differences/U13.md -->
+Observed on BDS 1.26.51.1 (protocol 2193). The station APIs (`bot.openFurnace`, `bot.openEnchantmentTable`,
+`bot.openAnvil`, `bot.openVillager`, `bot.trade`) keep mineflayer's signatures, window members, events and error
+messages. Underneath, every station operation is a server-authoritative item stack request
+(lib/bedrock/stations.js). The entries below record what the Bedrock protocol forces and its few visible effects.
+
+#### Furnace properties come from container_set_data  {#furnace}
+- **Affects:** `Furnace .fuel`, `.progress`, `.totalFuel`, `.fuelSeconds`, `.totalProgress`, `.progressSeconds`,
+  `Furnace "update" event`, `bot.openFurnace` (furnace, blast furnace, smoker)
+- **Java:** `craft_progress_bar` (window property) carries property 0 (fuel left), 1 (burn time of the fuel),
+  2 (cook progress) and 3 (total cook time).
+- **Bedrock:** `container_set_data { window_id, property, value }`. Property 0 is the tick count (progress), 1 the lit
+  time (fuel left) and 2 the lit duration (burn time). 3 (stored XP) and 4 (fuel aux) have no Java counterpart.
+  There is **no total cook time**: it is the block's constant, 200 ticks for a furnace and 100 for a blast furnace
+  or smoker (also a blast furnace or smoker burns one coal for 800 ticks, not 1600). BDS sends the block's state **before**
+  its `container_open`, then every tick while the block burns. The smelted output arrives as `inventory_slot` of the window.
+- **mineflayer-bedrock:** Bedrock properties are mapped onto the Java ones (0→2, 1→0, 2→1) and normalised exactly as
+  upstream does it. `totalProgress` is set from the block type when the window opens. Values that arrived before the
+  window opened are applied when it opens. `update` fires for every `container_set_data` of the window, like upstream
+  fires it for every window property.
+- **Tests:** `test/external/furnace.test.js` (all four cases), `test/unit/stations.test.js` › "stations: furnace".
+
+#### Enchanting: options, seed and the enchant request  {#enchanting}
+- **Affects:** `EnchantmentTable .enchantments`, `.xpseed`, `.enchant(choice)`, `EnchantmentTable "ready" event`
+- **Java:** window properties 0–9 give the three level requirements, the enchantment seed and one *hinted*
+  enchantment (id + level) per option. `enchant_item { windowId, enchantment }` enchants, and the server sends the new item.
+- **Bedrock:** `player_enchant_options { options: [{ cost, slot_flags, equip_enchants, held_enchants, self_enchants,
+  name, option_id }] }` is sent before the table's `container_open` (empty) and again after every change of the item
+  slot. `cost` is the level requirement. The three lists are **all** the enchantments the option applies, not a
+  single hint. The seed is never sent to the client. Enchanting is a single item stack request:
+  `craft_recipe { recipe_network_id: zigzag32(option_id) }`, then `results_deprecated`, then `consume` of choice + 1
+  lapis (nothing in creative), then `consume` of the item, then `place` of the produced item from `creative_output`
+  50 back into the item slot. BDS applies its own result (a wrong `results_deprecated` is ignored) and charges
+  choice + 1 levels. **The response carries no item.**
+- **mineflayer-bedrock:** `enchantments[i] = { level: cost, expected: { enchant, level } }`, where `expected` is the
+  first of the option's enchantments (Bedrock ids, as in `bot.registry.enchantments`). `ready` fires on the same
+  transitions as upstream, and `xpseed` stays −1. `enchant(choice)` predicts the enchanted item from the option:
+  equip, held and self enchantments in that order, the same `ench` NBT as BDS (a book becomes an `enchanted_book`).
+  This prediction was verified byte-equal against the server's copy for swords, pickaxes, chestplates and books
+  with options 0–2. It resolves with the item in slot 0 once the server accepts the request. Missing lapis or
+  levels reject with an explanatory error instead of waiting forever.
+- **Tests:** `test/external/enchanting.test.js` (verbatim body + every option, server copy compared after an
+  inventory resend, creative), `test/unit/stations.test.js` › "stations: enchanting table".
+
+#### Anvil: the name travels in the request, the client predicts the result  {#anvil}
+- **Affects:** `Anvil .combine(itemOne, itemTwo[, name])`, `Anvil .rename(item[, name])`, `bot.openAnvil`
+- **Java:** the name is typed with `name_item` (or `MC|ItemName`), the server shows the result in slot 2, and `putAway(2)` takes it.
+  The costs that upstream checks come from prismarine-item's `Item.anvil`.
+- **Bedrock:** there is no name packet. The operation is a single item stack request: `optional { recipe_network_id:
+  0, filtered_string_index: 0 (rename) | -1 }`, then `consume` of the target and the sacrifice, then `place` of the
+  produced item from `creative_output` 50. The new name goes in the request's `custom_names` (cause `anvil_text`).
+  BDS shows nothing in slot 2 and never sends the result back. Bedrock's rules also differ from Java's:
+  an enchantment costs multiplier × the **levels it adds** (Sharpness IV + IV → V costs 1, not 5), an incompatible
+  enchantment is dropped at no cost, Impaling has multiplier 2/1, a rename alone keeps the prior work penalty
+  (a fresh renamed item has `RepairCost` 0), and a rename can also be "Too Expensive" (Java caps it at 39). Names
+  are at most 30 characters. prismarine-item has no Bedrock anvil (`Item.anvil` is undefined).
+- **mineflayer-bedrock:** `lib/bedrock/anvil.js` (adapted from prismarine-item's `anvil.js`) applies the Bedrock rules
+  for the guards ("Not anvil-able…", "not enough xp", input order) and for the predicted result. That result has
+  BDS's NBT layout: `RepairCost`, `display.Name`, `ench`, `Damage`. Both are verified against the server's copy for
+  combine, combine + rename, rename, material repair, stack rename and enchantment upgrade. The result goes into the
+  inventory the way upstream's `putAway(2)` puts it: first a matching stack with room, else the first empty slot
+  (Java slot 3 in the upstream test). The experience check uses the cost of the direction actually used (upstream's
+  `smallest` is 0 whenever one direction is impossible, so it never refuses; BDS would reject the request and leave
+  the items in the anvil). A sacrifice that changes nothing gives no result even with a name, as in vanilla, and the
+  slots are cleared of leftovers (e.g. unused repair materials) before an operation. `rename` in creative mode does
+  not wait for an experience change (upstream waits for one in creative too, though none comes). A name longer than
+  30 characters is refused with upstream's "Name is too long." (upstream: 35).
+- **Tests:** `test/external/anvil.test.js` (the four upstream tests + a Bedrock-rules extra),
+  `test/unit/stations.test.js` › "stations: anvil".
+
+#### Villager trading: update_trade opens the window, the offers are NBT  {#trading}
+- **Affects:** `bot.openVillager`, `bot.trade`, `Villager .trades`, `Villager .selectedTrade`,
+  `villager.trade(tradeIndex, [times])`, `Villager .close()`, `Villager "ready" event`
+- **Java:** `open_window` (merchant) plus `trade_list` (only the unlocked offers, with `specialPrice`, `demand` and
+  `priceMultiplier`). `select_trade` makes the server move the inputs, and `putAway(2)` takes the output. The opener
+  accepts the `villager` entity only.
+- **Bedrock:** interacting with a villager sends `update_trade { window_id, window_type: 'trading', trade_tier,
+  villager_unique_id, offers: NBT { Recipes: [{ buyA, buyCountA, buyB, buyCountB, sell, uses, maxUses, tier, traderExp,
+  demand, priceMultiplierA/B, netId }] } }` and **no** `container_open`: that packet opens the screen. The offers list
+  every tier (locked ones too). `buyA.Count` is the price the server charges, with discounts such as Hero of the
+  Village folded in (verified), and `buyCountA` is the base price. A `Damage` of 32767 means any data value. There is no
+  `select_trade`. One use is a single item stack request: `craft_recipe { recipe_network_id: netId }`, then `consume`
+  from `trade2_ingredient1` / `trade2_ingredient2` (ui slots 4 / 5, verified), then `place` of the output from
+  `creative_output` 50. The server counts the use (`uses` in the next `update_trade`). The villager is `villager_v2`;
+  `wandering_trader` opens the same window.
+- **mineflayer-bedrock:** the villager plugin hands `update_trade` to the inventory plugin as a `trading` container
+  (`minecraft:merchant`, U8's slot map; a refresh while another window is open, or for a window being closed, opens
+  nothing). `trades` lists the unlocked offers (tier ≤ `trade_tier`), like Java. Prices:
+  `inputItem1.count` is the base price and `realPrice` the server's. `specialPrice` is the difference minus Java's
+  demand term, so upstream's formula yields `realPrice` again. `xp` is `traderExp`. An input whose `Damage` is 32767
+  matches any data value when counting and depositing. The recipe network id is
+  non-enumerable `trade.bedrock.netId`. `trade()` keeps upstream's guards and messages and runs one request per use
+  (`putRequirements` deposits the inputs as upstream does). It first clears ingredient slots that hold something
+  else, since Bedrock has no `select_trade`. The output is predicted from the offer's `sell` item (NBT included,
+  e.g. enchanted books) and lands like `putAway(2)`. `openVillager` accepts `villager_v2`, `villager` and
+  `wandering_trader`.
+- **Tests:** `test/external/trade.test.js`, `test/unit/stations.test.js` › "stations: villager".
+
+#### Trade fixture: no NBT offers on /summon  {#trade-fixture}
+- **Affects:** test `trade`
+- **Java:** the upstream test summons a villager with fixed `Offers` NBT (four recipes, maxUses 3, uses 1) from a
+  command block.
+- **Bedrock:** `/summon` takes no NBT, so offers cannot be chosen. A `villager_v2` summoned with the spawn event
+  `minecraft:become_<profession>` gets that profession at once. `minecraft:spawn_<profession>` does not:
+  it picked random professions in testing. Its trades are the vanilla novice ones and are partly random. A
+  `wandering_trader` has all of its trades unlocked at once, with small max uses.
+- **mineflayer-bedrock:** the port uses a novice librarian (`minecraft:become_librarian`; always "24 paper → 1
+  emerald", plus either "9 emeralds → bookshelf" or "N emeralds + book → enchanted book"). It re-summons until a
+  librarian offers the two-input trade, and keeps it still with slowness 255. A wandering trader covers emerald
+  trades and a trade used up to `tradeDisabled` (then `bot.trade` rejects with "trade blocked"). Each trade runs twice,
+  like upstream, with item and emerald counts checked. Because the offers are random, the suite gate is ≥ 4/5.
+- **Tests:** `test/external/trade.test.js` › "trade", › "trade: wandering trader, emerald trades, a used-up trade
+  is blocked (Bedrock extra)".
+
+#### Ported tests  {#ported-tests}
+- **furnace:** verbatim, except that upstream shortens the cook with `/data merge block … {CookTime:195s}`. Bedrock
+  has neither `/data` nor `/blockdata`, so the port waits for the furnace's own 10 s.
+- **enchanting:** verbatim except `/xp set <bot> 999 levels` → `/xp 999L <bot>`.
+- **anvil:** the four upstream tests, with the same assertions. `/xp set` becomes `bot.test.setExperienceLevel(999)`.
+  The enchanted sword is made with `/enchant`, since creative can only create catalogue items and replaceitem has
+  no NBT; the enchanted books come from the catalogue (`makeBook` is verbatim). `renameName(name)` is the plain
+  name, because a Bedrock custom name is a string, not a JSON text component. `renameCost()` is 0 without the
+  `isNewerOrEqualTo('1.8.9')` comparison, which the Bedrock registry cannot make.
+- **trade:** see [trade fixture](#trade-fixture).
+- All four place their station with the setblock-based `bot.test.placeBlock`; U11 switches it to `bot.placeBlock`.
+
+#### Opening a station while a window is open  {#window-switch}
+- **Affects:** `bot.openFurnace`, `bot.openEnchantmentTable`, `bot.openAnvil`, `bot.openVillager`
+- **Java:** the server replaces the open window.
+- **Bedrock:** BDS ignores a container activation while another window is open, so the opener would wait 20 s.
+- **mineflayer-bedrock:** the station openers close `bot.currentWindow` first (and return its carried items as
+  `closeWindow` does). W3-FIX-B is moving this into `openBlock` / `openEntity`.
+- **Tests:** `test/external/trade.test.js` (an opened trader is reopened after closing).
+
+## U14
+
+<!-- from docs/differences/U14.md -->
+Observed against BDS 1.26.51.1 (protocol 2193, bedrock-protocol 3.60.1) with live probes and the e2e suites
+`packages/mineflayer-bedrock/test/external/{fishing,book,bed,elytra,riding}.test.js`.
+
+#### Fishing  {#fishing}
+- **Affects:** `bot.fish()`, test `fishing`.
+- **Java:** cast / reel in with use_item; the bobber is a `fishing_bobber` spawn_entity; a bite shows as 6 `fishing` /
+  `bubble` particles next to the bobber (world_particles), which upstream detects.
+- **Bedrock:** cast / reel in = item use `click_air` with the rod. The bobber is `add_entity minecraft:fishing_hook`
+  whose `owner_eid` metadata is the caster's unique id. While waiting the hook sends `entity_event fish_hook_tease`
+  (fish nearby) and then `fish_hook_position` with `fish_x` / `fish_z` metadata (a fish swimming in, ~1–3 s); the bite
+  is `entity_event fish_hook_hook` on the hook. Reeling in then drops the catch as an `add_item_entity` flying to the
+  player (collected with `take_item_entity`) plus XP orbs, and removes the hook (`remove_entity`).
+  Measured waits (cast → `fish_hook_hook`, open water, `/enchant` levels): Lure 0 clear 6.3–32.3 s (mean 20.7, n=10);
+  Lure 0 rain 6.0–20.9 s (12.1, n=8); Lure III clear 2.5–12.7 s (5.9, n=8); Lure III rain 1.9–12.2 s (5.7, n=14
+  incl. 4 early probes). The base window matches Java's 100–600 ticks (+ the fish swimming in), so
+  `fishingBiteDelayMaxTicks: 600` (U2's assumption) holds; Lure lowers it by ~5 s per level like Java.
+- **mineflayer-bedrock:** upstream's task logic and messages unchanged; the bobber is the first `fishing_hook` the bot
+  owns after `fish()` (another player's bobber is ignored — upstream takes any bobber), the bite is
+  `fish_hook_hook` on it. Like upstream, `fish()` has no time limit of its own.
+- **Tests:** the port keeps upstream's flow (water under the bot, rain, `lookAt` its own position, wait for
+  `playerCollect`). Upstream's rod carries Lure V (computed from the 600-tick window, written as item NBT); Bedrock's
+  `/give` cannot carry enchantments and `/enchant` caps Lure at III, so the rod is `/give @s fishing_rod` +
+  `/enchant @s lure 3` (in survival: BDS tells a creative player nothing about an `/enchant`). Random test, gate ≥ 4/5.
+
+#### Books  {#books}
+- **Affects:** `bot.writeBook`, `bot.signBook`, test `book`.
+- **Java:** `edit_book { slot, pages[], title? }` with the whole book; pages are NBT strings
+  (`nbt.value.pages.value.value` = the page texts); the server echoes the edited slot.
+- **Bedrock:** the book must be *opened* first: an item use (`click_air`) of the held `writable_book` (a new book
+  then comes back with an empty `pages` list); edits that reach the server in the same tick as the use are dropped.
+  Edits go page by page: `book_edit { inventory_slot: hotbar slot, type: replace_page | add_page | delete_page |
+  swap_pages, page_number, text, photo_name }`, signing is `book_edit { type: sign, title, author, xuid }`. BDS sends
+  nothing back for an edit; closing the book (`item_release`) makes it resend the book (new stack id). Item NBT:
+  `pages: [{ text, photoname }]`; a written book adds `author`, `title`, `xuid` ('' offline) and `generation` 0.
+  An 18-character title is accepted.
+- **mineflayer-bedrock:** upstream's checks, messages and slot handling (the book is moved to hotbar slot 0 and held,
+  then the held slot / book slot are restored); the edit is one session open → `book_edit`s (only the pages that
+  change, extra pages deleted from the end) → (`sign`) → release, acknowledged by the resent book holding the requested
+  pages (or the written book); an unacknowledged session is retried once with a longer open delay (20 s in total, like
+  upstream's acknowledgement timeout). `writeBook` with the book's own pages sends nothing.
+- **Tests:** the port compares the page texts (`pages.value.value.map(p => p.text.value)`) instead of a list of strings.
+
+#### Beds  {#beds}
+- **Affects:** `bot.sleep`, `bot.wake`, `sleep` / `wake` events, tests `bed`, `internalTest › bed`.
+- **Java:** sleep = use the bed; `entity_action leave_bed` wakes; the sleeping state is the player's pose metadata.
+- **Bedrock:** sleep = item use `click_block` on the bed. The server answers with `set_entity_data` `player_flags`
+  bit 1 + `player_bed_position` (the head), moves the player into the bed with a `correct_player_move_prediction`
+  (feet ~0.7 below the bed top, in the head block's center) and marks the head `occupied_bit`; a creative player can
+  sleep too. `player_action stop_sleeping` wakes the player (`animate wake_up` + `player_flags` 0, a correction next
+  to the bed). Nobody waking the player: BDS ends the sleep itself after 100 ticks (the night is skipped when
+  `doDaylightCycle` is on). `/setblock` of a bed always places the whole bed: the given position becomes the head and
+  the foot goes behind it (`head_piece_bit` is ignored); removing one half breaks the other.
+- **mineflayer-bedrock:** upstream's checks in upstream's order and with its messages (time / thunderstorm, already
+  sleeping, not a bed, occupied, half a bed, `canDigBlock` — upstream's reach check while U10's `digging.js` is a stub
+  —, click range, hostile mobs); `activateBlock` is awaited (Bedrock's is asynchronous); 'bot is not sleeping' after 3 s.
+  `wake()` sends `player_action stop_sleeping` and resolves at once, like upstream.
+- **Tests:** the `bed` port places one bed with its head at upstream's `bedPos2` (`/setblock <head> bed
+  ["direction"=0]`), which gives upstream's layout; upstream's `bedItem` (first item ending in "bed") is
+  `item.straw_bed` on Bedrock, the port uses the `bed` block. Half a bed cannot be staged on BDS (unit-tested).
+
+#### Elytra and firework boosts  {#elytra}
+- **Affects:** test `elytra` (with `usedFirework`, `bot.fireworkRocketDuration`, `bot.elytraFly`).
+- **Java:** rockets used while gliding are `firework_rocket` entities whose `attached_to_target` metadata names the
+  boosted player.
+- **Bedrock:** a boosting rocket is `add_entity minecraft:fireworks_rocket` with `owner_eid` **-1** and the boosted
+  player's unique id in metadata key 18 (`minecart_has_display` in bedrock-protocol's names, a long for rockets);
+  the item NBT (`Fireworks.Flight`) is key 16. BDS fires about one rocket per 2 ticks of continuous use (20 uses → ~10
+  rockets) and corrects a boosted glide every ~6 ticks.
+- **mineflayer-bedrock:** firework tracking is U7's (`entities.js`): it reads key 18 besides `owner_eid` / the
+  shooter ids (W3-FIX-B), so live boosts fire `usedFirework` and set `bot.fireworkRocketDuration`. The physics side
+  (a correction erasing the boost) is fixed by W3-FIX-A (the boost start is recorded in the tick's input and
+  replayed).
+- **Tests:** the port is verbatim; the plain rockets come from the creative inventory's default variant
+  (`Fireworks {Flight: 1}`, [W3-FIX-A](differences/W3FIX.md#creative-defaults)). `usedFirework` and the boost assertions are
+  checked.
+
+#### Riding control  {#riding}
+- **Affects:** `bot.moveVehicle` with `bot.mount` / `bot.dismount` (Bedrock extra test `riding`).
+- **Java:** the client simulates the ridden vehicle and sends `vehicle_move` / `steer_vehicle`.
+- **Bedrock:** the rider's `player_auth_input` carries the move vector (+ paddle flags for boats) and the predicted
+  vehicle id / rotation; BDS simulates the boat / horse from it (a boat ~7 blocks/s on water, turning with one paddle;
+  a horse follows the rider's yaw). The client does not predict vehicle physics, and BDS reconciles the vehicle with a
+  `correct_player_move_prediction { prediction_type: 'vehicle' }` every 6 ticks; the rider gets no player correction.
+  Dismounting a horse teleports the rider next to it; for a boat BDS may keep the position the rider reported.
+- **mineflayer-bedrock:** like upstream, `physicsTick` does not fire while mounted. The physics plugin (W3-FIX-A)
+  reports the rider at the vehicle's seat in every `player_auth_input` (vehicle wire position from move_entity or the
+  newer vehicle correction + the `rider_seat_position` actor data) and moves `bot.entity.position` with it, so a boat
+  rider gets off next to the boat.
+- **Tests:** `test/external/riding.test.js` (no player correction while riding, vehicle corrections never closer than
+  5 ticks apart). Measured: boat 20.8 blocks in 3 s, horse 25–29 blocks in 3 s, 0 player corrections, vehicle
+  corrections exactly 6 ticks apart.
+
+## U15
+
+<!-- from docs/differences/U15.md -->
+Observed on BDS 1.26.51.1 (protocol 2193). The ecosystem plugins run unchanged except for the small `pnpm patch`es
+below (`patches/mineflayer-*.patch`); each entry says what the patch changes and why. Recommended usage:
+[docs/ecosystem.md](ecosystem.md).
+
+#### mineflayer-pathfinder 2.4.5 patch  {#pathfinder}
+- **Affects:** `Movements`, `bot.pathfinder.bestHarvestTool`, `goto`, `stop`, the path executor (`monitorMovement`,
+  `fullStop`, `postProcessPath`); everything built on it (mineflayer-collectblock, mineflayer-pvp, mineflayer-tool's
+  chest retrieval)
+- **Java:** block-name sets with Java names; doors are dug through (only fence gates can be opened, and
+  `canOpenDoors` was left off upstream); `fullStop()` recentres the bot by moving `bot.entity.position` ("the server
+  will not tell the difference"); dig costs from prismarine-block `block.digTime` with the tool's simplified NBT.
+- **Bedrock:** different block names (`flowing_water` / `flowing_lava` are blocks of their own, `web`, `wooden_door`,
+  `fence_gate`, `standing_sign`, `lit_furnace`, … — `lib/interactable.json` only knew Java names); server-authoritative
+  movement corrects any client-side position change (measured with U11's scaffold test: the recentring cost 3–4
+  corrections of 0.16–0.64 block per bridge); Bedrock items keep enchantments in `ench` (numeric ids) and BDS applies
+  Bedrock's Haste / Mining Fatigue factors (docs/differences/U10.md#dig-speed).
+- **mineflayer-bedrock (patch, new file `lib/bedrock.js` + edits):**
+  - names: `flowing_water` / `flowing_lava` join `liquids` and `replaceables`, `flowing_lava` `blocksToAvoid`; water-filled
+    blocks (`seagrass`, `kelp`, `bubble_column`, …) and waterlogged blocks count as liquid, the postprocessed path centres
+    in them (backport of master #384); `interactable.json` gets the 156 Bedrock names of interactive blocks (the same
+    set as `lib/bedrock/placement.js`), so pathfinder also sneaks before placing against them;
+  - doors and gates: `openable` holds the hand-openable doors (`wooden_door`, `spruce_door`, …, copper doors; never iron)
+    besides fence gates; with `canOpenDoors` a closed one becomes a `useOne` click (the door's upper half is not dug), an
+    open door / gate (`open_bit`, Java `open`) is passable and never clicked again; the doorway node is the floor centre
+    and a `useOne` node no longer stops the path post-processing (backport of master #372); after the click the executor
+    walks on (upstream kept `placing` set and then read `placingBlock.y` of undefined or reset the path for want of
+    scaffolding blocks);
+  - `fullStop()` keeps upstream's zeroed horizontal velocity but skips the recentring teleport when the bot has
+    `bot._bedrock.physics` (server-authoritative movement). Measured on the scaffold test: pathfinder bridge 0
+    corrections (was 3–4); the ecosystem suite sees at most one ~0.24-block correction now and then when BDS does not
+    accept the zeroed velocity (releasing the keys only — tried — let the bot drift out of the goal block);
+  - dig costs (`bestHarvestTool`, `safeOrBreak`): `item.enchants` (Java `Enchantments` and Bedrock `ench` alike; the
+    simplified NBT had `id`, which prismarine-block never matched) and `bot._bedrock.digging.blockDigTime` when present
+    (Bedrock effect factors; prismarine-block's `digTime` otherwise);
+  - backports of master #375: `stop()` while idle no longer latches (it stopped the next goal), `goto` rejects with
+    NoPath instead of resolving on an empty failed search;
+  - `detectDiggingStopped` removes only its own listeners (`removeAllListeners(event, fn)` ignores `fn` and dropped
+    every other `diggingCompleted` / `diggingAborted` listener of the bot);
+  - a dynamic goal (`GoalFollow`) re-plans when the bot was pushed more than a block away from where its finished path
+    was computed (a skeleton's arrows pushed a mineflayer-pvp bot out of range for good: the target itself had not moved
+    far enough for `hasChanged()`).
+- **Tests:** `test/external/ecosystemPathfinder.test.js` (hills, lake, GoalXZ 120 + GoalY, ladder, parkour, pillar,
+  bridge, wall, door + gate, GoalFollow), `test/external/scaffold.test.js`, unit `test/unit/ecosystem.test.js`.
+
+#### mineflayer-tool 1.2.0 patch  {#tool}
+- **Affects:** `bot.tool.getDigTime`, `equipForBlock`, `retrieveTools`' cost order
+- **Java:** `block.digTime(type, …, nbt.simplify(item.nbt).Enchantments, effects)`.
+- **Bedrock:** enchantments are `ench` NBT with numeric ids; Bedrock effect factors.
+- **mineflayer-bedrock (patch):** `item.enchants` + `bot._bedrock.digging.blockDigTime` (else prismarine-block) — the
+  estimate equals `bot.digTime` with that tool in hand (asserted live), so Efficiency picks the enchanted tool.
+- **Tests:** `test/external/ecosystemTool.test.js`, unit `test/unit/ecosystem.test.js`.
+
+#### mineflayer-collectblock 1.6.0 patch  {#collectblock}
+- **Affects:** `bot.collectBlock.collect(target, [options], cb)` (callback form), the drops it picks up
+- **Java / Bedrock:** the same upstream bug on both: `callbackify(this.collect)` lost `this`, so the callback form
+  (mineflayer's `examples/collectblock.js`) always failed with "Cannot read properties of undefined (reading 'bot')".
+- **Both:** a mined block's drops spawn at a random point 0.25–0.75 into the block on each axis (minus half the item
+  height): up to ~0.52 block from its centre (measured on BDS: 0.17–0.52). collectblock only targets drops within 0.5
+  of the centre, so now and then a drop was left behind (Java has the same spread).
+- **Both:** a target block that is already gone when its turn comes (mineflayer-pathfinder digs what is in its way,
+  e.g. the log above a dug one while following that log's drop) got a `GoalLookAtBlock` on air, which never ends: the
+  search ran into its 5 s timeout and `collect()` rejected (measured: 2 of 4 runs of the 5-log scenario).
+- **mineflayer-bedrock (patch):** `callbackify(this.collect).call(this, …)`; drops within 0.75 of the mined block's
+  centre are collected; a block target that changed is dropped before pathing to it. Nothing else is patched: digging
+  waits for
+  the server (U10), drops come from `itemDrop` → `GoalFollow` → `playerCollect` / `entityGone` (U7), the chest flow uses
+  `openChest` / `deposit` (U8) unchanged.
+- **Tests:** `test/external/ecosystemCollectBlock.test.js`, `test/external/exampleEcosystem.test.js`.
+
+#### mineflayer-armor-manager 2.0.1 patch  {#armor-manager}
+- **Affects:** auto-equip on `playerCollect`
+- **Java:** each picked-up piece starts `equipItem` 100 ms later; with Java's instant window clicks the equips rarely
+  overlap.
+- **Bedrock:** every click waits for the server's item stack response, so pieces picked up together equip at the same
+  time; their clicks interleave through the shared cursor and swap the pieces around (measured: 1 of 5 pieces ended up
+  equipped).
+- **mineflayer-bedrock (patch):** the equips run one after another (a promise queue). `getDroppedItem()` (U7) and the
+  Java armor slots 5–8 / off-hand 45 (U8) work as is; `supportFeature('doesntHaveOffHandSlot')` is false.
+- **Tests:** `test/external/ecosystemArmor.test.js`, unit `test/unit/ecosystem.test.js`.
+
+#### mineflayer-auto-eat 5.0.3 patch  {#auto-eat}
+- **Affects:** `bot.autoEat.eat()`, `enableAuto()`
+- **Java:** a meal ends with `entity_status` 9 on `bot._client`.
+- **Bedrock:** no `entity_status` packet; BDS sends `completed_using_item` to the eater (what `bot.consume` waits for).
+- **mineflayer-bedrock (patch):** the eating listener also completes on `completed_using_item`. The plugin is ESM-only
+  (load it with `await import('mineflayer-auto-eat')`); `registry.foods` / `foodsByName` come from bedrock-data; its
+  GPL-3.0 dependency `@nxg-org/mineflayer-util-plugin` is used unmodified (it needs the Java version comparisons below,
+  `bot.version.split('.')`, `clickWindow`, `inventory.selectedItem`, `firstEmptyInventorySlot`). Hunger only drops on
+  difficulty easy or harder (docs/differences/U8.md).
+- **Tests:** `test/external/ecosystemAutoEat.test.js`, unit `test/unit/ecosystem.test.js`.
+
+#### mineflayer-pvp 1.3.2 patch, shield and timing  {#pvp}
+- **Affects:** `bot.pvp` (creeper shield block, shield use, attack timing, `followRange`)
+- **Java:** a fusing creeper is metadata index 16 = 1; the shield is raised with `activateItem(true)`; the attack
+  rate follows Java's weapon cooldowns.
+- **Bedrock:** a fusing creeper has the `ignited` entity flag; a shield is raised by sneaking (no use action,
+  docs/differences/U8.md); there is no attack cooldown.
+- **mineflayer-bedrock (patch):** `checkExplosion` also reads `metadata.flags.ignited` (measured live: the flag is set,
+  pvp raises the shield). Unpatched: `activateItem(true)` / `deactivateItem()` hold / release sneak (U8), so the bot
+  moves at sneaking speed between attacks while it holds a shield; the Java cooldown timing just attacks a little
+  slower than Bedrock allows. With the default `followRange` 2 a skeleton that backs off while shooting stays 4 blocks
+  away (GoalFollow re-plans only when the target moved more than the range; the same on Java): use
+  `bot.pvp.followRange = 1` against ranged mobs. pvp listens to `physicTick` (mineflayer prints its deprecation
+  warning, as on Java).
+- **Tests:** `test/external/ecosystemPvp.test.js` (zombie, zombie + shield, creeper + shield, skeleton), unit
+  `test/unit/ecosystem.test.js`.
+
+#### Java version comparisons on the Bedrock registry  {#version-comparisons}
+- **Affects:** `bot.registry.isNewerOrEqualTo` / `isOlderThan` / `version['>=']` etc. with Java versions (mineflayer's
+  `examples/inventory.js`, test `exampleInventory`, @nxg-org/mineflayer-util-plugin)
+- **Java:** comparisons between Java versions.
+- **Bedrock:** minecraft-data only knows Bedrock versions for a Bedrock version object and threw a RangeError for
+  `'1.9'` / `'1.16'` — the util plugin (and so mineflayer-auto-eat) could not even load.
+- **mineflayer-bedrock:** `@bedboo/bedrock-data` `install()` relaxes the comparators of the cached `bedrock_1.26.51`
+  version object: a version minecraft-data does not know is compared numerically (major.minor.patch) with 1.26.51 —
+  newer than every Java 1.x, older than Java 26.x; Bedrock versions compare exactly as before; non-numeric unknown
+  versions still throw. Code that relied on the throw (prismarine-windows' 1.14+ branch) is unaffected: the feature
+  that guards it stays false.
+- **Tests:** unit `test/unit/ecosystem.test.js` › "a Java version compares numerically…",
+  `test/unit/data/features.test.js`.
+
+#### Examples: op through the console  {#example-op}
+- **Affects:** tests `exampleBee`, `exampleDigger`, `exampleInventory`
+- **Java:** the test bot runs `/op <child>` (bee waits for the "Opped" chat message).
+- **Bedrock:** BDS refuses `/op` from a player and never tells players about a console op (players are operators by
+  default on the harness servers anyway).
+- **mineflayer-bedrock:** the op goes through the console and its answer is asserted there; exampleBee also waits
+  for the update_abilities that announces it. Everything else of the tests is verbatim.
+- **Tests:** `test/external/exampleBee.test.js`, `exampleDigger.test.js`, `exampleInventory.test.js`.
+
+#### exampleBee: creative flight really flies  {#example-bee}
+- **Affects:** test `exampleBee`, `bot.creative.flyTo`
+- **Java:** `flyTo` moves `bot.entity.position` 0.5 block per tick; the 11 legs of the example take ≈ 3 s, within
+  `tellAndListen`'s 5 s.
+- **Bedrock:** movement is server-authoritative, `flyTo` flies with creative flight inputs (U5). Measured: BDS
+  sprint-flies (≈ twice the speed) after a double-tapped forward and stops the flight when the player touches the
+  ground — flyTo now never re-presses forward within 10 ticks of releasing it, keeps its jump guard across consecutive
+  flyTo calls and never lands short of a destination above the landing spot (lib/plugins/physics.js, U15 minimal fix:
+  the example's 11 short legs got a correction of 0.7–2 blocks each, then landed and lost flight). The flight takes
+  ≈ 15.5 s.
+- **mineflayer-bedrock:** the test waits up to 30 s for "My flight was amazing !" (the exchange is otherwise verbatim).
+- **Tests:** `test/external/exampleBee.test.js` (3/3), `test/external/physicsFlight.test.js`.
+
+#### exampleInventory: off-hand arrows  {#example-inventory}
+- **Affects:** test `exampleInventory`
+- **Java:** `equip off-hand dirt`.
+- **Bedrock:** the off-hand only takes off-hand items (docs/differences/U8.md#offhand).
+- **mineflayer-bedrock:** the child also gets 16 arrows; `equip off-hand arrow` replaces the dirt step, and the lists
+  end with `arrow x 16` (slot 45 is listed last by the example). Crafting the ladder at the crafting table, tossing,
+  equipping the boots and the final layout `ladder x 3, diamond_boots x 1` are verbatim.
+- **Tests:** `test/external/exampleInventory.test.js`.
+
+#### Ported examples  {#examples}
+- **Affects:** `packages/mineflayer-bedrock/examples/**` (they resolve `mineflayer-bedrock` through the root workspace
+  link, the plugins through mineflayer-bedrock's devDependencies)
+- **Java:** mineflayer 4.39.0 `examples/` (`require('mineflayer')`).
+- **Bedrock / mineflayer-bedrock:** 51 example files ported with `require('mineflayer-bedrock')` and otherwise identical
+  (Java item / block names they hard-code are kept: e.g. fisherman's `fish`, graffiti's `sign` are not Bedrock names
+  — nor modern Java ones). `auto-eat.js` is adapted to the pinned mineflayer-auto-eat 5 API (ESM `import()`, `setOpts`,
+  `enableAuto` / `disableAuto`, `eatStart` / `eatFinish`), which upstream's example predates. Not ported: `session.js`
+  (Java launcher-profile authentication), `discord.js` / `telegram.js` (third-party bots, nothing Bedrock-specific),
+  `perfectShotBow.js` (minecrafthawkeye, Java), `viewer/`, `screenshot-with-node-canvas-webgl/` (prismarine-viewer:
+  Java chunks), `anvil_saver/` (Java Anvil world files), `python/`.
+- **Tests:** unit `test/unit/examples.test.js` (every example parses and resolves its modules); run against BDS:
+  `exampleBee`, `exampleBlockFinder`, `exampleDigger`, `exampleInventory`, `exampleEcosystem` (pathfinder/gps.js,
+  collectblock.js).
+
+#### Core fixes found by the ecosystem suites  {#core-fixes}
+- **Affects:** `bot.stopDigging` (digging.js), `bot.creative.flyTo` (physics.js); `bot.waitForChunksToLoad`
+- **digging.js:** `blockUpdate` listeners run before the dig's per-position one; mineflayer-pathfinder stops digging on
+  any change near its path, so every pathfinder dig ended as `diggingAborted` ("Digging aborted") although the block
+  broke. A `stopDigging` while the block is already broken completes the dig like upstream (whose finishDigging clears
+  `targetDigBlock` before the local update). `bot._bedrock.digging.blockDigTime(block, type, creative, inWater,
+  notOnGround, enchantments, effects)` (prismarine-block's signature, Bedrock factors) is new for the plugins' cost
+  estimates.
+- **physics.js:** the flyTo planner changes of [exampleBee](#example-bee).
+- **waitForChunksToLoad:** the upstream examples call it on "loaded" right after the harness teleported them; columns
+  BDS sent during the join (beyond its advertised publisher radius) were unloaded and never resent, so it timed out.
+  U16b's blocks.js fix (merged first) keeps them; the example tests depend on it.
+- **Tests:** unit `test/unit/ecosystem.test.js`; `test/external/digging.test.js`, `physicsFlight.test.js`,
+  `creative.test.js`, `scaffold.test.js` still pass.
+
+## U16
+
+<!-- from docs/differences/U16-transport.md -->
+Observed against BDS 1.26.51.1 (protocol 2193) with bedrock-protocol 3.60.1 + the wave-5 patches.
+
+**How to read these documents.** Every entry names what it affects, what mineflayer does on Java, what Bedrock does
+instead, what mineflayer-bedrock does about it and which test proves it. Most entries are invisible to a bot written
+against mineflayer's API — they explain how the same API is implemented over Bedrock packets. The ones a bot author
+notices are summarised in [docs/api.md](api.md#bedrock-differences-in-short).
+
+#### Transports: RakNet by default, NetherNet on request  {#transport}
+- **Affects:** `createBot` options `transport`, `nethernet`; `bot._client.connection`.
+- **Java:** one transport (TCP, minecraft-protocol).
+- **Bedrock:** BDS 1.26.51 offers two: **NetherNet** (its default; WebRTC data channels, with signalling over HTTP on
+  `server-port` TCP — `POST /v1/join/<network id>` with the SDP offer, answered with the signed SDP answer —, over
+  LAN discovery on UDP 7551, or through Xbox services) and **RakNet** (`transport=raknet`, the transport of every
+  Bedrock version so far; BDS prints a `TRANSPORT TYPE ERROR` banner when it is selected, and Mojang announced its
+  removal, possibly in BDS 26.60). A NetherNet server does not open its RakNet ports and vice versa.
+- **mineflayer-bedrock:** `transport: 'raknet'` (default; raknet-native). `transport: 'nethernet'` joins with HTTP
+  signalling on `host:port` unless `nethernet.signalling` says `'lan'` / `'services'`: bedrock-protocol#831 and
+  node-nethernet#32 (unreleased) are backported as `patches/bedrock-protocol@3.60.1.patch` and
+  `patches/nethernet@1.1.2.patch` (+ a `packageExtensions` entry for nethernet's new jsonwebtoken dependency). The
+  server signs its answer with an identity key; plain HTTP cannot vouch for that key, so it is accepted unless
+  `nethernet.serverKey` pins it (`'sha256:<hex of the DER SPKI>'`, a mismatch is refused with
+  `Untrusted Nethernet server key …`) or `nethernet.onServerKey(fingerprint, url)` decides — the same trust as RakNet,
+  whose handshake key is not pinned either. Everything above the transport (packets, plugins, events) is identical.
+- **Tests:** `test/external/nethernet.test.js` (opt-in: `--grep nethernet` or `BEDBOO_NETHERNET=1`; join, spawn, chat
+  both ways, a block update, walking without corrections, HTTP discovery, server-key pinning, quit),
+  `test/unit/client_transport.test.js`.
+
+#### NetherNet: the server port must be free on TCP too  {#nethernet-port}
+- **Affects:** servers run with `transport=nethernet` (test harness, `bds up --transport nethernet`).
+- **Java:** n/a.
+- **Bedrock:** with `transport=nethernet` BDS opens its HTTP signalling listener on TCP `server-port` and logs
+  `Accepting clients on [::]:<port>`. If that TCP port is still held — e.g. by `TIME_WAIT` connections of the previous
+  server on the same port, for about a minute — BDS starts **without** the listener and without any error; every
+  client then gets `ECONNREFUSED`.
+- **mineflayer-bedrock:** nothing in the library; the harness skips a slot whose TCP port is held (`/proc/net/tcp`) and
+  treats a NetherNet start without the `Accepting clients` line as a busy port (next slot).
+- **Tests:** `test/external/nethernet.test.js`.
+
+#### Who hit whom: `entityHurt` has no source  {#hurt-source}
+- **Affects:** combat code that wants to know whether its own hit killed a mob (e.g. the agent's combat library).
+- **Java:** `damage_event` carries the source entity (`entityHurt(entity, source)` in newer mineflayer).
+- **Bedrock:** `entity_event hurt_animation` / `death_animation` carry no attacker (see
+  [U7: hurt and death](differences/U7.md#hurt-death)).
+- **mineflayer-bedrock:** unchanged events. The combat matrix and `@bedboo/agent`'s combat library attribute a kill to
+  the bot when the target's `entityDead` comes within 1.5 s of one of the bot's own `attack()`s (3 s of one of its
+  arrows) after at least one `entityHurt`, with no other damage source in the arena.
+- **Tests:** `test/external/combatMatrix.test.js`.
+
+#### Combat on Bedrock  {#combat}
+- **Affects:** `bot.attack`, `bot.activateItem` / `deactivateItem` (bow, shield), mineflayer-pvp-style fighting.
+- **Java:** since 1.9 an attack cooldown scales the damage of fast hits; a raised shield is an item use.
+- **Bedrock:** no attack cooldown (every hit does full damage), but a hurt mob ignores damage for 10 ticks; a shield
+  blocks while the player sneaks; arrows never hurt endermen (they teleport away); `/summon slime … minecraft:spawn_large`
+  only sets the hitbox — the split count follows the size variant (1, 2 or 4).
+- **mineflayer-bedrock:** the API is unchanged (`activateItem` with a shield sneaks: [U8: item use](differences/U8.md#item-use)).
+  The combat library attacks every 10 ticks, never shoots endermen, and the matrix re-summons slimes / magma cubes
+  until their size variant is ≥ 2.
+- **Tests:** `test/external/combatMatrix.test.js` (21 hostile mobs, ≥ 4/5 wins each with `BEDBOO_COMBAT_RUNS=5`).
+
+## U16
+
+<!-- from docs/differences/U16a.md -->
+U16a fixed the wave-4 review findings and audited parity (conformance test in failing mode, remaining ports,
+skips, full-suite stability). Everything below was observed against BDS 1.26.51.1 (protocol 2193). Regression tests:
+`packages/mineflayer-bedrock/test/unit/hardening.test.js` (fake client) and
+`packages/mineflayer-bedrock/test/external/hardening.test.js` (live BDS).
+
+#### The `bot.bedrock` namespace  {#bedrock-extras}
+- **Affects:** `bot.bedrock` (no mineflayer counterpart).
+- **Java:** none.
+- **Bedrock:** Bedrock-only state and helpers have no place among mineflayer's members.
+- **mineflayer-bedrock:** `bot.bedrock = {}` is created by the loader before the plugins; members (typed in
+  `types/bedrock.d.ts`): `gameRules` (U9, the server's game rules by their Bedrock names) and `blockVariants(block)`
+  (U16a, see [block variants](#block-variants)). The conformance test fails on any other non-mineflayer top-level
+  member.
+- **Tests:** conformance › "no top-level members beyond mineflayer's (Bedrock extras live under bot.bedrock)";
+  `test/unit/dimension.test.js` (gameRules); `test/unit/hardening.test.js` › "bot.bedrock.blockVariants: …".
+
+#### Burning furnaces and other "lit" blocks are separate blocks  {#block-variants}
+- **Affects:** `bot.findBlock` / `bot.findBlocks` / `bot.blockAt` with furnaces, blast furnaces, smokers, redstone
+  ore, redstone lamps, redstone torches, repeaters, comparators, daylight detectors; `bot.openFurnace`.
+- **Java:** one block with a `lit` / `powered` / `inverted` state (`furnace[lit=true]`): matching by the block id finds
+  it in every state.
+- **Bedrock:** two blocks with their own ids: `furnace` / `lit_furnace`, `blast_furnace` / `lit_blast_furnace`,
+  `smoker` / `lit_smoker`, `redstone_ore` / `lit_redstone_ore`, `deepslate_redstone_ore` /
+  `lit_deepslate_redstone_ore`, `redstone_lamp` / `lit_redstone_lamp`, `redstone_torch` / `unlit_redstone_torch`,
+  `unpowered_repeater` / `powered_repeater`, `unpowered_comparator` / `powered_comparator`, `daylight_detector` /
+  `daylight_detector_inverted`. A furnace that burns is `lit_furnace` until it goes out.
+- **mineflayer-bedrock:** the registry keeps the Bedrock blocks (`bot.findBlock({ matching: furnace.id })` misses a
+  burning furnace). `bot.bedrock.blockVariants(nameOrId)` returns the ids of the group (`blockVariants('furnace')` →
+  `[furnace, lit_furnace]`; other blocks → `[id]`) for `matching`. `openFurnace` accepts the lit blocks (window type
+  and total cook time of the unlit block); a furnace window stays open when its block lights up or goes out.
+- **Tests:** `test/unit/hardening.test.js` › "openFurnace accepts lit_furnace / …", "bot.bedrock.blockVariants: …";
+  `test/external/hardening.test.js` › "a burning furnace (lit_furnace) opens with openFurnace and is found with
+  bot.bedrock.blockVariants".
+
+#### Getting off a boat or minecart  {#dismount}
+- **Affects:** `bot.dismount()`, `dismount` / `forcedMove` events, `bot.entity.position` after a ride.
+- **Java:** the server computes a dismount position (DismountHelper: a free spot around the vehicle, else on top of
+  it) and teleports the rider there.
+- **Bedrock:** BDS sends no teleport when a rider leaves a boat or a minecart (a horse rider may get a correction).
+  The rider sits at the vehicle's seat (`rider_seat_position`, 1.02 above the vehicle's wire position, eye level),
+  which puts its feet 0.1 into the block under a minecart on rails and 0.225 into the ground under a boat on land.
+  BDS itself lifts its copy of the rider straight up out of that block (measured: a correction to the seat x/z on top
+  of the block when the client reports anything else).
+- **mineflayer-bedrock:** like BDS: on `dismount` the rider is raised from its seat until its box is free (a seat
+  that is free — a boat on water — stays); the move is emitted like a teleport (`forcedMove`) and goes out with the
+  next input. Before, the bot fell from the seat to the block below and stayed buried one block down (wave-4 review).
+- **Tests:** `test/external/hardening.test.js` › "getting off a minecart on rails: …", "getting off a boat on land:
+  …" (the server's position equals the bot's, the bot walks away).
+
+#### The rider's seat across rides  {#rider-seat}
+- **Affects:** `bot.entity.position` while riding.
+- **Java:** the client does not move a passenger itself (mineflayer keeps the position at the mount point).
+- **Bedrock:** the rider's position is its vehicle's seat. BDS sends `rider_seat_position` (actor data) only when it
+  changes: the join's actor data has (0, 0, 0), the first boat or minecart sets (0, 1.02, 0), and later boats and
+  minecarts send nothing.
+- **mineflayer-bedrock:** the last seat is kept across rides (before, it was deleted on dismount and the bot's
+  position stayed at the mount point from the second ride on); a seat that is still unknown falls back to the boat /
+  minecart seat or the top of the vehicle.
+- **Tests:** `test/external/hardening.test.js` › "two rides in a row (boat → minecart → boat): the rider follows its
+  vehicle every time".
+
+#### Digging air  {#dig-air}
+- **Affects:** `bot.dig(air)`, `bot.digTime(air)`, `registry.blocksByName.air.hardness`.
+- **Java:** air has hardness 0: `digTime` is 0 and `dig` resolves at once with `diggingCompleted`.
+- **Bedrock:** minecraft-data PR #1335 and BDS's own block dump give air hardness -1 (unbreakable).
+- **mineflayer-bedrock:** the data overlay sets air's hardness to 0 (`packages/bedrock-data/scripts/tables.js`
+  `BLOCK_FIXES`), so `digTime(air)` is 0 like upstream; `bot.dig` of a block that is air in the world (also a stale
+  Block of a block that is gone by now — a door's other half) completes at once with `diggingCompleted(air)` and sends
+  nothing (BDS never reports breaking air). A stale air Block whose position holds a block by now is dug normally.
+- **Tests:** `test/unit/hardening.test.js` › "#3 digging air"; `test/external/hardening.test.js` › "bot.dig(air)
+  resolves …"; the dig speed = prismarine-block test still covers every block.
+
+#### Placements wait for the server's answer to the previous click  {#placement-serialization}
+- **Affects:** `bot.placeBlock`, `bot._placeBlockWithOptions`, `bot.placeEntity`, `bot.activateItem` with buckets and
+  boats — when several run at once or back to back.
+- **Java:** `block_place` carries no item: placements in flight never invalidate each other.
+- **Bedrock:** every click carries the exact server copy of the held item; BDS gives the stack a new stack id after
+  each use (inventory_content, right before its update_block answer) and refuses a click with the old one (live: two
+  placements 0–30 ms apart → the second refused).
+- **mineflayer-bedrock:** clicks are serialized in the placer (`lib/bedrock/placement.js`): the next click goes out
+  once the held item was updated, the clicked block was answered, or after 500 ms. Sequential awaited placements
+  (pathfinder, the agent) never wait; `Promise.all` of placements now places all of them. A bucket / boat use
+  (`activateItem` → the looked-at block) issued while a placement is unanswered keeps its target and hotbar slot and
+  goes out after it. Other item uses (`activateBlock`, the `click_air` of `activateItem`) are not serialized: fired
+  without awaiting right after a placement, they can still carry the old stack id.
+- **Tests:** `test/unit/hardening.test.js` › "#4 / #5 placing"; `test/external/hardening.test.js` › "two placements at
+  once (Promise.all): both place in survival".
+
+#### A click with a stale block state is retried  {#stale-click}
+- **Affects:** `bot.placeBlock` / `_placeBlockWithOptions` against a block the server changed right before.
+- **Java:** `block_place` carries no block state.
+- **Bedrock:** the click carries the clicked block's runtime id, and BDS refuses a click whose id is not its own
+  state of that block. BDS changes some blocks a tick after a neighbour update (farmland and grass paths turn into
+  dirt under a placed block, 50–90 ms after the placement's answer), so the next click against them was refused.
+- **mineflayer-bedrock:** the answer to a click discloses the server's state of the clicked block; a refusal whose
+  click carried another state is retried once with the block as it is now (wrapper of the vendored place_block.js in
+  generic_place.js). Any other refusal rejects like upstream.
+- **Tests:** `test/unit/hardening.test.js` › "a refusal of a click with a stale block state …";
+  `test/external/hardening.test.js` › "placing against farmland right after it turned into dirt …".
+
+#### A container whose entity or block is gone  {#container-gone}
+- **Affects:** `windowClose`, `bot.currentWindow`, trading (`bot.openVillager`, `bot.trade`) and station windows
+  (anvil, enchanting table, furnace, …) whose trader dies or despawns or whose block is broken.
+- **Java:** the server closes the menu (`stillValid` fails) and returns the items in the input slots.
+- **Bedrock:** BDS sends only `remove_entity` (or the block update): no `container_close`, nothing returned. Items in
+  the trade / station input slots are in the player's `ui` container; BDS refuses to move them out of that dead screen
+  (status 49, invalid source slot) and keeps them there — the next window using those slots shows them.
+- **mineflayer-bedrock:** the inventory plugin treats the container's entity going away (`entityGone` of the window's
+  entity) or its block becoming another block (a lit furnace is still a furnace, a chipped anvil still an anvil) like
+  a server close: `windowClose`, `currentWindow` null, then `container_close` (no doomed return request; the next
+  opener waits for its echo). Moving out of range does not close a window (BDS sends nothing; not handled).
+  `openVillager` returns items it finds in the trade input slots at once (a fresh Java trade window is empty), so a
+  dead trader's payment comes back with the next trade window. `update_trade.villager_unique_id` is a zigzag varint
+  that bedrock-protocol 3.60.1 reads unsigned; it is decoded in `inventory.js` (U16b owns the bedrock-protocol patch).
+- **Tests:** `test/unit/hardening.test.js` › "#9 …"; `test/external/hardening.test.js` › "windowClose; the emeralds
+  left in the trade slot come back with the next trade window".
+
+#### Enchanting options without enchantments  {#enchanting-empty-options}
+- **Affects:** `EnchantmentTable.enchant`, `enchantments[i].expected`.
+- **Java:** every offered option applies at least one enchantment.
+- **Bedrock:** BDS can offer options whose enchantment lists are all empty (a fishing rod or a carrot on a stick at a
+  table without bookshelves); it charges levels and lapis for them and leaves the item unchanged.
+- **mineflayer-bedrock:** such an option has `expected: { enchant: -1, level: -1 }`; `enchant()` predicts the item
+  unchanged (no empty `ench` list), so the bot's copy equals the server's.
+- **Tests:** `test/unit/hardening.test.js` › "#8 …"; `test/external/hardening.test.js` › "an enchanting option without
+  enchantments …" (skips with the options printed when the server offers none — its offers are seeded).
+
+#### Books hold at most 50 pages  {#book-pages}
+- **Affects:** `bot.writeBook`, `bot.signBook`.
+- **Java:** up to 100 pages.
+- **Bedrock:** BDS keeps at most 50 pages and drops the rest.
+- **mineflayer-bedrock:** more than 50 pages are refused at once (`too many pages: a Bedrock book holds at most 50
+  pages`), before anything is moved; a failed edit still restores the held slot and puts the book back.
+- **Tests:** `test/unit/hardening.test.js` › "#12 …"; `test/external/hardening.test.js` › "a book with more than 50
+  pages is refused at once …".
+
+#### A double-tapped forward sprints  {#double-tap-sprint}
+- **Affects:** `bot.setControlState('forward', …)` toggled quickly (mineflayer-pathfinder's short moves, a tap then a
+  hold), `bot.entity.position` / corrections while walking.
+- **Java:** double-tap sprinting is a client feature; mineflayer never sprints unless the `sprint` control is set.
+- **Bedrock:** BDS judges the double tap itself from the input's `up` key flag: forward pressed again within 6 ticks
+  of its previous press makes the player sprint (no sprint flag needed) until forward is released (measured on
+  1.26.51.1: press-to-press 6 ticks sprints, 7 does not; tap 3 ticks → 1 tick off → hold gave 3 corrections in 3 s
+  before the fix). The `up` flag also drives the movement, so it cannot be held back.
+- **mineflayer-bedrock:** the physics plugin predicts it like the vanilla client (which sprints on a double tap on its
+  own): such a second press sprints (`sprinting` / `start_sprinting` in the input, no sprint key) while forward is
+  held and sprinting is possible (not flying or riding, not sneaking or backing, no item in use, food above 6, not
+  stopped by a wall; a teleport or death ends it); `setControlState('sprint', false)` ends it too (stop_sprinting).
+  Every toggle pattern tried then had no correction and the server's position equalled the bot's.
+  `getControlState('sprint')` stays false. Creative `flyTo` avoids the double tap instead (U15).
+- **Tests:** `test/unit/hardening.test.js` › "double-tapped forward …"; `test/external/hardening.test.js` › "BDS sprints
+  after forward is pressed again within 6 ticks; the bot predicts it: no corrections, same position".
+
+#### An end portal set inside the player can push it out  {#end-portal-push}
+- **Affects:** test `dimensionTravel` › "end portal block at the feet → the End, …" (the known wave-3/4 flake).
+- **Java:** the end portal block has no collision; an entity inside it is teleported.
+- **Bedrock:** `end_portal` has a 0.25-high collision box. A block set (`/setblock`) inside the player makes BDS push
+  the player out of it; when that push wins against the portal check of the same ticks, the player stands next to
+  the portal and nothing happens (traced live under load: `command_output` success, then
+  `correct_player_move_prediction` moving the player 0.8 blocks away, no `change_dimension` within 30 s).
+- **mineflayer-bedrock:** nothing to change in the library. The test now replaces the block under the bot's feet with
+  the portal and lets the bot (creative flight stopped) fall onto it, for the entry and both End exits — the way a
+  player walks into a portal.
+- **Tests:** `test/external/dimensionTravel.test.js` (passes in every full-suite run since, and 20/20 rounds in two
+  parallel loops under load).
+
+#### A server hotbar select can be older than the bot's own selection  {#hotbar-select}
+- **Affects:** `bot.quickBarSlot`, `bot.heldItem`, `heldItemChanged` right after `setQuickBarSlot` (test
+  `inventoryFlows` › "simpleClick, putAway, …", seen once in a full run).
+- **Java:** `held_item_slot` from the server and the client's `held_item_change` do not cross in practice.
+- **Bedrock:** BDS answers console commands (`/clear`, `/replaceitem`, `/give`) with `player_hotbar { select_slot:
+  true }` carrying its selected slot. When such a command runs before BDS has read the bot's latest `mob_equipment`
+  selection, the select is stale: following it switches the bot back to the previous slot while BDS then applies the
+  bot's selection — client and server stay out of sync.
+- **mineflayer-bedrock:** a server select (player_hotbar or the bot's own mob_equipment) that contradicts a selection
+  the bot sent less than 1 s ago is ignored and the bot's selection sent again (the window is not extended by the
+  resend).
+- **Tests:** `test/unit/hardening.test.js` › "player_hotbar select_slot contradicting a selection sent < 1 s ago …".
+
+#### Progress reports after an instant break  {#instant-break-report}
+- **Affects:** `bot._bedrock.digging.last.serverSpeedData` (diagnostics; test `digEverything` › `short_dry_grass`,
+  seen once in a full run).
+- **Bedrock:** after an instant break BDS may report the block-break progress of what replaced the block (the water
+  a plant in a water source leaves) — sometimes in the batch before the `update_block` of the break.
+- **mineflayer-bedrock:** an instant break (start and predict in one input) keeps only an instant report (≥ 1 per
+  tick: the dug block's own, which digOres compares) as the server's speed; a slower one only counts as server
+  activity.
+- **Tests:** `test/unit/hardening.test.js` › "a progress report of the water left behind …".
+
+#### A /setblock right after a long teleport  {#setblock-after-teleport}
+- **Affects:** test `nether` (seen once in a full run under load).
+- **Bedrock:** right after a teleport 16–128 blocks away the target chunk may not be loaded on the server yet: the
+  bot's `/setblock ~ ~ ~ portal` fails with `commands.setblock.outOfWorld` and no portal appears.
+- **mineflayer-bedrock:** nothing in the library; the test waits for `bot.waitForChunksToLoad()` (the server sends a
+  chunk only once it has loaded it) before the `/setblock`.
+- **Tests:** `test/external/nether.test.js`.
+
+#### Skips left in the e2e suites  {#test-skips}
+- **Affects:** `packages/mineflayer-bedrock/test/external/*.test.js`.
+- **mineflayer-bedrock:** the U16a audit removed every skip that waited for a feature that has landed
+  (`activateItem`, `consume`, `creative` flyTo, `digAndBuild`, `sign`, `sound noteHeard`). The skips left:
+  - `team.test.js` › "team": Bedrock has no teams ([U6 no teams](differences/U6.md#no-teams));
+  - `digEverything.test.js`: blocks BDS will not stage or never breaks in survival, each printed with its reason
+    ([U10 dig everything](differences/U10.md#dig-everything));
+  - `hardening.test.js` › "an enchanting option without enchantments …": when the server offers no such option
+    ([enchanting options](#enchanting-empty-options));
+  - `harness.test.js` (two tests) and `resourcePack.test.js`: they need a harness-started server (its instance
+    directory and console), not `BDS_HOST` / `BDS_PORT` — not a Bedrock limit;
+  - `stress.test.js` (`BEDBOO_STRESS`) and `soak.test.js` (`BEDBOO_SOAK=1`): opt-in load tests.
+- **Tests:** the full e2e suite (`docs/parity/U16a.md` lists the runs).
+
+## W3FIX.md
+
+<!-- from docs/differences/W3FIX.md -->
+Behaviour changed by the wave-3 review fix-ups (W3-FIX-A) that differs from mineflayer 4.39.0 because of Bedrock.
+The owning units' entries (U5, U8, U9) link here where their text changed.
+
+#### Sneak / sprint before a click  {#controls-before-clicks}
+- **Affects:** `bot.setControlState('sneak' | 'sprint')` followed at once by a click (`placeBlock` / `activateBlock`
+  against an interactable block, `attack` with sprint knockback, `useOn`); `bot._bedrock.physics.controlsSent()`.
+- **Java:** mineflayer writes `entity_action` / `player_input` inside `setControlState`, so the next click is handled
+  with the new state.
+- **Bedrock:** sneaking and sprinting only exist as `player_auth_input` flags (`start_sneaking`, `sneaking`, …), sent
+  once per tick; BDS handles a transaction queued before that input with the old state (verified on BDS 1.26.51.1: a
+  sneak-click on a chest opened it instead of placing the held block).
+- **mineflayer-bedrock:** clicks that depend on the state wait for the input that carries it: `useItemOn` / `useOnEntity`
+  (lib/bedrock/transactions.js) await `bot._bedrock.physics.controlsSent()` when a sneak / sprint change is pending;
+  the synchronous `bot.attack` / `useOn` / `mount` (entities.js) send through `afterControlsSent(fn)`. The click is at
+  most one tick (50 ms) later than upstream's; with nothing pending it is queued synchronously, as before. If the input
+  is suspended first (loading screen, dimension change) the click goes out at once; after `end` it is dropped
+  (`controlsSent()` rejects).
+- **Tests:** `test/unit/physics_fixes.test.js` › "sneak / sprint before a click: …",
+  `test/external/physicsInteractions.test.js` › "sneak, then useItemOn at once: the stone is placed on the chest (not
+  opened)".
+
+#### Item use slowdown and the raised shield  {#item-use}
+- **Affects:** movement while `bot.usingHeldItem` (eating, drawing a bow, a raised shield).
+- **Java:** mineflayer's physics does not slow item use down at all.
+- **Bedrock:** BDS clamps the movement impulse (±0.1225) and drops sprinting while the player uses an item — which it
+  enters only on a `click_air` transaction. A shield is raised by sneaking (no item use), so BDS simulates a plain sneak
+  (measured: 3.81 blocks per 60 ticks for both).
+- **mineflayer-bedrock:** the engine applies the item-use clamp only while `bot.usingHeldItem` is set and a `click_air`
+  was sent for that use (observed on the outgoing transactions; `item_release` / `completed_using_item` end it). A
+  raised shield moves exactly like a sneak, without corrections.
+- **Tests:** `test/unit/physics_fixes.test.js` › "a raised shield …", `test/external/physicsInteractions.test.js` › "a
+  raised shield (activateItem(true)) walks like a plain sneak: same distance, no mispredictions".
+
+#### 'spawn' after the spawn search height  {#spawn-search-height}
+- **Affects:** `spawn` after the End exit portal and after a respawn into another dimension.
+- **Java:** the server sends the position before the health update that makes mineflayer emit `spawn`.
+- **Bedrock:** the End exit's `change_dimension` carries y 32767 (the spawn search height); BDS answers the dimension
+  ack at once and sends the real position ~50 ms later in `respawn` state 1. In a respawn into another dimension BDS
+  often corrects the respawning player to the search height (`correct_player_move_prediction` y 32768.62, before or
+  after the real `respawn` state 1; seen in 4 of 6 deaths in the nether) and to the real position ~300 ms later.
+- **mineflayer-bedrock:** the `change_dimension` / `respawn` search heights are not applied (no `move` / `forcedMove`
+  there), and while the bot's last server position is the search height `spawn` waits for the real one (the next
+  `forcedMove` below it, emitted first), at most 2 s; the input clock stays suspended (End exit) or the bot stays in
+  the respawning state meanwhile.
+- **Tests:** `test/unit/physics_fixes.test.js` › "End exit: …", "a respawn into another dimension …";
+  `test/external/dimensionTravel.test.js` (every travel asserts the position at `spawn`).
+
+#### Creative flight and gravity  {#flight-gravity}
+- **Affects:** `bot.creative.startFlying`, `bot.creative.stopFlying`, `bot.physics.gravity`.
+- **Java:** `startFlying` sets `bot.physics.gravity = 0`, `stopFlying` restores it.
+- **Bedrock:** flight is a server-side movement state that the physics engine simulates itself (U5).
+- **mineflayer-bedrock:** with the physics flight hook, `startFlying` / `stopFlying` only request the flight and leave
+  `bot.physics.gravity` untouched (a gravity of 0 would outlive a flight the server refused or ended — game mode change,
+  death — and break every later movement and pathfinder's simulations). Without the hook, upstream's gravity handling.
+- **Tests:** `test/unit/physics_fixes.test.js` › "creative.startFlying leaves bot.physics.gravity alone …",
+  `test/unit/inventory.test.js` › "creative flight: startFlying / stopFlying → bot._bedrock.physics.setFlying (gravity
+  untouched with the hook); flyTo → physics.flyTo (U5)", `test/external/creative.test.js` › "startFlying / stopFlying /
+  flyTo (flight: U5 physics hook)".
+
+#### Abilities events  {#abilities}
+- **Affects:** `bot.abilities`, `abilities` event.
+- **Java:** one `abilities` packet per change (join, game mode change, …).
+- **Bedrock:** besides the game mode's abilities the client derives itself (U9), BDS sends `update_abilities` twice in
+  answer to a `request_ability`, and after a game mode change that changes the flight (flying → survival, into / out of
+  spectator) — repeating values the bot already has (measured on BDS 1.26.51.1).
+- **mineflayer-bedrock:** an `update_abilities` that changes nothing emits no `abilities` and keeps the `bot.abilities`
+  object (the join's first one is always reported); a game mode change is reported once. In spectator BDS's layers
+  clear `mayFly` while `flying` stays on. `bot.abilities` is the only flight state source: the physics engine follows
+  it without sending `request_ability` back.
+- **Tests:** `test/unit/physics_fixes.test.js` › "abilities.js is the single flight source: …",
+  `test/external/playerState.test.js` › "playerState: abilities at join and per game mode".
+
+#### Plain items from the creative inventory  {#creative-defaults}
+- **Affects:** `bot.creative.setInventorySlot` with a plain `firework_rocket`, `firework_star` or `banner`.
+- **Java:** any item, any NBT.
+- **Bedrock:** the creative inventory lists these only with NBT (rockets `Fireworks {Flight: 1, Explosions: []}`, banners
+  `Type: 0`, stars per colour).
+- **mineflayer-bedrock:** an item without NBT that has no exact entry gets the entry with the fewest NBT tags when
+  exactly one has the fewest (the default variant); the slot then holds that NBT. Enchanted books (all variants alike)
+  stay refused.
+- **Tests:** `test/unit/physics_fixes.test.js` › "creative.setInventorySlot entry: …",
+  `test/external/physicsInteractions.test.js` › "elytra + a plain firework rocket: …".
+
+#### The rider's position  {#riding}
+- **Affects:** `bot.entity.position` and `move` while `bot.vehicle` is set, the position after `bot.dismount()`.
+- **Java:** the client simulates the vehicle and the rider sits on it.
+- **Bedrock:** BDS simulates the vehicle from the rider's input and keeps the rider at the vehicle's seat: vehicle
+  position + the `rider_seat_position` actor data (measured on BDS 1.26.51.1: boat seat (0, 1.02, 0) above the boat's
+  wire position = feet 0.225 below the boat's feet; horse (0, 2.32, −0.2) = feet 0.7 above, 0.2 behind). It sends a
+  vehicle correction every 6 ticks and does not always teleport a boat rider on dismount (it keeps the reported
+  position).
+- **mineflayer-bedrock:** while riding, every `player_auth_input` reports that seat (the vehicle's latest position from
+  move_entity or a vehicle correction, the seat rotated by the vehicle's yaw) and `bot.entity.position` follows it
+  (`move` fires as the vehicle moves); vehicle physics is not predicted. Seat offsets along x / z are rotated by the
+  vehicle's reported yaw: the measured single-rider seats have none; a two-rider boat's seats are not verified.
+- **Tests:** `test/unit/physics_fixes.test.js` › "riding: every input reports the vehicle seat …",
+  `test/external/riding.test.js` (the rider stays at the seat and gets off next to the boat / horse).
+
+## W3FIXB.md
+
+<!-- from docs/differences/W3FIXB.md -->
+Fixes to wave-3 code found by the wave-3 review, observed against BDS 1.26.51.1 (protocol 2193). The entries of the
+owning units were updated in place where their behaviour changed (U4 waterlogging / commands, U6 default chat
+patterns / whisper, U7 player list / hurt and death / dropped items / positions / interact / fireworks, U8
+click-window / resync / window types); the entries below describe what is new. Parity rows keep linking the owning
+units' entries, which link here.
+
+#### Opening a window while another one is open  {#window-switch}
+- **Affects:** `bot.openBlock`, `bot.openEntity`, `bot.openContainer` / `openChest` / `openDispenser`, the wave-4
+  openers (`openFurnace`, `openAnvil`, `openEnchantmentTable`, `openVillager`, `craft` with a table),
+  `bot.activateBlock` / `bot.activateEntity` / `bot.activateEntityAt`, `windowClose`.
+- **Java:** `ServerPlayer.openMenu` closes the current menu first (`close_window` → mineflayer emits `windowClose`),
+  then opens the new one; code that never closes a chest (mineflayer-collectblock's `emptyInventory`) works.
+- **Bedrock:** BDS ignores an activation that would open a container while the player has one open — no
+  `container_open`, no `container_close`, so `openBlock` would wait for once()'s 20 s and throw (verified live: chest
+  then barrel, and the same chest twice). Other activations (a lever) are processed with a container open and the
+  container stays open — like Java.
+- **mineflayer-bedrock:** `openBlock` / `openEntity`, and `activateBlock` / `activateEntity(At)` of a container or
+  station block (chests, barrels, shulker boxes, furnaces, crafting / enchanting / smithing tables, anvils, hoppers,
+  dispensers, droppers, brewing stands, beacons, grindstones, stonecutters, looms, cartography tables, crafters,
+  lecterns) or of a trading / storage entity (villagers, wandering traders, chest / hopper minecarts, chest boats)
+  first close the open container window with `bot.closeWindow` (`windowClose` at once, carried and station items put
+  back, `container_close`, the server's echo), then wait BDS's 100 ms reopen delay and activate. Other activations
+  leave the window open.
+- **Tests:** `test/unit/windows.test.js` › "opening a container while another one is open closes it first …";
+  `test/external/inventoryConcurrency.test.js` › "opening chest B while chest A is open closes A first …".
+
+#### Overlapping item stack requests  {#overlapping-requests}
+- **Affects:** `bot.clickWindow` and everything built on it when calls overlap (clicks not awaited, armor-manager /
+  tool / auto-eat equips racing user code, `transfer` while tossing), window `deposit` / `withdraw`.
+- **Java:** the client applies each click to its window at once (1.17+ prediction) and the server resyncs a wrong
+  slot with `set_slot` / `window_items`, so overlapping clicks self-heal.
+- **Bedrock:** each click is an `item_stack_request`; a request planned on an earlier request's prediction names the
+  pending request id as the slot's stack id; BDS answers in send order; a rejected request (e.g. status 55 dirt into
+  the off-hand, then 49 for the request that named it) gets only the error response — nothing is resent.
+- **mineflayer-bedrock:** the inventory model keeps, per slot, the requests in flight that changed it. A settled
+  request hands its result for the slot to the next request on that slot (the server's count and stack id, or its
+  own starting state when rejected) instead of overwriting that request's prediction; only the last request on a slot
+  writes the slot. Chained rejections therefore end at the state before the first request, and late (timed-out)
+  answers are applied in order. Answers for a container window that was closed meanwhile no longer touch the next
+  window. A click's prediction is committed synchronously when the inventory screen is open (and re-planned after
+  waiting for the screen otherwise), so clicks issued without awaiting the previous one build on it, like Java's
+  client-side click.
+- **Tests:** `test/unit/inventory.test.js` › "overlapping requests on the same slot …" (A ok / B rejected, both
+  rejected, both ok, both late, the off-hand case, a closed window, back-to-back clicks);
+  `test/external/inventoryConcurrency.test.js` › "a rejected click and a click planned on it …", "rapid clicks: …"
+  (the model compared with the server's resent inventory).
+
+#### Commands without output  {#silent-commands}
+- **Affects:** `bot._bedrock.commands.request(command, { timeout })` (internal hook used by later units and tests),
+  `bot.chat('/…')` (fire and forget, unchanged).
+- **Java:** no equivalent hook in mineflayer.
+- **Bedrock:** `/say`, `/me`, a successful `/tellraw` — and every command while the `sendcommandfeedback` gamerule is
+  off — get no `command_output` at all. For every successful command BDS sends `event { event_type:
+  'command_executed', event_data: 08 02 00 <len> <name> 00 }`, right before the command's `command_output` (same
+  batch) when it has one; a failed command never gets the event but always a `command_output` (even with feedback
+  off: `output_type: 'silent'`).
+- **mineflayer-bedrock:** the event is matched to the oldest request of that command name; when no `command_output`
+  follows within 100 ms the request resolves with `{ origin, output_type: 'none', success_count: 1, output: [],
+  has_data: false }`. A request still rejects after `timeout` (10 s) when neither arrives.
+- **Tests:** `test/unit/chat.test.js` › "commands.request: a successful command without output …";
+  `test/external/chatCommands.test.js` › "commands.request: say / tellraw / feedback-off commands …".
+
+#### The liquid layer of replaced blocks  {#liquid-layer}
+- **Affects:** `bot.blockAt(…).isWaterlogged` / `.superimposed` / `.computedStates.waterlogged`, `blockUpdate`, the
+  physics engine's water (U5 reads `isWaterlogged`).
+- **Java:** `waterlogged` is a block state: every block update carries it.
+- **Bedrock:** waterlogging is block layer 1, and BDS sends only the layer-0 change when a block replaces a water
+  source or a waterlogged block (`update_block` layer 0, or `update_subchunk_blocks` with an empty `extra`); the
+  client applies the liquid-layer rule itself. Observed live (a fresh join as ground truth): a fence, ladder, slab,
+  carpet or wall placed into a water source is waterlogged, a waterlogged fence replaced by a slab / carpet / wall
+  stays waterlogged, replaced by stone / glass it is dry, replaced by air or water it is plain water; flowing water
+  (not a source) and lava never end up in layer 1. Bedrock's can-contain-liquid set differs from Java's
+  `waterlogged` blocks (carpets are waterloggable) and no client data lists it.
+- **mineflayer-bedrock:** a layer-0 update whose new block is air or a liquid clears layer 1, and the same block in
+  another state (a trapdoor toggling, kelp growing) keeps its layer — both certain. Any other block replacing a water
+  source or a waterlogged block is predicted (a full cube dry, any other block keeping / taking the water; one
+  `blockUpdate` with both layers) and confirmed: the bot requests that sub-chunk again (one `subchunk_request` per
+  sub-chunk at a time, sent again after 5 s without an answer, up to 3 times) and applies the server's layer 1 for
+  those blocks (one more `blockUpdate` where the prediction was wrong; a block whose layer 0 changed again meanwhile is
+  left to its own update, and a block changed while the request was out is asked for again).
+- **Tests:** `test/unit/blocks.test.js` › "layer-0 updates apply Bedrock's liquid-layer rule …";
+  `test/external/liquidLayer.test.js` (eleven replacements, the watching bot compared with a fresh join).

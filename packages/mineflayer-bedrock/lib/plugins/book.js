@@ -27,6 +27,11 @@ module.exports = inject
 const ATTEMPTS = [{ openDelay: 150, ackTimeout: 5000 }, { openDelay: 500, ackTimeout: 15000 }]
 /** ms to wait for the page list BDS gives a new book when it is opened */
 const OPEN_TIMEOUT = 2000
+/**
+ * BDS 1.26.51.1 keeps at most 50 pages (Java: 100) and drops the rest, so a longer book could never be acknowledged
+ * (U16a): rejected up front like upstream's argument checks.
+ */
+const MAX_PAGES = 50
 
 /** page texts of a Bedrock book item (`pages: [{ text, photoname }]`; plain strings accepted too) */
 function pagesOf (item) {
@@ -59,6 +64,7 @@ function inject (bot) {
     assert.ok(slot >= 0 && slot <= 44, 'slot out of inventory range')
     const book = bot.inventory.slots[slot]
     assert.ok(book && book.type === bot.registry.itemsByName.writable_book.id, `no book found in slot ${slot}`)
+    assert.ok(Array.isArray(pages) && pages.length <= MAX_PAGES, `too many pages: a Bedrock book holds at most ${MAX_PAGES} pages`)
     const quickBarSlot = bot.quickBarSlot
     const moveToQuickBar = slot < 36
 
@@ -67,25 +73,33 @@ function inject (bot) {
       await bot._syncWindow(bot.inventory)
     }
 
-    bot.setQuickBarSlot(moveToQuickBar ? 0 : slot - 36)
+    let failure = null
+    try {
+      bot.setQuickBarSlot(moveToQuickBar ? 0 : slot - 36)
 
-    const bookSlot = moveToQuickBar ? 36 : slot
-    // nothing to change (writeBook with the book's own pages): no session, BDS would not send the book again
-    if (signing || pageEdits(bookSlot - 36, pagesOf(bot.inventory.slots[bookSlot]), pages).length > 0) {
-      try {
-        await editSession(bookSlot, pages, author, title, signing, ATTEMPTS[0])
-      } catch (err) {
-        if (!err.retry) throw err
-        // an edit BDS handled before it had opened the book is dropped: open it again and resend what is missing
-        await editSession(bookSlot, pages, author, title, signing, ATTEMPTS[1])
+      const bookSlot = moveToQuickBar ? 36 : slot
+      // nothing to change (writeBook with the book's own pages): no session, BDS would not send the book again
+      if (signing || pageEdits(bookSlot - 36, pagesOf(bot.inventory.slots[bookSlot]), pages).length > 0) {
+        try {
+          await editSession(bookSlot, pages, author, title, signing, ATTEMPTS[0])
+        } catch (err) {
+          if (!err.retry) throw err
+          // an edit BDS handled before it had opened the book is dropped: open it again and resend what is missing
+          await editSession(bookSlot, pages, author, title, signing, ATTEMPTS[1])
+        }
       }
+    } catch (err) {
+      failure = err
     }
 
+    // restore the held slot and the book's slot also when the edit failed (U16a)
     bot.setQuickBarSlot(quickBarSlot)
 
     if (moveToQuickBar) {
-      await bot.moveSlotItem(36, slot)
+      if (failure) await bot.moveSlotItem(36, slot).catch(() => {})
+      else await bot.moveSlotItem(36, slot)
     }
+    if (failure) throw failure
   }
 
   /**
