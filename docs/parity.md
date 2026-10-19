@@ -73,9 +73,9 @@ Rows are counted for the last unit of the owner chain (`U4 → U5` counts for U5
 | warning | unknown: `examples/auto-eat.js` (export) is not part of the reference surface (Bedrock-only extra, kind mismatch or typo?) | U15.md:48 |
 | warning | unknown: `examples/{ansi,anvil,armor_stand,attack,auto_totem,block_entity,book,bossbar,chat_parsing,chatterbox,chest,command_block,crossbower,crystal,echo,elytra,farmer,fisherman,graffiti,guard,jumper,looker,multiple,multiple_from_file,place_entity,quitter,raycast,reconnector,repl,resourcepack,scoreboard,skin_blinker,skin_data,sleeper,sound,tab_complete,titles,trader}.js`, `examples/{cli/readline,modular_mineflayer/index,modular_mineflayer/modules/hello,place_end_crystal/index,plugins/afk,plugins/hello_world}.js` (export) is not part of the reference surface (Bedrock-only extra, kind mismatch or typo?) | U15.md:49 |
 | warning | unknown: `examples/{session,discord,telegram,perfectShotBow}.js`, `examples/{viewer,screenshot-with-node-canvas-webgl,anvil_saver,python}/` (export) is not part of the reference surface (Bedrock-only extra, kind mismatch or typo?) | U15.md:50 |
-| warning | unknown: conformance test in failing mode (every member, event and window member asserted) (test) is not part of the reference surface (Bedrock-only extra, kind mismatch or typo?) | U16a.md:48 |
-| warning | unknown: wave-4 review regressions (fake client) (test) is not part of the reference surface (Bedrock-only extra, kind mismatch or typo?) | U16a.md:49 |
-| warning | unknown: wave-4 review regressions (live BDS) (test) is not part of the reference surface (Bedrock-only extra, kind mismatch or typo?) | U16a.md:50 |
+| warning | unknown: conformance test in failing mode (every member, event and window member asserted) (test) is not part of the reference surface (Bedrock-only extra, kind mismatch or typo?) | U16a.md:56 |
+| warning | unknown: wave-4 review regressions (fake client) (test) is not part of the reference surface (Bedrock-only extra, kind mismatch or typo?) | U16a.md:57 |
+| warning | unknown: wave-4 review regressions (live BDS) (test) is not part of the reference surface (Bedrock-only extra, kind mismatch or typo?) | U16a.md:58 |
 
 ## Module exports
 
