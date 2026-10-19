@@ -129,7 +129,7 @@ async function finalChain ({ log = () => {}, cfg = config(), netherOres = false,
         if (!has(bot, 'bed')) {
           // 3 wool of one colour from sheep (the plains around the spawn have flocks), then the bed is crafted
           if (Math.max(...WOOL.map((w) => inventory.count(bot, w))) < 3) {
-            await task('hunt', { mobs: ['sheep'], item: WOOL, count: 3, total: true, radius: 48, explore: true, timeout: 170000 }, { name: 'camp: wool', timeout: 3 * MINUTES, retries: 0 })
+            await task('hunt', { mobs: ['sheep'], item: WOOL, count: 3, total: true, radius: 48, explore: true, timeout: 150000 }, { name: 'camp: wool', timeout: 160000, retries: 0 })
               .catch((err) => { out.wool = err.message })
           }
           await task('obtain', { item: 'bed', count: 1 }, { name: 'camp: a bed', timeout: 2 * MINUTES, retries: 0 })
@@ -138,10 +138,10 @@ async function finalChain ({ log = () => {}, cfg = config(), netherOres = false,
         // wood for later (the shield's planks, sticks, a table): deep in a mine a log is a long climb away
         const logs = () => inventory.allItems(bot).filter((i) => /_log$/.test(i.name)).reduce((n, i) => n + i.count, 0)
         if (logs() < 6) {
-          await task('gather', { item: 'log', count: 6 - logs() }, { name: 'camp: logs', timeout: 2 * MINUTES, retries: 0 }).catch((err) => { out.logs = err.message })
+          await task('gather', { item: 'log', count: 6 - logs() }, { name: 'camp: logs', timeout: 90000, retries: 0 }).catch((err) => { out.logs = err.message })
         }
         // meat for later (cooked in the gear phase): the animals in sight
-        await task('food', { min: 0, items: 6, stock: true, radius: 48, explore: false, fishing: false, timeout: 90000 }, { name: 'camp: meat', timeout: 2 * MINUTES, retries: 0 })
+        await task('food', { min: 0, items: 6, stock: true, radius: 48, explore: false, fishing: false, timeout: 55000 }, { name: 'camp: meat', timeout: 60000, retries: 0 })
           .then((r) => { out.food = r }, (err) => { out.food = err.message })
         return out
       }
