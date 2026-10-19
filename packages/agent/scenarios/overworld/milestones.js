@@ -129,7 +129,9 @@ const M5 = {
     }
     const short = ORE_DROPS.filter((d) => gained[d] <= 0)
     if (short.length) throw new Error(`no ${short.join(', ')} mined`)
-    const ores = new Set(eventsOf(agent, 'mine').map((e) => e.block).filter((b) => /_ore$/.test(b)))
+    // this run of the scenario only (a chained run's event log holds the earlier milestones' digs too)
+    const since = agent.events.filter((e) => e.type === 'scenario-start' && e.scenario === M5.name).at(-1)?.t ?? 0
+    const ores = new Set(eventsOf(agent, 'mine').filter((e) => e.t >= since).map((e) => e.block).filter((b) => /_ore$/.test(b)))
     for (const kind of ['coal', 'copper', 'iron', 'gold', 'redstone', 'lapis', 'diamond', 'emerald']) {
       if (![...ores].some((b) => b.replace(/^(deepslate_|lit_)+/, '') === `${kind}_ore`)) throw new Error(`no ${kind} ore dug`)
     }

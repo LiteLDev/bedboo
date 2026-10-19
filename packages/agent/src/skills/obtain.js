@@ -57,7 +57,6 @@ async function execute (bot, step, { signal }) {
   }
 }
 
-/** kill passive mobs in sight for their drops (mineflayer combat helpers of skills/combat.js) */
 /** animals the bot could not get at (per bot: entity id → until) */
 const unreachablePrey = new WeakMap()
 function preyOk (bot, e) {
@@ -65,6 +64,7 @@ function preyOk (bot, e) {
   return !(until > Date.now())
 }
 
+/** kill passive mobs in sight for their drops (mineflayer combat helpers of skills/combat.js) */
 async function hunt (bot, { mobs, item, count, signal, radius = 64 }) {
   const combat = require('./combat')
   const start = inventory.count(bot, item)

@@ -49,7 +49,7 @@ async function runSkill (bot, name, args = {}, { skills = defaultSkills, timeout
   const onAbort = () => controller.abort(signal.reason)
   signal?.addEventListener('abort', onAbort, { once: true })
   let timer
-  const running = skill(bot, { ...args, signal: controller.signal })
+  const running = (async () => skill(bot, { ...args, signal: controller.signal }))()
   try {
     return await Promise.race([
       running,
@@ -122,7 +122,7 @@ async function loadPlugins (bot, { autoEat = true, pvp = true, armor = true } = 
     bot.autoEat.setOpts({
       minHunger: 16,
       minHealth: 0, // auto-eat's default 14 tries to eat whenever hurt, even when full (Bedrock refuses): hunger only
-      priority: 'foodPoints',
+      priority: 'saturation', // cooked > raw meat > rotten flesh (eaten only when nothing better is carried)
       bannedFood: ['spider_eye', 'poisonous_potato', 'pufferfish', 'chicken', 'golden_apple', 'enchanted_golden_apple', 'chorus_fruit', 'suspicious_stew']
     })
     if (autoEat) bot.autoEat.enableAuto()
@@ -262,8 +262,8 @@ class Agent extends EventEmitter {
       this._abortTask = (reason) => controller.abort(reason)
       try {
         const left = Math.max(1000, timeout - (Date.now() - started))
-        const result = await withTimeout(runSkill(this.bot, skill, args, { skills: this.skills, timeout: left, signal: controller.signal }), left + 2000, {
-          signal: controller.signal,
+        // runSkill handles the abort (death) and its own timeout, and lets the skill wind down; this is the last guard
+        const result = await withTimeout(runSkill(this.bot, skill, args, { skills: this.skills, timeout: left, signal: controller.signal }), left + 10000, {
           message: `task ${task.name} timed out`
         })
         task.ok = true
@@ -345,7 +345,8 @@ class Agent extends EventEmitter {
     const { foodPoints } = require('./skills/survive')
     if (bot.food > 12 || foodPoints(bot) >= 6) return
     this.event('maintain', { food: bot.food, carried: foodPoints(bot) })
-    await this.run('food', { min: 8, explore: false, radius: 40 }, { name: 'food (maintenance)', timeout, retries: 0 }).catch((err) => this.event('log', { msg: `maintenance: ${err.message}` }))
+    // the skill knows its budget (it decides whether cooking still fits)
+    await this.run('food', { min: 8, explore: false, radius: 40, timeout: timeout - 5000 }, { name: 'food (maintenance)', timeout, retries: 0 }).catch((err) => this.event('log', { msg: `maintenance: ${err.message}` }))
   }
 
   /**

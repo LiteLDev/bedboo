@@ -43,7 +43,8 @@ async function cook (bot, { signal, deadline }) {
   const stations = require('../stations')
   for (const [raw, cooked] of Object.entries(COOKED)) {
     const n = inventory.count(bot, raw)
-    if (!n || Date.now() + 12000 * n > deadline) continue
+    // 10 s per item in the furnace + placing / opening / taking the furnace back
+    if (!n || Date.now() + 10000 * n + 15000 > deadline) continue
     if (!inventory.count(bot, 'furnace') && !stations.stationNear(bot, 'furnace')) return
     if (!smelt.chooseFuel(bot, { input: raw, inputCount: n })) return
     try {

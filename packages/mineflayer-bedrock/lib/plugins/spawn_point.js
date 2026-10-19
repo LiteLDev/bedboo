@@ -16,8 +16,8 @@ const { Vec3 } = require('vec3')
 module.exports = inject
 
 const UNSET = -2147483648
-/** BDS's "not decided yet" spawn height (it searches the highest safe block when a player spawns there) */
-const SEARCH_Y = 32767
+/** BDS's "not decided yet" spawn heights (32767 / 32768; lifecycle.js uses the same bound) */
+const SEARCH_Y = 32766
 
 function inject (bot) {
   bot.spawnPoint = new Vec3(0, 0, 0)
@@ -25,14 +25,14 @@ function inject (bot) {
   function setSpawnPoint (pos) {
     if (!pos || pos.x === UNSET) return false
     bot.spawnPoint = new Vec3(pos.x, pos.y, pos.z)
-    resolveHeight()
+    resolveHeight(false) // the caller emits 'game' for this change
     return true
   }
 
   /** y 32767 → highest solid block + 1 of the spawn column, once that overworld column is loaded */
-  function resolveHeight () {
+  function resolveHeight (emit = true) {
     const sp = bot.spawnPoint
-    if (sp.y !== SEARCH_Y || bot.game?.dimension !== 'overworld' || typeof bot.blockAt !== 'function') return
+    if (sp.y < SEARCH_Y || bot.game?.dimension !== 'overworld' || typeof bot.blockAt !== 'function') return
     const minY = bot.game.minY ?? -64
     const top = minY + (bot.game.height ?? 384) - 1
     const x = Math.floor(sp.x)
@@ -40,18 +40,21 @@ function inject (bot) {
     if (!bot.blockAt(new Vec3(x, minY, z))) return // column not loaded yet
     for (let y = top; y >= minY; y--) {
       const b = bot.blockAt(new Vec3(x, y, z))
-      if (b && b.boundingBox === 'block') {
+      if (!b) continue
+      // the ground: a solid block that is not foliage, or the surface of water / lava
+      if ((b.boundingBox === 'block' && !/leaves/.test(b.name)) || /water|lava/.test(b.name)) {
         bot.spawnPoint = new Vec3(sp.x, y + 1, sp.z)
+        if (emit) bot.emit('game') // like upstream on every spawn point change
         return
       }
     }
   }
 
   bot.on('chunkColumnLoad', (pos) => {
-    if (bot.spawnPoint.y !== SEARCH_Y) return
+    if (bot.spawnPoint.y < SEARCH_Y) return
     if (Math.floor(bot.spawnPoint.x / 16) * 16 === pos.x && Math.floor(bot.spawnPoint.z / 16) * 16 === pos.z) resolveHeight()
   })
-  bot.on('spawn', resolveHeight)
+  bot.on('spawn', () => resolveHeight())
 
   // part of start_game: covered by game.js' 'game' of the login (set right after it, like Java's spawn_position)
   bot._client.on('start_game', (packet) => {

@@ -45,7 +45,7 @@ function movements (bot, overrides) {
   moves.allowParkour = false // a missed jump in survival costs health; the gaps it saves are small
   moves.allowSprinting = true
   moves.maxDropDown = 3 // fall damage starts above 3 blocks
-  moves.liquidCost = 4
+  moves.liquidCost = 10 // swimming is slow and long underwater stretches drown the bot
   moves.allowFreeMotion = false
   for (const name of ['crafting_table', 'furnace', 'lit_furnace', 'chest', 'trapped_chest', 'barrel', 'bed', 'wooden_door', 'spruce_door', 'birch_door', 'jungle_door', 'acacia_door', 'dark_oak_door', 'mangrove_door', 'cherry_door', 'pale_oak_door', 'poplar_door']) {
     const b = bot.registry.blocksByName[name]
@@ -105,9 +105,14 @@ async function goto (bot, goal, { timeout = 90000, attempts = 4, signal, movemen
   ensurePathfinder(bot)
   const started = Date.now()
   const agent = agentOf(bot)
-  // far away: walk there in legs (one A* search over 100+ blocks of hills runs out of think time)
+  // far away: walk there in legs (one A* search over 100+ blocks of hills runs out of think time), on the surface
+  // (from deep underground pathfinder tunnels or swims through flooded caves)
   const center = goalCenter(goal)
   if (legs && center && distXZ(center, bot.entity.position) > LEG * 1.5) {
+    const survive = require('./survive')
+    if (!survive.underOpenSky(bot) && (center.y === undefined || center.y > bot.entity.position.y + 8)) {
+      await survive.surface(bot, { signal }).catch((err) => { if (isAbort(err)) throw err; log(bot, `goto: could not surface first: ${err.message}`) })
+    }
     await travel(bot, center, { signal, timeout: timeout * 0.8, movements: moves })
   }
   let failures = 0

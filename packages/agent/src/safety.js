@@ -134,7 +134,10 @@ class Safety extends EventEmitter {
     const recentlyHurt = Date.now() - this.lastHurt < 4000
     const radius = recentlyHurt ? this.opts.alertRadius : this.opts.engageRadius
     const now = Date.now()
-    const target = combat.nearestHostile(bot, { radius: Math.max(radius, 6), exclude: (e) => !hurt && (this.ignored.get(e.id) ?? 0) > now })
+    const target = combat.nearestHostile(bot, {
+      radius: Math.max(radius, 6),
+      exclude: (e) => !hurt && (this.ignored.get(e.id) ?? 0) > now && e.position.distanceTo(bot.entity.position) > 4
+    })
     if (!target) return
     const d = target.position.distanceTo(bot.entity.position)
     const engage = d <= radius || (target.name === 'creeper' && d <= 6) || (hurt && d <= this.opts.alertRadius)
@@ -245,14 +248,48 @@ class Safety extends EventEmitter {
     const bot = this.bot
     // centred in the cell: rubbing on the wall of a 1×1 water shaft keeps the bot down
     await require('./skills/navigate').stepTo(bot, bot.entity.position.floored(), undefined, { tolerance: 0.15, ticks: 20 }).catch(() => {})
+    let lastY = bot.entity.position.y
+    let still = 0
     for (let i = 0; i < 80 && bot.health > 0; i++) {
       const head = bot.blockAt(bot.entity.position.offset(0, 1.62, 0).floored())
       if (!world.isWater(head) && (bot.oxygenLevel ?? 20) >= 15) break
       bot.setControlState('jump', true)
       await bot.waitForTicks(1).catch(() => {})
+      still = bot.entity.position.y > lastY + 0.01 ? 0 : still + 1
+      lastY = bot.entity.position.y
+      if (still > 10) break // a ceiling over the water (flooded cave)
     }
     bot.clearControlStates()
-    return 'surfaced'
+    const head = bot.blockAt(bot.entity.position.offset(0, 1.62, 0).floored())
+    if (!world.isWater(head)) return 'surfaced'
+    // no air above: swim to the nearest pocket of air instead
+    const pocket = this.airPocket(6)
+    if (!pocket) return 'no air'
+    const { goals } = require('mineflayer-pathfinder')
+    await require('./skills/navigate').goto(bot, new goals.GoalBlock(pocket.x, pocket.y, pocket.z), { timeout: 8000, attempts: 1, legs: false }).catch(() => {})
+    return world.isWater(bot.blockAt(bot.entity.position.offset(0, 1.62, 0).floored())) ? 'no air' : 'air pocket'
+  }
+
+  /** the nearest cell (≤ radius) with air at the feet and the head, on something to stand / float on */
+  airPocket (radius) {
+    const bot = this.bot
+    const here = bot.entity.position.floored()
+    let best = null
+    for (let dx = -radius; dx <= radius; dx++) {
+      for (let dz = -radius; dz <= radius; dz++) {
+        for (let dy = -2; dy <= radius; dy++) {
+          const p = here.offset(dx, dy, dz)
+          const feet = bot.blockAt(p)
+          const head = bot.blockAt(p.offset(0, 1, 0))
+          if (!feet || !head || !world.isPassable(feet) || !world.isPassable(head)) continue
+          const below = bot.blockAt(p.offset(0, -1, 0))
+          if (!below || !(world.isSolid(below) || world.isWater(below))) continue
+          const d = Math.abs(dx) + Math.abs(dy) + Math.abs(dz)
+          if (!best || d < best.d) best = { p, d }
+        }
+      }
+    }
+    return best?.p ?? null
   }
 }
 

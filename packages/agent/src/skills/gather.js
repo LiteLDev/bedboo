@@ -56,11 +56,11 @@ async function ensureTool (bot, blocks, signal) {
   const block = bot.registry.blocksByName[blocks[0]]
   const tools = inventory.harvestToolNames(bot.registry, block)
   if (!tools || tools.some((t) => inventory.count(bot, t) > 0)) return null
-  const model = knowledge.worldModel(bot)
+  const estimates = new planner.Planner(knowledge.worldModel(bot))
   let best = null
   for (const t of tools) {
-    const p = planner.plan({ item: t, count: 1 }, model)
-    if (p.ok && (!best || p.cost < best.cost)) best = { tool: t, cost: p.cost }
+    const cost = estimates.estimate(t)
+    if (Number.isFinite(cost) && (!best || cost < best.cost)) best = { tool: t, cost }
   }
   if (!best) return null
   log(bot, `${blocks[0]} needs one of ${tools.join(', ')}: obtaining ${best.tool}`)
