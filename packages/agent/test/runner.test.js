@@ -4,29 +4,48 @@ const { runSkill, runScenario, skills } = require('..')
 
 const OWNERS = {
   navigate: 'U17',
+  explore: 'U17',
   gather: 'U17',
   craft: 'U17',
   smelt: 'U17',
   mine: 'U17',
   build: 'U17',
+  obtain: 'U17',
   combat: 'U18',
   portal: 'U18',
   nether: 'U18',
   end: 'U18'
 }
 
-describe('@bedboo/agent runner (U0 skeleton)', () => {
-  it('registers every planned skill with the `async (bot, args) => result` shape', () => {
-    assert.deepStrictEqual(Object.keys(skills).sort(), Object.keys(OWNERS).sort())
+describe('@bedboo/agent runner', () => {
+  it('auto-discovers every skill file with the `async (bot, args) => result` shape', () => {
+    for (const name of Object.keys(OWNERS)) assert.ok(Object.hasOwn(skills, name), `skill ${name} registered`)
     for (const [name, skill] of Object.entries(skills)) {
       assert.strictEqual(typeof skill, 'function', name)
       assert.strictEqual(skill.length, 2, `${name} takes (bot, args)`)
     }
   })
 
-  it('skill stubs reject with NotImplementedError of their owner unit', async () => {
+  it('U17 skills are implemented; remaining stubs reject with NotImplementedError of their owner unit', async () => {
     for (const [name, unit] of Object.entries(OWNERS)) {
+      if (unit === 'U17') assert.ok(!skills[name].notImplemented, `${name} is implemented`)
+      if (!skills[name].notImplemented) continue
       await assert.rejects(skills[name]({}, {}), (err) => err.notImplemented === true && err.unit === unit, name)
+    }
+  })
+
+  it('a new file in src/skills registers itself (and `skills: {}` extras)', () => {
+    const fs = require('fs')
+    const os = require('os')
+    const path = require('path')
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'skills-'))
+    try {
+      fs.writeFileSync(path.join(dir, 'dance.js'), 'module.exports = async function dance (bot, args) { return { danced: true } }\nmodule.exports.skills = { twirl: async (bot, args) => 1 }\n')
+      fs.writeFileSync(path.join(dir, 'helpers.js'), 'module.exports = { notASkill: 1 }\n')
+      const found = skills.discover(dir)
+      assert.deepStrictEqual(Object.keys(found).sort(), ['dance', 'twirl'])
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
     }
   })
 

@@ -257,9 +257,15 @@ importers:
       '@bedboo/bds':
         specifier: workspace:*
         version: link:../bds
+      '@bedboo/bedrock-data':
+        specifier: workspace:*
+        version: link:../bedrock-data
       mocha:
         specifier: 12.0.3
         version: 12.0.3
+      prismarine-registry:
+        specifier: 1.12.0
+        version: 1.12.0(patch_hash=e2d9b1aa9e8c0ac704d87932fbb2105e38cf7c529dcdfdbe1d51ed9e2e011534)
 
   packages/bds:
     devDependencies:

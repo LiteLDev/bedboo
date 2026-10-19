@@ -1,5 +1,6 @@
-// owner: U4 (core runtime) → U16b (wave 5: transport options)
+// owner: U4 (core runtime) → U16b (wave 5: transport options); U17 minimal fix: offline SelfSignedId
 'use strict'
+const crypto = require('crypto')
 const { VERSION } = require('./bedrock/constants')
 
 /**
@@ -36,6 +37,11 @@ const { VERSION } = require('./bedrock/constants')
  *   identical to mineflayer's microsoft auth)
  * - `auth: 'mojang'` does not exist on Bedrock and throws
  * An explicit bedrock-protocol `offline` option wins over `auth`.
+ *
+ * Offline players keep their saved data (U17): BDS keys an offline (xuid 0) player's data — inventory, position,
+ * spawn point, … — by the client's `SelfSignedId`, which bedrock-protocol randomizes for every connection, so each
+ * rejoin was a brand-new player. Like Java's offline-mode UUIDs it is derived from the username here
+ * (`offlineSelfSignedId`); `skinData.SelfSignedId` overrides it.
  */
 
 const DEFAULTS = {
@@ -91,6 +97,18 @@ function nethernetOptions (clientOptions, options) {
 }
 
 /**
+ * Java's offline-mode player UUID (`UUID.nameUUIDFromBytes("OfflinePlayer:" + name)`, version 3) — stable per username.
+ * @param {string} username
+ */
+function offlineSelfSignedId (username) {
+  const b = crypto.createHash('md5').update(`OfflinePlayer:${username}`, 'utf8').digest()
+  b[6] = (b[6] & 0x0f) | 0x30
+  b[8] = (b[8] & 0x3f) | 0x80
+  const h = b.toString('hex')
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`
+}
+
+/**
  * @param {object} options mineflayer createBot options (bedrock-protocol ClientOptions + mineflayer options)
  * @returns {import('bedrock-protocol').Client}
  */
@@ -109,7 +127,10 @@ function createClient (options) {
     throw new Error(`unsupported transport '${clientOptions.transport}': use 'raknet' (default) or 'nethernet'`)
   }
   if (clientOptions.transport === 'nethernet') clientOptions.nethernet = nethernetOptions(clientOptions, options)
+  if (clientOptions.offline && typeof clientOptions.username === 'string') {
+    clientOptions.skinData = { SelfSignedId: offlineSelfSignedId(clientOptions.username), ...clientOptions.skinData }
+  }
   return bedrock.createClient(clientOptions)
 }
 
-module.exports = { createClient, offlineFromAuth, DEFAULTS, TRANSPORTS }
+module.exports = { createClient, offlineFromAuth, offlineSelfSignedId, DEFAULTS, TRANSPORTS }
