@@ -416,7 +416,7 @@ async function climbUp (bot, { targetY, signal, timeout = 240000, maxSteps = 400
       }
       // a fight in the middle of the jump (the sword in the hand now, the bot knocked aside): the same step again
       const safety = agentOf(bot)?.safety
-      if ((safety?.busy || safety?.recentlyBusy(3000) || /holding/.test(err.message)) && interrupted++ < 10) {
+      if ((safety?.recentlyIntervened?.(3000) || /holding/.test(err.message)) && interrupted++ < 10) {
         log(bot, `climb: ${err.message}; again`)
         await safety?.idle(signal)
         continue

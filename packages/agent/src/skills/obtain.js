@@ -302,7 +302,8 @@ async function huntSkill (bot, { mobs, item, count = 1, total = false, radius = 
       await waitTicks(bot, 10, signal)
     }
   }
-  const best = items.reduce((b, i) => inventory.count(bot, i) - start[i] > inventory.count(bot, b) - start[b] ? i : b, items[0])
+  const have = (i) => inventory.count(bot, i) - (total ? 0 : start[i])
+  const best = items.reduce((b, i) => have(i) > have(b) ? i : b, items[0])
   if (got() < count) throw new SkillError(`hunted ${got()} of ${count} ${items.length > 1 ? 'of one of ' : ''}${items.join('/')} (${killed} ${mobs.join('/')} killed)`, { code: 'NOT_FOUND', details: { killed } })
   return { collected: { [best]: got() }, killed }
 }

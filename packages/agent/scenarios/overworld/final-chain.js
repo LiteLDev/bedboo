@@ -159,7 +159,9 @@ async function finalChain ({ log = () => {}, cfg = config(), netherOres = false,
         if (inventory.count(bot, 'iron_ingot') < ingots) {
           // coal for the smelt first: without it the planner burns the carried logs, and the shield's planks and the
           // sticks of a later pickaxe are then a climb to the surface away
-          const coal = Math.ceil((ingots - inventory.count(bot, 'iron_ingot')) / 8) + 1
+          const smelt = require('../../src/skills/smelt')
+          const raw = ingots - inventory.count(bot, 'iron_ingot')
+          const coal = smelt.fuelFor(smelt.split(raw, Math.min(3, Math.ceil(raw / 8))), 8) + 1
           if (inventory.count(bot, 'coal') < coal) {
             await task('obtain', { item: 'coal', count: coal }, { name: 'gear: coal', timeout: 2 * MINUTES, retries: 0 }).catch(() => {})
           }
@@ -172,7 +174,7 @@ async function finalChain ({ log = () => {}, cfg = config(), netherOres = false,
           // the armor is what this phase is for; the rest (shield, spares) is best effort
           const r = task('obtain', { item: g.item, count: g.count ?? 1 }, { name: `gear: ${g.item}`, timeout: 3 * MINUTES, retries: 0 })
           if (ARMOR_SLOT[g.item]) await r
-          else await r.catch((err) => { failed[g.item] = err.message })
+          else if (await r.then(() => false, (err) => { failed[g.item] = err.message; return true })) continue
           made.push(g.item)
         }
         // sticks for a pickaxe made later (deep in a mine a log is a long climb away)

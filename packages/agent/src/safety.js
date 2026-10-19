@@ -80,9 +80,10 @@ class Safety extends EventEmitter {
     on(this.bot, 'physicsTick', () => this.onTick())
     on(this.bot, 'health', () => this.tuneEating())
     if (this.bot.autoEat) {
-      on(this.bot.autoEat, 'eatStart', () => this.claim('eat'))
-      on(this.bot.autoEat, 'eatFinish', () => this.release('eat'))
-      on(this.bot.autoEat, 'eatFail', () => this.release('eat'))
+      // a meal that starts or ends is no stuck one (back-to-back meals keep isEating set for long)
+      on(this.bot.autoEat, 'eatStart', () => { this._eatingSince = 0; this.claim('eat') })
+      on(this.bot.autoEat, 'eatFinish', () => { this._eatingSince = 0; this.release('eat') })
+      on(this.bot.autoEat, 'eatFail', () => { this._eatingSince = 0; this.release('eat') })
     }
     on(this.bot, 'death', () => { this.attackers.clear(); this.release(this.busy?.type) })
   }
@@ -149,6 +150,11 @@ class Safety extends EventEmitter {
     return true
   }
 
+  /** whether a behaviour that takes the controls (a fight, lava, drowning — not a meal) ran within the last `ms` */
+  recentlyIntervened (ms) {
+    return (!!this.busy && this.busy.type !== 'eat') || Date.now() - (this.lastInterventionEnd ?? 0) < ms
+  }
+
   /** whether a behaviour had the controls within the last `ms` */
   recentlyBusy (ms) {
     return !!this.busy || Date.now() - this.lastBusyEnd < ms
@@ -197,8 +203,8 @@ class Safety extends EventEmitter {
   }
 
   /**
-   * mineflayer-auto-eat stuck "eating" (a meal that never started or never ended) for 15 s: reset it, release the
-   * 'eat' claim — the bot would never eat again (see runner.js guardAutoEat).
+   * mineflayer-auto-eat stuck "eating" (a meal that never started or never ended: no eatStart / eatFinish) for 15 s:
+   * reset it, release the 'eat' claim — the bot would never eat again (see runner.js guardAutoEat).
    */
   staleMeal () {
     const ae = this.bot.autoEat
@@ -296,6 +302,7 @@ class Safety extends EventEmitter {
     try { if (bot.targetDigBlock) bot.stopDigging() } catch {}
     try { if (bot.currentWindow) bot.closeWindow(bot.currentWindow) } catch {}
     try { bot.clearControlStates() } catch {}
+    this.lastIntervention = started
     Promise.resolve().then(fn).then((outcome) => {
       record.outcome = outcome ?? 'done'
     }, (err) => {
@@ -303,6 +310,7 @@ class Safety extends EventEmitter {
       record.error = err.message
     }).finally(() => {
       record.ms = Date.now() - started
+      this.lastInterventionEnd = Date.now()
       this.interventions.push(record)
       try { bot.clearControlStates() } catch {}
       this.release(type)
@@ -324,7 +332,7 @@ class Safety extends EventEmitter {
         timeout: this.opts.fightTimeout,
         // running from a mob as fast as the bot (a zombie, a spider) only takes hits in the back: armored and armed,
         // the bot fights it to the end; retreating stays for creepers, ranged mobs and an unarmored bot
-        ...(CHASERS.has(target.name) && combat.bestWeapon(bot) && armorWorn(bot) >= 2 ? { retreatHealth: 0 } : {}),
+        ...(CHASERS.has(target.name) && combat.bestWeapon(bot) && require('./skills/rest').wearsArmor(bot) >= 2 ? { retreatHealth: 0 } : {}),
         safe: true,
         giveUpMs: this.opts.fightGiveUpMs,
         maxChase: this.opts.maxChase,
@@ -481,11 +489,6 @@ class Safety extends EventEmitter {
     }
     return best?.p ?? null
   }
-}
-
-/** pieces of armor worn */
-function armorWorn (bot) {
-  return [5, 6, 7, 8].filter((s) => bot.inventory?.slots?.[s]).length
 }
 
 function posOf (bot) {

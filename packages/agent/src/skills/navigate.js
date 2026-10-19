@@ -158,7 +158,7 @@ async function goto (bot, goal, { timeout = 90000, attempts = 4, signal, movemen
         const far = center && distXZ(center, bot.entity.position) > 24
         if (escape && !escaped && failures >= 2 && far && waitSafety && needsEscape(bot)) {
           escaped = true
-          log(bot, `goto: stuck at ${fmt(bot.entity.position)} (${err.message}); escaping to the surface`)
+          log(bot, `goto: stuck at ${fmt(bot.entity.position)} (${err.message}); escaping (out of the water / the pit)`)
           await require('./survive').escape(bot, { signal, timeout: Math.min(150000, Math.max(30000, timeout - (Date.now() - started))) })
             .catch((e) => { if (isAbort(e)) throw e; log(bot, `goto: escape: ${e.message}`) })
           continue

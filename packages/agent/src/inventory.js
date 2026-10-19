@@ -170,12 +170,12 @@ function unwanted (bot, name) {
  * ahead; the bot does not pick them up again (it is busy elsewhere, and drops are only collected around a dug block).
  * @returns {Promise<Record<string, number>>} what was tossed
  */
-async function declutter (bot, { minFree = 4 } = {}) {
+async function declutter (bot, { minFree = 4, keep = null } = {}) {
   const tossed = {}
   if (freeSlots(bot) >= minFree || typeof bot.toss !== 'function') return tossed
   try { if (bot.currentWindow) bot.closeWindow(bot.currentWindow) } catch {}
   // whole stacks first (junk), then the surplus of the blocks
-  const list = junk(bot).sort((a, b) => (JUNK.test(b.name) ? 1 : 0) - (JUNK.test(a.name) ? 1 : 0))
+  const list = junk(bot).filter((j) => j.name !== keep).sort((a, b) => (JUNK.test(b.name) ? 1 : 0) - (JUNK.test(a.name) ? 1 : 0))
   for (const { name, count: n } of list) {
     if (freeSlots(bot) >= minFree) break
     const def = bot.registry.itemsByName[name]

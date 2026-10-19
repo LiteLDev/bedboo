@@ -176,7 +176,8 @@ function guardAutoEat (autoEat) {
     try {
       return await eat(opts)
     } catch (err) {
-      if (!started && !/Already eating/.test(err.message)) autoEat._eating = false
+      // the flag is cleared 2 s later: auto-eat's tick check would retry the equip on every tick meanwhile
+      if (!started && !/Already eating/.test(err.message)) setTimeout(() => { autoEat._eating = false }, 2000)
       throw err
     } finally {
       autoEat.removeListener('eatStart', onStart)
@@ -346,7 +347,11 @@ class Agent extends EventEmitter {
         }
         if (stuck) {
           stucks++
-          await this.unstuck().catch((e) => this.event('log', { msg: `unstuck: ${e.message}` }))
+          const how = await this.unstuck().catch((e) => this.event('log', { msg: `unstuck: ${e.message}` }))
+          if (how === 'died') {
+            deaths++
+            task.errors.push({ code: 'DIED', message: 'the bot died escaping' })
+          }
         }
         const again = (died && deaths <= retries) || (stuck && stucks <= stuckRetries)
         if (!again || Date.now() - started > timeout) {
@@ -423,9 +428,10 @@ class Agent extends EventEmitter {
     }
     if (controller.signal.reason?.code === 'DIED') {
       await this.recover().catch((e) => this.event('log', { msg: `recover: ${e.message}` }))
-      return
+      return 'died'
     }
     this.event('unstuck-done', { at: posOf(bot) })
+    return 'escaped'
   }
 
   /**
@@ -509,7 +515,7 @@ class Agent extends EventEmitter {
     const bot = this.bot
     if (!bot?.entity) return
     // between steps: a sleep only (a whole night in a shelter would eat the scenario's budget)
-    await this.restIfNight({ timeout: Math.max(timeout, 90000), shelter: false })
+    await this.restIfNight({ timeout: Math.max(timeout, 45000), shelter: false })
     // room for what the next step digs up
     const tossed = await inventory.declutter(bot, { minFree: 6 }).catch(() => ({}))
     if (Object.keys(tossed).length) this.event('tossed', { items: tossed })

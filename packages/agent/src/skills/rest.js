@@ -112,7 +112,9 @@ function bedSpots (bot) {
           if (!free(foot) || !free(head) || !ground(foot) || !ground(head)) continue
           if (world.isProtected(bot, foot) || world.isProtected(bot, head)) continue
           if (world.lavaAround(bot, foot) || world.lavaAround(bot, head)) continue
-          spots.push({ stand, foot, head, d, cost: Math.abs(dx) + Math.abs(dz) + Math.abs(dy) * 2 })
+          // room above the bed (Java refuses an obstructed bed; Bedrock is not known to): preferred
+          const low = [foot, head].some((p) => !free(p.offset(0, 1, 0)))
+          spots.push({ stand, foot, head, d, cost: Math.abs(dx) + Math.abs(dz) + Math.abs(dy) * 2 + (low ? 6 : 0) })
         }
       }
     }
@@ -124,15 +126,18 @@ function bedSpots (bot) {
 async function digBedRoom (bot, signal) {
   const feet = bot.entity.position.floored()
   for (const d of world.HORIZONTAL) {
-    const cells = [feet.plus(d), feet.plus(d.scaled(2))]
-    if (!cells.every((c) => world.isSolid(bot.blockAt(c.offset(0, -1, 0))) && world.safeToDig(bot, c) && !world.exposesLiquid(bot, c) && !world.lavaAround(bot, c))) continue
+    const floor = [feet.plus(d), feet.plus(d.scaled(2))]
+    if (!floor.every((c) => world.isSolid(bot.blockAt(c.offset(0, -1, 0))))) continue
+    // the bed's cells and the room above them
+    const cells = floor.flatMap((c) => [c, c.offset(0, 1, 0)])
+    if (!cells.every((c) => world.safeToDig(bot, c) && !world.exposesLiquid(bot, c) && !world.lavaAround(bot, c))) continue
     try {
       for (const c of cells) {
         const b = bot.blockAt(c)
         if (b && !world.isPassable(b)) await navigate.digSafe(bot, b, signal)
       }
-      if (cells.every((c) => world.isPassable(bot.blockAt(c)))) {
-        log(bot, `rest: dug room for the bed at ${navigate.fmt(cells[0])}`)
+      if (floor.every((c) => world.isPassable(bot.blockAt(c)))) {
+        log(bot, `rest: dug room for the bed at ${navigate.fmt(floor[0])}`)
         return true
       }
     } catch (err) {

@@ -92,7 +92,7 @@ async function collectBlocks (bot, { item = null, count = 1, blocks, maxDistance
     await agentOf(bot)?.safety?.idle(signal)
     // a full inventory picks nothing up: the ore would be dug for nothing, again and again
     if (inventory.freeSlots(bot) < 3) {
-      const tossed = await inventory.declutter(bot, { minFree: 5 })
+      const tossed = await inventory.declutter(bot, { minFree: 5, keep: item })
       if (Object.keys(tossed).length) log(bot, `inventory full: tossed ${JSON.stringify(tossed)}`)
     }
     let list = candidates(bot, blocks, { maxDistance, exclude: tried })

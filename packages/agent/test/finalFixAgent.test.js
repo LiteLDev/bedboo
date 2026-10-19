@@ -216,7 +216,9 @@ describe('final fix (agent): mineflayer-auto-eat guard', () => {
     const ae = new FakeEat()
     guardAutoEat(ae)
     await assert.rejects(ae.eat(), /Failed to equip/)
-    assert.strictEqual(ae.isEating, false, 'the flag was cleared')
+    assert.strictEqual(ae.isEating, true, 'not on the next tick (no equip retry every tick)…')
+    await sleep(2100)
+    assert.strictEqual(ae.isEating, false, '…but 2 s later')
     ae.equipFails = false
     await ae.eat()
     assert.strictEqual(ae.isEating, false)
