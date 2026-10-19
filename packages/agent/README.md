@@ -178,12 +178,26 @@ Env: `AGENT_RUNS` (runs per milestone), `AGENT_DIFFICULTY`, `AGENT_REPORT_DIR` (
 
 `scenarios/overworld/final-chain.js` (`corepack pnpm --filter @bedboo/agent final-chain`, or
 `AGENT_FINAL_CHAIN=1 … test:e2e -- --grep "final chain"`) runs everything in one world with one bot and no reconnects:
-M1 → M5, provisions (meat hunted and cooked for the trip, best effort), U18's N1M3 (second bucket, iron ingot, back to the spawn, bucket-cast obsidian portal, into the Nether), back
-home through the bot's own portal (`--nether-ores`: N2's quartz, nether gold and ancient debris on the way), then
-U18's End part — the stronghold portal room is reached with cheats (locate + teleport, eyes of ender given; see
-docs/differences/U18.md), the bot fills the frames, enters the End, the dragon is killed by `/kill` (cheat), the bot
-fights two endermen and leaves through the exit portal. Every phase's time is printed; the report goes to
-`$AGENT_REPORT_DIR/final-chain-<time>.json`.
+M1 → M5, provisions (back to the spawn, meat hunted and cooked for the trip, best effort), U18's N1M3 (second
+bucket, iron ingot, back to the spawn, bucket-cast obsidian portal, into the Nether), back home through the bot's own
+portal (`--nether-ores`: N2's quartz, nether gold and ancient debris on the way), then U18's End part — the stronghold
+portal room is reached with cheats (locate + teleport, eyes of ender given; see docs/differences/U18.md), the bot
+fills the frames, enters the End, the dragon is killed by `/kill` (cheat), the bot fights two endermen and leaves
+through the exit portal. Every phase's time is printed; the report goes to `$AGENT_REPORT_DIR/final-chain-<time>.json`.
+
+Runs so far (2026-10-19, seed 1234, easy): **no run has passed every phase yet.** M1 → M5 passed in 4 of 5 chained
+runs (14.1–16.3 min); N1M3 failed in all 4 runs that reached it:
+
+| run | M1 → M5 (s) | then |
+|---|---|---|
+| 1 | 77, 207, 107, 173, 298 | N1M3: drowned in a flooded cave going back to the spawn, the diamond pickaxe lost |
+| 2 | 87, 233, 128, 163, 366 | N1M3 (17 min): no food (the hunts failed), the portal skill searched water / lava from a mineshaft for 13 min, a starving bot fell to its death, recovery gave up without a pickaxe |
+| 3 | 102, 201, 96, 166, 315 | provisions found no animals in the mountains; N1M3 "back to the spawn" stuck 2 min in the water at a lake shore 44 blocks west of the spawn |
+| 4 | 94, 202, 132, 175, 244 | provisions: killed by a spider at night (health low); N1M3 got its buckets and walked back, cast 2 of 10 obsidian, then the portal skill's cast loop waited at the mold for 12 min |
+| 5 | 75, 200, 102, 176, — | M5: stuck 8 min in its own copper pit under a lake shore on the way to the emerald |
+
+Fixed after the runs that found them: hunting (run 2), recovery without a pickaxe (2), provisions start at the spawn
+(3), climbing out of the water at a shore (3; only run 5 had it). Runs 2 and 4 stalled in U18's portal skill.
 
 ## Seed scouting
 
