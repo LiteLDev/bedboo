@@ -249,6 +249,8 @@ function runOnce (bot, goal, { ms, signal, stuckMs, noProgressMs = 30000 }) {
 async function unstick (bot, { signal, toward } = {}) {
   progress(bot, 'unstick', { at: fmt(bot.entity.position) })
   const pos = bot.entity.position.floored()
+  // a closed door right next to the bot (its own house): open it and walk through
+  if (await throughDoor(bot, pos, signal)) return
   const head = bot.blockAt(pos.offset(0, 1, 0))
   // something solid in the head cell (a placed block, gravel): dig it
   if (head && !world.isPassable(head) && world.safeToDig(bot, head.position) && bot.canDigBlock(head)) {
@@ -276,6 +278,30 @@ async function unstick (bot, { signal, toward } = {}) {
   // last resort: jump in place a few ticks
   bot.setControlState('jump', true)
   await waitTicks(bot, 10, signal).finally(() => bot.setControlState('jump', false))
+}
+
+/** a wooden door / fence gate beside the feet: open it if closed, step into it and out the other side */
+async function throughDoor (bot, pos, signal) {
+  for (const d of world.HORIZONTAL) {
+    const cell = pos.plus(d)
+    const door = bot.blockAt(cell)
+    if (!door || !/(_door|^wooden_door|fence_gate)$/.test(door.name) || /iron/.test(door.name)) continue
+    const beyond = cell.plus(d)
+    const landing = [beyond, beyond.offset(0, -1, 0)].find((c) => world.standable(bot, c))
+    if (!landing) continue
+    try {
+      if (!door.getProperties?.().open_bit) await bot.activateBlock(door)
+      await waitTicks(bot, 5, signal)
+      await stepTo(bot, cell, signal, { ticks: 25 })
+      await stepTo(bot, landing, signal, { ticks: 25 })
+      log(bot, `unstick: went through the ${door.name} at ${fmt(cell)}`)
+      return true
+    } catch (err) {
+      if (isAbort(err)) throw err
+      log(bot, `unstick: door at ${fmt(cell)}: ${err.message}`)
+    }
+  }
+  return false
 }
 
 /** dig `block` with the best tool (no-op when it is gone) */
