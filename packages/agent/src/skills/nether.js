@@ -353,8 +353,9 @@ async function netherSkill (bot, args) {
     ignore: (e) => (combat.FLYING_MOBS.has(e.name) && !combat.hasBowAndArrows(bot)),
     signal
   })
-  // the Agent's safety does not hit fireballs back: a small deflector next to it
-  const stopDeflecting = guard.delegated ? deflectFireballs(bot, { log: (m) => u.log(bot, `nether: ${m}`) }) : () => {}
+  // an Agent safety without guard options (pushGuard: it deflects them itself) does not hit fireballs back: a small
+  // deflector next to it
+  const stopDeflecting = guard.delegated && !guard._token ? deflectFireballs(bot, { log: (m) => u.log(bot, `nether: ${m}`) }) : () => {}
   // nor does it fight neutral mobs that attack (zombified piglins, piglins angered by gold): through it, here
   const stopRetaliating = retaliate(bot, guard)
   const mined = {}
