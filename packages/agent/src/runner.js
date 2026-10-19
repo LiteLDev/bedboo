@@ -180,7 +180,29 @@ class Agent extends EventEmitter {
     await loadPlugins(bot, { autoEat: this.opts.autoEat })
     // the inventory is already empty when 'death' fires: keep the last one seen alive
     this._lastInventory = inventory.counts(bot)
-    bot.on('health', () => { if (bot.health > 0) this._lastInventory = inventory.counts(bot) })
+    // damage trace for the report: what hurt the bot and where (death causes are otherwise invisible)
+    let lastHealth = bot.health
+    bot.on('health', () => {
+      if (bot.health > 0) this._lastInventory = inventory.counts(bot)
+      if (bot.health < lastHealth && bot.entity) {
+        const p = bot.entity.position
+        const hostile = require('./skills/combat').nearestHostile(bot, { radius: 8 })
+        this.event('hurt', {
+          health: Math.round(bot.health * 10) / 10,
+          damage: Math.round((lastHealth - bot.health) * 10) / 10,
+          food: bot.food,
+          oxygen: bot.oxygenLevel,
+          at: posOf(bot),
+          feet: bot.blockAt(p.floored())?.name,
+          head: bot.blockAt(p.offset(0, 1.62, 0).floored())?.name,
+          near: hostile ? `${hostile.name}@${hostile.position.distanceTo(p).toFixed(1)}` : null
+        })
+      }
+      lastHealth = bot.health
+    })
+    bot.on('messagestr', (msg, position) => {
+      if (bot.username && msg.includes(bot.username) && /death|died|slain|killed|drown|burn|fell|suffocat|lava|blew|shot/i.test(msg)) this.event('death-message', { msg })
+    })
     this._invTimer = setInterval(() => { if (bot.health > 0 && bot.entity) this._lastInventory = inventory.counts(bot) }, 2000)
     bot.on('death', () => this.onDeath())
     bot.on('kicked', (reason) => this.event('kicked', { reason: typeof reason === 'string' ? reason : JSON.stringify(reason) }))
@@ -286,7 +308,13 @@ class Agent extends EventEmitter {
     const timer = setTimeout(() => controller.abort(new Error('recover timeout')), 120000)
     try {
       // far below (died in a mine): a shaft down next to the spot, like the miner reaches deep ores
-      if (bot.entity.position.y - at.y > 12) await require('./dig').shaftTo(bot, at.floored(), { signal: controller.signal })
+      if (bot.entity.position.y - at.y > 12) {
+        if (!bot.inventory.items().some((i) => /_pickaxe$/.test(i.name))) {
+          this.event('log', { msg: `recover: ${at.y} is ${Math.round(bot.entity.position.y - at.y)} blocks down and no pickaxe is left; giving the drops up` })
+          return
+        }
+        await require('./dig').shaftTo(bot, at.floored(), { signal: controller.signal })
+      }
       await navigate.goto(bot, new goals.GoalNear(at.x, at.y, at.z, 2), { signal: controller.signal, timeout: 110000 })
       await require('./dig').pickupNear(bot, at.offset(0.5, 0.5, 0.5), { signal: controller.signal, radius: 8, wait: 2000, timeout: 30000 })
     } catch (err) {

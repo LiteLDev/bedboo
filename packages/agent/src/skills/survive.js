@@ -71,9 +71,16 @@ async function food (bot, { min = 8, signal, timeout = 150000, explore: mayExplo
 function underOpenSky (bot) {
   const feet = bot.entity.position.floored()
   // leaves do not count as a roof; water does until the head is out of it (climbUp swims up)
-  const top = world.surfaceY(bot, feet.x, feet.z, { top: 319, bottom: feet.y - 1, ground: (b) => world.isSolid(b) && !/leaves/.test(b.name) })
+  const roof = (b) => world.isSolid(b) && !/leaves/.test(b.name)
+  const top = world.surfaceY(bot, feet.x, feet.z, { top: 319, bottom: feet.y - 1, ground: roof })
   if (top !== null && top > feet.y) return false
-  return !world.isWater(bot.blockAt(bot.entity.position.offset(0, 1.62, 0).floored()))
+  if (world.isWater(bot.blockAt(bot.entity.position.offset(0, 1.62, 0).floored()))) return false
+  // the bottom of an open shaft is not the surface: walled in on all four sides by ground higher than the head
+  // (one high side is just a cliff)
+  return !world.HORIZONTAL.every((d) => {
+    const around = world.surfaceY(bot, feet.x + d.x, feet.z + d.z, { top: Math.min(319, feet.y + 24), bottom: feet.y - 1, ground: roof })
+    return around !== null && around > feet.y + 2
+  })
 }
 
 /**
