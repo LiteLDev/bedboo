@@ -11,7 +11,7 @@
  */
 const { Vec3 } = require('vec3')
 const { SkillError, checkAbort, isAbort } = require('../errors')
-const { defineSkill, log, progress, agentOf, waitTicks } = require('../skill')
+const { defineSkill, log, progress, agentOf, waitTicks, heartbeat } = require('../skill')
 const { compile, verify, BLUEPRINTS } = require('../blueprint')
 const world = require('../world')
 const inventory = require('../inventory')
@@ -274,6 +274,7 @@ async function placeCell (bot, placement, compiled, { signal }) {
       await agentOf(bot)?.safety?.idle(signal)
       await inventory.equip(bot, stack)
       await bot.placeBlock(r.ref, r.face)
+      heartbeat(bot) // work done (the stuck watchdog)
     } catch (err) {
       if (isAbort(err)) throw err
       log(bot, `build: place ${stack.name} at ${navigate.fmt(pos)}: ${err.message}`)
@@ -375,6 +376,12 @@ async function build (bot, args) {
     v = verify(compiled, (pos) => bot.blockAt(pos))
   }
   progress(bot, 'build-verified', { ok: v.ok, checked: v.checked, mismatches: v.mismatches.length })
+  // a house (a structure with a door): the Agent's shelter for the night when it has no bed (skills/rest.js)
+  const door = compiled.placements.find((pl) => pl.tall)
+  if (agent && v.ok && door) {
+    const inside = door.pos.minus(outward(compiled, door.pos))
+    agent.state.home = { name: compiled.name, door: { x: door.pos.x, y: door.pos.y, z: door.pos.z }, inside: { x: inside.x, y: inside.y, z: inside.z } }
+  }
   await leave(bot, compiled, { signal })
   const result = {
     blueprint: compiled.name,

@@ -6,17 +6,37 @@
  * skill carries on afterwards.
  *
  * - **threats**: a hostile mob that hurt the bot, or comes close (creepers, anything within `engageRadius`), is fought
- *   with the combat helpers of skills/combat.js (`fight`: melee / bow, retreats when low) — or fled from when the
- *   bot is too weak (no weapon and low health);
+ *   with the combat helpers of skills/combat.js (`fight` with `safe: true`: it never steps into lava / fire / a portal
+ *   or off a ledge; melee / bow, retreats and eats when low) — or fled from when the bot is too weak (no weapon and low
+ *   health). A mob that hurt the bot is fought back even when it is neutral (a piglin, an enderman), but only when it
+ *   swung its arm just before (combat.likelyAttacker): provoking a neutral mob by mistake turns its group against the
+ *   bot. A mob the bot could neither hit nor get closer to for `fightGiveUpMs`, or that ran `maxChase` blocks away, is
+ *   left alone for `ignoreMs`;
+ * - **fireballs**: a ghast fireball coming within 4 blocks is hit back;
  * - **lava / fire**: in lava → jump and run to the nearest solid ground away from it;
- * - **drowning**: low on air in water → swim up;
- * - **eating**: mineflayer-auto-eat (loaded by the runner) eats when hungry; while it eats the skill waits.
+ * - **drowning**: low on air in water → swim up (or to the nearest pocket of air);
+ * - **suffocating**: gravel / sand fell into the head cell → dig it out;
+ * - **eating**: mineflayer-auto-eat (loaded by the runner) eats when hungry — and, while the bot is hurt, as soon as
+ *   the food bar drops below 18 (natural regeneration needs 18); while it eats the skill waits. During a fight
+ *   auto-eat is paused (the fight eats itself while it retreats).
+ * - **drops**: what a mob the bot killed dropped right next to it (string, bones, rotten flesh) is picked up.
+ *
+ * U18's skills (portal, nether, end) run under `combat.guardFor()`, which under an Agent is a `SafetyGuard` around
+ * this object: the guard's options (`radius`, `maxDy`, `ignore`, `includeNeutral`, `retaliate`, `deflect`) are pushed
+ * with `pushGuard()` for as long as the skill runs, so the skill keeps the protections its own `combat.defend()` guard
+ * would give it.
+ *
  * Everything is recorded in `interventions` (type, target, outcome, ms) for the Agent's report.
  */
 const { EventEmitter } = require('events')
 const { Vec3 } = require('vec3')
 const world = require('./world')
 const { AbortError } = require('./errors')
+
+/** projectiles a melee hit sends back (ghast fireballs) */
+const DEFLECTABLE = new Set(['fireball', 'large_fireball'])
+/** melee mobs that follow the bot at its own speed: no use running from them */
+const CHASERS = new Set(['zombie', 'husk', 'drowned', 'zombie_villager', 'zombie_villager_v2', 'spider', 'cave_spider', 'zombified_piglin', 'zombie_pigman', 'piglin', 'piglin_brute', 'hoglin', 'zoglin', 'vindicator', 'enderman', 'silverfish', 'endermite', 'slime', 'magma_cube'])
 
 class Safety extends EventEmitter {
   /**
@@ -25,13 +45,21 @@ class Safety extends EventEmitter {
    * @param {number} [opts.engageRadius=5] fight hostiles that come this close (creepers: 6)
    * @param {number} [opts.alertRadius=12] fight a hostile this far away when it hurt the bot recently
    * @param {number} [opts.fleeHealth=4] flee instead of fighting at or below this health without a weapon
+   * @param {number} [opts.fightTimeout=25000] longest fight
+   * @param {number} [opts.fightGiveUpMs=12000] give a fight up after this long without a hit or getting closer
+   * @param {number} [opts.maxChase=24] give a fight up when the mob ran this far from where it started
+   * @param {number} [opts.ignoreMs=60000] a mob given up on is left alone this long (unless it hurts the bot)
+   * @param {boolean} [opts.pickupDrops=true] pick up what a killed mob dropped next to the bot
    * @param {(msg: string) => void} [opts.log]
    */
   constructor (bot, opts = {}) {
     super()
     this.bot = bot
-    this.opts = { engageRadius: 5, alertRadius: 12, fleeHealth: 4, fightTimeout: 15000, ignoreMs: 60000, ...opts }
-    this.ignored = new Map() // entity id → until (fights that timed out: the mob cannot get at the bot either)
+    this.opts = { engageRadius: 5, alertRadius: 12, fleeHealth: 4, fightTimeout: 25000, fightGiveUpMs: 12000, maxChase: 24, ignoreMs: 60000, pickupDrops: true, ...opts }
+    this.ignored = new Map() // entity id → until (fights given up: the mob cannot get at the bot either)
+    this.attackers = new Map() // entity → until: mobs that hurt the bot (retaliation)
+    this.swings = new WeakMap() // entity → time of its last arm swing
+    this.guards = [] // option sets of U18 skills running under combat.guardFor()
     this.lastBusyEnd = 0
     this.log = opts.log ?? (() => {})
     this.busy = null // { type, since }
@@ -48,13 +76,15 @@ class Safety extends EventEmitter {
     this.enabled = true
     const on = (emitter, event, fn) => { emitter.on(event, fn); this._listeners.push([emitter, event, fn]) }
     on(this.bot, 'entityHurt', (e) => { if (e === this.bot.entity) this.onHurt() })
+    on(this.bot, 'entitySwingArm', (e) => { if (e !== this.bot.entity) this.swings.set(e, Date.now()) })
     on(this.bot, 'physicsTick', () => this.onTick())
+    on(this.bot, 'health', () => this.tuneEating())
     if (this.bot.autoEat) {
       on(this.bot.autoEat, 'eatStart', () => this.claim('eat'))
       on(this.bot.autoEat, 'eatFinish', () => this.release('eat'))
       on(this.bot.autoEat, 'eatFail', () => this.release('eat'))
     }
-    on(this.bot, 'death', () => { this.release(this.busy?.type) })
+    on(this.bot, 'death', () => { this.attackers.clear(); this.release(this.busy?.type) })
   }
 
   stop () {
@@ -62,6 +92,38 @@ class Safety extends EventEmitter {
     for (const [emitter, event, fn] of this._listeners) emitter.removeListener(event, fn)
     this._listeners = []
     this.release(this.busy?.type)
+  }
+
+  /**
+   * A U18 skill's guard options, in force until `popGuard(token)`.
+   * @param {{ radius?: number, maxDy?: number, ignore?: (e) => boolean, includeNeutral?: boolean, retaliate?: boolean,
+   *   deflect?: boolean, names?: string[] }} opts
+   * @returns {object} token
+   */
+  pushGuard (opts = {}) {
+    const token = { opts }
+    this.guards.push(token)
+    return token
+  }
+
+  popGuard (token) {
+    this.guards = this.guards.filter((g) => g !== token)
+  }
+
+  /** the options in force: the Agent's own, widened by every pushed guard */
+  effective () {
+    const out = { radius: this.opts.engageRadius, maxDy: Infinity, includeNeutral: false, retaliate: true, deflect: true, ignores: [] }
+    for (const { opts } of this.guards) {
+      if (opts.radius > out.radius) out.radius = opts.radius
+      if (opts.maxDy !== undefined) out.maxDy = Number.isFinite(out.maxDy) ? Math.max(out.maxDy, opts.maxDy) : opts.maxDy
+      if (opts.includeNeutral) out.includeNeutral = true
+      if (opts.retaliate === false) out.retaliate = false
+      if (opts.deflect === false) out.deflect = false
+      if (typeof opts.ignore === 'function') out.ignores.push(opts.ignore)
+    }
+    // a guard keeps its fights to its own height band (the default band of combat.defend)
+    if (this.guards.length && !Number.isFinite(out.maxDy)) out.maxDy = 4
+    return out
   }
 
   /** resolves when no safety behaviour has the controls (rejects on abort) */
@@ -102,8 +164,27 @@ class Safety extends EventEmitter {
     for (const w of waiters) w.resolve()
   }
 
+  /** hurt → mineflayer-auto-eat eats below 18 food (regeneration needs 18); else below 16 */
+  tuneEating () {
+    const ae = this.bot.autoEat
+    if (!ae?.opts) return
+    const want = this.bot.health > 0 && this.bot.health < 14 ? 18 : 16
+    if (ae.opts.minHunger !== want) ae.opts.minHunger = want
+  }
+
   onHurt () {
     this.lastHurt = Date.now()
+    const eff = this.effective()
+    if (eff.retaliate && this.bot.entity) {
+      try {
+        const combat = require('./skills/combat')
+        const attacker = combat.likelyAttacker(this.bot, { swings: this.swings, exclude: (e) => eff.ignores.some((f) => f(e)) })
+        if (attacker) {
+          this.ignored.delete(attacker.id) // it got at the bot after all
+          this.attackers.set(attacker, Date.now() + 20000)
+        }
+      } catch {}
+    }
     this.check(true)
   }
 
@@ -111,6 +192,34 @@ class Safety extends EventEmitter {
     if (!this.enabled || this.busy) return
     if (++this._tick % 4 !== 0) return
     this.check(false)
+  }
+
+  /** the mob to fight now (an attacker first, then the nearest hostile close by), or null */
+  threat (hurt) {
+    const bot = this.bot
+    const combat = require('./skills/combat')
+    const eff = this.effective()
+    const pos = bot.entity.position
+    const now = Date.now()
+    const dead = combat.deadEntities(bot)
+    const ignoredBy = (e) => eff.ignores.some((f) => f(e))
+    for (const [e, until] of this.attackers) {
+      if (until < now || dead.has(e) || !bot.entities[e.id] || e.position.distanceTo(pos) > this.opts.alertRadius + 12 || ignoredBy(e)) this.attackers.delete(e)
+    }
+    const attacker = [...this.attackers.keys()].sort((a, b) => a.position.distanceTo(pos) - b.position.distanceTo(pos))[0]
+    if (attacker && attacker.position.distanceTo(pos) <= Math.max(this.opts.alertRadius, eff.radius)) return { target: attacker, engage: true }
+    const recentlyHurt = now - this.lastHurt < 4000
+    const radius = recentlyHurt ? Math.max(this.opts.alertRadius, eff.radius) : eff.radius
+    const target = combat.nearestHostile(bot, {
+      radius: Math.max(radius, 6),
+      includeNeutral: eff.includeNeutral,
+      exclude: (e) => ignoredBy(e) || Math.abs(e.position.y - pos.y) > eff.maxDy ||
+        (!hurt && (this.ignored.get(e.id) ?? 0) > now && e.position.distanceTo(pos) > 4)
+    })
+    if (!target) return null
+    const d = target.position.distanceTo(pos)
+    const engage = d <= radius || (target.name === 'creeper' && d <= 6) || (hurt && d <= this.opts.alertRadius)
+    return engage ? { target, engage } : null
   }
 
   check (hurt) {
@@ -130,21 +239,31 @@ class Safety extends EventEmitter {
       this.run('drowning', () => this.swimUp())
       return
     }
+    if (this.effective().deflect) {
+      const fireball = this.fireball()
+      if (fireball) { this.run('deflect', () => this.deflect(fireball), fireball); return }
+    }
+    const t = this.threat(hurt)
+    if (!t) return
     const combat = require('./skills/combat')
-    const recentlyHurt = Date.now() - this.lastHurt < 4000
-    const radius = recentlyHurt ? this.opts.alertRadius : this.opts.engageRadius
-    const now = Date.now()
-    const target = combat.nearestHostile(bot, {
-      radius: Math.max(radius, 6),
-      exclude: (e) => !hurt && (this.ignored.get(e.id) ?? 0) > now && e.position.distanceTo(bot.entity.position) > 4
-    })
-    if (!target) return
-    const d = target.position.distanceTo(bot.entity.position)
-    const engage = d <= radius || (target.name === 'creeper' && d <= 6) || (hurt && d <= this.opts.alertRadius)
-    if (!engage) return
     const weak = !combat.bestWeapon(bot) && bot.health <= this.opts.fleeHealth
-    if (weak) this.run('flee', () => this.flee(target), target)
-    else this.run('fight', () => this.fight(target), target)
+    if (weak) this.run('flee', () => this.flee(t.target), t.target)
+    else this.run('fight', () => this.fight(t.target), t.target)
+  }
+
+  /** a ghast fireball within hitting distance */
+  fireball () {
+    const combat = require('./skills/combat')
+    for (const e of Object.values(this.bot.entities ?? {})) {
+      if (DEFLECTABLE.has(e.name) && combat.hitboxDistance(this.bot, e) <= 4) return e
+    }
+    return null
+  }
+
+  async deflect (fireball) {
+    await this.bot.lookAt(fireball.position, true)
+    this.bot.attack(fireball)
+    return 'deflected'
   }
 
   run (type, fn, target) {
@@ -173,12 +292,61 @@ class Safety extends EventEmitter {
   }
 
   async fight (target) {
+    const bot = this.bot
     const combat = require('./skills/combat')
-    await combat.equipForCombat(this.bot, { shield: true }).catch(() => {})
-    // safe: the fight's own moves (approach, strafe, retreat) never step into lava / fire or off a ledge over 3 blocks
-    const r = await combat.fight(this.bot, target, { timeout: this.opts.fightTimeout, safe: true, log: this.log })
-    if (r.outcome === 'timeout') this.ignored.set(target.id, Date.now() + this.opts.ignoreMs)
+    await combat.equipForCombat(bot, { shield: true }).catch(() => {})
+    // auto-eat would swap the weapon for food mid-fight: the fight eats itself (while it retreats, out of reach)
+    const autoEat = bot.autoEat?.enabled ? bot.autoEat : null
+    autoEat?.disableAuto()
+    let r
+    try {
+      // safe: the fight's own moves (approach, strafe, retreat) never step into lava / fire / a portal or off a ledge
+      // over 3 blocks; a mob it cannot get at (across lava, up a wall) is given up after fightGiveUpMs
+      r = await combat.fight(bot, target, {
+        timeout: this.opts.fightTimeout,
+        // running from a mob as fast as the bot (a zombie, a spider) only takes hits in the back: with a weapon in hand
+        // the bot fights it to the end; retreating stays for creepers, ranged mobs and the unarmed
+        ...(CHASERS.has(target.name) && combat.bestWeapon(bot) ? { retreatHealth: 0 } : {}),
+        safe: true,
+        giveUpMs: this.opts.fightGiveUpMs,
+        maxChase: this.opts.maxChase,
+        eat: true,
+        bow: 'auto',
+        log: this.log
+      })
+    } finally {
+      autoEat?.enableAuto()
+    }
+    this.attackers.delete(target)
+    if (['timeout', 'unreachable', 'escaped'].includes(r.outcome)) this.ignored.set(target.id, Date.now() + this.opts.ignoreMs)
+    if (r.outcome === 'killed' && this.opts.pickupDrops) await this.collectDrops(target.position.clone()).catch(() => {})
     return r.outcome
+  }
+
+  /**
+   * What the killed mob dropped (string, bones, …) within 4 blocks at about the same height: walked onto with plain
+   * controls (≤ 4 s, never into lava / off a ledge).
+   */
+  async collectDrops (where) {
+    const bot = this.bot
+    const combat = require('./skills/combat')
+    await bot.waitForTicks(6).catch(() => {}) // the drops spawn a moment after the death
+    const near = () => Object.values(bot.entities).filter((e) => e.name === 'item' && e.position.distanceTo(where) <= 3 &&
+      e.position.xzDistanceTo(bot.entity.position) <= 4 && Math.abs(e.position.y - bot.entity.position.y) <= 1.2)
+    const until = Date.now() + 4000
+    try {
+      for (let drop = near()[0]; drop && Date.now() < until && bot.health > 0; drop = near()[0]) {
+        if (bot.entity.isInWater || bot.entity.isInLava) break
+        await bot.lookAt(drop.position.offset(0, bot.entity.eyeHeight ?? 1.62, 0), true)
+        const controls = { forward: true }
+        if (combat.hazardAhead(bot, controls)) break
+        bot.setControlState('forward', true)
+        bot.setControlState('jump', !!bot.entity.isCollidedHorizontally)
+        await bot.waitForTicks(2).catch(() => {})
+      }
+    } finally {
+      bot.clearControlStates()
+    }
   }
 
   /** dig the block (and whatever keeps falling) out of the head cell — never when lava would flow in */
@@ -204,10 +372,13 @@ class Safety extends EventEmitter {
   /** run away from `target` for a few seconds */
   async flee (target) {
     const bot = this.bot
+    const combat = require('./skills/combat')
     for (let i = 0; i < 60 && bot.entities[target.id] && bot.health > 0; i++) {
       const away = bot.entity.position.minus(target.position)
       const dir = away.norm() > 0.01 ? away.normalize() : new Vec3(1, 0, 0)
       await bot.lookAt(bot.entity.position.plus(dir.scaled(4)).offset(0, 1.6, 0), true)
+      // never into lava / off a cliff
+      if (combat.hazardAhead(bot, { forward: true })) { bot.clearControlStates(); break }
       bot.setControlState('forward', true)
       bot.setControlState('sprint', true)
       bot.setControlState('jump', bot.entity.isCollidedHorizontally)
@@ -267,7 +438,7 @@ class Safety extends EventEmitter {
     const pocket = this.airPocket(6)
     if (!pocket) return 'no air'
     const { goals } = require('mineflayer-pathfinder')
-    await require('./skills/navigate').goto(bot, new goals.GoalBlock(pocket.x, pocket.y, pocket.z), { timeout: 8000, attempts: 1, legs: false }).catch(() => {})
+    await require('./skills/navigate').goto(bot, new goals.GoalBlock(pocket.x, pocket.y, pocket.z), { timeout: 8000, attempts: 1, legs: false, safety: false }).catch(() => {})
     return world.isWater(bot.blockAt(bot.entity.position.offset(0, 1.62, 0).floored())) ? 'no air' : 'air pocket'
   }
 
@@ -299,4 +470,4 @@ function posOf (bot) {
   return p ? { x: Math.round(p.x), y: Math.round(p.y), z: Math.round(p.z) } : null
 }
 
-module.exports = { Safety }
+module.exports = { Safety, DEFLECTABLE }

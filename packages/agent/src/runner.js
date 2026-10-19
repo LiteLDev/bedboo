@@ -29,11 +29,24 @@ const path = require('path')
 const { Vec3 } = require('vec3')
 const defaultSkills = require('./skills')
 const { setContext, withTimeout } = require('./skill')
-const { SkillError, isAbort } = require('./errors')
+const { SkillError, AbortError, isAbort } = require('./errors')
 const { Safety } = require('./safety')
 const inventory = require('./inventory')
 
 const DEFAULT_STEP_TIMEOUT = 10 * 60 * 1000
+/** longest wait for an aborted skill to unwind before the next task / the recovery drives the bot */
+const WIND_DOWN_MS = 10000
+/**
+ * The stuck watchdog (Agent#run): a task whose bot stayed within `STUCK_RADIUS` blocks for `stuckMs` without doing
+ * anything (no block dug / placed, nothing crafted / smelted / picked up, no heartbeat) is aborted, the bot escapes
+ * (out of the water, up to the sky, away from the spot) and the task runs again. Skills that stand still on purpose
+ * (smelting, fishing, sleeping) send heartbeats. Defaults per skill; U18's skills (portal, nether, end, combat) have
+ * their own budgets and run without it.
+ */
+const STUCK_MS = { obtain: 180000, mine: 180000, gather: 180000, navigate: 150000, explore: 150000, build: 240000, food: 150000, surface: 150000, fish: 150000, hunt: 150000 }
+const STUCK_RADIUS = 4
+/** event types that are progress (anything else — log lines, failed gotos — is not) */
+const WORK_EVENTS = new Set(['mine', 'craft', 'smelt', 'place', 'pickup', 'obtained', 'build-site', 'build-verified', 'heartbeat', 'shaft', 'food', 'caught', 'slept'])
 
 /**
  * Run one skill with a timeout.
@@ -42,14 +55,17 @@ const DEFAULT_STEP_TIMEOUT = 10 * 60 * 1000
  * @param {object} [args]
  * @param {{ skills?: Record<string, Function>, timeout?: number, signal?: AbortSignal }} [opts]
  */
-async function runSkill (bot, name, args = {}, { skills = defaultSkills, timeout = DEFAULT_STEP_TIMEOUT, signal } = {}) {
+async function runSkill (bot, name, args = {}, { skills = defaultSkills, timeout = DEFAULT_STEP_TIMEOUT, signal, windDownMs = WIND_DOWN_MS } = {}) {
   const skill = Object.hasOwn(skills, name) ? skills[name] : undefined
   if (typeof skill !== 'function') throw new Error(`Unknown skill: ${name}`)
   const controller = new AbortController()
   const onAbort = () => controller.abort(signal.reason)
-  signal?.addEventListener('abort', onAbort, { once: true })
+  if (signal?.aborted) onAbort()
+  else signal?.addEventListener('abort', onAbort, { once: true })
   let timer
+  let onAborted
   const running = (async () => skill(bot, { ...args, signal: controller.signal }))()
+  running.catch(() => {}) // settles after the race when it lost
   try {
     return await Promise.race([
       running,
@@ -58,20 +74,30 @@ async function runSkill (bot, name, args = {}, { skills = defaultSkills, timeout
           controller.abort(new Error('timeout'))
           reject(new SkillError(`Skill ${name} timed out after ${timeout} ms`, { code: 'TIMEOUT' }))
         }, timeout)
+      }),
+      // the caller's abort (a death, the stuck watchdog) ends the skill at once, whatever it is waiting for
+      new Promise((resolve, reject) => {
+        onAborted = () => {
+          const reason = signal?.reason
+          reject(reason instanceof Error ? reason : new AbortError(typeof reason === 'string' ? reason : undefined))
+        }
+        if (signal?.aborted) onAborted()
+        else signal?.addEventListener('abort', onAborted, { once: true })
       })
     ])
   } catch (err) {
-    // the skill saw the abort: let it unwind (it may be mid-dig / mid-path) so it cannot fight the next task over the
-    // controls; at most a few seconds
+    // the skill saw the abort: let it unwind (it may be mid-dig / mid-path, its finally blocks may still move the bot)
+    // before anything else drives the bot — bounded, a skill that ignores its signal cannot hold the next task
     if (controller.signal.aborted) {
       let wait
-      await Promise.race([running.catch(() => {}), new Promise((resolve) => { wait = setTimeout(resolve, 5000) })])
+      await Promise.race([running.catch(() => {}), new Promise((resolve) => { wait = setTimeout(resolve, windDownMs) })])
       clearTimeout(wait)
     }
     throw err
   } finally {
     clearTimeout(timer)
     signal?.removeEventListener('abort', onAbort)
+    if (onAborted) signal?.removeEventListener('abort', onAborted)
   }
 }
 
@@ -148,13 +174,16 @@ class Agent extends EventEmitter {
    */
   constructor (opts = {}) {
     super()
-    this.opts = { username: 'Agent', safety: true, autoEat: true, keepFed: true, recoverItems: true, maxEvents: 5000, ...opts }
+    this.opts = { username: 'Agent', safety: true, autoEat: true, keepFed: true, recoverItems: true, rest: true, shelter: false, maxEvents: 5000, ...opts }
     this.bot = opts.bot ?? null
     this.skills = opts.skills ?? defaultSkills
     this.events = []
     this.tasks = []
     this.deaths = []
-    this.state = { protectedZones: [], lastDeath: null }
+    // protectedZones: the agent's builds (never dug); traps: spots where a task got stuck (no ore / station / goal
+    // there is chosen again for a while); home: where the bot's house is (M4)
+    this.state = { protectedZones: [], lastDeath: null, traps: [], home: null }
+    this._lastWork = 0
     this.startedAt = null
     this.safety = null
     this._log = this.opts.log ?? (() => {})
@@ -229,6 +258,8 @@ class Agent extends EventEmitter {
   /** record + emit an event */
   event (type, data = {}) {
     const e = { t: this.startedAt ? Date.now() - this.startedAt : 0, type, ...data }
+    if (WORK_EVENTS.has(type)) this._lastWork = Date.now()
+    if (type === 'heartbeat') return e // the stuck watchdog's only: not worth a line in the report
     this.events.push(e)
     if (this.events.length > this.opts.maxEvents) this.events.splice(0, this.events.length - this.opts.maxEvents)
     this._log(formatEvent(e))
@@ -253,35 +284,50 @@ class Agent extends EventEmitter {
    * @param {object} [args]
    * @param {{ timeout?: number, retries?: number, name?: string }} [opts]
    */
-  async run (skill, args = {}, { timeout = DEFAULT_STEP_TIMEOUT, retries = 1, name } = {}) {
+  async run (skill, args = {}, { timeout = DEFAULT_STEP_TIMEOUT, retries = 1, name, stuckMs = STUCK_MS[skill] ?? 0, stuckRetries = 2 } = {}) {
     const task = { name: name ?? skill, skill, args: jsonSafe(args), attempts: 0, ok: false, startedAt: new Date().toISOString() }
     this.tasks.push(task)
     const started = Date.now()
+    let deaths = 0
+    let stucks = 0
     this.event('task-start', { task: task.name, skill, args: task.args })
     for (;;) {
       task.attempts++
       const controller = new AbortController()
       this._abortTask = (reason) => controller.abort(reason)
+      const watchdog = stuckMs > 0 ? this.watchdog(controller, stuckMs) : null
       try {
         const left = Math.max(1000, timeout - (Date.now() - started))
-        // runSkill handles the abort (death) and its own timeout, and lets the skill wind down; this is the last guard
-        const result = await withTimeout(runSkill(this.bot, skill, args, { skills: this.skills, timeout: left, signal: controller.signal }), left + 10000, {
+        // runSkill handles the abort (death, stuck) and its own timeout, and lets the skill wind down; this is the
+        // last guard
+        const result = await withTimeout(runSkill(this.bot, skill, args, { skills: this.skills, timeout: left, signal: controller.signal }), left + WIND_DOWN_MS + 5000, {
           message: `task ${task.name} timed out`
         })
         task.ok = true
         task.result = jsonSafe(result)
         break
       } catch (err) {
-        const died = controller.signal.aborted && controller.signal.reason?.code === 'DIED'
-        const error = died ? controller.signal.reason : err
+        const reason = controller.signal.aborted ? controller.signal.reason : null
+        const died = reason?.code === 'DIED'
+        const stuck = reason?.code === 'STUCK'
+        const error = died || stuck ? reason : err
         task.errors = (task.errors ?? []).concat({ code: error.code ?? error.name, message: error.message })
         this.event('task-error', { task: task.name, attempt: task.attempts, code: error.code ?? error.name, error: error.message })
-        if (died) await this.recover().catch((e) => this.event('log', { msg: `recover: ${e.message}` }))
-        if (!died || task.attempts > retries || Date.now() - started > timeout) {
+        if (died) {
+          deaths++
+          await this.recover().catch((e) => this.event('log', { msg: `recover: ${e.message}` }))
+        }
+        if (stuck) {
+          stucks++
+          await this.unstuck().catch((e) => this.event('log', { msg: `unstuck: ${e.message}` }))
+        }
+        const again = (died && deaths <= retries) || (stuck && stucks <= stuckRetries)
+        if (!again || Date.now() - started > timeout) {
           task.error = { code: error.code ?? error.name, message: error.message }
           break
         }
       } finally {
+        if (watchdog) clearInterval(watchdog)
         this._abortTask = null
         try { this.bot.pathfinder?.setGoal(null) } catch {}
         try { this.bot.clearControlStates() } catch {}
@@ -295,6 +341,55 @@ class Agent extends EventEmitter {
       throw err
     }
     return task.result
+  }
+
+  /**
+   * The stuck watchdog of one task attempt (see STUCK_MS): every 5 s, the bot's positions over the last `stuckMs`
+   * all within STUCK_RADIUS blocks, no progress event and no heartbeat in that time, safety not busy → abort the
+   * attempt with a STUCK error. @returns {object} the interval (cleared by run())
+   */
+  watchdog (controller, stuckMs) {
+    const samples = []
+    const started = Date.now()
+    let quietSince = Date.now()
+    return setInterval(() => {
+      const bot = this.bot
+      if (!bot?.entity || bot.health <= 0 || controller.signal.aborted) return
+      const now = Date.now()
+      // a fight / flight / meal, a sleep: not the task's fault
+      if (this.safety?.busy || bot.isSleeping) quietSince = now
+      samples.push({ t: now, p: bot.entity.position.clone() })
+      while (samples.length && samples[0].t < now - stuckMs) samples.shift()
+      if (now - started < stuckMs || now - Math.max(quietSince, this._lastWork) < stuckMs) return
+      const first = samples[0].p
+      if (samples.some((s) => s.p.distanceTo(first) > STUCK_RADIUS)) return
+      const at = first.floored()
+      this.event('stuck', { at: posOf(bot), ms: stuckMs })
+      this.state.traps.push({ x: at.x, y: at.y, z: at.z, until: now + 10 * 60 * 1000 })
+      controller.abort(new SkillError(`stuck at ${at} for ${Math.round(stuckMs / 1000)} s`, { code: 'STUCK' }))
+    }, this.opts.watchdogInterval ?? 5000)
+  }
+
+  /**
+   * After the watchdog aborted a stuck task: out of the water onto a bank, up to the open sky (pillar / staircase),
+   * then a few blocks away from the spot. Best effort, ≤ 3 minutes.
+   */
+  async unstuck () {
+    const bot = this.bot
+    if (!bot?.entity || bot.health <= 0) return
+    this.event('unstuck', { at: posOf(bot) })
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(new Error('unstuck timeout')), 180000)
+    try {
+      await require('./skills/survive').escape(bot, { signal: controller.signal, away: this.state.traps.at(-1) })
+    } catch (err) {
+      if (!isAbort(err)) this.event('log', { msg: `unstuck: ${err.message}` })
+    } finally {
+      clearTimeout(timer)
+      try { bot.pathfinder?.setGoal(null) } catch {}
+      try { bot.clearControlStates() } catch {}
+    }
+    this.event('unstuck-done', { at: posOf(bot) })
   }
 
   /**
@@ -374,12 +469,28 @@ class Agent extends EventEmitter {
    */
   async maintain ({ timeout = 90000 } = {}) {
     const bot = this.bot
-    if (!this.opts.keepFed || !this.skills.food || !bot?.entity) return
+    if (!bot?.entity) return
+    await this.restIfNight()
+    if (!this.opts.keepFed || !this.skills.food) return
     const { foodPoints } = require('./skills/survive')
     if (bot.food > 12 || foodPoints(bot) >= 6) return
     this.event('maintain', { food: bot.food, carried: foodPoints(bot) })
     // the skill knows its budget (it decides whether cooking still fits)
     await this.run('food', { min: 8, explore: false, radius: 40, timeout: timeout - 5000 }, { name: 'food (maintenance)', timeout, retries: 0 }).catch((err) => this.event('log', { msg: `maintenance: ${err.message}` }))
+  }
+
+  /**
+   * Between tasks, at night in the overworld: sleep in the carried bed (the night is skipped) — or, with the
+   * `shelter` option and no armor worn, sit the night out in a sealed shelter (skills/rest.js). Never throws.
+   */
+  async restIfNight () {
+    const bot = this.bot
+    if (!this.opts.rest || !this.skills.rest || !bot?.entity || bot.health <= 0) return
+    const rest = require('./skills/rest')
+    const how = rest.restMode(bot, { shelter: !!this.opts.shelter })
+    if (!how) return
+    await this.run('rest', { shelter: !!this.opts.shelter }, { name: `night: ${how}`, timeout: how === 'shelter' ? 10 * 60 * 1000 : 150000, retries: 0 })
+      .catch((err) => this.event('log', { msg: `rest: ${err.message}` }))
   }
 
   /**
@@ -490,4 +601,4 @@ function createAgent (opts) {
   return Agent.create(opts)
 }
 
-module.exports = { Agent, createAgent, loadPlugins, runSkill, runScenario, skills: defaultSkills, formatEvent, jsonSafe, DEFAULT_STEP_TIMEOUT }
+module.exports = { Agent, createAgent, loadPlugins, runSkill, runScenario, skills: defaultSkills, formatEvent, jsonSafe, DEFAULT_STEP_TIMEOUT, STUCK_MS, WIND_DOWN_MS }

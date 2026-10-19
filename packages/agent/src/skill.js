@@ -86,6 +86,15 @@ function progress (bot, type, data) {
   context(bot).progress(type, data)
 }
 
+/**
+ * "Still working, standing still on purpose" (waiting for a furnace, a fish, the morning): keeps the Agent's stuck
+ * watchdog quiet. Not recorded in the report.
+ */
+function heartbeat (bot) {
+  const ctx = contexts.get(bot)
+  if (ctx?.agent) ctx.progress('heartbeat')
+}
+
 /** the Agent driving this bot, if any */
 function agentOf (bot) {
   return contexts.get(bot)?.agent ?? null
@@ -143,4 +152,4 @@ function waitTicks (bot, n, signal) {
     .finally(() => clearTimeout(timer))
 }
 
-module.exports = { stubSkill, defineSkill, setContext, context, log, progress, agentOf, sleep, withTimeout, waitTicks }
+module.exports = { stubSkill, defineSkill, setContext, context, log, progress, heartbeat, agentOf, sleep, withTimeout, waitTicks }

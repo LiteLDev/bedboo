@@ -69,12 +69,16 @@ A skill is `async (bot, args) => result` (`args.signal` is the runner's AbortSig
 | `mine` | `{ item \| block \| blocks, count }` or `{ all: [{ item, count }] }` | ores and stone: shaft down to deep ones, explore towards the right biome when none is loaded |
 | `gather` | `{ item \| blocks, count }` | surface blocks: logs (`item: 'log'` = any), sand, gravel, … |
 | `craft` | `{ item, count }` | `bot.recipesFor` / `bot.craft`, 2×2 or a crafting table (placed and taken back) |
-| `smelt` | `{ item, count, input?, fuel? }` | `bot.openFurnace`; the furnace is placed and taken back |
+| `smelt` | `{ item, count, input?, fuel?, furnaces?: 3 }` | `bot.openFurnace`; the furnace is placed and taken back; the window is only open to load / unload (a fight that closes it costs nothing); ≥ 12 items are split over up to 3 furnaces |
 | `build` | `{ blueprint, origin?, radius? }` | builds a blueprint near the bot, verifies it block by block |
-| `navigate` | `{ position \| spawn: true, goal?, range? }` | pathfinder with re-planning, legs for far goals, unsticking (own door, head block, out of the water onto a bank, a side dug open) |
+| `navigate` | `{ position \| spawn: true, goal?, range? }` | pathfinder with re-planning, legs for far goals (each leg's end on dry land, never in a lake), unsticking (own door, head block, out of the water onto a bank, a side dug open), the last resort after two failures in a pit / the water: `escape`; `spawn: true` is an x / z goal (the spawn column) |
 | `explore` | `{ blocks?, biomes?, maxDistance? }` | spiral walk until a block / biome is loaded |
 | `surface` | `{}` | out of a mine: pillar up (staircase where liquid is above, around lakes) |
-| `food` | `{ min }` | hunt passive animals for food |
+| `food` | `{ min, items?, stock?, explore?, fishing? }` | carry `min` hunger points and `items` food items: hunt passive animals (exploring for them), cook the meat; fish when no animal is left |
+| `hunt` | `{ mobs, item, count }` | kill passive mobs for an item (wool, leather, …), exploring until one is in sight |
+| `fish` | `{ count, obtainRod? }` | `bot.fish()` from a shore next to open water (≥ 2 deep); each cast waits ≤ 40 s for a bite |
+| `rest` | `{ shelter? }` | the night: sleep in the carried bed (placed, `bot.sleep`, taken back: the night is skipped); with `shelter` and no bed / armor: the house, or a sealed hole in the ground until the morning |
+| `escape` | `{ away? }` | last-resort unstick: out of the water onto a bank, up to the open sky (pillar / staircase), a few blocks away on dry land |
 | `combat`, `portal`, `nether`, `end` | | U18's (fighting, portals, other dimensions) |
 
 ## The obtain planner
@@ -100,14 +104,30 @@ dropped after 3 failures.
 
 src/safety.js runs during every task. When it takes over, pathfinder and digging stop and the task waits:
 
-- a hostile that hurt the bot or comes close (creepers from 6 blocks) is fought with skills/combat.js `fight`
-  (melee, bow when available, retreat when low) — or fled from without a weapon at low health; a mob it could not get
-  at within 15 s is left alone for a minute;
-- in lava: jump towards the nearest solid ground; low on air: swim up (centred in the water column); a falling
-  block in the head cell (gravel, sand): dig it out (never towards lava);
-- mineflayer-auto-eat eats when the food level drops below 16 (rotten flesh too when starving); between tasks the
-  agent hunts passive animals in sight when hungry and out of food (chased with the pathfinder around fences and
-  ledges), and cooks the meat in its furnace;
+- a hostile that hurt the bot or comes close (creepers from 6 blocks) is fought with skills/combat.js `fight` with
+  `safe: true` (melee, bow when available, retreat and eat when low; its moves never step into lava / fire / a portal
+  or off a ledge higher than 3) — or fled from without a weapon at low health; a mob the bot neither hit nor got
+  closer to for 12 s, or that ran 24 blocks away, is left alone for a minute; a neutral mob (piglin, enderman) that
+  swung at the bot and hurt it is fought back (`combat.likelyAttacker`); a ghast fireball within 4 blocks is hit
+  back; what a killed mob dropped next to the bot (string, bones) is picked up;
+- U18's skills (portal, nether, end) run under `combat.guardFor()`: under an Agent it pushes the skill's guard options
+  (radius, height band, `ignore` — ghasts without a bow —, neutral mobs, retaliation, deflection) onto the safety
+  behaviours for as long as the skill runs, so they keep their own guard's protections; the combat skill's hunt /
+  nearby modes pause the safety behaviours while they fight themselves (one fighter per mob);
+- in lava: jump towards the nearest solid ground; low on air: swim up (centred in the water column), or to the
+  nearest pocket of air under a ceiling; a falling block in the head cell (gravel, sand): dig it out (never towards
+  lava);
+- mineflayer-auto-eat eats when the food level drops below 16 — below 18 while the bot is hurt (natural regeneration
+  needs 18) — (rotten flesh too when starving), never during a fight; between tasks the agent hunts passive animals
+  in sight when hungry and out of food (chased with the pathfinder around fences and ledges), and cooks the meat in
+  its furnace;
+- nights: between tasks, in the overworld at night, the agent sleeps in its bed (`rest`: the night is skipped); with
+  `shelter: true` (the final chain) and neither a bed nor armor it waits for the morning in its house or a sealed hole;
+- the stuck watchdog: a task (obtain, mine, gather, navigate, explore, build, food, hunt, fish, surface) whose bot
+  stayed within 4 blocks for 2½–4 minutes without digging, placing, crafting, smelting or picking anything up is
+  aborted; the bot escapes (`escape`: out of the water, up to the sky, away from the spot), the spot is a trap for ten
+  minutes (no ore / goal there is chosen again) and the task runs again (twice at most); an aborted task's skill is
+  given 10 s to unwind before anything else drives the bot;
 - a death aborts the task; after the respawn the agent walks back (a shaft for a death deep underground, after making
   a wooden pickaxe if none is left), picks up its drops and retries the task; a lost tool is obtained again by the mine
   step that needs it;

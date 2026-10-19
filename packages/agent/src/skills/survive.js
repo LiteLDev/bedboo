@@ -29,6 +29,16 @@ function foodPoints (bot) {
   return n
 }
 
+/** food items the bot carries (raw chicken only when `cookable`: it poisons) */
+function foodItems (bot, { cookable = false } = {}) {
+  let n = 0
+  for (const item of bot.inventory.items()) {
+    if (!data.FOODS.includes(item.name) || (item.name === 'chicken' && !cookable)) continue
+    n += item.count
+  }
+  return n
+}
+
 const PREY = ['cow', 'pig', 'sheep', 'mooshroom', 'chicken', 'rabbit']
 
 function nearestPrey (bot, radius = 64, filter = () => true) {
@@ -36,16 +46,16 @@ function nearestPrey (bot, radius = 64, filter = () => true) {
   return bot.nearestEntity((e) => PREY.includes(e.name) && preyOk(bot, e) && e.position.distanceTo(bot.entity.position) <= radius && filter(e)) ?? null
 }
 
-const COOKED = { beef: 'cooked_beef', porkchop: 'cooked_porkchop', mutton: 'cooked_mutton', chicken: 'cooked_chicken', rabbit: 'cooked_rabbit' }
+const COOKED = { beef: 'cooked_beef', porkchop: 'cooked_porkchop', mutton: 'cooked_mutton', chicken: 'cooked_chicken', rabbit: 'cooked_rabbit', cod: 'cooked_cod', salmon: 'cooked_salmon' }
 
-/** raw meat → cooked (more than twice the food) when a furnace and fuel are at hand and there is time */
+/** raw meat / fish → cooked (more than twice the food) when a furnace and fuel are at hand and there is time */
 async function cook (bot, { signal, deadline }) {
   const smelt = require('./smelt')
   const stations = require('../stations')
   for (const [raw, cooked] of Object.entries(COOKED)) {
     const n = inventory.count(bot, raw)
-    // 10 s per item in the furnace + placing / opening / taking the furnace back
-    if (!n || Date.now() + 10000 * n + 15000 > deadline) continue
+    // 10 s per item in the furnace (up to 3 furnaces for a big batch) + placing / opening / taking the furnace back
+    if (!n || Date.now() + 10000 * Math.ceil(n / (n >= 12 ? 3 : 1)) + 20000 > deadline) continue
     if (!inventory.count(bot, 'furnace') && !stations.stationNear(bot, 'furnace')) return
     if (!smelt.chooseFuel(bot, { input: raw, inputCount: n })) return
     try {
@@ -58,7 +68,12 @@ async function cook (bot, { signal, deadline }) {
   }
 }
 
-async function food (bot, { min = 8, stock = false, signal, timeout = 150000, explore: mayExplore = true, radius = 64 } = {}) {
+/**
+ * Carry food: `min` hunger points and `items` food items (provisions for a trip: `stock`). Hunts passive animals in
+ * sight (exploring for them when allowed), cooks the meat; when no animal is left, fishes (`fishing`, when a rod is
+ * carried or can be made) — mineflayer-auto-eat eats when hungry.
+ */
+async function food (bot, { min = 8, items = 0, stock = false, signal, timeout = 150000, explore: mayExplore = true, radius = 64, fishing = true } = {}) {
   const started = Date.now()
   const hunted = {}
   const explore = require('./explore')
@@ -68,9 +83,11 @@ async function food (bot, { min = 8, stock = false, signal, timeout = 150000, ex
   // cooked afterwards (a furnace carried or nearby)
   const canCook = () => inventory.count(bot, 'furnace') > 0 || !!stations.stationNear(bot, 'furnace')
   const carried = () => foodPoints(bot) + (canCook() ? 2 * inventory.count(bot, 'chicken') : 0)
+  const count = () => foodItems(bot, { cookable: canCook() })
   // mineflayer-auto-eat eats what the hunt brings while the bot is hungry: a well-fed bot counts as done (unless it is
   // stocking up for a long trip)
-  const enough = () => carried() >= min || (!stock && bot.food >= 18)
+  const enough = () => (carried() >= min && count() >= items) || (!stock && bot.food >= 18)
+  let fished = 0
   while (!enough()) {
     checkAbort(signal)
     if (Date.now() - started > timeout) break
@@ -80,17 +97,30 @@ async function food (bot, { min = 8, stock = false, signal, timeout = 150000, ex
     const inReach = (e) => (cooking || e.name !== 'chicken') && (open || Math.abs(e.position.y - bot.entity.position.y) < 8)
     let prey = nearestPrey(bot, radius, inReach)
     log(bot, `food: ${foodPoints(bot)} points carried; prey ${prey ? `${prey.name} at ${prey.position.distanceTo(bot.entity.position).toFixed(0)}` : 'none in sight'}`)
-    if (!prey) {
-      if (!mayExplore) break
+    if (!prey && mayExplore) {
       await surface(bot, { signal }).catch((err) => { if (isAbort(err)) throw err })
       const until = () => {
         open = underOpenSky(bot)
         return nearestPrey(bot, 48, inReach)
       }
-      const r = await explore.explore(bot, { until, maxDistance: 160, signal, timeout: Math.max(20000, timeout - (Date.now() - started)) })
+      // half of what is left at most: fishing needs time too
+      const r = await explore.explore(bot, { until, maxDistance: 160, signal, timeout: Math.max(20000, (timeout - (Date.now() - started)) * (fishing ? 0.5 : 1)) })
       open = underOpenSky(bot)
       prey = r.found ? nearestPrey(bot, radius, inReach) : null
-      if (!prey) break
+    }
+    if (!prey) {
+      // no animal left around: fish (a rod carried, or made from 2 string + 3 sticks)
+      const left = timeout - (Date.now() - started)
+      if (!fishing || left < 45000 || fished > 0) break
+      try {
+        const r = await fish(bot, { count: Math.max(2, items - count()), signal, timeout: left - 25000, obtainRod: true })
+        fished += r.caught
+      } catch (err) {
+        if (isAbort(err) || err.code === 'DIED') throw err
+        log(bot, `food: fishing: ${err.message}`)
+      }
+      fished = Math.max(fished, 1) // one fishing trip per call
+      continue
     }
     const drop = prey.name === 'sheep' ? 'mutton' : prey.name === 'pig' ? 'porkchop' : prey.name === 'chicken' ? 'chicken' : prey.name === 'rabbit' ? 'rabbit' : 'beef'
     try {
@@ -103,9 +133,160 @@ async function food (bot, { min = 8, stock = false, signal, timeout = 150000, ex
   }
   await cook(bot, { signal, deadline: started + timeout })
   const points = foodPoints(bot)
-  progress(bot, 'food', { points, hunted })
+  const n = foodItems(bot)
+  progress(bot, 'food', { points, items: n, hunted, fished })
   if (points === 0 && bot.food < 18 && !Object.keys(hunted).length) throw new SkillError('no food found', { code: 'NOT_FOUND', details: { hunted } })
-  return { foodPoints: points, hunted }
+  return { foodPoints: points, items: n, hunted, fished }
+}
+
+// ---- fishing --------------------------------------------------------------------------------------------------------
+
+const FISH = ['cod', 'salmon', 'tropical_fish', 'pufferfish']
+
+/**
+ * A spot to fish from: a dry, standable cell on a shore next to open water (a water surface cell with air above, at
+ * least 2 deep, whose neighbours towards the open water are water too), nearest first. @returns {{ stand, water }|null}
+ */
+function fishingSpot (bot, { maxDistance = 48 } = {}) {
+  const found = world.findBlocks(bot, ['water'], { maxDistance, count: 400 })
+  let best = null
+  for (const w of found) {
+    if (!world.isPassable(bot.blockAt(w.offset(0, 1, 0)))) continue // the surface only
+    if (!world.isWater(bot.blockAt(w.offset(0, -1, 0)))) continue // ≥ 2 deep
+    for (const d of world.HORIZONTAL) {
+      // the bot on the bank behind the water cell; open water 2 and 3 cells ahead of it
+      const stand = w.minus(d).offset(0, 1, 0)
+      if (!world.standable(bot, stand) || world.isWater(bot.blockAt(stand.offset(0, -1, 0)))) continue
+      if (![1, 2].every((k) => world.isWater(bot.blockAt(w.plus(d.scaled(k)))) && world.isPassable(bot.blockAt(w.plus(d.scaled(k)).offset(0, 1, 0))))) continue
+      const cost = stand.distanceTo(bot.entity.position)
+      if (!best || cost < best.cost) best = { stand, water: w.plus(d.scaled(2)), cost }
+    }
+  }
+  return best
+}
+
+/**
+ * Fish `count` catches (cod / salmon count; junk and treasure are kept but not counted) with `bot.fish()`. A rod is
+ * obtained first when `obtainRod` (2 string + 3 sticks). Each cast waits ≤ 40 s for a bite (BDS: ~6–32 s), then
+ * reels in and casts again.
+ * @returns {Promise<{ caught: number, casts: number, ms: number }>}
+ */
+async function fish (bot, { count = 3, timeout = 180000, signal, obtainRod = false, maxDistance = 64 } = {}) {
+  const started = Date.now()
+  const { heartbeat } = require('../skill')
+  if (!inventory.count(bot, 'fishing_rod')) {
+    if (!obtainRod) throw new SkillError('no fishing rod', { code: 'MISSING' })
+    // only when the string is already there: string comes from spiders / cobwebs, not worth a trip of its own
+    if (inventory.count(bot, 'string') < 2) throw new SkillError(`no fishing rod and ${inventory.count(bot, 'string')} string`, { code: 'MISSING' })
+    await require('./obtain').obtain(bot, { item: 'fishing_rod', count: 1, signal })
+  }
+  let spot = fishingSpot(bot, { maxDistance })
+  if (!spot && !underOpenSky(bot)) {
+    await surface(bot, { signal }).catch((err) => { if (isAbort(err)) throw err })
+    spot = fishingSpot(bot, { maxDistance })
+  }
+  if (!spot) throw new SkillError(`no open water within ${maxDistance} blocks`, { code: 'NOT_FOUND' })
+  const { goals } = require('mineflayer-pathfinder')
+  await navigate.goto(bot, new goals.GoalBlock(spot.stand.x, spot.stand.y, spot.stand.z), { signal, timeout: 60000, attempts: 3 })
+  log(bot, `fish: on the shore at ${navigate.fmt(spot.stand)}`)
+  // what each bite brought (a hungry bot may eat a raw fish right away: it still counts)
+  let fishCaught = 0
+  const caught = () => fishCaught
+  let casts = 0
+  while (caught() < count && Date.now() - started < timeout) {
+    checkAbort(signal)
+    await agentOf(bot)?.safety?.idle(signal)
+    await inventory.equip(bot, 'fishing_rod')
+    await bot.lookAt(spot.water.offset(0.5, 0.9, 0.5), true)
+    casts++
+    const cast = bot.fish()
+    cast.catch(() => {})
+    let timer
+    const bite = await Promise.race([
+      cast.then(() => true, () => false),
+      new Promise((resolve) => { timer = setTimeout(() => resolve(null), Math.min(40000, Math.max(5000, timeout - (Date.now() - started)))) })
+    ])
+    clearTimeout(timer)
+    if (bite === null) {
+      // no bite in time (or the bobber landed on the shore): reel in
+      bot.activateItem()
+      await cast.catch(() => {})
+    }
+    heartbeat(bot)
+    if (bite) {
+      // the catch flies to the bot
+      const had = inventory.counts(bot)
+      for (let i = 0; i < 30; i++) {
+        await waitTicks(bot, 2, signal)
+        if (!Object.values(bot.entities).some((e) => e.name === 'item' && e.position.distanceTo(bot.entity.position) < 8)) break
+      }
+      const got = Object.entries(inventory.counts(bot)).filter(([n, c]) => c > (had[n] ?? 0)).map(([n, c]) => `${c - (had[n] ?? 0)} ${n}`)
+      fishCaught += Object.entries(inventory.counts(bot)).filter(([n]) => FISH.slice(0, 2).includes(n)).reduce((k, [n, c]) => k + Math.max(0, c - (had[n] ?? 0)), 0)
+      progress(bot, 'caught', { got, total: caught() })
+    }
+  }
+  log(bot, `fish: ${caught()} caught in ${casts} casts`)
+  return { caught: caught(), casts, ms: Date.now() - started }
+}
+
+// ---- getting out of trouble -----------------------------------------------------------------------------------------
+
+/**
+ * Last-resort unstick (the stuck watchdog, navigation that failed twice in a pit): out of the water onto the nearest
+ * bank, up to the open sky (pillar / staircase, around water above), then a few blocks away from `away` (the spot the
+ * bot was stuck at) on dry land. Best effort; throws only on abort.
+ * @returns {Promise<{ position, surfaced: boolean }>}
+ */
+async function escape (bot, { signal, timeout = 150000, away } = {}) {
+  const started = Date.now()
+  const left = () => timeout - (Date.now() - started)
+  const { goals } = require('mineflayer-pathfinder')
+  navigate.stopPathfinder(bot)
+  if (inWater(bot)) {
+    await swimUp(bot, signal).catch((err) => { if (isAbort(err)) throw err })
+    const bank = nearestBank(bot, 12)
+    if (bank) {
+      log(bot, `escape: out of the water onto ${navigate.fmt(bank)}`)
+      await navigate.goto(bot, new goals.GoalBlock(bank.x, bank.y, bank.z), { signal, timeout: Math.min(40000, left()), attempts: 2, legs: false, escape: false })
+        .catch((err) => { if (isAbort(err)) throw err; log(bot, `escape: ${err.message}`) })
+    }
+    if (inWater(bot)) await navigate.unstick(bot, { signal }).catch((err) => { if (isAbort(err)) throw err })
+  }
+  if (!underOpenSky(bot) && left() > 10000) {
+    log(bot, `escape: up to the sky from ${navigate.fmt(bot.entity.position)}`)
+    await surface(bot, { signal, timeout: left() }).catch((err) => { if (isAbort(err)) throw err; log(bot, `escape: ${err.message}`) })
+  }
+  // a few blocks away from the spot, on dry land (the same pit / shore would catch the next attempt again)
+  if (left() > 10000 && underOpenSky(bot)) {
+    const here = bot.entity.position
+    const from = away ? new Vec3(away.x, here.y, away.z) : null
+    let dir = from && from.xzDistanceTo(here) > 0.5 ? here.minus(from) : new Vec3(Math.cos(Date.now() % 628 / 100), 0, Math.sin(Date.now() % 628 / 100))
+    dir = new Vec3(dir.x, 0, dir.z)
+    dir = dir.scaled(1 / Math.max(1e-6, Math.hypot(dir.x, dir.z)))
+    const target = { x: here.x + dir.x * 10, z: here.z + dir.z * 10 }
+    const dry = navigate.dryNear(bot, target) ?? target
+    await navigate.goto(bot, new goals.GoalNearXZ(dry.x, dry.z, 3), { signal, timeout: Math.min(40000, left()), attempts: 2, legs: false, escape: false })
+      .catch((err) => { if (isAbort(err)) throw err; log(bot, `escape: ${err.message}`) })
+  }
+  const p = bot.entity.position
+  return { position: { x: p.x, y: p.y, z: p.z }, surfaced: underOpenSky(bot) }
+}
+
+/** the nearest dry standable cell (≤ radius) next to the water, about the water's height */
+function nearestBank (bot, radius = 12) {
+  const here = bot.entity.position.floored()
+  let best = null
+  for (let dx = -radius; dx <= radius; dx++) {
+    for (let dz = -radius; dz <= radius; dz++) {
+      for (let dy = -1; dy <= 3; dy++) {
+        const p = here.offset(dx, dy, dz)
+        if (!world.standable(bot, p) || world.isWater(bot.blockAt(p.offset(0, -1, 0)))) continue
+        const d = Math.hypot(dx, dz) + Math.abs(dy) * 0.5
+        if (!best || d < best.d) best = { p, d }
+      }
+    }
+  }
+  return best?.p ?? null
 }
 
 /** whether nothing solid is above the bot's head (up to the top of the loaded column) */
@@ -141,7 +322,7 @@ async function surface (bot, { signal, timeout = 240000 } = {}) {
       if (dry) {
         const { goals } = require('mineflayer-pathfinder')
         log(bot, `surface: water above ${navigate.fmt(feet)}; climbing at ${dry.x}, ${dry.z} instead`)
-        await navigate.goto(bot, new goals.GoalBlock(dry.x, feet.y, dry.z), { signal, timeout: 60000, attempts: 2 })
+        await navigate.goto(bot, new goals.GoalBlock(dry.x, feet.y, dry.z), { signal, timeout: 60000, attempts: 2, escape: false })
           .catch((err) => { if (isAbort(err)) throw err; log(bot, `surface: ${err.message}`) })
         feet = bot.entity.position.floored()
       }
@@ -164,7 +345,7 @@ async function surface (bot, { signal, timeout = 240000 } = {}) {
       for (let i = 0; i < 4 && !underOpenSky(bot) && Date.now() - started < timeout; i++) {
         const f = bot.entity.position.floored()
         const t = world.surfaceY(bot, f.x, f.z, { top: 319, bottom: f.y, ground: (b) => world.isSolid(b) && !/leaves/.test(b.name) })
-        await navigate.goto(bot, new goals.GoalY(Math.min(t ?? f.y + 16, f.y + 24)), { signal, timeout: Math.min(90000, timeout - (Date.now() - started)), attempts: 2 })
+        await navigate.goto(bot, new goals.GoalY(Math.min(t ?? f.y + 16, f.y + 24)), { signal, timeout: Math.min(90000, timeout - (Date.now() - started)), attempts: 2, escape: false })
           .catch((e) => { if (isAbort(e)) throw e; log(bot, `surface: ${e.message}`) })
       }
     }
@@ -320,5 +501,7 @@ async function stairStepUp (bot, signal) {
 
 const foodSkill = defineSkill('food', (bot, args) => food(bot, args), { description: 'carry enough food (hunt passive animals)' })
 const surfaceSkill = defineSkill('surface', (bot, args) => surface(bot, args), { description: 'climb out of a mine to the open sky' })
+const fishSkill = defineSkill('fish', (bot, args) => fish(bot, args), { description: 'fish with a rod on a shore (bot.fish)' })
+const escapeSkill = defineSkill('escape', (bot, args) => escape(bot, args), { description: 'out of the water, up to the sky, away from a spot (last-resort unstick)' })
 
-module.exports = { skills: { food: foodSkill, surface: surfaceSkill }, food, surface, climbUp, pillarStep, stairStepUp, swimUp, inWater, foodPoints, underOpenSky, nearestPrey, PREY }
+module.exports = { skills: { food: foodSkill, surface: surfaceSkill, fish: fishSkill, escape: escapeSkill }, food, surface, escape, fish, fishingSpot, nearestBank, climbUp, pillarStep, stairStepUp, swimUp, inWater, foodPoints, foodItems, underOpenSky, nearestPrey, PREY, COOKED }

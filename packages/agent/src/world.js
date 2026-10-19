@@ -108,6 +108,14 @@ function isProtected (bot, pos) {
   return zones.some((z) => pos.x >= z.min.x && pos.x <= z.max.x && pos.y >= z.min.y && pos.y <= z.max.y && pos.z >= z.min.z && pos.z <= z.max.z)
 }
 
+/** within 4 blocks of a spot where a task got stuck in the last minutes (the Agent's `state.traps`) */
+function inTrap (bot, pos) {
+  const traps = agentOf(bot)?.state?.traps
+  if (!traps?.length) return false
+  const now = Date.now()
+  return traps.some((t) => t.until > now && Math.abs(pos.x - t.x) <= 4 && Math.abs(pos.y - t.y) <= 4 && Math.abs(pos.z - t.z) <= 4)
+}
+
 /** horizontal distance */
 function distXZ (a, b) {
   return Math.hypot(a.x - b.x, a.z - b.z)
@@ -171,6 +179,7 @@ module.exports = {
   surfaceY,
   feet,
   isProtected,
+  inTrap,
   distXZ,
   cardinalTowards,
   biomeAt,

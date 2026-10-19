@@ -1,4 +1,4 @@
-// owner: U18 (agent combat & dimensions); library helpers seeded by U16b (wave 5, mob combat matrix)
+// owner: U18 (agent combat & dimensions; the safety integration: FINAL-FIX-AGENT-A); library helpers seeded by U16b
 'use strict'
 /**
  * Combat.
@@ -885,24 +885,36 @@ class Guard extends EventEmitter {
  */
 function guardFor (bot, opts = {}) {
   const safety = require('../skill').agentOf(bot)?.safety
-  if (safety?.enabled) return new SafetyGuard(bot, safety)
+  if (safety?.enabled) return new SafetyGuard(bot, safety, opts)
   return defend(bot, opts)
 }
 
-/** {@link guardFor}'s adapter around the Agent's Safety */
+/**
+ * {@link guardFor}'s adapter around the Agent's Safety. The guard options the skill asked for (`radius`, `maxDy`,
+ * `ignore`, `includeNeutral`, `retaliate`, `deflect`) are pushed onto the Safety until `stop()` (or the `signal`), so
+ * under an Agent the skill keeps what its own {@link defend} guard would do: safe fights, retaliation against neutral
+ * attackers, fireball deflection, ghasts ignored without a bow, unreachable mobs dropped, eating.
+ */
 class SafetyGuard extends EventEmitter {
-  constructor (bot, safety) {
+  constructor (bot, safety, opts = {}) {
     super()
     this.bot = bot
     this.safety = safety
     this.delegated = true
     this.stats = { delegated: 'agent safety' }
     this._paused = null
+    this._stopped = false
     this._onBusy = (type) => this.emit('busy', type)
     this._onIdle = () => this.emit('idle')
     safety.on('busy', this._onBusy)
     safety.on('idle', this._onIdle)
+    const { signal, onEngage, fight, interval, ...guardOpts } = opts
+    this._token = typeof safety.pushGuard === 'function' ? safety.pushGuard(guardOpts) : null
     util.setGuard(bot, this)
+    if (signal) {
+      if (signal.aborted) this.stop()
+      else signal.addEventListener('abort', () => { this.stop() }, { once: true })
+    }
   }
 
   get busy () { return !!this.safety.busy }
@@ -921,8 +933,12 @@ class SafetyGuard extends EventEmitter {
 
   async stop () {
     this.resume()
-    this.safety.removeListener('busy', this._onBusy)
-    this.safety.removeListener('idle', this._onIdle)
+    if (!this._stopped) {
+      this._stopped = true
+      if (this._token) this.safety.popGuard(this._token)
+      this.safety.removeListener('busy', this._onBusy)
+      this.safety.removeListener('idle', this._onIdle)
+    }
     if (util.guardOf(this.bot) === this) util.setGuard(this.bot, null)
     return { delegated: 'agent safety', interventions: this.safety.interventions?.length ?? 0 }
   }
@@ -1094,8 +1110,16 @@ async function combatSkill (bot, args) {
   const mode = args.mode ?? (args.mob ? 'hunt' : args.durationMs ? 'survive' : 'nearby')
   if (mode === 'hunt') {
     if (!args.mob) throw new Error('combat hunt needs args.mob')
-    const r = await huntFor(bot, args.mob, args.count ?? 1, args)
-    return { mode, killed: { [args.mob]: r.killed }, fights: r.fights, ms: r.ms }
+    // one fighter at a time: the guard (the Agent's safety under an Agent) is paused while the hunt fights, and the
+    // hunt's walks wait for it otherwise
+    const own = !args.guard && require('../skill').agentOf(bot)?.safety?.enabled
+    const guard = args.guard ?? (own ? guardFor(bot, { radius: 8, retaliate: true, signal: args.signal }) : null)
+    try {
+      const r = await huntFor(bot, args.mob, args.count ?? 1, { ...args, guard })
+      return { mode, killed: { [args.mob]: r.killed }, fights: r.fights, ms: r.ms }
+    } finally {
+      if (own) await guard.stop()
+    }
   }
   if (mode === 'survive') {
     const r = await survive(bot, args)
@@ -1103,9 +1127,17 @@ async function combatSkill (bot, args) {
     return { mode, survived: r.survived, killed: r.stats.killed, stats: r.stats, ms: r.ms }
   }
   if (mode === 'nearby') {
-    const r = await fightNearby(bot, args)
-    if (r.outcome === 'died') throw new Error('the bot died fighting')
-    return { mode, ...r }
+    // fightAll fights every hostile itself: an Agent's safety must not start a second fight on the same mob
+    const agentSafety = require('../skill').agentOf(bot)?.safety
+    const safetyWas = agentSafety?.enabled
+    if (agentSafety) agentSafety.enabled = false
+    try {
+      const r = await fightNearby(bot, args)
+      if (r.outcome === 'died') throw new Error('the bot died fighting')
+      return { mode, ...r }
+    } finally {
+      if (agentSafety) agentSafety.enabled = safetyWas
+    }
   }
   throw new Error(`unknown combat mode ${mode}`)
 }

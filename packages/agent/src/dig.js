@@ -31,7 +31,7 @@ const isProtected = world.isProtected
  */
 function candidates (bot, blocks, { maxDistance = 64, exclude = new Set(), point } = {}) {
   const here = point ?? bot.entity.position
-  const usable = (p) => !exclude.has(key(p)) && !isProtected(bot, p) && world.safeToDig(bot, p) && !world.lavaAround(bot, p)
+  const usable = (p) => !exclude.has(key(p)) && !isProtected(bot, p) && !world.inTrap(bot, p) && world.safeToDig(bot, p) && !world.lavaAround(bot, p)
   const found = world.findBlocks(bot, blocks, { maxDistance, count: 48, point: here, filter: usable })
   const out = []
   for (const p of found) {
@@ -150,12 +150,16 @@ async function mineAt (bot, pos, { signal, item, pickup = true } = {}) {
   if (harvest && !harvest.some((t) => inventory.count(bot, t) > 0)) {
     throw new SkillError(`${block.name} needs one of ${harvest.join(', ')}`, { code: 'MISSING' })
   }
-  progress(bot, 'mine', { block: block.name, at: { x: pos.x, y: pos.y, z: pos.z } })
   await reach(bot, pos, { signal })
   block = bot.blockAt(pos)
   if (!block || world.isAir(block) || world.isLiquid(block)) return false
   if (!world.safeToDig(bot, pos)) throw new SkillError(`${block.name} at ${navigate.fmt(pos)} is next to a liquid`, { code: 'UNSAFE' })
+  const name = block.name
   if (!(await digBlock(bot, block, signal))) return false
+  // only a block that is gone counts as mined (the milestones verify these events)
+  for (let i = 0; i < 10 && bot.blockAt(pos)?.name === name; i++) await waitTicks(bot, 1, signal)
+  if (bot.blockAt(pos)?.name === name) return false
+  progress(bot, 'mine', { block: name, at: { x: pos.x, y: pos.y, z: pos.z } })
   if (pickup) await pickupNear(bot, pos.offset(0.5, 0.5, 0.5), { signal, item })
   return true
 }
