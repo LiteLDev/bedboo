@@ -113,7 +113,7 @@ async function loadPlugins (bot, { autoEat = true, pvp = true, armor = true } = 
       minHunger: 16,
       minHealth: 0, // auto-eat's default 14 tries to eat whenever hurt, even when full (Bedrock refuses): hunger only
       priority: 'foodPoints',
-      bannedFood: ['rotten_flesh', 'spider_eye', 'poisonous_potato', 'pufferfish', 'chicken', 'golden_apple', 'enchanted_golden_apple', 'chorus_fruit', 'suspicious_stew']
+      bannedFood: ['spider_eye', 'poisonous_potato', 'pufferfish', 'chicken', 'golden_apple', 'enchanted_golden_apple', 'chorus_fruit', 'suspicious_stew']
     })
     if (autoEat) bot.autoEat.enableAuto()
   }
@@ -353,7 +353,7 @@ class Agent extends EventEmitter {
     for (const step of scenario.steps) {
       const left = deadline - Date.now()
       if (left <= 0) { ok = false; error = { code: 'TIMEOUT', message: `${scenario.name} ran out of time` }; break }
-      await this.maintain({ timeout: Math.min(45000, left / 5) })
+      await this.maintain({ timeout: Math.min(75000, left / 4) })
       try {
         await this.run(step.skill, step.args ?? {}, { name: step.name, timeout: Math.min(step.timeout ?? DEFAULT_STEP_TIMEOUT, left), retries: step.retries ?? 1 })
       } catch (err) {

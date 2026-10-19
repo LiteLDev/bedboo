@@ -58,16 +58,28 @@ async function execute (bot, step, { signal }) {
 }
 
 /** kill passive mobs in sight for their drops (mineflayer combat helpers of skills/combat.js) */
+/** animals the bot could not get at (per bot: entity id → until) */
+const unreachablePrey = new WeakMap()
+function preyOk (bot, e) {
+  const until = unreachablePrey.get(bot)?.get(e.id)
+  return !(until > Date.now())
+}
+
 async function hunt (bot, { mobs, item, count, signal, radius = 64 }) {
   const combat = require('./combat')
   const start = inventory.count(bot, item)
   let kills = 0
   for (let i = 0; i < count * 3 && inventory.count(bot, item) - start < count; i++) {
     checkAbort(signal)
-    const target = bot.nearestEntity((e) => mobs.includes(e.name) && e.position.distanceTo(bot.entity.position) <= radius)
+    const target = bot.nearestEntity((e) => mobs.includes(e.name) && preyOk(bot, e) && e.position.distanceTo(bot.entity.position) <= radius)
     if (!target) throw new SkillError(`no ${mobs.join('/')} in sight`, { code: 'NOT_FOUND' })
-    const r = await combat.fight(bot, target, { signal, timeout: 20000 }) // a fleeing animal is not worth more
+    const r = await combat.fight(bot, target, { signal, timeout: 15000 }) // a fleeing animal is not worth more
     if (r.outcome === 'died') throw new SkillError('died while hunting', { code: 'DIED' })
+    if (r.outcome === 'timeout') {
+      // behind a fence / across water: leave that one alone for a while
+      if (!unreachablePrey.has(bot)) unreachablePrey.set(bot, new Map())
+      unreachablePrey.get(bot).set(target.id, Date.now() + 120000)
+    }
     if (r.outcome === 'killed') {
       kills++
       await dig.pickupNear(bot, target.position.clone(), { signal, item, radius: 4 })
@@ -157,4 +169,4 @@ async function obtainAll (bot, { items, signal }) {
   return { results }
 }
 
-module.exports = Object.assign(skill, { obtain, obtainAll, execute, hunt, describe, FOODS: data.FOODS })
+module.exports = Object.assign(skill, { obtain, obtainAll, execute, hunt, preyOk, describe, FOODS: data.FOODS })

@@ -31,7 +31,29 @@ function foodPoints (bot) {
 const PREY = ['cow', 'pig', 'sheep', 'mooshroom', 'chicken', 'rabbit']
 
 function nearestPrey (bot, radius = 64) {
-  return bot.nearestEntity((e) => PREY.includes(e.name) && e.position.distanceTo(bot.entity.position) <= radius) ?? null
+  const { preyOk } = require('./obtain')
+  return bot.nearestEntity((e) => PREY.includes(e.name) && preyOk(bot, e) && e.position.distanceTo(bot.entity.position) <= radius) ?? null
+}
+
+const COOKED = { beef: 'cooked_beef', porkchop: 'cooked_porkchop', mutton: 'cooked_mutton', chicken: 'cooked_chicken', rabbit: 'cooked_rabbit' }
+
+/** raw meat → cooked (more than twice the food) when a furnace and fuel are at hand and there is time */
+async function cook (bot, { signal, deadline }) {
+  const smelt = require('./smelt')
+  const stations = require('../stations')
+  for (const [raw, cooked] of Object.entries(COOKED)) {
+    const n = inventory.count(bot, raw)
+    if (!n || Date.now() + 12000 * n > deadline) continue
+    if (!inventory.count(bot, 'furnace') && !stations.stationNear(bot, 'furnace')) return
+    if (!smelt.chooseFuel(bot, { input: raw, inputCount: n })) return
+    try {
+      await smelt.smeltItem(bot, { item: cooked, count: n, input: raw, signal })
+    } catch (err) {
+      if (isAbort(err)) throw err
+      log(bot, `food: cooking ${raw}: ${err.message}`)
+      return
+    }
+  }
 }
 
 async function food (bot, { min = 8, signal, timeout = 150000, explore: mayExplore = true, radius = 64 } = {}) {
@@ -61,6 +83,7 @@ async function food (bot, { min = 8, signal, timeout = 150000, explore: mayExplo
       log(bot, `food: hunting ${prey.name} failed: ${err.message}`)
     }
   }
+  await cook(bot, { signal, deadline: started + timeout })
   const points = foodPoints(bot)
   progress(bot, 'food', { points, hunted })
   if (points === 0 && bot.food < 18 && !Object.keys(hunted).length) throw new SkillError('no food found', { code: 'NOT_FOUND', details: { hunted } })
