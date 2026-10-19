@@ -226,18 +226,31 @@ class Planner {
       throw new PlanError(`no way to obtain ${missing} ${item}${path}${why.length ? `: ${why.join(', ')}` : ''}`)
     }
     options.sort((a, b) => a.cost - b.cost)
-    const choice = options[0]
-    stack.push(item)
-    try {
-      switch (choice.kind) {
-        case 'craft': return this.applyCraft(item, choice, inv, stack, steps)
-        case 'smelt': return this.applySmelt(item, choice, inv, stack, steps)
-        case 'source': return this.applySource(item, missing, choice, inv, stack, steps)
-        case 'mob': return this.applyMob(item, missing, choice, inv, steps)
+    // the estimates ignore the acquisition stack: the cheapest option may lead back through `item` itself (ingot ←
+    // nuggets ← ingot) and fail deeper down — then undo it and try the next one
+    let lastError = null
+    for (const choice of options) {
+      const invBefore = { ...inv }
+      const stepsBefore = steps.length
+      stack.push(item)
+      try {
+        switch (choice.kind) {
+          case 'craft': return this.applyCraft(item, choice, inv, stack, steps)
+          case 'smelt': return this.applySmelt(item, choice, inv, stack, steps)
+          case 'source': return this.applySource(item, missing, choice, inv, stack, steps)
+          case 'mob': return this.applyMob(item, missing, choice, inv, steps)
+        }
+      } catch (err) {
+        if (!(err instanceof PlanError)) throw err
+        lastError = err
+        for (const k of Object.keys(inv)) delete inv[k]
+        Object.assign(inv, invBefore)
+        steps.length = stepsBefore
+      } finally {
+        stack.pop()
       }
-    } finally {
-      stack.pop()
     }
+    throw lastError
   }
 
   /** acquire `n` × `name` and take them out of `inv` (reserved for the caller); returns [cost, release] */

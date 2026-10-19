@@ -64,9 +64,9 @@ async function smeltItem (bot, { item, count = 1, input, fuel, signal, keepFurna
   let furnace = null
   try {
     furnace = await bot.openFurnace(st.block)
-    if (furnace.outputItem()) await retry(bot, () => furnace.takeOutput(), signal)
-    if (furnace.inputItem() && furnace.inputItem().name !== source.input) await retry(bot, () => furnace.takeInput(), signal)
-    if (furnace.fuelItem() && furnace.fuelItem().name !== fuelName) await retry(bot, () => furnace.takeFuel(), signal)
+    if (furnace.outputItem()) await retry(bot, () => furnace.outputItem() ? furnace.takeOutput() : null, signal)
+    if (furnace.inputItem() && furnace.inputItem().name !== source.input) await retry(bot, () => furnace.inputItem() ? furnace.takeInput() : null, signal)
+    if (furnace.fuelItem() && furnace.fuelItem().name !== fuelName) await retry(bot, () => furnace.fuelItem() ? furnace.takeFuel() : null, signal)
     const already = furnace.inputItem()?.count ?? 0
     const put = Math.max(0, n - already)
     if (put > 0) await retry(bot, () => furnace.putInput(reg.itemsByName[source.input].id, null, Math.min(put, Math.max(0, n - (furnace.inputItem()?.count ?? 0)))), signal)
@@ -86,7 +86,7 @@ async function smeltItem (bot, { item, count = 1, input, fuel, signal, keepFurna
       await sleep(1000, signal)
       const out = furnace.outputItem()
       if (out && (out.count >= Math.min(8, n * source.count - taken) || !furnace.inputItem())) {
-        await retry(bot, () => furnace.takeOutput(), signal)
+        await retry(bot, () => furnace.outputItem() ? furnace.takeOutput() : null, signal)
         taken = inventory.count(bot, item) - start
       }
       if (!furnace.inputItem() && !furnace.outputItem()) break
@@ -97,7 +97,7 @@ async function smeltItem (bot, { item, count = 1, input, fuel, signal, keepFurna
         await furnace.putFuel(reg.itemsByName[more].id, null, Math.min(inventory.count(bot, more), Math.ceil(furnace.inputItem().count / data.itemsPerFuel(more))))
       }
     }
-    if (furnace.outputItem()) await retry(bot, () => furnace.takeOutput(), signal)
+    if (furnace.outputItem()) await retry(bot, () => furnace.outputItem() ? furnace.takeOutput() : null, signal)
     if (!keepFurnace || st.placed) {
       // leave nothing behind in a furnace we take with us
       if (furnace.inputItem()) await furnace.takeInput().catch(() => {})

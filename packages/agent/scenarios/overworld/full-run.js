@@ -14,7 +14,7 @@ const fs = require('fs')
 const path = require('path')
 const { Agent } = require('../../src/runner')
 const { MILESTONES } = require('./milestones')
-const { config, serverOptions, USERNAME } = require('./harness')
+const { config, serverOptions, snapshotName, USERNAME } = require('./harness')
 
 /**
  * @param {{ from?: string, to?: string, log?: (line: string) => void, cfg?: object }} [opts]
@@ -26,7 +26,10 @@ async function fullRun ({ from = 'M1', to = 'M5', log = () => {}, cfg = config()
   const b = MILESTONES.findIndex((m) => m.id === String(to).toUpperCase())
   if (a < 0 || b < a) throw new Error(`bad milestone range ${from}..${to} (M1..M5)`)
   const list = MILESTONES.slice(a, b + 1)
-  const server = await bds.startServer(serverOptions(cfg, null))
+  // from M1: a fresh world; from Mk: the end state of M(k-1) (its snapshot, see harness.js)
+  const startSnapshot = a > 0 ? snapshotName(MILESTONES[a - 1].id, cfg) : null
+  if (startSnapshot && !bds.readSnapshot(startSnapshot)) throw new Error(`snapshot ${startSnapshot} is missing: run the milestones up to ${MILESTONES[a - 1].id} first`)
+  const server = await bds.startServer(serverOptions(cfg, startSnapshot))
   const t0 = Date.now()
   const milestones = []
   let agent = null

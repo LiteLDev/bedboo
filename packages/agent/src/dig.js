@@ -147,24 +147,28 @@ async function mineAt (bot, pos, { signal, item, pickup = true } = {}) {
   block = bot.blockAt(pos)
   if (!block || world.isAir(block) || world.isLiquid(block)) return false
   if (!world.safeToDig(bot, pos)) throw new SkillError(`${block.name} at ${navigate.fmt(pos)} is next to a liquid`, { code: 'UNSAFE' })
-  await digBlock(bot, block, signal)
+  if (!(await digBlock(bot, block, signal))) return false
   if (pickup) await pickupNear(bot, pos.offset(0.5, 0.5, 0.5), { signal, item })
   return true
 }
 
-/** equip the best tool and dig (rejects when the block cannot be reached / is refused) */
+/**
+ * Equip the best tool and dig (rejects when the block cannot be reached / is refused).
+ * @returns {Promise<boolean>} false when there was nothing (left) to dig
+ */
 async function digBlock (bot, block, signal) {
   checkAbort(signal)
-  if (world.isAir(block)) return
+  if (!block || world.isAir(block)) return false
   const tool = inventory.bestToolFor(bot, block)
   if (tool) await inventory.equip(bot, tool)
   if (!bot.canDigBlock(block)) {
     // out of reach / not visible: look at it from closer
     await navigate.goto(bot, new (goals().GoalLookAtBlock)(block.position, bot.world, { reach: 4 }), { signal, timeout: 20000, attempts: 1 })
     block = bot.blockAt(block.position)
-    if (!block || world.isPassable(block)) return
+    if (!block || world.isAir(block) || world.isLiquid(block)) return false
   }
   await bot.dig(block, true)
+  return true
 }
 
 /** get within digging reach of `pos` (a shaft first when it is far below) */

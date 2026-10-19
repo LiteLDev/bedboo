@@ -106,6 +106,16 @@ describe('obtain planner on a fake bot with real recipe data (U17)', function ()
     assert.deepStrictEqual([smelt.input, smelt.inputCount, smelt.fuel, smelt.fuelCount], ['raw_iron', 3, 'coal', 1])
   })
 
+  it('iron ingots with coal only in sight: never planned through nuggets / blocks (backtracks out of the cycle)', () => {
+    const bot = fakeBot({ blocks: { '6,60,2': 'iron_ore', '5,60,2': 'iron_ore', '4,61,4': 'coal_ore' }, items: { stone_pickaxe: 1, furnace: 1, crafting_table: 1 } })
+    for (const count of [1, 2, 9, 18]) {
+      const p = planner.plan({ item: 'iron_ingot', count }, knowledge.worldModel(bot))
+      assert.ok(p.ok, `${count}: ${p.reason}`)
+      assert.ok(!p.steps.some((s) => /nugget|iron_block/.test(s.item)), `${count}: ${p.steps.map((s) => s.item)}`)
+      assert.strictEqual(p.steps.filter((s) => s.action === 'smelt').reduce((n, s) => n + s.count, 0), count)
+    }
+  })
+
   it('diamonds need an iron pickaxe: no diamond ore in sight and no iron → explore estimates, still a plan', () => {
     const bot = fakeBot({ items: { stone_pickaxe: 1, crafting_table: 1, furnace: 1, coal: 4, stick: 4 } })
     const p = planner.plan({ item: 'diamond', count: 1 }, knowledge.worldModel(bot))

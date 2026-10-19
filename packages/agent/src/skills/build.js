@@ -236,6 +236,10 @@ async function build (bot, args) {
   const probe = compile(bp, { x: 0, y: 0, z: 0 })
   const agent = agentOf(bot)
   const home = args.origin ? new Vec3(args.origin.x, args.origin.y, args.origin.z) : bot.entity.position.floored()
+  // a site given up front is protected right away (obtaining materials must not dig its ground)
+  const early = args.origin ? compile(bp, home) : null
+  const zone = early ? { name: early.name, min: early.bounds.min, max: early.bounds.max } : null
+  if (agent && zone) agent.state.protectedZones.push(zone)
 
   // 1. materials first (the site is picked afterwards, so no station placed while crafting ends up inside it)
   if (args.obtain !== false) {
@@ -257,7 +261,7 @@ async function build (bot, args) {
   const compiled = compile(bp, origin)
   progress(bot, 'build-site', { blueprint: compiled.name, origin: { x: origin.x, y: origin.y, z: origin.z } })
   // our structure is off limits for every later dig (mine / gather / pathfinder through the Agent's movements)
-  if (agent) agent.state.protectedZones.push({ name: compiled.name, min: compiled.bounds.min, max: compiled.bounds.max })
+  if (agent && !zone) agent.state.protectedZones.push({ name: compiled.name, min: compiled.bounds.min, max: compiled.bounds.max })
 
   // 3. clear the volume, fill dips under the floor, place, verify
   const cleared = await clearVolume(bot, compiled, { signal })

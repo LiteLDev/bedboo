@@ -14,26 +14,41 @@ const navigate = require('./skills/navigate')
 const goals = () => require('mineflayer-pathfinder').goals
 const STATION_BLOCKS = { crafting_table: ['crafting_table'], furnace: ['furnace', 'lit_furnace'] }
 
-/** stations the bot could not reach (per bot): never offered again */
+/** stations the bot just failed to reach (per bot → position → until): skipped for a few minutes */
 const unreachable = new WeakMap()
+const UNREACHABLE_MS = 3 * 60 * 1000
 const posKey = (p) => `${p.x},${p.y},${p.z}`
 function isUnreachable (bot, pos) {
-  return unreachable.get(bot)?.has(posKey(pos)) ?? false
+  const until = unreachable.get(bot)?.get(posKey(pos))
+  return until !== undefined && until > Date.now()
 }
 function markUnreachable (bot, pos) {
-  if (!unreachable.has(bot)) unreachable.set(bot, new Set())
-  unreachable.get(bot).add(posKey(pos))
+  if (!unreachable.has(bot)) unreachable.set(bot, new Map())
+  unreachable.get(bot).set(posKey(pos), Date.now() + UNREACHABLE_MS)
 }
 
-/** a station block the bot can probably use: near, about the same height, not known unreachable */
-function stationNear (bot, name, radius = 16) {
+/** the default station search (the planner's world model and ensureStation agree on it) */
+const STATION_RADIUS = 16
+const STATION_DY = 4
+
+/** station blocks the bot can probably use, nearest first: near, about the same height, not just failed */
+function stationsNear (bot, name, { radius = STATION_RADIUS, count = 4, avoid } = {}) {
   const names = STATION_BLOCKS[name] ?? [name]
   const here = bot.entity.position
   return world.findBlocks(bot, names, {
     maxDistance: radius,
-    count: 1,
-    filter: (p) => !isUnreachable(bot, p) && Math.abs(p.y - here.y) <= 4
-  })[0] ?? null
+    count,
+    filter: (p) => !isUnreachable(bot, p) && Math.abs(p.y - here.y) <= STATION_DY && !avoid?.(p)
+  })
+}
+
+function stationNear (bot, name, radius = STATION_RADIUS) {
+  return stationsNear(bot, name, { radius, count: 1 })[0] ?? null
+}
+
+/** blocks a click would use instead of placing against (containers, doors, gates, beds, …) */
+function isInteractive (bot, block) {
+  return require('./skills/navigate').movements(bot).interactableBlocks.has(block.name)
 }
 
 /** world cells the bot's hitbox touches (feet and head, plus neighbours it overlaps) */
@@ -71,7 +86,7 @@ function placeSpots (bot, { radius = 2, avoid = () => false } = {}) {
         let face = null
         for (const dir of [new Vec3(0, -1, 0), new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Vec3(0, 0, 1), new Vec3(0, 0, -1), new Vec3(0, 1, 0)]) {
           const r = bot.blockAt(p.plus(dir))
-          if (r && world.isSolid(r) && !/chest|furnace|crafting_table|door|bed/.test(r.name)) { ref = r; face = dir.scaled(-1); break }
+          if (r && world.isSolid(r) && !isInteractive(bot, r)) { ref = r; face = dir.scaled(-1); break }
         }
         if (!ref) continue
         const d = Math.hypot(dx, dz) + Math.abs(dy) * 0.7 + (face.y === 1 ? 0 : 1.5)
@@ -120,6 +135,8 @@ async function digRoom (bot, signal, avoid = () => false) {
       const p = feet.plus(d).offset(0, dy, 0)
       const b = bot.blockAt(p)
       if (!b || world.isPassable(b) || avoid(p) || !world.safeToDig(bot, p) || world.exposesLiquid(bot, p)) continue
+      // something quick to dig (no obsidian by hand), and nobody's furnace / chest
+      if (isInteractive(bot, b) || !(b.hardness >= 0 && b.hardness <= 5) || !inventory.canHarvest(bot, b)) continue
       try {
         await navigate.digSafe(bot, b, signal)
         log(bot, `made room for a station at ${navigate.fmt(p)}`)
@@ -136,17 +153,18 @@ async function digRoom (bot, signal, avoid = () => false) {
  * A usable station block: one within `radius` (walks to it), else the carried one placed next to the bot.
  * @returns {Promise<{ block: object, placed: boolean }>}
  */
-async function ensureStation (bot, name, { signal, radius = 24, avoid } = {}) {
+async function ensureStation (bot, name, { signal, radius = STATION_RADIUS, avoid } = {}) {
   const names = STATION_BLOCKS[name] ?? [name]
-  const found = world.findBlocks(bot, names, { maxDistance: radius, count: 4, filter: (p) => !avoid?.(p) && !isUnreachable(bot, p) })
-  for (const pos of found) {
+  const agent = require('./skill').agentOf(bot)
+  for (const pos of stationsNear(bot, name, { radius, avoid })) {
     try {
       await navigate.goto(bot, new (goals().GoalLookAtBlock)(pos, bot.world, { reach: 4 }), { signal, timeout: 30000, attempts: 2 })
       const block = bot.blockAt(pos)
       if (block && names.includes(block.name)) return { block, placed: false }
     } catch (err) {
       if (err.code === 'ABORTED') throw err
-      markUnreachable(bot, pos)
+      // a fight / flight in the middle is no reason to give the station up
+      if (!agent?.safety?.busy && (err.code === 'NO_PATH' || err.code === 'TIMEOUT')) markUnreachable(bot, pos)
       log(bot, `${name} at ${navigate.fmt(pos)} unreachable: ${err.message}`)
     }
   }
@@ -171,4 +189,4 @@ async function pickUp (bot, block, { signal } = {}) {
   }
 }
 
-module.exports = { ensureStation, placeNear, placeSpots, digRoom, pickUp, occupied, stationNear, markUnreachable, isUnreachable, STATION_BLOCKS }
+module.exports = { ensureStation, placeNear, placeSpots, digRoom, pickUp, occupied, stationNear, stationsNear, markUnreachable, isUnreachable, isInteractive, STATION_BLOCKS, STATION_RADIUS }
