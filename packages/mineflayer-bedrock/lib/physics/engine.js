@@ -288,8 +288,20 @@ function Physics (registry, world) {
     entity.isCollidedHorizontally = dx !== oldVelX || dz !== oldVelZ
     entity.isCollidedVertically = dy !== oldVelY
     entity.onGround = (entity.isCollidedVertically && oldVelY < 0) ||
-      (wasOnGround && !entity.isCollidedVertically && Math.abs(oldVelY) <= 1e-5)
+      (wasOnGround && !entity.isCollidedVertically && Math.abs(oldVelY) <= 1e-5 && restsOnSomething(world, playerBB))
     return { dx, dy, dz, oldVelX, oldVelY, oldVelZ, wasOnGround }
+  }
+
+  /**
+   * (U10 fix) A box without vertical velocity keeps onGround only while something is right below it: a teleport
+   * reports the on_ground of the old position, and without gravity (upstream's creative.startFlying) nothing else
+   * would ever clear it.
+   */
+  function restsOnSomething (world, bb) {
+    const probe = -1e-3
+    let dy = probe
+    for (const blockBB of getSurroundingBBs(world, bb.clone().extend(0, probe, 0))) dy = blockBB.computeOffsetY(bb, dy)
+    return dy !== probe
   }
 
   /**
