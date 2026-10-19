@@ -10,6 +10,7 @@
  *   M2                          iron tools, bucket
  *   gear                        iron for the trip: iron armor (helmet, chestplate, leggings, boots) and a shield, worn;
  *                               the second bucket and the iron ingot of N1M3's flint and steel; the camp's meat cooked
+ *   down to the diamonds        a safe shaft to y -54 (M3 checks a deepslate diamond ore is among its three)
  *   M3 → M4 → M5                diamonds, the house at the spawn, every overworld ore
  *   provisions                  back to the spawn; ≥ 8 food items (hunted and cooked; fishing when no animal is left)
  *   N1M3                        U18's nether entry from the M3 state (second bucket, iron ingot, back to the spawn,
@@ -195,6 +196,12 @@ async function finalChain ({ log = () => {}, cfg = config(), netherOres = false,
         await task('food', { min: 0, items: 0, stock: true, explore: false, fishing: false, timeout: 90000 }, { name: 'gear: cook', timeout: 2 * MINUTES, retries: 0 }).catch(() => {})
         return { made, worn, shield: bot.inventory.slots[45]?.name ?? null, failed }
       }
+    })
+    plan.push({
+      name: 'down to the diamonds',
+      // the gear phase ends wherever the iron was (y 30–60): diamonds are a deepslate thing (most below y 0) — M3
+      // checks that a deepslate diamond ore is among the ones it mined; best effort, never fails the chain
+      run: () => task('descend', { y: -54 }, { name: 'down to the diamond level', timeout: 4 * MINUTES, retries: 1 }).catch((err) => ({ error: err.message }))
     })
     plan.push(milestone('M3'))
     plan.push(milestone('M4'))

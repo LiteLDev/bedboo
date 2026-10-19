@@ -78,6 +78,7 @@ A skill is `async (bot, args) => result` (`args.signal` is the runner's AbortSig
 | `hunt` | `{ mobs, item, count }` | kill passive mobs for an item (wool, leather, …), exploring until one is in sight |
 | `fish` | `{ count, obtainRod? }` | `bot.fish()` from a shore next to open water (≥ 2 deep); each cast waits ≤ 40 s for a bite |
 | `rest` | `{ shelter? }` | the night: sleep in the carried bed (placed, `bot.sleep`, taken back: the night is skipped); with `shelter` and no bed / armor: the house, or a sealed hole in the ground until the morning |
+| `descend` | `{ y }` | down a safe shaft (dry column, a staircase step around what is unsafe) to a level |
 | `escape` | `{ away? }` | last-resort unstick: out of the water onto a bank, up to the open sky (pillar / staircase), a few blocks away on dry land |
 | `combat`, `portal`, `nether`, `end` | | U18's (fighting, portals, other dimensions) |
 
@@ -206,6 +207,7 @@ and no reconnects:
 | camp | at the spawn while it is day: 3 wool of one colour from sheep → a bed; logs; meat (best effort) | ~6 min |
 | M2 | iron tools, a bucket | 10 min |
 | gear | all the iron in one trip and one 3-furnace smelt → iron helmet, chestplate, leggings, boots (worn) and a shield (off-hand), a spare iron pickaxe, the second bucket and the iron for the flint and steel; sticks; the camp's meat cooked | 9 + 2×7 min |
+| down to the diamonds | a safe shaft to y -54 (`descend`): diamonds are a deepslate thing, and M3 checks a deepslate diamond ore is among its three | 4 min |
 | M3, M4, M5 | diamonds, the house at the spawn, every overworld ore (the milestones) | 10 min each |
 | provisions | back to the spawn; ≥ 8 food items (hunted around the spawn, exploring for animals; fishing when none is left; cooked) | 5 + 2×4 min |
 | N1M3 | U18's nether entry: second bucket, iron ingot (both carried by then), bucket-cast obsidian at a lava pool, frame, flint and steel, into the Nether | 45 min |

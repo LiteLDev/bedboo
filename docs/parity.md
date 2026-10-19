@@ -5,7 +5,7 @@
 Every mineflayer 4.39.0 export, bot property, method, event, window-class member and test, with its owner
 unit, status and the test that asserts it. Source fragments: [`U0-seed.md`](parity/U0-seed.md), [`U1.md`](parity/U1.md), [`U2.md`](parity/U2.md), [`U3-internal-tests.md`](parity/U3-internal-tests.md), [`U3.md`](parity/U3.md), [`U4.md`](parity/U4.md), [`U5.md`](parity/U5.md), [`U6.md`](parity/U6.md), [`U7.md`](parity/U7.md), [`U8.md`](parity/U8.md), [`U9.md`](parity/U9.md), [`U10.md`](parity/U10.md), [`U11.md`](parity/U11.md), [`U12.md`](parity/U12.md), [`U13.md`](parity/U13.md), [`U14.md`](parity/U14.md), [`U15.md`](parity/U15.md), [`U16-combat-nethernet-docs.md`](parity/U16-combat-nethernet-docs.md), [`U16a.md`](parity/U16a.md), [`U17.md`](parity/U17.md), [`U18.md`](parity/U18.md). Cross-checked against the conformance reference surface (mineflayer 4.39.0, 501 items).
 
-**546 rows:** 279 done, 255 adapted, 11 n.a., 1 todo (100% closed). Problems: 0 error(s), 42 warning(s).
+**546 rows:** 280 done, 255 adapted, 11 n.a., 0 todo (100% closed). Problems: 0 error(s), 42 warning(s).
 
 ## Coverage per unit
 
@@ -28,7 +28,7 @@ Rows are counted for the last unit of the owner chain (`U4 → U5` counts for U5
 | U14 | 13 | 4 | 9 | 0 | 0 | 100% |
 | U15 | 22 | 10 | 11 | 1 | 0 | 100% |
 | U16 | 5 | 3 | 2 | 0 | 0 | 100% |
-| U17 | 7 | 4 | 2 | 0 | 1 | 86% |
+| U17 | 7 | 5 | 2 | 0 | 0 | 100% |
 | U18 | 4 | 1 | 3 | 0 | 0 | 100% |
 
 ## Coverage per kind
@@ -40,7 +40,7 @@ Rows are counted for the last unit of the owner chain (`U4 → U5` counts for U5
 | method | 116 | 59 | 57 | 0 | 0 | 100% |
 | event | 104 | 56 | 42 | 6 | 0 | 100% |
 | window | 43 | 26 | 16 | 1 | 0 | 100% |
-| test | 73 | 30 | 41 | 1 | 1 | 99% |
+| test | 73 | 31 | 41 | 1 | 0 | 100% |
 | internal-test | 30 | 11 | 18 | 1 | 0 | 100% |
 
 ## Problems
@@ -84,7 +84,7 @@ Rows are counted for the last unit of the owner chain (`U4 → U5` counts for U5
 | warning | unknown: `agentM4` (house blueprint, verified block by block) (test) is not part of the reference surface (Bedrock-only extra, kind mismatch or typo?) | U17.md:13 |
 | warning | unknown: `agentM5` (every overworld ore incl. emerald) (test) is not part of the reference surface (Bedrock-only extra, kind mismatch or typo?) | U17.md:14 |
 | warning | unknown: `agentFullRun` (M1 → M5 chained in one world) (test) is not part of the reference surface (Bedrock-only extra, kind mismatch or typo?) | U17.md:15 |
-| warning | unknown: `agentFinalChain` (M1 → M5 → provisions → N1M3 → home → End, one world; the stronghold step and the dragon kill are U18's cheat-assisted parts; runnable as one command, but no run has passed every phase yet — see packages/agent/README.md) (test) is not part of the reference surface (Bedrock-only extra, kind mismatch or typo?) | U17.md:16 |
+| warning | unknown: `agentFinalChain` (M1 → camp → M2 → gear → M3 → M4 → M5 → provisions → N1M3 → home → End, one world, one bot; the stronghold step and the dragon kill are U18's cheat-assisted parts; acceptance runs and phase times in packages/agent/README.md#the-final-chain) (test) is not part of the reference surface (Bedrock-only extra, kind mismatch or typo?) | U17.md:16 |
 | warning | unknown: `agentCombat` (skill `combat`: fightNearby, huntFor, survive, the defend guard) (test) is not part of the reference surface (Bedrock-only extra, kind mismatch or typo?) | U18.md:13 |
 | warning | unknown: `agentPortal` (skill `portal`: bucket-cast obsidian, frame, flint and steel, light, enter) (test) is not part of the reference surface (Bedrock-only extra, kind mismatch or typo?) | U18.md:14 |
 | warning | unknown: `agentNether` (skill `nether`: quartz, nether gold, ancient debris, back through the portal) (test) is not part of the reference surface (Bedrock-only extra, kind mismatch or typo?) | U18.md:15 |
@@ -630,7 +630,7 @@ Rows are counted for the last unit of the owner chain (`U4 → U5` counts for U5
 | `agentM4` (house blueprint, verified block by block) | test | U17 | done | `packages/agent/scenarios/overworld/milestones.e2e.js` › "M4: M4 house near spawn" | from U17.md |
 | `agentM5` (every overworld ore incl. emerald) | test | U17 | adapted | `packages/agent/scenarios/overworld/milestones.e2e.js` › "M5: M5 every overworld ore" — see [differences: loot](differences/U17.md#loot), [pathfinder legs](differences/U17.md#pathfinder-long) | from U17.md |
 | `agentFullRun` (M1 → M5 chained in one world) | test | U17 | done | `packages/agent/scenarios/overworld/milestones.e2e.js` › "full run M1→M5 in one world (AGENT_FULL_RUN=1)" | from U17.md |
-| `agentFinalChain` (M1 → M5 → provisions → N1M3 → home → End, one world; the stronghold step and the dragon kill are U18's cheat-assisted parts; runnable as one command, but no run has passed every phase yet — see packages/agent/README.md) | test | U17 | todo | `packages/agent/scenarios/overworld/milestones.e2e.js` › "final chain M1→M5 → nether → End in one world (AGENT_FINAL_CHAIN=1)" | from U17.md |
+| `agentFinalChain` (M1 → camp → M2 → gear → M3 → M4 → M5 → provisions → N1M3 → home → End, one world, one bot; the stronghold step and the dragon kill are U18's cheat-assisted parts; acceptance runs and phase times in packages/agent/README.md#the-final-chain) | test | U17 | done | `packages/agent/scenarios/overworld/milestones.e2e.js` › "final chain M1→M5 → nether → End in one world (AGENT_FINAL_CHAIN=1)" | from U17.md |
 | `agentCombat` (skill `combat`: fightNearby, huntFor, survive, the defend guard) | test | U18 | done | `packages/agent/scenarios/combat/night.e2e.js` › "C1-survive-the-night" (natural spawns, difficulty normal, midnight); `packages/agent/test/u18Combat.test.js` | from U18.md |
 | `agentPortal` (skill `portal`: bucket-cast obsidian, frame, flint and steel, light, enter) | test | U18 | adapted | `packages/agent/scenarios/nether/n1.e2e.js` › "N1-nether-entry" (kit cheat-assisted) — see [cheat-assisted](differences/U18.md#cheat-assisted); planners: `packages/agent/test/u18Planners.test.js` | from U18.md |
 | `agentNether` (skill `nether`: quartz, nether gold, ancient debris, back through the portal) | test | U18 | adapted | `packages/agent/scenarios/nether/n2.e2e.js` › "N2-nether-ores" (kit + frame cheat-assisted) — see [cheat-assisted](differences/U18.md#cheat-assisted) | from U18.md |

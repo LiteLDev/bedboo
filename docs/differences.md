@@ -24,7 +24,7 @@ each unit documents its own in `docs/differences/<unit>.md` (format: [`differenc
 | U15 | [`U15.md`](differences/U15.md) | 12 | 13 |
 | U16 | [`U16-transport.md`](differences/U16-transport.md) | 4 | 0 |
 | U16 | [`U16a.md`](differences/U16a.md) | 20 | 2 |
-| U17 | [`U17.md`](differences/U17.md) | 8 | 4 |
+| U17 | [`U17.md`](differences/U17.md) | 10 | 4 |
 | U18 | [`U18.md`](differences/U18.md) | 10 | 3 |
 | ? | [`W3FIX.md`](differences/W3FIX.md) | 7 | 0 |
 | ? | [`W3FIXB.md`](differences/W3FIXB.md) | 4 | 0 |
@@ -2774,6 +2774,26 @@ agent works around in its own code.
 - **Tests:** `packages/mineflayer-bedrock/test/unit/spawn_height.test.js`, `test/unit/player_state.test.js` › "spawn
   point" (the flat capture's spawn resolves to y -60).
 
+#### A bed placed a moment ago is "half a bed"  {#bed-halves}
+- **Affects:** `bot.sleep(bed)` right after `bot.placeBlock` placed the bed (the agent's `rest` skill)
+- **Java:** the server places both halves with one block change each; a client sees both before it can click.
+- **Bedrock:** observed on BDS 1.26.51.1: the foot and the head arrive as two separate `update_block`s; a
+  `bot.sleep()` issued as soon as the clicked cell holds a bed is refused with upstream's "there's only half bed"
+  (`bot.isABed` of the other half is still false), and works a tick later. Sleeping then behaves as U14 describes
+  (BDS ends the sleep after 100 ticks; the clock jumps to the morning).
+- **Agent:** `rest` waits (≤ 20 ticks) until both cells are beds, and tries `sleep` again after a refusal.
+
+#### mineflayer-auto-eat stops eating after a refused equip  {#auto-eat-stuck}
+- **Affects:** mineflayer-auto-eat 5.0.3 `eat()` / its automatic mode (same code on Java)
+- **Observed:** in a chained run on BDS 1.26.51.1 the bot went on with food 5 and 5 cooked meals in its inventory for
+  minutes. `eat()` sets its "eating" flag before equipping the food and clears it only on the paths after the meal
+  started; an equip that throws (a skill or a fight swapping the hand at the same moment, a window open) leaves the flag
+  set, and the automatic mode (`physicsTick` → `if (!_eating) eat()`) never tries again. Not Bedrock-specific; the
+  ecosystem patch (U15) does not touch it.
+- **Agent:** the runner wraps `bot.autoEat.eat` so a failure before `eatStart` clears the flag (src/runner.js
+  `guardAutoEat`), and the safety behaviours reset a meal that has been "in progress" for 15 s. Noted for the
+  ecosystem patch.
+
 ## U18
 
 <!-- from docs/differences/U18.md -->
@@ -2857,7 +2877,10 @@ scenarios.
 - **E1 in the final chain's world (seed 1234, E1A: `scenarios/end/e1-agent.js`):** the same steps under U17's Agent,
   as `scenarios/overworld/final-chain.js` runs them. `locate structure stronghold` answers (-878, 194), 389 blocks
   from the spawn; the portal room's ring is at (-872, -34, 198), 7 blocks from that point, no eyes in it, walk-in
-  spot (-875, -33, 197). The chain's kit there is 12 eyes of ender and 16 cooked beef (`e1.CHAIN_KIT`); E1A also
+  spot (-875, -33, 197). The chain's kit there is 12 eyes of ender and 16 cooked beef (`e1.CHAIN_KIT`), and
+  `toPortalRoom` gives the End's fight gear — diamond sword and armor, `e1.END_GEAR`, like E1's kit — for every piece
+  the bot lacks (the chain's bot has an iron sword and no armor: unarmored it died to one provoked enderman in 4 hits,
+  in iron armor with the iron sword to the second and third angry enderman); E1A also
   gives the gear the chain's bot carries at that point (iron sword, diamond and iron pickaxes, 64 cobblestone, a
   bucket: `CHAIN_GEAR`), standing in for M1–M5 and the Nether.
 - **C1 (survive the night):** the kit (iron sword, shield, iron armor, bow, 64 arrows, food) with `/give`; `time set
