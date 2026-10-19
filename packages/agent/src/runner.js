@@ -144,6 +144,7 @@ async function loadPlugins (bot, { autoEat = true, pvp = true, armor = true } = 
     bot.loadPlugin(loader)
   }
   await bot.waitForTicks(2).catch(() => {})
+  if (bot.autoEat) guardAutoEat(bot.autoEat)
   if (bot.autoEat) {
     bot.autoEat.setOpts({
       minHunger: 16,
@@ -155,6 +156,32 @@ async function loadPlugins (bot, { autoEat = true, pvp = true, armor = true } = 
   }
   bot.pathfinder.thinkTimeout = 10000 // ms per search (upstream 5 s): hills and caves need more nodes
   bot.pathfinder.setMovements(require('./skills/navigate').movements(bot))
+}
+
+/**
+ * mineflayer-auto-eat 5.0.3 sets its "eating" flag before equipping the food and only clears it on the paths after
+ * the meal started: an equip that fails (a window open, a skill swapping the hand at the same moment) leaves the flag
+ * set for good and the bot never eats again (seen in a chained run: food 5 with 5 cooked meals carried). The wrapper
+ * clears the flag when `eat()` fails before the meal began (instance property: auto-eat's own tick check calls
+ * `this.eat()`, so it goes through it too).
+ */
+function guardAutoEat (autoEat) {
+  if (autoEat._bedbooGuarded || typeof autoEat.eat !== 'function') return
+  autoEat._bedbooGuarded = true
+  const eat = autoEat.eat.bind(autoEat)
+  autoEat.eat = async (opts) => {
+    let started = false
+    const onStart = () => { started = true }
+    autoEat.once('eatStart', onStart)
+    try {
+      return await eat(opts)
+    } catch (err) {
+      if (!started && !/Already eating/.test(err.message)) autoEat._eating = false
+      throw err
+    } finally {
+      autoEat.removeListener('eatStart', onStart)
+    }
+  }
 }
 
 class Agent extends EventEmitter {
@@ -380,14 +407,21 @@ class Agent extends EventEmitter {
     this.event('unstuck', { at: posOf(bot) })
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(new Error('unstuck timeout')), 180000)
+    // a death on the way out (lava, a fall) aborts the escape like a task: then the usual recovery
+    this._abortTask = (reason) => controller.abort(reason)
     try {
       await require('./skills/survive').escape(bot, { signal: controller.signal, away: this.state.traps.at(-1) })
     } catch (err) {
-      if (!isAbort(err)) this.event('log', { msg: `unstuck: ${err.message}` })
+      if (!isAbort(err) && err.code !== 'DIED') this.event('log', { msg: `unstuck: ${err.message}` })
     } finally {
+      this._abortTask = null
       clearTimeout(timer)
       try { bot.pathfinder?.setGoal(null) } catch {}
       try { bot.clearControlStates() } catch {}
+    }
+    if (controller.signal.reason?.code === 'DIED') {
+      await this.recover().catch((e) => this.event('log', { msg: `recover: ${e.message}` }))
+      return
     }
     this.event('unstuck-done', { at: posOf(bot) })
   }
@@ -470,7 +504,8 @@ class Agent extends EventEmitter {
   async maintain ({ timeout = 90000 } = {}) {
     const bot = this.bot
     if (!bot?.entity) return
-    await this.restIfNight()
+    // between steps: a sleep only (a whole night in a shelter would eat the scenario's budget)
+    await this.restIfNight({ timeout: Math.max(timeout, 90000), shelter: false })
     if (!this.opts.keepFed || !this.skills.food) return
     const { foodPoints } = require('./skills/survive')
     if (bot.food > 12 || foodPoints(bot) >= 6) return
@@ -480,17 +515,26 @@ class Agent extends EventEmitter {
   }
 
   /**
-   * Between tasks, at night in the overworld: sleep in the carried bed (the night is skipped) — or, with the
-   * `shelter` option and no armor worn, sit the night out in a sealed shelter (skills/rest.js). Never throws.
+   * At night in the overworld: sleep in the carried bed (the night is skipped) — or, with `shelter` (default: the
+   * Agent's `shelter` option) and no armor worn, sit the night out in the house / a sealed hole (skills/rest.js).
+   * `maintain()` (between scenario steps) only sleeps; a runner calls this between its phases for the shelter. A
+   * failed attempt is not repeated for 2 minutes. Never throws.
    */
-  async restIfNight () {
+  async restIfNight ({ timeout, shelter = !!this.opts.shelter } = {}) {
     const bot = this.bot
     if (!this.opts.rest || !this.skills.rest || !bot?.entity || bot.health <= 0) return
+    // a sleep that failed (monsters nearby behind a wall, no room for the bed) is not tried again before every step
+    if (Date.now() < (this._restAgainAt ?? 0)) return
     const rest = require('./skills/rest')
-    const how = rest.restMode(bot, { shelter: !!this.opts.shelter })
+    const how = rest.restMode(bot, { shelter })
     if (!how) return
-    await this.run('rest', { shelter: !!this.opts.shelter }, { name: `night: ${how}`, timeout: how === 'shelter' ? 10 * 60 * 1000 : 150000, retries: 0 })
-      .catch((err) => this.event('log', { msg: `rest: ${err.message}` }))
+    const ms = Math.max(30000, Math.min(timeout ?? Infinity, how === 'shelter' ? 10 * 60 * 1000 : 90000))
+    await this.run('rest', { shelter, timeout: ms - 5000 }, { name: `night: ${how}`, timeout: ms, retries: 0 })
+      .then((r) => { if (r?.rested !== 'slept' && r?.rested !== 'sheltered') this._restAgainAt = Date.now() + 120000 })
+      .catch((err) => {
+        this._restAgainAt = Date.now() + 120000
+        this.event('log', { msg: `rest: ${err.message}` })
+      })
   }
 
   /**
@@ -506,9 +550,11 @@ class Agent extends EventEmitter {
     let ok = true
     let error = null
     for (const step of scenario.steps) {
+      if (deadline - Date.now() <= 0) { ok = false; error = { code: 'TIMEOUT', message: `${scenario.name} ran out of time` }; break }
+      await this.maintain({ timeout: Math.min(75000, (deadline - Date.now()) / 4) })
+      // what is left after the maintenance (a night's sleep, a meal hunted)
       const left = deadline - Date.now()
       if (left <= 0) { ok = false; error = { code: 'TIMEOUT', message: `${scenario.name} ran out of time` }; break }
-      await this.maintain({ timeout: Math.min(75000, left / 4) })
       try {
         await this.run(step.skill, step.args ?? {}, { name: step.name, timeout: Math.min(step.timeout ?? DEFAULT_STEP_TIMEOUT, left), retries: step.retries ?? 1 })
       } catch (err) {
@@ -601,4 +647,4 @@ function createAgent (opts) {
   return Agent.create(opts)
 }
 
-module.exports = { Agent, createAgent, loadPlugins, runSkill, runScenario, skills: defaultSkills, formatEvent, jsonSafe, DEFAULT_STEP_TIMEOUT, STUCK_MS, WIND_DOWN_MS }
+module.exports = { Agent, createAgent, loadPlugins, guardAutoEat, runSkill, runScenario, skills: defaultSkills, formatEvent, jsonSafe, DEFAULT_STEP_TIMEOUT, STUCK_MS, WIND_DOWN_MS }

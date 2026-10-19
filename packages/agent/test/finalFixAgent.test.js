@@ -129,17 +129,6 @@ describe('final fix (agent): safety under U18 guards', () => {
     assert.strictEqual(safety.guards.length, 0)
     const g2 = combat.guardFor(bot, { radius: 12 })
     assert.strictEqual(safety.effective().radius, 12)
-    // a meal stops nothing: not a busy guard (a skill would treat it as a fight and retry forever)
-    let busyEvents = 0
-    g2.on('busy', () => busyEvents++)
-    safety.claim('eat')
-    assert.strictEqual(g2.busy, false)
-    await g2.idle()
-    safety.release('eat')
-    safety.claim('fight')
-    assert.strictEqual(g2.busy, true)
-    safety.release('fight')
-    assert.strictEqual(busyEvents, 1)
     await g2.stop()
     await g2.stop() // twice is fine
     assert.strictEqual(safety.effective().radius, 5)
@@ -205,6 +194,36 @@ describe('final fix (agent): runner', () => {
     assert.strictEqual(await agent.run('wait', {}, { stuckMs: 60 }), 'done')
     assert.strictEqual(await agent.run('walk', {}, { stuckMs: 60 }), 'walked')
     assert.ok(!agent.events.some((e) => e.type === 'heartbeat'), 'heartbeats are not in the report')
+  })
+})
+
+describe('final fix (agent): mineflayer-auto-eat guard', () => {
+  it('a meal that failed before it started (equip refused) does not leave auto-eat "eating" for good', async () => {
+    const { guardAutoEat } = require('../src/runner')
+    // auto-eat 5.0.3's eat(): the flag first, then the equip (which may throw), eatStart only once the meal began
+    class FakeEat extends EventEmitter {
+      constructor () { super(); this._eating = false; this.equipFails = true }
+      get isEating () { return this._eating }
+      async eat () {
+        if (this._eating) throw new Error('Already eating!')
+        this._eating = true
+        if (this.equipFails) throw new Error('Failed to equip: cooked_beef!')
+        this.emit('eatStart')
+        this._eating = false
+        this.emit('eatFinish')
+      }
+    }
+    const ae = new FakeEat()
+    guardAutoEat(ae)
+    await assert.rejects(ae.eat(), /Failed to equip/)
+    assert.strictEqual(ae.isEating, false, 'the flag was cleared')
+    ae.equipFails = false
+    await ae.eat()
+    assert.strictEqual(ae.isEating, false)
+    // a meal in progress keeps its flag: "Already eating" is no reason to clear it
+    ae._eating = true
+    await assert.rejects(ae.eat(), /Already eating/)
+    assert.strictEqual(ae.isEating, true)
   })
 })
 

@@ -123,9 +123,8 @@ async function finalChain ({ log = () => {}, cfg = config(), netherOres = false,
         await task('navigate', { spawn: true, range: 24 }, { name: 'camp: to the spawn', timeout: 2 * MINUTES, retries: 0 }).catch((err) => { out.home = err.message })
         if (!has(bot, 'bed')) {
           // 3 wool of one colour from sheep (the plains around the spawn have flocks), then the bed is crafted
-          const wool = 3 - Math.max(...WOOL.map((w) => inventory.count(bot, w)))
-          if (wool > 0) {
-            await task('hunt', { mobs: ['sheep'], item: WOOL, count: wool, radius: 48, explore: true, timeout: 170000 }, { name: 'camp: wool', timeout: 3 * MINUTES, retries: 0 })
+          if (Math.max(...WOOL.map((w) => inventory.count(bot, w))) < 3) {
+            await task('hunt', { mobs: ['sheep'], item: WOOL, count: 3, total: true, radius: 48, explore: true, timeout: 170000 }, { name: 'camp: wool', timeout: 3 * MINUTES, retries: 0 })
               .catch((err) => { out.wool = err.message })
           }
           await task('obtain', { item: 'bed', count: 1 }, { name: 'camp: a bed', timeout: 2 * MINUTES, retries: 0 })
@@ -181,7 +180,7 @@ async function finalChain ({ log = () => {}, cfg = config(), netherOres = false,
         let r = null
         for (let round = 0; round < 2 && require('../../src/skills/survive').foodItems(bot) < PROVISIONS; round++) {
           await agent.maintain()
-          r = await task('food', { min: 30, items: PROVISIONS, stock: true, radius: 64, explore: true, timeout: 230000 }, { name: `provisions${round ? ' (again)' : ''}`, timeout: 4 * MINUTES, retries: 1 })
+          r = await task('food', { min: 30, items: PROVISIONS, stock: true, radius: 64, explore: true, fishing: true, timeout: 230000 }, { name: `provisions${round ? ' (again)' : ''}`, timeout: 4 * MINUTES, retries: 1 })
             .catch((err) => ({ error: err.message }))
         }
         const items = require('../../src/skills/survive').foodItems(bot)
@@ -225,6 +224,8 @@ async function finalChain ({ log = () => {}, cfg = config(), netherOres = false,
     const last = until ? plan.findIndex((p) => p.name === until) : plan.length - 1
     if (until && last < 0) throw new Error(`--until ${until}: one of ${plan.map((p) => p.name).join(', ')}`)
     for (const p of plan.slice(start, last + 1)) {
+      // the night before the phase: asleep in the bed, or (no bed, no armor) in a shelter
+      await agent.restIfNight()
       if (!await phase(p.name, p.run)) break
     }
     plan.splice(last + 1)

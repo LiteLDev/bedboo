@@ -189,9 +189,27 @@ class Safety extends EventEmitter {
   }
 
   onTick () {
-    if (!this.enabled || this.busy) return
+    if (!this.enabled) return
     if (++this._tick % 4 !== 0) return
+    this.staleMeal()
+    if (this.busy) return
     this.check(false)
+  }
+
+  /**
+   * mineflayer-auto-eat stuck "eating" (a meal that never started or never ended) for 15 s: reset it, release the
+   * 'eat' claim — the bot would never eat again (see runner.js guardAutoEat).
+   */
+  staleMeal () {
+    const ae = this.bot.autoEat
+    if (!ae?.isEating) { this._eatingSince = 0; return }
+    this._eatingSince ||= Date.now()
+    if (Date.now() - this._eatingSince < 15000) return
+    this.log('safety: auto-eat stuck eating for 15 s; reset')
+    try { ae.cancelEat?.() } catch {}
+    ae._eating = false
+    this._eatingSince = 0
+    this.release('eat')
   }
 
   /** the mob to fight now (an attacker first, then the nearest hostile close by), or null */
@@ -304,9 +322,9 @@ class Safety extends EventEmitter {
       // over 3 blocks; a mob it cannot get at (across lava, up a wall) is given up after fightGiveUpMs
       r = await combat.fight(bot, target, {
         timeout: this.opts.fightTimeout,
-        // running from a mob as fast as the bot (a zombie, a spider) only takes hits in the back: with a weapon in hand
-        // the bot fights it to the end; retreating stays for creepers, ranged mobs and the unarmed
-        ...(CHASERS.has(target.name) && combat.bestWeapon(bot) ? { retreatHealth: 0 } : {}),
+        // running from a mob as fast as the bot (a zombie, a spider) only takes hits in the back: armored and armed,
+        // the bot fights it to the end; retreating stays for creepers, ranged mobs and an unarmored bot
+        ...(CHASERS.has(target.name) && combat.bestWeapon(bot) && armorWorn(bot) >= 2 ? { retreatHealth: 0 } : {}),
         safe: true,
         giveUpMs: this.opts.fightGiveUpMs,
         maxChase: this.opts.maxChase,
@@ -463,6 +481,11 @@ class Safety extends EventEmitter {
     }
     return best?.p ?? null
   }
+}
+
+/** pieces of armor worn */
+function armorWorn (bot) {
+  return [5, 6, 7, 8].filter((s) => bot.inventory?.slots?.[s]).length
 }
 
 function posOf (bot) {

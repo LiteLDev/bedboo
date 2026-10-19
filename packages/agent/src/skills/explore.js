@@ -83,7 +83,8 @@ async function explore (bot, { until = () => null, biomes, maxDistance = 320, le
       await navigate.goto(bot, new goals.GoalNearXZ(target.x, target.z, 4), {
         signal,
         timeout: Math.min(90000, timeout - (Date.now() - started)),
-        attempts: 2
+        attempts: 2,
+        escape: true
       })
     } catch (err) {
       if (isAbort(err)) throw err

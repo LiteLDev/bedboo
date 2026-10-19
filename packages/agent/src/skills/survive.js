@@ -43,7 +43,8 @@ const PREY = ['cow', 'pig', 'sheep', 'mooshroom', 'chicken', 'rabbit']
 
 function nearestPrey (bot, radius = 64, filter = () => true) {
   const { preyOk } = require('./obtain')
-  return bot.nearestEntity((e) => PREY.includes(e.name) && preyOk(bot, e) && e.position.distanceTo(bot.entity.position) <= radius && filter(e)) ?? null
+  const dead = require('./combat').deadEntities(bot) // a dying animal stays in bot.entities for a second
+  return bot.nearestEntity((e) => PREY.includes(e.name) && !dead.has(e) && preyOk(bot, e) && e.position.distanceTo(bot.entity.position) <= radius && filter(e)) ?? null
 }
 
 const COOKED = { beef: 'cooked_beef', porkchop: 'cooked_porkchop', mutton: 'cooked_mutton', chicken: 'cooked_chicken', rabbit: 'cooked_rabbit', cod: 'cooked_cod', salmon: 'cooked_salmon' }
@@ -70,10 +71,10 @@ async function cook (bot, { signal, deadline }) {
 
 /**
  * Carry food: `min` hunger points and `items` food items (provisions for a trip: `stock`). Hunts passive animals in
- * sight (exploring for them when allowed), cooks the meat; when no animal is left, fishes (`fishing`, when a rod is
- * carried or can be made) — mineflayer-auto-eat eats when hungry.
+ * sight (exploring for them when allowed), cooks the meat; when no animal is left and `fishing` is set, fishes (a rod
+ * carried or made from 2 carried string) — mineflayer-auto-eat eats when hungry.
  */
-async function food (bot, { min = 8, items = 0, stock = false, signal, timeout = 150000, explore: mayExplore = true, radius = 64, fishing = true } = {}) {
+async function food (bot, { min = 8, items = 0, stock = false, signal, timeout = 150000, explore: mayExplore = true, radius = 64, fishing = false } = {}) {
   const started = Date.now()
   const hunted = {}
   const explore = require('./explore')
@@ -129,6 +130,7 @@ async function food (bot, { min = 8, items = 0, stock = false, signal, timeout =
     } catch (err) {
       if (isAbort(err) || err.code === 'DIED') throw err
       log(bot, `food: hunting ${prey.name} failed: ${err.message}`)
+      await waitTicks(bot, 10, signal)
     }
   }
   await cook(bot, { signal, deadline: started + timeout })
@@ -208,9 +210,11 @@ async function fish (bot, { count = 3, timeout = 180000, signal, obtainRod = fal
     ])
     clearTimeout(timer)
     if (bite === null) {
-      // no bite in time (or the bobber landed on the shore): reel in
+      // no bite in time (or the bobber landed on the shore): reel in (the bobber's removal ends the cast)
       bot.activateItem()
-      await cast.catch(() => {})
+      let wait
+      await Promise.race([cast.catch(() => {}), new Promise((resolve) => { wait = setTimeout(resolve, 5000) })])
+      clearTimeout(wait)
     }
     heartbeat(bot)
     if (bite) {

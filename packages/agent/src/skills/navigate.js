@@ -99,9 +99,14 @@ const isEnd = (goal, bot) => goal.isEnd(bot.entity.position.floored()) || goal.i
  * @param {AbortSignal} [opts.signal]
  * @param {object} [opts.movements] Movements to use (default: movements(bot))
  * @param {number} [opts.stuckMs=8000] no progress for this long → unstick
+ * @param {boolean} [opts.escape=false] after two failures with a goal more than 24 blocks away while in the water or
+ *   under a roof: survive.escape (out of the water, up to the sky) once, then plan again — for long walks only (a
+ *   miner's goal underground must not send it to the surface)
+ * @param {boolean} [opts.safety=true] wait while the Agent's safety behaviours have the controls (false: called by
+ *   one of them)
  * @returns {Promise<{ reached: true, ms: number, attempts: number }>}
  */
-async function goto (bot, goal, { timeout = 90000, attempts = 4, signal, movements: moves, stuckMs = 8000, legs = true, safety: waitSafety = true, escape = true } = {}) {
+async function goto (bot, goal, { timeout = 90000, attempts = 4, signal, movements: moves, stuckMs = 8000, legs = true, safety: waitSafety = true, escape = false } = {}) {
   ensurePathfinder(bot)
   const started = Date.now()
   // `safety: false`: called by a safety behaviour itself (it has the controls; waiting for it would deadlock)
@@ -150,7 +155,7 @@ async function goto (bot, goal, { timeout = 90000, attempts = 4, signal, movemen
       if (err.code === 'STUCK' || err.name === 'NoPath') {
         // stuck twice in a pit / a flooded cave / the water with the goal far away: the last resort first — out of
         // the water, up to the sky (pillar / staircase), then plan again from the surface
-        const far = center && distXZ(center, bot.entity.position) > 12
+        const far = center && distXZ(center, bot.entity.position) > 24
         if (escape && !escaped && failures >= 2 && far && waitSafety && needsEscape(bot)) {
           escaped = true
           log(bot, `goto: stuck at ${fmt(bot.entity.position)} (${err.message}); escaping to the surface`)
@@ -205,7 +210,7 @@ async function travel (bot, target, { signal, timeout = 120000, movements: moves
     const wp = dryNear(bot, { x: here.x + dir.x * leg - dir.z * side, z: here.z + dir.z * leg + dir.x * side }) ??
       { x: here.x + dir.x * leg - dir.z * side, z: here.z + dir.z * leg + dir.x * side }
     try {
-      await goto(bot, new goals.GoalNearXZ(wp.x, wp.z, 4), { signal, timeout: Math.min(60000, timeout - (Date.now() - started)), attempts: 1, movements: moves, legs: false })
+      await goto(bot, new goals.GoalNearXZ(wp.x, wp.z, 4), { signal, timeout: Math.min(60000, timeout - (Date.now() - started)), attempts: 1, movements: moves, legs: false, escape: true })
       sideways = 0
     } catch (err) {
       if (isAbort(err)) throw err
@@ -471,7 +476,8 @@ function targetSpec (bot, args) {
 
 const navigate = defineSkill('navigate', async (bot, args) => {
   const goal = goalFor({ ...args, ...targetSpec(bot, args) }, bot)
-  const r = await goto(bot, goal, { timeout: args.timeout ?? 120000, signal: args.signal })
+  // a walk somewhere far (back to the spawn): a pit / a lake shore on the way is escaped from as a last resort
+  const r = await goto(bot, goal, { timeout: args.timeout ?? 120000, signal: args.signal, escape: args.escape ?? true })
   const p = bot.entity.position
   return { reached: true, position: { x: p.x, y: p.y, z: p.z }, ms: r.ms }
 }, { description: 'walk to a position with mineflayer-pathfinder (re-plans, unsticks)' })

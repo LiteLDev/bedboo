@@ -51,7 +51,8 @@ function wearsArmor (bot) {
 function restMode (bot, { shelter = false } = {}) {
   if (bot.game?.dimension !== 'overworld' || !isNight(bot)) return null
   if (bedItem(bot) || bedNear(bot, 12)) return 'sleep'
-  if (shelter && wearsArmor(bot) < 2) return 'shelter'
+  // underground the night changes nothing (caves are dark all day): a shelter only on the surface
+  if (shelter && wearsArmor(bot) < 2 && require('./survive').underOpenSky(bot)) return 'shelter'
   return null
 }
 
@@ -138,13 +139,13 @@ async function sleepIn (bot, bed, { signal, deadline }) {
     } catch (err) {
       if (isAbort(err)) throw err
       log(bot, `rest: cannot sleep yet: ${err.message}`)
+      if (attempt >= 5) return false
       if (/monsters/i.test(err.message)) {
         // the safety behaviours deal with them (they come close); wait a little
         heartbeat(bot)
         await sleep(4000, signal)
         continue
       }
-      if (attempt >= 4) return false
       await sleep(1500, signal)
     }
   }
@@ -234,7 +235,7 @@ async function rest (bot, { shelter = false, signal, timeout = 150000 } = {}) {
     await waitForDay(bot, { signal, deadline })
     return { rested: 'sheltered', where: 'house', timeOfDay: bot.time?.timeOfDay ?? null }
   }
-  await dugShelter(bot, { signal, deadline })
+  if (!(await dugShelter(bot, { signal, deadline }))) return { rested: 'no shelter', timeOfDay: bot.time?.timeOfDay ?? null }
   return { rested: 'sheltered', where: 'hole', timeOfDay: bot.time?.timeOfDay ?? null }
 }
 

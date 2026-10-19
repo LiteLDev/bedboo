@@ -268,23 +268,25 @@ const skill = defineSkill('obtain', (bot, args) => obtain(bot, args), {
 })
 
 /**
- * Skill `hunt` — args: { mobs: string[], item: string, count?: 1, radius?: 48, explore?: true, timeout?: 150000 }:
- * kill passive mobs (chased with the pathfinder) until `count` more `item`s were picked up; when none is in sight,
- * walk a spiral on the surface until one is. result: { collected: { [item]: n }, killed }
+ * Skill `hunt` — args: { mobs: string[], item: string|string[], count?: 1, total?: false, radius?: 48, explore?: true,
+ * timeout?: 150000 }: kill passive mobs (chased with the pathfinder) until `count` more `item`s were picked up (a list
+ * of items: `count` of any one of them; `total`: until that many are carried); when none is in sight, walk a spiral
+ * on the surface until one is. result: { collected: { [item]: n }, killed }
  */
-async function huntSkill (bot, { mobs, item, count = 1, radius = 48, explore: mayExplore = true, timeout = 150000, signal } = {}) {
+async function huntSkill (bot, { mobs, item, count = 1, total = false, radius = 48, explore: mayExplore = true, timeout = 150000, signal } = {}) {
   if (!mobs?.length || !item) throw new SkillError('hunt needs args.mobs and args.item', { code: 'FAILED' })
   const started = Date.now()
   const items = [].concat(item)
   const start = Object.fromEntries(items.map((i) => [i, inventory.count(bot, i)]))
   let killed = 0
-  // a list of items: `count` of any one of them
-  const got = () => Math.max(...items.map((i) => inventory.count(bot, i) - start[i]))
+  // a list of items: `count` of any one of them (`total`: carried in all, else gained)
+  const got = () => Math.max(...items.map((i) => inventory.count(bot, i) - (total ? 0 : start[i])))
   while (got() < count) {
     checkAbort(signal)
     if (Date.now() - started > timeout) break
     await agentOf(bot)?.safety?.idle(signal)
-    const inSight = () => bot.nearestEntity((e) => mobs.includes(e.name) && preyOk(bot, e) && e.position.distanceTo(bot.entity.position) <= radius)
+    const dead = require('./combat').deadEntities(bot)
+    const inSight = () => bot.nearestEntity((e) => mobs.includes(e.name) && !dead.has(e) && preyOk(bot, e) && e.position.distanceTo(bot.entity.position) <= radius)
     if (!inSight()) {
       if (!mayExplore) break
       log(bot, `hunt: no ${mobs.join('/')} in sight; exploring`)
@@ -297,6 +299,7 @@ async function huntSkill (bot, { mobs, item, count = 1, radius = 48, explore: ma
     } catch (err) {
       if (isAbort(err) || err.code === 'DIED') throw err
       log(bot, `hunt: ${err.message}`)
+      await waitTicks(bot, 10, signal)
     }
   }
   const best = items.reduce((b, i) => inventory.count(bot, i) - start[i] > inventory.count(bot, b) - start[b] ? i : b, items[0])

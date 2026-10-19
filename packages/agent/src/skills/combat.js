@@ -904,8 +904,7 @@ class SafetyGuard extends EventEmitter {
     this.stats = { delegated: 'agent safety' }
     this._paused = null
     this._stopped = false
-    // a meal (mineflayer-auto-eat) stops nothing: not an interruption the skill must wait for or retry after
-    this._onBusy = (type) => { if (type !== 'eat') this.emit('busy', type) }
+    this._onBusy = (type) => this.emit('busy', type)
     this._onIdle = () => this.emit('idle')
     safety.on('busy', this._onBusy)
     safety.on('idle', this._onIdle)
@@ -918,8 +917,8 @@ class SafetyGuard extends EventEmitter {
     }
   }
 
-  get busy () { return !!this.safety.busy && this.safety.busy.type !== 'eat' }
-  idle () { return this.busy ? this.safety.idle() : Promise.resolve() }
+  get busy () { return !!this.safety.busy }
+  idle () { return this.safety.idle() }
   pause () {
     if (this._paused !== null) return
     this._paused = this.safety.enabled

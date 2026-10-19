@@ -104,14 +104,15 @@ function fuelFor (parts, perFuel) {
  * Up to `want` furnaces next to the bot: the first one nearby or placed (stations.ensureStation), more ones placed
  * from the inventory (crafted from cobblestone / cobbled deepslate when 8 spare are carried). @returns {Promise<object[]>}
  */
-async function furnacesFor (bot, want, { signal }) {
+async function furnacesFor (bot, want, { signal, input, inputCount = 0 }) {
   const first = await stations.ensureStation(bot, 'furnace', { signal })
   const out = [first]
   for (let k = 1; k < want; k++) {
     try {
       if (!inventory.count(bot, 'furnace')) {
-        const stone = ['cobblestone', 'cobbled_deepslate'].map((n) => inventory.count(bot, n))
-        if (Math.max(...stone) < 16) break // keep a few for pillars and the house
+        // never from the stone being smelted; keep a few for pillars and the house
+        const stone = ['cobblestone', 'cobbled_deepslate'].map((n) => inventory.count(bot, n) - (n === input ? inputCount : 0))
+        if (Math.max(...stone) < 16) break
         await require('./craft').craftItem(bot, 'furnace', 1, { signal })
       }
       const taken = out.map((f) => f.block.position)
@@ -147,7 +148,7 @@ async function smeltItem (bot, { item, count = 1, input, fuel, signal, keepFurna
   // how many furnaces: ~8 items each, and the fuel must cover every furnace's share
   let want = n >= 12 ? Math.min(maxFurnaces, Math.ceil(n / 8)) : 1
   while (want > 1 && fuelFor(split(n, want), perFuel) > fuelCarried) want--
-  const list = await furnacesFor(bot, want, { signal })
+  const list = await furnacesFor(bot, want, { signal, input: source.input, inputCount: n })
   const parts = split(n, list.length)
   const placed = list.filter((f) => f.placed)
   let fuelPut = 0
@@ -184,25 +185,24 @@ async function smeltItem (bot, { item, count = 1, input, fuel, signal, keepFurna
         await sleep(1000, signal)
         continue
       }
+      // the longest queue still burning; furnaces out of fuel with input left get any fuel carried
       let left = 0
-      let stalled = false
       for (const f of list) {
         await withFurnace(bot, f, async (furnace) => {
           if (furnace.outputItem()) await retry(bot, () => furnace.outputItem() ? furnace.takeOutput() : null, signal)
           const inside = furnace.inputItem()?.count ?? 0
-          left = Math.max(left, inside)
           if (inside && !furnace.fuelItem() && !furnace.fuel) {
-            // out of fuel (or never lit) with input left: add more of any fuel carried
             const more = chooseFuel(bot, { input: source.input, inputCount: 0 })
-            if (more) await retry(bot, () => furnace.putFuel(reg.itemsByName[more].id, null, Math.min(inventory.count(bot, more), Math.ceil(inside / data.itemsPerFuel(more)))), signal)
-            else stalled = true
+            if (!more) return // stalled: nothing left to burn
+            await retry(bot, () => furnace.putFuel(reg.itemsByName[more].id, null, Math.min(inventory.count(bot, more), Math.ceil(inside / data.itemsPerFuel(more)))), signal)
           }
+          left = Math.max(left, inside)
         }, signal).catch((err) => {
           if (isAbort(err)) throw err
           log(bot, `smelt: ${err.message}`)
         })
       }
-      if (!left || stalled || Date.now() >= deadline) break
+      if (!left || Date.now() >= deadline) break
       doneAt = Date.now() + left * ITEM_MS + 1000
     }
     // leave nothing behind in a furnace we take with us
