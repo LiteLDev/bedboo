@@ -66,3 +66,18 @@ guard (`combat.guardFor`).
 | N2 nether ores | seed 35, normal | kit, the overworld portal frame (`/setblock`) |
 | E1 the End | seed 35 (stronghold portal room at 1703, -4, -869), normal | `/locate` + teleports into the portal room, kit (12 eyes), `/kill` of the ender dragon |
 | chain | seed 35, easy | N1's kit, then E1's stronghold teleport + eyes and the dragon kill |
+
+### Results (FINAL-FIX-AGENT-B, BDS 1.26.51.1, 2026-10-20)
+
+Five runs each on main with FINAL-FIX-AGENT-A (#32) under it; wall time per run in seconds, ✗ = failed (reason below).
+
+| scenario | passed | wall time per run (s) | notes |
+|---|---|---|---|
+| C1 survive the night | 5/5 | 304, 305, 305, 304, 304 | |
+| N1 nether entry (seed 35) | 5/5 | 173, 187, 184, 175, 191 | before the pool-rim fixes 0/4: every run slid off the rim into a taken source's hole at 90 s |
+| N2 nether ores | 5/5 | 120, 75, 76, 132, 68 | |
+| E1 the End (seed 35) | 5/5 | 144, 70, 93, 117, 79 | |
+| E1A the End in seed 1234 (Agent) | 5/5 | 67, 81, 69, 136, 74 | no deaths |
+| N1M3 from M3 (Agent) | 5/5 | 954, 969, 959, 1001, 960 | ≈ 10 min of each in a night shelter (the snapshot is ≈ 200 s before nightfall); no deaths |
+| N1M5 from M5 (Agent) | 4/5, 4/5 | 459, 463, 461, 476, ✗; 466, 467, ✗, 469, 570 | ✗: a death in the lava pool between two fills (before the rim fixes); two creeper blasts at dawn at 9.6 hp (the snapshot's health). On the final code 0/2 so far: both stuck in U17's `obtain` of the second bucket before the portal (the surface climb holds rotten flesh instead of a block: auto-eat) |
+| N1M5H from M5 + back home, nether ores (Agent) | 0/2 | 612 ✗, 484 ✗ | #1: the Nether reached (portal 326 s), 3 quartz in 67 s, then slain by a piglin (no gold armor; mining near piglins) — the retry stopped at once with "no pickaxe … (lost in a death?)"; #2: U17's `obtain` as above |
