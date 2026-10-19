@@ -1,8 +1,8 @@
 // owner: U9 (player state, world extras & dimensions)
 'use strict'
 /**
- * Block entities and signs against BDS 1.26.51.1 (Bedrock extra; the upstream `sign` test needs bot.placeBlock and
- * is ported in sign.test.js, skipped until wave 4):
+ * Block entities and signs against BDS 1.26.51.1 (Bedrock extra; the upstream `sign` test, which needs
+ * bot.placeBlock, is ported in sign.test.js):
  * - a /setblock sign → block_entity_data → 'blockEntityData', block.blockEntity, signText '';
  * - the editor opened by interacting with the sign (BDS opens it for any unwaxed sign; one edit per opening) →
  *   'signOpen'; bot.updateSign front and back → the echoed block_entity_data → 'blockEntityData' + signText / getSignText();

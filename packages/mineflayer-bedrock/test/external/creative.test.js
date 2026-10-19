@@ -10,7 +10,7 @@
 const assert = require('assert')
 const wait = require('util').promisify(setTimeout)
 const { Vec3 } = require('vec3')
-const { useBot, implemented } = require('./common')
+const { useBot } = require('./common')
 const SLOT = 36
 
 describe('creative', function () {
@@ -117,7 +117,7 @@ describe('creative', function () {
 
   it('startFlying / stopFlying / flyTo (flight: U5 physics hook)', async function () {
     const { bot } = ctx
-    if (!implemented(bot._bedrock.physics.flyTo)) this.skip() // bot._bedrock.physics.flyTo lands with U5
+    assert.strictEqual(typeof bot._bedrock.physics.flyTo, 'function', 'U5 physics hook')
     const gravity = bot.physics.gravity
     bot.creative.startFlying()
     // W3-FIX-A: the Bedrock engine flies by itself; upstream's gravity = 0 would outlive a flight ended by the server

@@ -123,7 +123,7 @@ Totals: 10 export, 160 property, 112 method, 104 event, 43 window, 46 test.
 | `bot.game.serverViewDistance` | property | U4 → U9 | todo |  |
 | `bot.entity.equipment` | property | U4 | todo |  |
 | `bot.abilities` | property | U9 | todo |  |
-| `bot.bedrock` (Bedrock-only extras namespace) | property | U0 | todo |  |
+| `bot.bedrock` (Bedrock-only extras namespace) | property | U0 → U16 | todo |  |
 | `bot.settings.mainHand` | property | U4 | todo |  |
 | `bot.physics.gravity` | property | U4 → U5 | todo |  |
 | `bot.physics.airdrag` | property | U4 → U5 | todo |  |

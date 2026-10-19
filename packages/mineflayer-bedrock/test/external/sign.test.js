@@ -1,4 +1,4 @@
-// owner: U9 (wave 3: written, skipped until bot.placeBlock exists) → U11 (wave 4, the seed's owner of `sign`)
+// owner: U9 (wave 3: written) → U11 (wave 4, the seed's owner of `sign`)
 'use strict'
 /**
  * Port of mineflayer 4.39.0 test/externalTests/sign.js: place a sign with bot.placeBlock (U11), wait for the editor,
@@ -10,7 +10,7 @@
  */
 const assert = require('assert')
 const Vec3 = require('vec3')
-const { useBot, implemented } = require('./common')
+const { useBot } = require('./common')
 
 const upstream = () => async (bot) => {
   const Item = require('prismarine-item')(bot.registry)
@@ -60,8 +60,6 @@ describe('sign', function () {
   beforeEach(() => ctx.bot.test.resetState())
 
   it('sign', async function () {
-    // needs bot.placeBlock (U11, wave 4) and bot.activateBlock (U8)
-    if (!implemented(ctx.bot.placeBlock) || !implemented(ctx.bot.activateBlock)) this.skip()
     await upstream()(ctx.bot)
   })
 })

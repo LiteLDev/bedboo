@@ -3,7 +3,7 @@
 /**
  * Conformance test mode.
  *
- * Non-strict (default until the switch below is flipped): members that are still `notImplemented`
+ * Non-strict (the default before wave 5): members that are still `notImplemented`
  * stubs, members that cannot be observed yet (created on join, window members behind an unimplemented
  * opener) and events without an asserting test are reported as PENDING and do not fail. Missing members,
  * wrong arity, wrong sync/promise kind, wrong value types, extra top-level members, missing exports
@@ -11,10 +11,10 @@
  *
  * Strict: every pending item fails.
  *
- * COORDINATOR: set STRICT to true when the conformance test switches to failing mode (plan: U16's
- * parity audit, at the latest Wave 6). `BEDBOO_CONFORMANCE_STRICT=1` (or `=0`) overrides it per run.
+ * Failing mode since U16a's parity audit (wave 5): STRICT is true. `BEDBOO_CONFORMANCE_STRICT=1` (or `=0`)
+ * overrides it per run.
  */
-const STRICT = false
+const STRICT = true
 
 function isStrict (env = process.env) {
   const v = env.BEDBOO_CONFORMANCE_STRICT

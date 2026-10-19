@@ -4,12 +4,12 @@
  * Port of mineflayer 4.39.0 test/externalTests/digAndBuild.js, VERBATIM: fly up 2 (console tp), place a dirt block
  * 2 below with bot.test.placeBlock (the real bot.placeBlock), stop flying, fall onto it, then dig it bare-handed in
  * survival and collect the drop.
- * The dig half needs U10's bot.dig (wave 4 sibling): the verbatim test is skipped until bot.dig is implemented; the
- * place half (everything up to and including the fall onto the placed block) runs now as its own test.
+ * The place half (everything up to and including the fall onto the placed block) also runs as its own test, with
+ * stricter checks (U11); the verbatim test runs since U10's bot.dig landed (U16a).
  */
 const { Vec3 } = require('vec3')
 const assert = require('assert')
-const { useBot, implemented } = require('./common')
+const { useBot } = require('./common')
 
 const upstream = () => async (bot) => {
   const Item = require('prismarine-item')(bot.registry)
@@ -51,8 +51,6 @@ describe('digAndBuild', function () {
   afterEach(() => ctx.bot.test.becomeCreative())
 
   it('digAndBuild', async function () {
-    // the dig half is U10's bot.dig (wave 4 sibling)
-    if (!implemented(ctx.bot.dig)) this.skip()
     await upstream()(ctx.bot)
   })
 
