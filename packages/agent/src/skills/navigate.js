@@ -116,7 +116,9 @@ async function goto (bot, goal, { timeout = 90000, attempts = 4, signal, movemen
   const center = goalCenter(goal)
   if (legs && center && distXZ(center, bot.entity.position) > LEG * 1.5) {
     const survive = require('./survive')
-    if (!survive.underOpenSky(bot) && (center.y === undefined || center.y > bot.entity.position.y + 8)) {
+    // (an x / z goal has no height: GoalNearXZ / GoalXZ — the surface it is)
+    const goalY = goal.pos?.y ?? goal.y
+    if (!survive.underOpenSky(bot) && (goalY === undefined || goalY > bot.entity.position.y + 8)) {
       await survive.surface(bot, { signal, timeout: Math.min(180000, timeout / 2) }).catch((err) => { if (isAbort(err)) throw err; log(bot, `goto: could not surface first: ${err.message}`) })
     }
     await travel(bot, center, { signal, timeout: timeout * 0.8, movements: moves })

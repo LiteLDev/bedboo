@@ -237,8 +237,12 @@ class Safety extends EventEmitter {
     const target = combat.nearestHostile(bot, {
       radius: Math.max(radius, 6),
       includeNeutral: eff.includeNeutral,
+      // a mob given up on (could not get at it: behind a wall, across a gap) stays ignored until it hurts the bot —
+      // it is then an attacker — even right next to the bot (a zombie behind a block 3 blocks away is fought
+      // forever otherwise)
+      // (a creeper coming close is never ignored: it hurts only once it blows up)
       exclude: (e) => ignoredBy(e) || Math.abs(e.position.y - pos.y) > eff.maxDy ||
-        (!hurt && (this.ignored.get(e.id) ?? 0) > now && e.position.distanceTo(pos) > 4)
+        ((this.ignored.get(e.id) ?? 0) > now && !(e.name === 'creeper' && e.position.distanceTo(pos) < 5))
     })
     if (!target) return null
     const d = target.position.distanceTo(pos)
