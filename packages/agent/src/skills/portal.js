@@ -263,7 +263,8 @@ async function fillBucket (bot, liquid, { signal, maxDistance = 128, near, skip 
   const filled = `${liquid}_bucket`
   const isSource = liquid === 'lava' ? u.isLavaSource : u.isWaterSource
   const names = liquid === 'lava' ? ['lava', 'flowing_lava'] : ['water', 'flowing_water']
-  const sources = u.findBlocks(bot, names, { maxDistance, count: 2048, point: near, filter: (b) => isSource(b) && !skip.has(b.position.toString()) })
+  // many: in a lake the nearest thousands of water blocks can all be under water (only the top layer is reachable)
+  const sources = u.findBlocks(bot, names, { maxDistance, count: 32768, point: near, filter: (b) => isSource(b) && !skip.has(b.position.toString()) })
     // reachable from above: air (or the liquid's own surface) right above
     .filter((b) => u.isClear(bot.blockAt(b.position.offset(0, 1, 0))))
   if (!sources.length) throw new Error(`no ${liquid} source within ${maxDistance} blocks`)
