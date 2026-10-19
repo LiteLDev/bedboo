@@ -63,27 +63,9 @@ function restMode (bot, { shelter = false } = {}) {
 async function placeBed (bot, { signal } = {}) {
   const item = bedItem(bot)
   if (!item) throw new SkillError('no bed carried', { code: 'MISSING' })
-  const here = bot.entity.position.floored()
-  const free = (p) => world.isPassable(bot.blockAt(p)) && world.isPassable(bot.blockAt(p.offset(0, 1, 0)))
-  const ground = (p) => world.isSolid(bot.blockAt(p.offset(0, -1, 0))) && !world.isLiquid(bot.blockAt(p.offset(0, -1, 0)))
-  const spots = []
-  for (let dx = -3; dx <= 3; dx++) {
-    for (let dz = -3; dz <= 3; dz++) {
-      for (const dy of [0, -1, 1]) {
-        const stand = here.offset(dx, dy, dz)
-        if (!world.standable(bot, stand) || world.isProtected(bot, stand)) continue
-        for (const d of world.HORIZONTAL) {
-          const foot = stand.plus(d)
-          const head = foot.plus(d)
-          if (!free(foot) || !free(head) || !ground(foot) || !ground(head)) continue
-          if (world.isProtected(bot, foot) || world.isProtected(bot, head)) continue
-          if (world.lavaAround(bot, foot) || world.lavaAround(bot, head)) continue
-          spots.push({ stand, foot, head, d, cost: Math.abs(dx) + Math.abs(dz) + Math.abs(dy) * 2 })
-        }
-      }
-    }
-  }
-  spots.sort((a, b) => a.cost - b.cost)
+  let spots = bedSpots(bot)
+  // in a 1×1 shaft / a tunnel: dig two cells side by side at the feet first
+  if (!spots.length && await digBedRoom(bot, signal)) spots = bedSpots(bot)
   const { goals } = require('mineflayer-pathfinder')
   for (const s of spots.slice(0, 5)) {
     checkAbort(signal)
@@ -111,6 +93,53 @@ async function placeBed (bot, { signal } = {}) {
     }
   }
   throw new SkillError(`no room for the bed near ${navigate.fmt(bot.entity.position)}`, { code: 'FAILED' })
+}
+
+/** where the bed fits around the bot: { stand, foot, head, d } (cheapest first) */
+function bedSpots (bot) {
+  const here = bot.entity.position.floored()
+  const free = (p) => world.isPassable(bot.blockAt(p))
+  const ground = (p) => world.isSolid(bot.blockAt(p.offset(0, -1, 0)))
+  const spots = []
+  for (let dx = -3; dx <= 3; dx++) {
+    for (let dz = -3; dz <= 3; dz++) {
+      for (const dy of [0, -1, 1]) {
+        const stand = here.offset(dx, dy, dz)
+        if (!world.standable(bot, stand) || world.isProtected(bot, stand)) continue
+        for (const d of world.HORIZONTAL) {
+          const foot = stand.plus(d)
+          const head = foot.plus(d)
+          if (!free(foot) || !free(head) || !ground(foot) || !ground(head)) continue
+          if (world.isProtected(bot, foot) || world.isProtected(bot, head)) continue
+          if (world.lavaAround(bot, foot) || world.lavaAround(bot, head)) continue
+          spots.push({ stand, foot, head, d, cost: Math.abs(dx) + Math.abs(dz) + Math.abs(dy) * 2 })
+        }
+      }
+    }
+  }
+  return spots.sort((a, b) => a.cost - b.cost)
+}
+
+/** dig the two cells beside the feet (solid floor under them, nothing liquid behind) for the bed */
+async function digBedRoom (bot, signal) {
+  const feet = bot.entity.position.floored()
+  for (const d of world.HORIZONTAL) {
+    const cells = [feet.plus(d), feet.plus(d.scaled(2))]
+    if (!cells.every((c) => world.isSolid(bot.blockAt(c.offset(0, -1, 0))) && world.safeToDig(bot, c) && !world.exposesLiquid(bot, c) && !world.lavaAround(bot, c))) continue
+    try {
+      for (const c of cells) {
+        const b = bot.blockAt(c)
+        if (b && !world.isPassable(b)) await navigate.digSafe(bot, b, signal)
+      }
+      if (cells.every((c) => world.isPassable(bot.blockAt(c)))) {
+        log(bot, `rest: dug room for the bed at ${navigate.fmt(cells[0])}`)
+        return true
+      }
+    } catch (err) {
+      if (isAbort(err)) throw err
+    }
+  }
+  return false
 }
 
 /** sleep in `bed` until the morning (tries again while monsters keep the bot awake). @returns {Promise<boolean>} slept */
