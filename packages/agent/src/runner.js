@@ -37,14 +37,14 @@ const DEFAULT_STEP_TIMEOUT = 10 * 60 * 1000
 /** longest wait for an aborted skill to unwind before the next task / the recovery drives the bot */
 const WIND_DOWN_MS = 10000
 /**
- * The stuck watchdog (Agent#run): a task whose bot stayed within `STUCK_RADIUS` blocks for `stuckMs` without doing
+ * The stuck watchdog (Agent#run): a task whose bot stayed in a box of `STUCK_EXTENT` blocks for `stuckMs` without doing
  * anything (no block dug / placed, nothing crafted / smelted / picked up, no heartbeat) is aborted, the bot escapes
  * (out of the water, up to the sky, away from the spot) and the task runs again. Skills that stand still on purpose
  * (smelting, fishing, sleeping) send heartbeats. Defaults per skill; U18's skills (portal, nether, end, combat) have
  * their own budgets and run without it.
  */
 const STUCK_MS = { obtain: 180000, mine: 180000, gather: 180000, navigate: 150000, explore: 150000, build: 240000, food: 150000, surface: 150000, fish: 150000, hunt: 150000 }
-const STUCK_RADIUS = 4
+const STUCK_EXTENT = 6
 /** event types that are progress (anything else — log lines, failed gotos — is not) */
 const WORK_EVENTS = new Set(['mine', 'craft', 'smelt', 'place', 'pickup', 'obtained', 'build-site', 'build-verified', 'heartbeat', 'shaft', 'food', 'caught', 'slept'])
 
@@ -372,7 +372,7 @@ class Agent extends EventEmitter {
 
   /**
    * The stuck watchdog of one task attempt (see STUCK_MS): every 5 s, the bot's positions over the last `stuckMs`
-   * all within STUCK_RADIUS blocks, no progress event and no heartbeat in that time, safety not busy → abort the
+   * all in a box of STUCK_EXTENT blocks, no progress event and no heartbeat in that time, safety not busy → abort the
    * attempt with a STUCK error. @returns {object} the interval (cleared by run())
    */
   watchdog (controller, stuckMs) {
@@ -384,13 +384,15 @@ class Agent extends EventEmitter {
       if (!bot?.entity || bot.health <= 0 || controller.signal.aborted) return
       const now = Date.now()
       // a fight / flight / meal, a sleep: not the task's fault
-      if (this.safety?.busy || bot.isSleeping) quietSince = now
+      // (a behaviour that has held the controls for over a minute is stuck itself: no excuse)
+      if ((this.safety?.busy && now - this.safety.busy.since < 60000) || bot.isSleeping) quietSince = now
       samples.push({ t: now, p: bot.entity.position.clone() })
       while (samples.length && samples[0].t < now - stuckMs) samples.shift()
       if (now - started < stuckMs || now - Math.max(quietSince, this._lastWork) < stuckMs) return
-      const first = samples[0].p
-      if (samples.some((s) => s.p.distanceTo(first) > STUCK_RADIUS)) return
-      const at = first.floored()
+      // the box the bot stayed in (a tower that keeps collapsing bounces up and down a few blocks: still stuck)
+      const extent = Math.max(...['x', 'y', 'z'].map((a) => Math.max(...samples.map((s) => s.p[a])) - Math.min(...samples.map((s) => s.p[a]))))
+      if (extent > STUCK_EXTENT) return
+      const at = samples[0].p.floored()
       this.event('stuck', { at: posOf(bot), ms: stuckMs })
       this.state.traps.push({ x: at.x, y: at.y, z: at.z, until: now + 10 * 60 * 1000 })
       controller.abort(new SkillError(`stuck at ${at} for ${Math.round(stuckMs / 1000)} s`, { code: 'STUCK' }))
@@ -506,6 +508,9 @@ class Agent extends EventEmitter {
     if (!bot?.entity) return
     // between steps: a sleep only (a whole night in a shelter would eat the scenario's budget)
     await this.restIfNight({ timeout: Math.max(timeout, 90000), shelter: false })
+    // room for what the next step digs up
+    const tossed = await inventory.declutter(bot, { minFree: 6 }).catch(() => ({}))
+    if (Object.keys(tossed).length) this.event('tossed', { items: tossed })
     if (!this.opts.keepFed || !this.skills.food) return
     const { foodPoints } = require('./skills/survive')
     if (bot.food > 12 || foodPoints(bot) >= 6) return

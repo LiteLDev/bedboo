@@ -129,4 +129,63 @@ function filler (bot, { keep = {} } = {}) {
   return null
 }
 
-module.exports = { allItems, count, counts, find, findAny, toolTier, toolKind, toolKindsFor, harvestToolNames, canHarvest, bestToolFor, equip, freeSlots, FILLER, filler, TIERS }
+/** never worth a slot to the agent (mineshaft loot, leaves' drops, flowers, …) */
+const JUNK = /^(leaf_litter|.*_sapling|wheat_seeds|beetroot_seeds|pumpkin_seeds|melon_seeds|torchflower_seeds|rail|.*_fence|.*_carpet|poisonous_potato|spider_eye|gunpowder|bone|feather|dandelion|poppy|.*_tulip|azure_bluet|oxeye_daisy|cornflower|lily_of_the_valley|allium|blue_orchid|short_grass|tall_grass|fern|dead_bush|vine|glow_lichen|moss_carpet|pointed_dripstone|calcite|smooth_basalt|amethyst_shard|clay_ball|seagrass|egg|ink_sac|leather|rabbit_hide|name_tag|lead|saddle|book|paper)$/
+/** blocks kept up to a number (the rest is tossed when the inventory is full): pillars, the house, scaffolding */
+const KEEP = { cobblestone: 128, cobbled_deepslate: 64, dirt: 32, stone: 32, deepslate: 16, andesite: 16, diorite: 16, granite: 16, tuff: 16, gravel: 8, sand: 8, rotten_flesh: 8, stick: 16, arrow: 64 }
+
+/**
+ * What can go when the inventory is full: junk, blocks above their KEEP amount, tools a better one of the same kind
+ * replaces (a wooden / stone pickaxe next to an iron one), arrows without a bow. @returns {Array<{ name, count }>}
+ */
+function junk (bot) {
+  const have = counts(bot)
+  const out = []
+  for (const [name, n] of Object.entries(have)) {
+    if (JUNK.test(name)) { out.push({ name, count: n }); continue }
+    if (name === 'arrow' && !have.bow) { out.push({ name, count: n }); continue }
+    if (Object.hasOwn(KEEP, name) && n > KEEP[name]) { out.push({ name, count: n - KEEP[name] }); continue }
+    const kind = toolKind(name)
+    if (kind && kind !== 'hoe') {
+      // a better tool of this kind is carried: this one is dead weight (golden ones are only kept for the Nether's
+      // piglins as armor, never as tools)
+      const tier = toolTier(name)
+      const better = Object.keys(have).some((o) => o !== name && toolKind(o) === kind && toolTier(o) > tier && !o.startsWith('golden_'))
+      if (better && !(name.startsWith('iron_') && kind === 'pickaxe')) out.push({ name, count: n })
+    }
+  }
+  return out
+}
+
+/** whether picking up a drop of `name` would only add junk / surplus (see `junk`) */
+function unwanted (bot, name) {
+  if (!name) return false
+  if (JUNK.test(name)) return true
+  if (name === 'arrow' && !count(bot, 'bow')) return true
+  return Object.hasOwn(KEEP, name) && count(bot, name) >= KEEP[name]
+}
+
+/**
+ * Free inventory slots: toss junk / surplus (see `junk`) until `minFree` slots are free. Tossed items fly a few blocks
+ * ahead; the bot does not pick them up again (it is busy elsewhere, and drops are only collected around a dug block).
+ * @returns {Promise<Record<string, number>>} what was tossed
+ */
+async function declutter (bot, { minFree = 4 } = {}) {
+  const tossed = {}
+  if (freeSlots(bot) >= minFree || typeof bot.toss !== 'function') return tossed
+  try { if (bot.currentWindow) bot.closeWindow(bot.currentWindow) } catch {}
+  // whole stacks first (junk), then the surplus of the blocks
+  const list = junk(bot).sort((a, b) => (JUNK.test(b.name) ? 1 : 0) - (JUNK.test(a.name) ? 1 : 0))
+  for (const { name, count: n } of list) {
+    if (freeSlots(bot) >= minFree) break
+    const def = bot.registry.itemsByName[name]
+    if (!def) continue
+    try {
+      await bot.toss(def.id, null, n)
+      tossed[name] = n
+    } catch {}
+  }
+  return tossed
+}
+
+module.exports = { allItems, count, counts, find, findAny, toolTier, toolKind, toolKindsFor, harvestToolNames, canHarvest, bestToolFor, equip, freeSlots, FILLER, filler, TIERS, junk, unwanted, declutter, JUNK, KEEP }

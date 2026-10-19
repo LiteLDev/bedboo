@@ -124,7 +124,7 @@ src/safety.js runs during every task. When it takes over, pathfinder and digging
 - nights: between tasks, in the overworld at night, the agent sleeps in its bed (`rest`: the night is skipped); with
   `shelter: true` (the final chain) and neither a bed nor armor it waits for the morning in its house or a sealed hole;
 - the stuck watchdog: a task (obtain, mine, gather, navigate, explore, build, food, hunt, fish, surface) whose bot
-  stayed within 4 blocks for 2½–4 minutes without digging, placing, crafting, smelting or picking anything up is
+  stayed in a box of 6 blocks for 2½–4 minutes without digging, placing, crafting, smelting or picking anything up is
   aborted; the bot escapes (`escape`: out of the water, up to the sky, away from the spot), the spot is a trap for ten
   minutes (no ore / goal there is chosen again) and the task runs again (twice at most); an aborted task's skill is
   given 10 s to unwind before anything else drives the bot;

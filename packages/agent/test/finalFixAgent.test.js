@@ -184,7 +184,7 @@ describe('final fix (agent): runner', () => {
         return 'done'
       },
       walk: async (bot) => {
-        for (let i = 0; i < 20; i++) { bot.entity.position = bot.entity.position.offset(1, 0, 0); await sleep(10) }
+        for (let i = 0; i < 20; i++) { bot.entity.position = bot.entity.position.offset(3, 0, 0); await sleep(10) }
         return 'walked'
       }
     }
@@ -268,6 +268,26 @@ describe('final fix (agent): skills', () => {
     bot.inventory.slots[5] = { name: 'iron_helmet' }
     bot.inventory.slots[6] = { name: 'iron_chestplate' }
     assert.strictEqual(rest.restMode(bot, { shelter: true }), null, 'armored: the night is no reason to stop')
+  })
+
+  it('inventory: junk, surplus blocks and replaced tools go when it is full; wanted drops are still picked up', async () => {
+    const inventory = require('../src/inventory')
+    const bot = fakeBot()
+    const stacks = { cobblestone: 300, leaf_litter: 5, oak_sapling: 2, wooden_pickaxe: 1, stone_pickaxe: 1, iron_pickaxe: 1, diamond_pickaxe: 1, stone_sword: 1, iron_sword: 1, flint: 1, raw_gold: 3, arrow: 4 }
+    bot.inventory.items = () => Object.entries(stacks).filter(([, c]) => c > 0).map(([name, count]) => ({ name, count, type: name }))
+    const junk = Object.fromEntries(inventory.junk(bot).map((j) => [j.name, j.count]))
+    assert.deepStrictEqual(junk, { cobblestone: 172, leaf_litter: 5, oak_sapling: 2, wooden_pickaxe: 1, stone_pickaxe: 1, stone_sword: 1, arrow: 4 })
+    assert.ok(inventory.unwanted(bot, 'cobblestone') && inventory.unwanted(bot, 'oak_sapling'))
+    assert.ok(!inventory.unwanted(bot, 'raw_gold') && !inventory.unwanted(bot, 'flint') && !inventory.unwanted(bot, null))
+    // declutter tosses until enough slots are free
+    let free = 1
+    bot.inventory.emptySlotCount = () => free
+    bot.registry = { itemsByName: Object.fromEntries(Object.keys(stacks).map((n) => [n, { id: n }])) }
+    const thrown = []
+    bot.toss = async (id, meta, n) => { thrown.push(id); stacks[id] -= n; free++ }
+    const tossed = await inventory.declutter(bot, { minFree: 3 })
+    assert.strictEqual(Object.keys(tossed).length, 2)
+    assert.ok(thrown.every((n) => inventory.JUNK.test(n)), 'whole junk stacks first')
   })
 
   it('traps: blocks near a spot where a task got stuck are skipped for a while', () => {

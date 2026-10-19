@@ -390,6 +390,7 @@ function dryColumn (bot, feet, radius = 16) {
  */
 async function climbUp (bot, { targetY, signal, timeout = 240000, maxSteps = 400 } = {}) {
   const started = Date.now()
+  let interrupted = 0
   for (let i = 0; i < maxSteps; i++) {
     checkAbort(signal)
     if (Date.now() - started > timeout) throw new SkillError(`still underground at ${navigate.fmt(bot.entity.position)}`, { code: 'TIMEOUT' })
@@ -405,6 +406,13 @@ async function climbUp (bot, { targetY, signal, timeout = 240000, maxSteps = 400
       if (isAbort(err)) throw err
       if (err.code === 'MISSING' && !inventory.filler(bot)) {
         if (!(await stairStepUp(bot, signal))) throw err
+        continue
+      }
+      // a fight in the middle of the jump (the sword in the hand now, the bot knocked aside): the same step again
+      const safety = agentOf(bot)?.safety
+      if ((safety?.busy || safety?.recentlyBusy(3000) || /holding/.test(err.message)) && interrupted++ < 10) {
+        log(bot, `climb: ${err.message}; again`)
+        await safety?.idle(signal)
         continue
       }
       log(bot, `climb: ${err.message}; staircase step`)

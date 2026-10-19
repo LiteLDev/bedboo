@@ -47,13 +47,18 @@ const inventory = require('../../src/inventory')
 const NETHER_ORES = { quartz_ore: 3, nether_gold_ore: 3, ancient_debris: 1 }
 const MINUTES = 60 * 1000
 
-/** iron for the gear phase: armor 24, shield 1, N1M3's second bucket 3 and flint and steel 1 */
+/**
+ * The gear phase: armor 24 ingots, a shield 1, a spare iron pickaxe 3 (the first one wears out mining all this iron
+ * and M3's diamonds need one), N1M3's second bucket 3 (and its flint and steel 1, below)
+ */
 const GEAR = [
   { item: 'iron_chestplate', ingots: 8 },
   { item: 'iron_leggings', ingots: 7 },
   { item: 'iron_helmet', ingots: 5 },
   { item: 'iron_boots', ingots: 4 },
-  { item: 'shield', ingots: 1 }
+  { item: 'shield', ingots: 1 },
+  { item: 'iron_pickaxe', count: 2, ingots: 3 },
+  { item: 'bucket', count: 2, ingots: 3 }
 ]
 const ARMOR_SLOT = { iron_helmet: 5, iron_chestplate: 6, iron_leggings: 7, iron_boots: 8 }
 /** a bed takes 3 wool of one colour */
@@ -147,17 +152,19 @@ async function finalChain ({ log = () => {}, cfg = config(), netherOres = false,
       run: async () => {
         await agent.maintain()
         // all the iron in one trip and one (3-furnace) smelt: armor, shield, N1M3's second bucket and flint and steel
-        const missing = GEAR.filter((g) => !has(bot, g.item))
-        const ingots = missing.reduce((n, g) => n + g.ingots, 0) + (inventory.count(bot, 'bucket') < 2 ? 3 : 0) + 1
+        const missing = GEAR.filter((g) => inventory.count(bot, g.item) < (g.count ?? 1))
+        const ingots = missing.reduce((n, g) => n + g.ingots * ((g.count ?? 1) - inventory.count(bot, g.item)), 0) + 1
         if (inventory.count(bot, 'iron_ingot') < ingots) {
           await task('obtain', { item: 'iron_ingot', count: ingots }, { name: `gear: ${ingots} iron ingots`, timeout: 9 * MINUTES, retries: 1 })
         }
         const made = []
-        for (const g of [...GEAR, { item: 'bucket', count: 2 }]) {
+        for (const g of missing) {
           if (inventory.count(bot, g.item) >= (g.count ?? 1)) continue
           await task('obtain', { item: g.item, count: g.count ?? 1 }, { name: `gear: ${g.item}`, timeout: 3 * MINUTES, retries: 0 })
           made.push(g.item)
         }
+        // sticks for a pickaxe made later (deep in a mine a log is a long climb away)
+        if (inventory.count(bot, 'stick') < 4) await task('obtain', { item: 'stick', count: 4 }, { name: 'gear: sticks', timeout: 2 * MINUTES, retries: 0 }).catch(() => {})
         await require('../../src/skills/combat').equipForCombat(bot, { shield: true })
         const worn = Object.entries(ARMOR_SLOT).filter(([, slot]) => bot.inventory.slots[slot]).map(([item]) => item)
         if (worn.length < 4) throw new Error(`armor worn: ${worn.join(', ') || 'none'}`)

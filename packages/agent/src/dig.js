@@ -90,6 +90,11 @@ async function collectBlocks (bot, { item = null, count = 1, blocks, maxDistance
     checkAbort(signal)
     if (Date.now() - started > timeout) throw new SkillError(`collecting ${item ?? blocks.join('/')}: timed out after ${timeout} ms (${JSON.stringify(mined)})`, { code: 'TIMEOUT' })
     await agentOf(bot)?.safety?.idle(signal)
+    // a full inventory picks nothing up: the ore would be dug for nothing, again and again
+    if (inventory.freeSlots(bot) < 3) {
+      const tossed = await inventory.declutter(bot, { minFree: 5 })
+      if (Object.keys(tossed).length) log(bot, `inventory full: tossed ${JSON.stringify(tossed)}`)
+    }
     let list = candidates(bot, blocks, { maxDistance, exclude: tried })
     if (!list.length) {
       if (!exploreDistance) throw new SkillError(`no ${blocks.join('/')} within ${maxDistance} blocks`, { code: 'NOT_FOUND' })
@@ -332,8 +337,8 @@ async function pickupNear (bot, center, { signal, radius = 3, wait = 900, timeou
   await sleep(150, signal)
   while (Date.now() - started < timeout) {
     checkAbort(signal)
-    if (item && inventory.count(bot, item) > before && !nearbyDrops(bot, center, radius, skip).length) return true
-    const drops = nearbyDrops(bot, center, radius, skip)
+    if (item && inventory.count(bot, item) > before && !nearbyDrops(bot, center, radius, skip, item).length) return true
+    const drops = nearbyDrops(bot, center, radius, skip, item)
     if (!drops.length) {
       if (Date.now() - started > wait) return item ? inventory.count(bot, item) > before : true
       await sleep(100, signal)
@@ -351,9 +356,15 @@ async function pickupNear (bot, center, { signal, radius = 3, wait = 900, timeou
   return item ? inventory.count(bot, item) > before : true
 }
 
-function nearbyDrops (bot, center, radius, skip) {
+function nearbyDrops (bot, center, radius, skip, want) {
+  // junk and surplus (cobblestone beyond what the agent keeps, saplings, tossed stuff) stay where they are
+  const unwanted = (e) => {
+    let name = null
+    try { name = e.getDroppedItem?.()?.name ?? null } catch {}
+    return name !== want && inventory.unwanted(bot, name)
+  }
   return Object.values(bot.entities)
-    .filter((e) => e.name === 'item' && !skip.has(e.id) && e.position.distanceTo(center) <= radius)
+    .filter((e) => e.name === 'item' && !skip.has(e.id) && e.position.distanceTo(center) <= radius && !unwanted(e))
     .sort((a, b) => a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position))
 }
 
