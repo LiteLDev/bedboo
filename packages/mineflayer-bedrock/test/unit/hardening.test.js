@@ -134,6 +134,54 @@ describe('wave-4 review fixes (U16a)', function () {
     })
   })
 
+  describe('double-tapped forward (U15 open item): BDS sprints, the bot predicts it', () => {
+    async function walk (pattern) {
+      const created = await spawned()
+      const { bot, tick, inputs } = created
+      bot.game.gameMode = 'survival'
+      bot.food = 20
+      created.client.clearSent()
+      for (const [forward, ticks] of pattern) {
+        bot.setControlState('forward', forward)
+        tick(ticks)
+      }
+      return { bot, sent: inputs() }
+    }
+    const flags = (p) => p.input_data ?? []
+
+    it('forward pressed again within 6 ticks of its previous press: sprinting (start_sprinting, no sprint key) until released', async () => {
+      const { sent } = await walk([[true, 3], [false, 1], [true, 10], [false, 2]])
+      const sprinting = sent.map((p) => flags(p).includes('sprinting'))
+      assert.deepStrictEqual(sprinting.slice(0, 4), [false, false, false, false], 'the first press walks')
+      assert.ok(sprinting.slice(4, 14).every(Boolean), 'the second press sprints')
+      assert.ok(flags(sent[4]).includes('start_sprinting'))
+      assert.ok(!sent.some((p) => flags(p).includes('sprint_down')), 'no sprint key: the double tap')
+      assert.ok(flags(sent[14]).includes('stop_sprinting') && !sprinting[15], 'released: walking again')
+    })
+
+    it('7 ticks between the presses, a held forward, sneaking or hunger: no sprint', async () => {
+      for (const pattern of [[[true, 5], [false, 2], [true, 6]], [[true, 20]]]) {
+        const { sent } = await walk(pattern)
+        assert.ok(!sent.some((p) => flags(p).includes('sprinting')), JSON.stringify(pattern))
+      }
+      const { bot, tick, inputs } = await spawned()
+      bot.game.gameMode = 'survival'
+      bot.food = 6
+      for (const [forward, ticks] of [[true, 2], [false, 1], [true, 5]]) {
+        bot.setControlState('forward', forward)
+        tick(ticks)
+      }
+      assert.ok(!inputs().some((p) => flags(p).includes('sprinting')), 'food 6: no sprint')
+      bot.food = 20
+      bot.setControlState('sneak', true)
+      for (const [forward, ticks] of [[false, 1], [true, 2], [false, 1], [true, 5]]) {
+        bot.setControlState('forward', forward)
+        tick(ticks)
+      }
+      assert.ok(!inputs().some((p) => flags(p).includes('sprinting')), 'sneaking: no sprint')
+    })
+  })
+
   describe('#12 books longer than BDS keeps', () => {
     it('writeBook / signBook with more than 50 pages reject at once (nothing moved or sent)', async () => {
       const { bot, client } = await joined()

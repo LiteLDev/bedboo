@@ -55,6 +55,12 @@ const FLY_TO_STALL_TICKS = 60
 const FLY_TO_JUMP_REPRESS = 12
 /** creative flyTo: never press forward again within this many ticks of releasing it (a double-tapped forward sprints) */
 const FLY_TO_FORWARD_REPRESS = 10
+/**
+ * BDS sprints a player whose forward key (the `up` input flag) is pressed again within this many ticks of its
+ * previous press — the double tap, judged by the server from the key flags, also without any sprint flag (measured
+ * on 1.26.51.1 walking: press-to-press 6 ticks sprints, 7 does not) — until forward is released (U16a)
+ */
+const DOUBLE_TAP_TICKS = 6
 /** BDS only starts gliding when start_gliding comes with a jump press (measured) */
 const GLIDE_START_FLAGS = ['jump_down', 'jumping', 'want_up', 'jump_current_raw', 'jump_pressed_raw', 'start_jumping']
 /** a glide the server has not confirmed after this many ticks is dropped */
@@ -87,7 +93,9 @@ function inject (bot, { physicsEnabled }) {
   let lookingTask = createDoneTask()
   let prevInput = null // input record of the previous sent tick (edge flags)
   // creative flyTo key timing across consecutive flyTo calls (U15): ticks captured, last jump press, last forward release
-  const keyEdges = { tick: 0, jumpPressed: -Infinity, forwardReleased: -Infinity }
+  const keyEdges = { tick: 0, jumpPressed: -Infinity, forwardReleased: -Infinity, forwardPressed: -Infinity }
+  // U16a: the server's double-tap sprint, predicted like the vanilla client (which sprints on a double tap itself)
+  let tapSprint = false
   let pendingKnockback = null // Vec3 from set_entity_motion, applied at the start of the next tick
   let flyTarget = null // { destination: Vec3, resolve, reject }
   let vehicleInput = { left: 0, forward: 0 }
@@ -236,6 +244,15 @@ function inject (bot, { physicsEnabled }) {
     }
     if (rawControl.jump && !prevInput?.rawControl?.jump) keyEdges.jumpPressed = keyEdges.tick
     if (!rawControl.forward && prevInput?.rawControl?.forward) keyEdges.forwardReleased = keyEdges.tick
+    if (rawControl.forward && !prevInput?.rawControl?.forward) {
+      if (keyEdges.tick - keyEdges.forwardPressed <= DOUBLE_TAP_TICKS) tapSprint = true
+      keyEdges.forwardPressed = keyEdges.tick
+    }
+    // BDS sprints on its own after a double-tapped forward: predict it (and report it with the sprinting flags, like
+    // the vanilla client does on its own double tap), or every such step ends in corrections. It lasts while forward
+    // is held and sprinting is possible (not flying, not sneaking or backing, no item in use, food above 6).
+    if (tapSprint && (!rawControl.forward || flying || !control.forward || control.back || control.sneak || usingItem || !mayTapSprint())) tapSprint = false
+    if (tapSprint && !control.sprint) control = { ...control, sprint: true }
     return {
       control,
       rawControl,
@@ -254,6 +271,13 @@ function inject (bot, { physicsEnabled }) {
       usingItem, // the move vector is clamped to ±0.1225 while using an item (eating, bow, …)
       ...statusInputs()
     }
+  }
+
+  /** sprinting needs food above 6 in survival / adventure (Bedrock like Java) */
+  function mayTapSprint () {
+    const mode = bot.game?.gameMode
+    if (mode === 'creative' || mode === 'spectator') return true
+    return typeof bot.food !== 'number' || bot.food > 6
   }
 
   /** server-driven movement inputs (effects, movement speed attribute) as they are now */

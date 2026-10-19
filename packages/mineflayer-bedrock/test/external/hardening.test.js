@@ -278,6 +278,42 @@ describe('hardening (U16a): wave-4 review fixes on BDS', function () {
     })
   })
 
+  describe('a double-tapped forward while walking (U15 open item)', () => {
+    it('BDS sprints after forward is pressed again within 6 ticks; the bot predicts it: no corrections, same position', async () => {
+      const { bot, server } = env
+      await bot.test.becomeSurvival()
+      await bot.look(Math.PI, 0, true)
+      let corrections = 0
+      const onCorrection = (p) => { if (p.prediction_type !== 'vehicle') corrections++ }
+      bot._client.on('correct_player_move_prediction', onCorrection)
+      let serverSprint = false
+      const onUpdate = (e) => { if (e === bot.entity && e.metadata?.flags?.sprinting) serverSprint = true }
+      bot.on('entityUpdate', onUpdate)
+      try {
+        const start = bot.entity.position.clone()
+        // a short step, then forward again (mineflayer-pathfinder's short moves): the server sprints until release
+        bot.setControlState('forward', true)
+        await bot.waitForTicks(3)
+        bot.setControlState('forward', false)
+        await bot.waitForTicks(1)
+        bot.setControlState('forward', true)
+        await bot.waitForTicks(30)
+        bot.setControlState('forward', false)
+        await sleep(800)
+        const travelled = bot.entity.position.distanceTo(start)
+        assert.ok(serverSprint, 'the server reported the player sprinting')
+        assert.ok(travelled > 30 * 0.2158 * 1.2, `travelled ${travelled.toFixed(2)} blocks: sprint speed`)
+        assert.strictEqual(corrections, 0, 'no corrections')
+        const serverFeet = await queryTargetPosition(server, bot.username)
+        assert.ok(serverFeet.distanceTo(bot.entity.position) < 0.1, `server ${serverFeet}, bot ${bot.entity.position}`)
+      } finally {
+        bot.clearControlStates()
+        bot._client.removeListener('correct_player_move_prediction', onCorrection)
+        bot.removeListener('entityUpdate', onUpdate)
+      }
+    })
+  })
+
   describe('#9 a trader that dies while trading', () => {
     it('windowClose; the emeralds left in the trade slot come back with the next trade window', async () => {
       const { bot, server } = env
