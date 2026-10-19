@@ -23,11 +23,13 @@ let args = process.argv.slice(2).filter((arg, i) => !(arg === '--' && i === 0))
 const mocha = path.join(pkgDir, 'node_modules', '.bin', process.platform === 'win32' ? 'mocha.cmd' : 'mocha')
 
 /**
- * Approximate seconds per e2e file (wave-4 gate run: tests + server start); unlisted files count DEFAULT_WEIGHT.
+ * Approximate seconds per e2e file (wave-4/5 runs: tests + server start); unlisted files count DEFAULT_WEIGHT.
  * Only the balance depends on these numbers.
  */
 const WEIGHTS = {
   'digEverything.test.js': 760,
+  'combatMatrix.test.js': 260,
+  'readmeQuickstart.test.js': 30,
   'physicsBlocks.test.js': 120,
   'physicsLoop.test.js': 75,
   'craftingTags.test.js': 50,
