@@ -122,7 +122,12 @@ describe('physics plugin (U5): Bedrock movement over player_auth_input', functio
     for (const f of ['up', 'sprint_down', 'sprinting', 'start_sprinting', 'vertical_collision']) assert.ok(first.input_data.includes(f), f)
     tick()
     assert.ok(!last().input_data.includes('start_sprinting'), 'edge flag sent once')
+    // Bedrock's sprint is sticky (FINAL-FIX-LIB): it only ends with forward released — for 7 ticks, a re-press
+    // within 6 ticks of the previous press would be a double tap
     bot.setControlState('sprint', false)
+    bot.setControlState('forward', false)
+    tick(7)
+    bot.setControlState('forward', true)
     tick(40)
     const xs = inputs().slice(-3).map((p) => p.position.x)
     close(xs[2] - xs[1], 0.21586, 1e-4)

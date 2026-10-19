@@ -181,6 +181,14 @@ function inject (bot) {
       eatingTask.finish()
     }
     bot.usingHeldItem = false
+    // the use ended: so does a raised shield's sneak (FINAL-FIX-LIB: it is not cleared with the controls any more)
+    if (shieldRaised) raiseShield(false)
+  })
+  // a death ends the use too (the respawned player does not block)
+  bot.on('death', () => {
+    if (!shieldRaised) return
+    raiseShield(false)
+    bot.usingHeldItem = false
   })
 
   // Java's set_cooldown has no Bedrock counterpart: item cooldowns are client side (the client announces them with
@@ -204,7 +212,11 @@ function inject (bot) {
 
   function raiseShield (on) {
     shieldRaised = on
-    if (typeof bot.setControlState === 'function' && !isStub(bot.setControlState)) bot.setControlState('sneak', on)
+    // FINAL-FIX-LIB: the shield's own sneak (physics holdSneak), so clearControlStates() / a sneak release — e.g.
+    // mineflayer-pathfinder's, under mineflayer-pvp — do not lower it; only deactivateItem() does, like on Java
+    const physics = bot._bedrock.physics
+    if (typeof physics?.holdSneak === 'function') physics.holdSneak(on)
+    else if (typeof bot.setControlState === 'function' && !isStub(bot.setControlState)) bot.setControlState('sneak', on)
     else bot._bedrock.input.hold('sneaking', on)
   }
 

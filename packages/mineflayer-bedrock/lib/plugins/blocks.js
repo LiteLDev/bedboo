@@ -182,11 +182,68 @@ function inject (bot) {
     // null block means chunk not loaded
     if (!block) return null
 
+    if (doorTypes.has(block.type)) doorShapes(block)
+
     if (extraInfos) {
       block.painting = paintingsByPos[block.position]
     }
 
     return block
+  }
+
+  // ---- doors (FINAL-FIX-LIB) ----------------------------------------------------------------------------
+  // Bedrock keeps a door's open state and facing on its LOWER half only: BDS never toggles the upper half's open_bit
+  // (measured on 1.26.51.1: after opening, the upper half still reports open_bit 0) and the hinge is read from the
+  // upper half — the vanilla client draws both halves from both. The per-state shapes of bedrock-data follow the
+  // half's own bits, so the upper half of an open door kept the closed leaf (head-height collision in the doorway,
+  // pathfinder digging / refusing open doors). blockAt() gives each half the shapes of the combined state; its
+  // stateId and getProperties() stay the server's (docs/differences/U16a.md#door-halves).
+  const doorTypes = new Set(bot.registry.blocksArray.filter((b) => /(^|_)door$/.test(b.name)).map((b) => b.id))
+  const DOOR_FACING = ['minecraft:cardinal_direction', 'direction', 'facing_direction']
+  const DOOR_STATES = ['open_bit', 'upper_block_bit', 'door_hinge_bit', ...DOOR_FACING]
+  const isUpperHalf = (props) => props.upper_block_bit === 1 || props.upper_block_bit === true
+  // 'stateId|other half's stateId' → the combined shapes, or null (the half's own shapes are right)
+  const doorShapeCache = new Map()
+
+  function doorShapes (block) {
+    const position = block.position
+    if (!position) return
+    const upper = isUpperHalf(block.getProperties())
+    const otherStateId = bot.world.getBlockStateId(position.offset(0, upper ? -1 : 1, 0))
+    if (otherStateId === undefined || otherStateId === null) return
+    const cacheKey = `${block.stateId}|${otherStateId}`
+    let shapes = doorShapeCache.get(cacheKey)
+    if (shapes === undefined) {
+      shapes = combinedDoorShapes(block, upper, otherStateId)
+      doorShapeCache.set(cacheKey, shapes)
+    }
+    if (shapes) block.shapes = shapes.map((shape) => shape.slice())
+  }
+
+  /** the shapes of `block` (a door half) combined with its other half's state, null when they are its own */
+  function combinedDoorShapes (block, upper, otherStateId) {
+    const other = Block.fromStateId(otherStateId, 0)
+    if (other.type !== block.type) return null
+    const props = block.getProperties()
+    const otherProps = other.getProperties()
+    if (isUpperHalf(otherProps) === upper) return null
+    const wanted = {}
+    for (const key of DOOR_STATES) if (key in props) wanted[key] = props[key]
+    if (upper) {
+      // open state and facing from the lower half
+      if ('open_bit' in otherProps) wanted.open_bit = otherProps.open_bit
+      for (const key of DOOR_FACING) if (key in otherProps) wanted[key] = otherProps[key]
+    } else if ('door_hinge_bit' in otherProps) {
+      wanted.door_hinge_bit = otherProps.door_hinge_bit // the hinge from the upper half
+    }
+    if (Object.keys(wanted).every((key) => wanted[key] === props[key])) return null
+    const def = bot.registry.blocks[block.type]
+    for (let stateId = def.minStateId; stateId <= def.maxStateId; stateId++) {
+      const candidate = Block.fromStateId(stateId, 0)
+      const p = candidate.getProperties()
+      if (Object.keys(wanted).every((key) => p[key] === wanted[key])) return candidate.shapes
+    }
+    return null
   }
 
   function updateBlockState (point, stateId) {

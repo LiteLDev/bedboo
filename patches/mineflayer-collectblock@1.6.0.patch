@@ -2,10 +2,27 @@ diff --git a/HISTORY.md b/HISTORY.md
 deleted file mode 100644
 index 1ec838b6b268220737e5a98b3832db546864411a..0000000000000000000000000000000000000000
 diff --git a/lib/CollectBlock.js b/lib/CollectBlock.js
-index 445df38741dfbc99c5ae048ac9d9577cbce6a013..5feeda9309c065c144d76db0f94ce2973abfd562 100644
+index 445df38741dfbc99c5ae048ac9d9577cbce6a013..8e81f2bf63de4c0cc1cad3b59052edb47d10d98a 100644
 --- a/lib/CollectBlock.js
 +++ b/lib/CollectBlock.js
-@@ -27,6 +27,14 @@ function collectAll(bot, options) {
+@@ -20,16 +20,36 @@ const events_1 = require("events");
+ const util_1 = require("util");
+ function collectAll(bot, options) {
+     return __awaiter(this, void 0, void 0, function* () {
++        // bedboo (mineflayer-bedrock) patch: cancelTask() ends the job after the step in progress, like with
++        // mineflayer-pathfinder 2.4.5, where its pathfinder.stop() made the next goto reject with PathStopped. The
++        // patched pathfinder's stop() is a no-op while idle (master #375) — during a dig or a pickup wait — so the job
++        // checks the cancel flag itself (and throws PathStopped, which collect() swallows)
++        const checkCancel = () => {
++            if (options.cancelled != null && options.cancelled())
++                throw (0, Util_1.error)('PathStopped', 'Path was stopped before it could be completed! Thus, the desired goal was not reached.');
++        };
+         while (!options.targets.empty) {
++            checkCancel();
+             yield (0, Inventory_1.emptyInventoryIfFull)(bot, options.chestLocations, options.itemFilter);
++            checkCancel();
+             const closest = options.targets.getClosest();
+             if (closest == null)
                  break;
              switch (closest.constructor.name) {
                  case 'Block': {
@@ -19,8 +36,47 @@ index 445df38741dfbc99c5ae048ac9d9577cbce6a013..5feeda9309c065c144d76db0f94ce297
 +                    }
                      const goal = new mineflayer_pathfinder_1.goals.GoalLookAtBlock(closest.position, bot.world);
                      yield bot.pathfinder.goto(goal);
++                    checkCancel();
                      yield mineBlock(bot, closest, options);
-@@ -78,7 +86,10 @@ function mineBlock(bot, block, options) {
++                    checkCancel();
+                     // TODO: options.ignoreNoPath
+                     break;
+                 }
+@@ -38,6 +58,7 @@ function collectAll(bot, options) {
+                     if (!closest.isValid)
+                         break;
+                     const tempEvents = new TemporarySubscriber_1.TemporarySubscriber(bot);
++                    let stopWaiting = null;
+                     const waitForPickup = new Promise(resolve => {
+                         tempEvents.subscribeTo('entityGone', (entity) => {
+                             if (entity === closest) {
+@@ -45,9 +66,23 @@ function collectAll(bot, options) {
+                                 resolve();
+                             }
+                         });
++                        // bedboo (mineflayer-bedrock) patch: a cancel also ends the wait for the pickup
++                        if (options.onCancel != null)
++                            stopWaiting = options.onCancel(() => {
++                                tempEvents.cleanup();
++                                resolve();
++                            });
+                     });
+-                    yield bot.pathfinder.goto(new mineflayer_pathfinder_1.goals.GoalFollow(closest, 0));
+-                    yield waitForPickup;
++                    try {
++                        yield bot.pathfinder.goto(new mineflayer_pathfinder_1.goals.GoalFollow(closest, 0));
++                        checkCancel();
++                        yield waitForPickup;
++                        checkCancel();
++                    }
++                    finally {
++                        if (stopWaiting != null)
++                            stopWaiting();
++                    }
+                     break;
+                 }
+                 default: {
+@@ -78,7 +113,10 @@ function mineBlock(bot, block, options) {
          }
          const tempEvents = new TemporarySubscriber_1.TemporarySubscriber(bot);
          tempEvents.subscribeTo('itemDrop', (entity) => {
@@ -32,7 +88,17 @@ index 445df38741dfbc99c5ae048ac9d9577cbce6a013..5feeda9309c065c144d76db0f94ce297
                  options.targets.appendTarget(entity);
              }
          });
-@@ -173,9 +184,11 @@ class CollectBlock {
+@@ -149,6 +187,9 @@ class CollectBlock {
+             return true;
+         };
+         this.bot = bot;
++        // bedboo (mineflayer-bedrock) patch: cancel state of the running job (see cancelTask)
++        this.cancelRequested = false;
++        this.cancelWaiters = new Set();
+         this.targets = new Targets_1.Targets(bot);
+         this.movements = new mineflayer_pathfinder_1.Movements(bot);
+     }
+@@ -173,15 +214,23 @@ class CollectBlock {
                  cb = options;
                  options = {};
              }
@@ -45,3 +111,37 @@ index 445df38741dfbc99c5ae048ac9d9577cbce6a013..5feeda9309c065c144d76db0f94ce297
              const optionsFull = {
                  append: (_a = options.append) !== null && _a !== void 0 ? _a : false,
                  ignoreNoPath: (_b = options.ignoreNoPath) !== null && _b !== void 0 ? _b : false,
+                 chestLocations: (_c = options.chestLocations) !== null && _c !== void 0 ? _c : this.chestLocations,
+                 itemFilter: (_d = options.itemFilter) !== null && _d !== void 0 ? _d : this.itemFilter,
+-                targets: this.targets
++                targets: this.targets,
++                // bedboo (mineflayer-bedrock) patch: see collectAll
++                cancelled: () => this.cancelRequested,
++                onCancel: (fn) => {
++                    this.cancelWaiters.add(fn);
++                    return () => this.cancelWaiters.delete(fn);
++                }
+             };
+             if (this.bot.pathfinder == null) {
+                 throw (0, Util_1.error)('UnresolvedDependency', 'The mineflayer-collectblock plugin relies on the mineflayer-pathfinder plugin to run!');
+@@ -196,6 +245,9 @@ class CollectBlock {
+             }
+             if (!optionsFull.append)
+                 yield this.cancelTask();
++            // bedboo (mineflayer-bedrock) patch: a new job (nothing running any more) starts uncancelled
++            if (!optionsFull.append || this.targets.empty)
++                this.cancelRequested = false;
+             if (Array.isArray(target)) {
+                 this.targets.appendTargets(target);
+             }
+@@ -242,6 +294,10 @@ class CollectBlock {
+                     cb();
+                 return yield Promise.resolve();
+             }
++            // bedboo (mineflayer-bedrock) patch: flag the running job (checked after each step) and end its pickup wait
++            this.cancelRequested = true;
++            for (const fn of [...this.cancelWaiters])
++                fn();
+             this.bot.pathfinder.stop();
+             if (cb != null) {
+                 // @ts-expect-error

@@ -108,6 +108,40 @@ function blockTargetOf (itemName) {
   return null
 }
 
+/**
+ * Replaceable blocks (Bedrock names): a block placed against one of them goes INTO it (the clicked position), not
+ * across the face — like Java's `replaceable` blocks.
+ */
+const REPLACEABLE_BLOCKS = new Set([
+  'air', 'water', 'flowing_water', 'lava', 'flowing_lava', 'short_grass', 'tall_grass', 'fern', 'large_fern',
+  'deadbush', 'seagrass', 'vine', 'snow_layer', 'fire', 'soul_fire', 'structure_void', 'glow_lichen', 'sculk_vein',
+  'hanging_roots', 'nether_sprouts', 'crimson_roots', 'warped_roots', 'short_dry_grass', 'tall_dry_grass',
+  'leaf_litter', 'bush', 'resin_clump'
+])
+const REPLACEABLE_PATTERNS = [/^light_block(_\d+)?$/]
+
+/** blocks that take one more of their own item into the same position (Bedrock names) */
+const MERGEABLE_BLOCKS = new Set(['sea_pickle', 'turtle_egg', 'snow_layer', 'pink_petals', 'wildflowers', 'leaf_litter'])
+const isMergeable = (name) => MERGEABLE_BLOCKS.has(name) || /(^|_)candle$/.test(name) ||
+  (/_slab$/.test(name) && !/_double_slab$/.test(name))
+
+/**
+ * Whether a click on `block` holding `itemName` may itself change the clicked block (FINAL-FIX-LIB): the block is
+ * replaceable (the placed block takes its place) or the held item merges into it (a slab onto the same half slab →
+ * double slab, one more candle / sea pickle / turtle egg / snow layer / petal, a candle onto a cake). The server's
+ * answer then carries another state for the clicked block although the click was not stale.
+ * @param {{name: string}|null} block the clicked block as the client sees it
+ * @param {string|null} itemName the held item
+ */
+function clickMayChange (block, itemName) {
+  const name = block?.name
+  if (!name) return false
+  if (REPLACEABLE_BLOCKS.has(name) || REPLACEABLE_PATTERNS.some((re) => re.test(name))) return true
+  if (!itemName) return false
+  if (itemName === name && isMergeable(name)) return true // one more of the item's own block (a slab → double slab, …)
+  return name === 'cake' && /(^|_)candle$/.test(itemName)
+}
+
 const FULL_CUBE = [[0, 0, 0, 1, 1, 1]]
 
 /** `local` (relative to the block) inside one of `shapes` */
@@ -172,7 +206,12 @@ function raycast (bot, { maxDistance = PICK_RANGE, liquids = 'none' } = {}) {
  * (`placer.waiting()`: whether acquire() would wait now).
  * The answer (the first update_block for the clicked block) also tells whether the click carried a stale block runtime
  * id (the server changed the block meanwhile, e.g. farmland turned into dirt under a placed block): BDS refuses such a
- * click; `stale(position)` reports it so the caller can click again with the fresh block.
+ * click; `stale(position)` reports it so the caller can click again with the fresh block. A click that changed the
+ * clicked block itself is never stale (FINAL-FIX-LIB): a replaceable block or one the held item merges into
+ * (clickMayChange), or a click that used up an item of the held stack.
+ * BDS also refuses a click whose held item is not the server's copy any more: a pickup, /give, … changed the held
+ * stack (new stack id) while the click was on its way. The server-side change arrives before the answer (an
+ * inventory_transaction of the held slot, the count grew); `staleHeld(position)` reports it (FINAL-FIX-LIB).
  * @param {object} bot
  */
 function createPlacer (bot) {
@@ -180,15 +219,26 @@ function createPlacer (bot) {
   let turn = Promise.resolve() // settles when the last click that took a turn may be followed by the next one
   let turnsTaken = 0 // acquire() calls not released yet (queued or holding the turn)
   let lastClick = null // the latest click's entry
-  const unanswered = new Map() // 'x,y,z' → { runtimeId, heldKey, ready, settleReady, readyDone, timer }
-  const answers = new Map() // 'x,y,z' → { stale, at }: the latest answered click per clicked block
+  // 'x,y,z' → { runtimeId, heldKey, held, mayChange, heldRaced, ready, settleReady, readyDone, timer }
+  const unanswered = new Map()
+  const answers = new Map() // 'x,y,z' → { stale, staleHeld, at }: the latest answered click per clicked block
 
   const keyOf = (p) => `${Math.floor(p.x)},${Math.floor(p.y)},${Math.floor(p.z)}`
+  const provider = () => {
+    const p = bot._bedrock?.heldNetworkItem
+    return typeof p === 'function' && !p.notImplemented ? p : null
+  }
   const heldKey = () => {
-    const provider = bot._bedrock?.heldNetworkItem
-    const item = typeof provider === 'function' && !provider.notImplemented ? provider() : null
+    const item = provider()?.()
     return item ? `${item.network_id}:${item.stack_id ?? ''}:${item.count}` : ''
   }
+  /** the server copy of the item in hotbar slot `slot` as the client has it now */
+  const slotItem = (slot) => {
+    const p = provider()
+    if (!p) return null
+    return typeof p.slot === 'function' ? p.slot(slot) : p()
+  }
+  const sameNetworkItem = (a, b) => (a?.network_id ?? 0) === (b?.network_id ?? 0)
 
   function settleReady (entry) {
     if (entry.readyDone) return
@@ -203,7 +253,20 @@ function createPlacer (bot) {
     if (runtimeId !== undefined) {
       const now = Date.now()
       for (const [k, a] of answers) if (now - a.at > STALE_MEMORY_MS) answers.delete(k)
-      answers.set(key, { stale: runtimeId !== entry.runtimeId, at: now })
+      // the held stack as the server sent it before its answer: fewer items = the click used one (placed something)
+      let consumed = false
+      let grew = false
+      if (entry.held && entry.held.network_id) {
+        const current = slotItem(entry.held.slot)
+        const count = sameNetworkItem(current, entry.held) ? (current?.count ?? 0) : null
+        consumed = count !== null ? count < entry.held.count : !current?.network_id
+        grew = count !== null && count > entry.held.count
+      }
+      answers.set(key, {
+        stale: runtimeId !== entry.runtimeId && !entry.mayChange && !consumed,
+        staleHeld: !consumed && (entry.heldRaced || grew),
+        at: now
+      })
     }
     settleReady(entry)
   }
@@ -213,6 +276,16 @@ function createPlacer (bot) {
     const key = keyOf(packet.position)
     const entry = unanswered.get(key)
     if (entry) finish(key, entry, packet.block_runtime_id)
+  })
+  // a server-driven change of the held slot (pickup, /give: inventory_transaction normal) while a click is unanswered
+  bot._client?.on?.('inventory_transaction', (packet) => {
+    const t = packet?.transaction
+    if (!t || t.transaction_type !== 'normal' || unanswered.size === 0) return
+    for (const action of t.actions ?? []) {
+      if (action.source_type !== 'container') continue
+      if (action.window_id !== 'inventory' && action.window_id !== 0) continue
+      for (const entry of unanswered.values()) if (entry.held && entry.held.slot === action.slot) entry.heldRaced = true
+    }
   })
   // the held item's new copy (inventory_content / inventory_slot come before the block answer): the next click may go
   const heldChanged = () => {
@@ -257,11 +330,26 @@ function createPlacer (bot) {
     return true
   }
 
-  function track (position, runtimeId) {
+  /**
+   * @param {object} data the click's transaction_data (clicked block runtime id, held item, hotbar slot, hand)
+   */
+  function track (position, data) {
     const key = keyOf(position)
     const previous = unanswered.get(key)
     if (previous) finish(key, previous)
-    const entry = { runtimeId, heldKey: heldKey(), settleReady: null, readyDone: false, timer: null }
+    const heldItem = data.held_item
+    const itemName = heldItem?.network_id ? bot.registry?.items?.[heldItem.network_id]?.name ?? null : null
+    const entry = {
+      runtimeId: data.block_runtime_id,
+      heldKey: heldKey(),
+      // main-hand clicks: the held stack the click carried (off-hand stacks are not tracked)
+      held: data.hand === 'off_hand' || !heldItem ? null : { slot: data.hotbar_slot, network_id: heldItem.network_id, count: heldItem.count ?? 0 },
+      mayChange: clickMayChange(bot.blockAt?.(position, false) ?? null, itemName),
+      heldRaced: false,
+      settleReady: null,
+      readyDone: false,
+      timer: null
+    }
     entry.ready = new Promise((resolve) => { entry.settleReady = resolve })
     entry.timer = setTimeout(() => finish(key, entry), ANSWER_TIMEOUT_MS)
     entry.timer.unref?.()
@@ -269,10 +357,19 @@ function createPlacer (bot) {
     lastClick = entry
   }
 
+  const answerOf = (position) => {
+    const a = answers.get(keyOf(position))
+    return a && Date.now() - a.at <= STALE_MEMORY_MS ? a : null
+  }
+
   /** whether the latest answered click on the block at `position` carried another block state than the server's */
   function stale (position) {
-    const a = answers.get(keyOf(position))
-    return !!a && a.stale && Date.now() - a.at <= STALE_MEMORY_MS
+    return !!answerOf(position)?.stale
+  }
+
+  /** whether the latest answered click on the block at `position` carried a held stack the server had changed */
+  function staleHeld (position) {
+    return !!answerOf(position)?.staleHeld
   }
 
   function send (name, params) {
@@ -305,7 +402,7 @@ function createPlacer (bot) {
     if (heldItem) transaction.transaction.transaction_data.held_item = heldItem
     if (lifecycle) send('player_action', start)
     send('inventory_transaction', transaction)
-    track(position, transaction.transaction.transaction_data.block_runtime_id)
+    track(position, transaction.transaction.transaction_data)
     if (lifecycle) {
       const timer = setTimeout(flushStop, STOP_DELAY_MS)
       timer.unref?.()
@@ -320,13 +417,14 @@ function createPlacer (bot) {
     for (const [key, entry] of [...unanswered]) finish(key, entry)
   }
 
-  return { click, acquire, waiting, stale, flushStop, reset, hasPendingStop: () => pendingStop !== null }
+  return { click, acquire, waiting, stale, staleHeld, flushStop, reset, hasPendingStop: () => pendingStop !== null }
 }
 
 module.exports = {
   INTERACTIVE_BLOCKS,
   INTERACTIVE_PATTERNS,
   isInteractive,
+  clickMayChange,
   isLiquid,
   isLiquidSource,
   blockTargetOf,

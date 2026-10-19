@@ -200,10 +200,13 @@ function createBot (options = {}) {
   bot._bedrock = createBedrockState(bot, options)
 
   let ended = false
+  // mineflayer emits 'end' asynchronously: client.end() only ends the socket, 'end' follows on its close. bedrock-protocol
+  // emits 'close' inside close() (so inside bot.end() / bot.quit()): the bot's 'end' is deferred the same way, so state
+  // set right after bot.quit() is seen by 'end' listeners (FINAL-FIX-LIB). The lifecycle stops at once (lifecycle.js).
   const emitEnd = (reason) => {
     if (ended) return
     ended = true
-    bot.emit('end', reason ?? 'socketClosed')
+    setImmediate(() => bot.emit('end', reason ?? 'socketClosed'))
   }
   // mineflayer's 'connect' = transport connected, before login. bedrock-protocol has no 'connect'
   // event; 'loggingIn' fires right after the RakNet connection + network settings, when the login

@@ -40,18 +40,20 @@ function serverSets (bot, client, pos, name, props) {
   })
 }
 
-/** bot.blockAt answers from `overlay` for the positions it was filled at (pathfinder reads blocks through it) */
+/**
+ * fill blocks (Bedrock states) into the bot's world, so bot.blockAt — which pathfinder reads blocks through — answers
+ * them like blocks the server sent (FINAL-FIX-LIB: through blocks.js, e.g. a door's upper half takes its shapes from
+ * the lower half)
+ */
 function withOverlay (bot) {
   const overlay = createWorld()
-  const changed = new Set()
-  const blockAt = bot.blockAt
-  bot.blockAt = (pos, extraInfos) => {
-    const key = `${Math.floor(pos.x)},${Math.floor(pos.y)},${Math.floor(pos.z)}`
-    return changed.has(key) ? overlay.getBlock(pos) : blockAt(pos, extraInfos)
-  }
   return (x1, y1, z1, x2, y2, z2, name, props) => {
     overlay.fill(x1, y1, z1, x2, y2, z2, name, props)
-    for (let x = x1; x <= x2; x++) for (let y = y1; y <= y2; y++) for (let z = z1; z <= z2; z++) changed.add(`${x},${y},${z}`)
+    for (let x = x1; x <= x2; x++) {
+      for (let y = y1; y <= y2; y++) {
+        for (let z = z1; z <= z2; z++) bot.world.setBlockStateId(new Vec3(x, y, z), overlay.getBlock(new Vec3(x, y, z)).stateId)
+      }
+    }
   }
 }
 
@@ -120,9 +122,10 @@ describe('mineflayer-pathfinder patch (Bedrock)', function () {
     assert.deepStrictEqual(closed.toBreak, [], 'nothing to break (the upper half opens with the door)')
     assert.deepStrictEqual(closed.toPlace.map(p => [p.x, p.y, p.z, !!p.useOne]), [[0, g, -1, true]])
     assert.ok(!north(Object.assign(new Movements(bot), { canOpenDoors: false, canDig: false })), 'closed + no digging + no opening: no way')
-    // open: walked through, no click (a click would close it)
+    // open: walked through, no click (a click would close it). BDS opens the lower half only: the upper half keeps
+    // open_bit 0 (measured on 1.26.51.1), its leaf follows the lower half (FINAL-FIX-LIB)
     fill(0, g, -1, 0, g, -1, 'wooden_door', { 'minecraft:cardinal_direction': 'west', upper_block_bit: 0, open_bit: 1, door_hinge_bit: 0 })
-    fill(0, g + 1, -1, 0, g + 1, -1, 'wooden_door', { 'minecraft:cardinal_direction': 'west', upper_block_bit: 1, open_bit: 1, door_hinge_bit: 0 })
+    fill(0, g + 1, -1, 0, g + 1, -1, 'wooden_door', { 'minecraft:cardinal_direction': 'west', upper_block_bit: 1, open_bit: 0, door_hinge_bit: 0 })
     const open = north(Object.assign(new Movements(bot), { canOpenDoors: true, canDig: false }))
     assert.ok(open && open.toPlace.length === 0 && open.toBreak.length === 0, 'walked through the open door')
     const openGate = new Movements(bot)
@@ -194,7 +197,8 @@ describe('mineflayer-pathfinder patch (Bedrock)', function () {
       return out[0]
     }
     const door = (open) => {
-      for (const upper of [0, 1]) fill(1, g + upper, 0, 1, g + upper, 0, 'wooden_door', { 'minecraft:cardinal_direction': 'west', upper_block_bit: upper, open_bit: open, door_hinge_bit: 0 })
+      // BDS: only the lower half carries the open state
+      for (const upper of [0, 1]) fill(1, g + upper, 0, 1, g + upper, 0, 'wooden_door', { 'minecraft:cardinal_direction': 'west', upper_block_bit: upper, open_bit: upper ? 0 : open, door_hinge_bit: 0 })
     }
     const moves = Object.assign(new Movements(bot), { canOpenDoors: true, canDig: false })
     // east into the door block (x 1): the closed 'west' leaf lies along x at the north edge (z 0..0.19) → walked past

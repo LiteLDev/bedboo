@@ -317,10 +317,14 @@ function createLifecycle (bot) {
     lifecycle.completeDimensionChange()
   })
 
-  bot.on('end', () => {
+  // the connection is gone: stop at once — the bot's 'end' follows asynchronously, like mineflayer's (loader.js)
+  const onEnded = () => {
     cancelDeferredSpawn()
-    lifecycle.setState('ended')
-  })
+    if (lifecycle.state !== 'ended') lifecycle.setState('ended')
+  }
+  client.on('close', onEnded)
+  client.on('end', onEnded)
+  bot.on('end', onEnded)
 
   return lifecycle
 }

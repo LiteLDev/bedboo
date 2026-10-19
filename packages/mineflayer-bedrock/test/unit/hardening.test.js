@@ -181,7 +181,7 @@ describe('wave-4 review fixes (U16a)', function () {
       assert.ok(!inputs().some((p) => flags(p).includes('sprinting')), 'sneaking: no sprint')
     })
 
-    it('an explicit setControlState(\'sprint\', false) ends it (stop_sprinting); no tap sprint while riding', async () => {
+    it('setControlState(\'sprint\', false) does not end it while forward is held (Bedrock: sticky, FINAL-FIX-LIB); no tap sprint while riding', async () => {
       const created = await spawned()
       const { bot, tick, inputs } = created
       bot.game.gameMode = 'survival'
@@ -192,10 +192,11 @@ describe('wave-4 review fixes (U16a)', function () {
       }
       assert.ok(flags(inputs().at(-1)).includes('sprinting'))
       bot.setControlState('sprint', false)
+      tick(4)
+      assert.ok(inputs().slice(-4).every((p) => flags(p).includes('sprinting') && !flags(p).includes('stop_sprinting')), 'still sprinting: BDS keeps the sprint speed while forward is held')
+      bot.setControlState('forward', false)
       tick(1)
-      assert.ok(flags(inputs().at(-1)).includes('stop_sprinting'), 'stop_sprinting')
-      tick(3)
-      assert.ok(!flags(inputs().at(-1)).includes('sprinting'), 'walking while forward is still held')
+      assert.ok(flags(inputs().at(-1)).includes('stop_sprinting'), 'forward released: stop_sprinting')
       bot.clearControlStates()
       tick(2)
       // riding: forward is the vehicle's, no tap sprint
