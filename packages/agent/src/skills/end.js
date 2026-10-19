@@ -316,6 +316,36 @@ async function toIslandTop (bot, { signal, guard } = {}) {
   return Math.hypot(bot.entity.position.x, bot.entity.position.z) <= 40 && openSky()
 }
 
+/**
+ * An AbortSignal for a phase in The End: aborts with `signal`, on the bot's death, or when it spawns in another
+ * dimension; `reason` says which. @returns {{ signal: AbortSignal, reason: string|null, done: () => void }}
+ */
+function endWatch (bot, signal) {
+  const controller = new AbortController()
+  const state = { reason: null }
+  const abort = (why) => {
+    if (state.reason) return
+    state.reason = why
+    controller.abort(new u.AbortedError(why))
+  }
+  const onParent = () => controller.abort(signal.reason)
+  const onDeath = () => abort(`the bot died in The End (at ${bot.entity?.position?.floored()})`)
+  const onSpawn = () => { if (bot.game.dimension !== 'the_end') abort(`the bot is no longer in The End (${bot.game.dimension})`) }
+  if (signal?.aborted) controller.abort(signal.reason)
+  else signal?.addEventListener('abort', onParent, { once: true })
+  bot.on('death', onDeath)
+  bot.on('spawn', onSpawn)
+  return {
+    signal: controller.signal,
+    get reason () { return state.reason },
+    done () {
+      signal?.removeEventListener('abort', onParent)
+      bot.removeListener('death', onDeath)
+      bot.removeListener('spawn', onSpawn)
+    }
+  }
+}
+
 async function endSkill (bot, args) {
   args = args ?? {}
   const { signal, endermen = 2 } = args
@@ -346,10 +376,14 @@ async function endSkill (bot, args) {
       if (bot.game.dimension !== 'the_end') throw new Error('not in The End')
       // no parkour over the void
       u.ensurePathfinder(bot, { fresh: true, allowParkour: false, maxDropDown: 3 })
-      const guard = combat.guardFor(bot, { radius: 8, retaliate: true, includeNeutral: false, signal })
+      // a death (a fall into the void) respawns the bot in the overworld: the phase ends there, with that reason —
+      // not minutes of hunting endermen in the overworld (E1 #2 without an Agent)
+      const watch = endWatch(bot, signal)
+      const guard = combat.guardFor(bot, { radius: 8, retaliate: true, includeNeutral: false, signal: watch.signal })
       // under the Agent: endermen that attack (looked at, or a hunt's target that comes back) are fought too
       const stopRetaliating = retaliate(bot, guard)
       try {
+        const signal = watch.signal
         const t0 = Date.now()
         result.onTop = await toIslandTop(bot, { signal, guard })
         result.timings.toIslandMs = Date.now() - t0
@@ -372,7 +406,11 @@ async function endSkill (bot, args) {
           result.killed.enderman += r.killed
           result.fights.push(...r.fights)
         }
+      } catch (err) {
+        if (watch.reason) throw new Error(watch.reason)
+        throw err
       } finally {
+        watch.done()
         stopRetaliating()
         result.guard = await guard.stop()
       }
@@ -409,5 +447,6 @@ module.exports = Object.assign(endSkill, {
   hasEye,
   onIsland,
   healUp,
+  endWatch,
   toIslandTop
 })

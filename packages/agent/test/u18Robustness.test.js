@@ -333,6 +333,28 @@ describe('U18 retaliation next to the Agent\'s safety (FINAL-FIX-AGENT-B)', () =
   })
 })
 
+describe('U18 end skill: a death ends the phase (FINAL-FIX-AGENT-B)', () => {
+  it('endWatch aborts on the death / a spawn in another dimension, with the reason', () => {
+    const end = require('../src/skills/end')
+    const bot = new EventEmitter()
+    bot.game = { dimension: 'the_end' }
+    bot.entity = { position: new Vec3(95, -41, -3) }
+    const w = end.endWatch(bot)
+    bot.emit('spawn') // still in the End: nothing
+    assert.ok(!w.signal.aborted)
+    bot.emit('death')
+    assert.ok(w.signal.aborted)
+    assert.match(w.reason, /died in The End/)
+    w.done()
+    assert.strictEqual(bot.listenerCount('death'), 0)
+    const w2 = end.endWatch(bot)
+    bot.game.dimension = 'overworld'
+    bot.emit('spawn')
+    assert.match(w2.reason, /no longer in The End \(overworld\)/)
+    w2.done()
+  })
+})
+
 describe('U18 E1 cheat-assisted setup helpers (FINAL-FIX-AGENT-B)', () => {
   it('parses Bedrock\'s locate answer', () => {
     assert.deepStrictEqual(e1.parseLocate(['The nearest stronghold is at block -878, (y?), 194 (389 blocks away)']), { x: -878, z: 194 })
