@@ -342,6 +342,8 @@ class Safety extends EventEmitter {
         maxChase: this.opts.maxChase,
         eat: true,
         bow: 'auto',
+        // another mob hitting the bot from up close while this one is out of reach: that one first
+        stop: () => this.betterTarget(target),
         log: this.log
       })
     } finally {
@@ -351,6 +353,18 @@ class Safety extends EventEmitter {
     if (['timeout', 'unreachable', 'escaped'].includes(r.outcome)) this.ignored.set(target.id, Date.now() + this.opts.ignoreMs)
     if (r.outcome === 'killed' && this.opts.pickupDrops) await this.collectDrops(target.position.clone()).catch(() => {})
     return r.outcome
+  }
+
+  /** an attacker that hit the bot in the last 2 s from within melee reach while `target` is out of it */
+  betterTarget (target) {
+    const combat = require('./skills/combat')
+    if (combat.hitboxDistance(this.bot, target) <= 3.5) return false
+    const now = Date.now()
+    for (const [e, until] of this.attackers) {
+      if (e === target || !this.bot.entities[e.id]) continue
+      if (until - 20000 > now - 2000 && combat.hitboxDistance(this.bot, e) <= 3) return true
+    }
+    return false
   }
 
   /**

@@ -81,6 +81,7 @@ async function collectBlocks (bot, { item = null, count = 1, blocks, maxDistance
   let dug = 0
   const tried = new Set()
   let failures = 0
+  let interruptions = 0
   const progressDone = () => item ? inventory.count(bot, item) - startCount >= count : dug >= count
   if (!biomes) {
     const hints = blocks.map((b) => data.NATURAL[b]?.biomes).filter(Boolean)
@@ -123,8 +124,9 @@ async function collectBlocks (bot, { item = null, count = 1, blocks, maxDistance
     } catch (err) {
       if (isAbort(err) || err.code === 'DIED' || err.code === 'MISSING') throw err
       const safety = agentOf(bot)?.safety
-      if (safety?.busy || safety?.recentlyBusy?.(3000)) {
+      if ((safety?.recentlyIntervened?.(3000) ?? (safety?.busy || safety?.recentlyBusy?.(3000))) && interruptions++ < 8) {
         // a fight / flight took the controls mid-way (pathfinder stopped, "Digging aborted"): try the same block again
+        // (a meal is no interruption: auto-eat does not stop the path)
         log(bot, `mining ${name} interrupted (${err.message}); resuming`)
         await safety.idle(signal)
         continue

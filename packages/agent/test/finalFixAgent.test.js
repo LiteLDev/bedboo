@@ -105,6 +105,19 @@ describe('final fix (agent): safety under U18 guards', () => {
     assert.strictEqual(safety.threat(false)?.target, creeper, 'a close creeper is fought anyway')
   })
 
+  it('a fight against a mob out of reach gives way to one hitting the bot from up close', () => {
+    const bot = fakeBot()
+    const safety = new Safety(bot)
+    const creeper = mob(8, 'creeper', new Vec3(6.5, 0, 0.5), { kind: 'Hostile mobs' })
+    const zombie = mob(9, 'zombie', new Vec3(1.5, 0, 0.5), { kind: 'Hostile mobs' })
+    bot.entities[8] = creeper
+    bot.entities[9] = zombie
+    assert.strictEqual(safety.betterTarget(creeper), false)
+    safety.attackers.set(zombie, Date.now() + 20000) // it just hit the bot
+    assert.strictEqual(safety.betterTarget(creeper), true)
+    assert.strictEqual(safety.betterTarget(zombie), false, 'the target itself in reach: no switch')
+  })
+
   it('a ghast fireball within reach is hit back', async () => {
     const bot = fakeBot()
     const safety = new Safety(bot)

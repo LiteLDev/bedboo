@@ -390,7 +390,8 @@ class Agent extends EventEmitter {
       const now = Date.now()
       // a fight / flight / meal, a sleep: not the task's fault
       // (a behaviour that has held the controls for over a minute is stuck itself: no excuse)
-      if ((this.safety?.busy && now - this.safety.busy.since < 60000) || bot.isSleeping) quietSince = now
+      // (a meal is no excuse either: mineflayer-auto-eat eats every minute or two while the task is stuck)
+      if ((this.safety?.busy && this.safety.busy.type !== 'eat' && now - this.safety.busy.since < 60000) || bot.isSleeping) quietSince = now
       samples.push({ t: now, p: bot.entity.position.clone() })
       while (samples.length && samples[0].t < now - stuckMs) samples.shift()
       if (now - started < stuckMs || now - Math.max(quietSince, this._lastWork) < stuckMs) return

@@ -60,6 +60,7 @@ const GEAR = [
   { item: 'iron_pickaxe', count: 2, ingots: 3 },
   { item: 'bucket', count: 2, ingots: 3 }
 ]
+const GEAR_ROUNDS = [['iron_chestplate', 'iron_leggings'], ['iron_helmet', 'iron_boots', 'shield', 'iron_pickaxe', 'bucket']]
 const ARMOR_SLOT = { iron_helmet: 5, iron_chestplate: 6, iron_leggings: 7, iron_boots: 8 }
 /** a bed takes 3 wool of one colour */
 const WOOL = ['white', 'light_gray', 'gray', 'black', 'brown', 'pink', 'orange', 'magenta', 'light_blue', 'yellow', 'lime', 'cyan', 'purple', 'blue', 'green', 'red'].map((c) => `${c}_wool`)
@@ -121,7 +122,8 @@ async function finalChain ({ log = () => {}, cfg = config(), netherOres = false,
     /** 3 wool of one colour from sheep (the plains around the spawn have flocks), then the bed is crafted */
     const bed = async (ms) => {
       if (Math.max(...WOOL.map((w) => inventory.count(bot, w))) < 3) {
-        await task('hunt', { mobs: ['sheep'], item: WOOL, count: 3, total: true, radius: 48, explore: true, timeout: ms }, { name: 'wool for a bed', timeout: ms + 10000, retries: 0 })
+        // (not too far: the next phases mine around the spawn)
+        await task('hunt', { mobs: ['sheep'], item: WOOL, count: 3, total: true, radius: 48, explore: true, maxDistance: 96, timeout: ms }, { name: 'wool for a bed', timeout: ms + 10000, retries: 0 })
           .catch(() => {})
       }
       return task('obtain', { item: 'bed', count: 1 }, { name: 'a bed', timeout: 2 * MINUTES, retries: 0 })
@@ -145,6 +147,8 @@ async function finalChain ({ log = () => {}, cfg = config(), netherOres = false,
         // meat for later (cooked in the gear phase): the animals in sight
         await task('food', { min: 0, items: 6, stock: true, radius: 48, explore: false, fishing: false, timeout: 55000 }, { name: 'camp: meat', timeout: 60000, retries: 0 })
           .then((r) => { out.food = r }, (err) => { out.food = err.message })
+        // back to the spawn: M2 and the gear phase mine the iron around it (the hunt may have led far away)
+        await task('navigate', { spawn: true, range: 24 }, { name: 'camp: back to the spawn', timeout: 2 * MINUTES, retries: 0 }).catch(() => {})
         return out
       }
     })
@@ -152,30 +156,35 @@ async function finalChain ({ log = () => {}, cfg = config(), netherOres = false,
     plan.push({
       name: 'gear',
       run: async () => {
-        await agent.maintain()
-        // all the iron in one trip and one (3-furnace) smelt: armor, shield, N1M3's second bucket and flint and steel
-        const missing = GEAR.filter((g) => inventory.count(bot, g.item) < (g.count ?? 1))
-        const ingots = missing.reduce((n, g) => n + g.ingots * ((g.count ?? 1) - inventory.count(bot, g.item)), 0) + 1
-        if (inventory.count(bot, 'iron_ingot') < ingots) {
-          // coal for the smelt first: without it the planner burns the carried logs, and the shield's planks and the
-          // sticks of a later pickaxe are then a climb to the surface away
-          const smelt = require('../../src/skills/smelt')
-          const raw = ingots - inventory.count(bot, 'iron_ingot')
-          const coal = smelt.fuelFor(smelt.split(raw, Math.min(3, Math.ceil(raw / 8))), 8) + 1
-          if (inventory.count(bot, 'coal') < coal) {
-            await task('obtain', { item: 'coal', count: coal }, { name: 'gear: coal', timeout: 2 * MINUTES, retries: 0 }).catch(() => {})
-          }
-          await task('obtain', { item: 'iron_ingot', count: ingots }, { name: `gear: ${ingots} iron ingots`, timeout: 9 * MINUTES, retries: 1 })
-        }
         const made = []
         const failed = {}
-        for (const g of missing) {
-          if (inventory.count(bot, g.item) >= (g.count ?? 1)) continue
-          // the armor is what this phase is for; the rest (shield, spares) is best effort
-          const r = task('obtain', { item: g.item, count: g.count ?? 1 }, { name: `gear: ${g.item}`, timeout: 3 * MINUTES, retries: 0 })
-          if (ARMOR_SLOT[g.item]) await r
-          else if (await r.then(() => false, (err) => { failed[g.item] = err.message; return true })) continue
-          made.push(g.item)
+        // two rounds: the chestplate and the leggings first (15 ingots — worn as soon as they exist: the iron is mined
+        // in caves, where mobs live day and night), then the rest; each round one trip and one (≤ 3-furnace) smelt
+        for (const round of GEAR_ROUNDS) {
+          await agent.maintain()
+          const missing = GEAR.filter((g) => round.includes(g.item) && inventory.count(bot, g.item) < (g.count ?? 1))
+          if (!missing.length) continue
+          const ingots = missing.reduce((n, g) => n + g.ingots * ((g.count ?? 1) - inventory.count(bot, g.item)), 0) + (round === GEAR_ROUNDS.at(-1) ? 1 : 0)
+          if (inventory.count(bot, 'iron_ingot') < ingots) {
+            // coal for the smelt first: without it the planner burns the carried logs, and the shield's planks and
+            // the sticks of a later pickaxe are then a climb to the surface away
+            const smelt = require('../../src/skills/smelt')
+            const raw = ingots - inventory.count(bot, 'iron_ingot')
+            const coal = smelt.fuelFor(smelt.split(raw, Math.min(3, Math.ceil(raw / 8))), 8) + 1
+            if (inventory.count(bot, 'coal') < coal) {
+              await task('obtain', { item: 'coal', count: coal }, { name: 'gear: coal', timeout: 2 * MINUTES, retries: 0 }).catch(() => {})
+            }
+            await task('obtain', { item: 'iron_ingot', count: ingots }, { name: `gear: ${ingots} iron ingots`, timeout: 7 * MINUTES, retries: 1 })
+          }
+          for (const g of missing) {
+            if (inventory.count(bot, g.item) >= (g.count ?? 1)) continue
+            // the armor is what this phase is for; the rest (shield, spares) is best effort
+            const r = task('obtain', { item: g.item, count: g.count ?? 1 }, { name: `gear: ${g.item}`, timeout: 3 * MINUTES, retries: 0 })
+            if (ARMOR_SLOT[g.item]) await r
+            else if (await r.then(() => false, (err) => { failed[g.item] = err.message; return true })) continue
+            made.push(g.item)
+          }
+          await require('../../src/skills/combat').equipForCombat(bot, { shield: true }).catch(() => {})
         }
         // sticks for a pickaxe made later (deep in a mine a log is a long climb away)
         if (inventory.count(bot, 'stick') < 4) await task('obtain', { item: 'stick', count: 4 }, { name: 'gear: sticks', timeout: 2 * MINUTES, retries: 0 }).catch(() => {})
