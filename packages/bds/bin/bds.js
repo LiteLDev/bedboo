@@ -14,6 +14,7 @@ const USAGE = `Usage: bds <command> [options]
        --gamerule <rule>=<v>     gamerule override (repeatable)
        --property <key>=<v>      server.properties override (repeatable)
        --snapshot <s>            start from a world snapshot
+       --transport <t>           raknet|nethernet (default raknet)
   cmd <n> <command…>             run a console command and print its output
   logs <n> [-f] [--tail <k>]     server log (follow with -f)
   down <n>…                      stop and remove instances (container, data dir, slot)
@@ -98,6 +99,7 @@ async function main () {
         difficulty: flags.difficulty,
         profile: flags.profile,
         snapshot: flags.snapshot,
+        transport: flags.transport,
         gamerules: gameruleValues(flags.gamerule),
         properties: keyValues(flags.property, 'property')
       })

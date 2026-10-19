@@ -30,6 +30,39 @@ const STARTUP_ERROR_WHITELIST = [
   /^$/
 ]
 
+/**
+ * transport=nethernet (U16b): BDS serves NetherNet HTTP signalling on TCP `server-port` and prints this line before
+ * `Server started.`. When the TCP port is still held (e.g. TIME_WAIT connections of the previous server on the
+ * slot), BDS silently runs without the listener and every client gets ECONNREFUSED.
+ */
+const NETHERNET_LISTEN_RE = /Accepting clients on /
+
+class TcpPortHeldError extends Error {
+  constructor (port, slot) {
+    super(`TCP port ${port} (slot ${slot}) is still held (NetherNet HTTP signalling needs it)`)
+    this.code = 'EBDSTCPHELD'
+    this.port = port
+    this.slot = slot
+  }
+}
+
+/** How long a slot whose TCP port was held is skipped (TIME_WAIT lasts 60 s on Linux). */
+const TCP_HELD_RETRY_MS = 65000
+
+/** Whether any TCP socket (listening, connected or TIME_WAIT) of this host uses local port `port`. */
+function tcpPortHeld (port) {
+  const hex = ':' + port.toString(16).toUpperCase().padStart(4, '0')
+  for (const file of ['/proc/net/tcp', '/proc/net/tcp6']) {
+    let text
+    try { text = fs.readFileSync(file, 'utf8') } catch { continue }
+    for (const line of text.split('\n').slice(1)) {
+      const local = line.trim().split(/\s+/)[1]
+      if (local && local.endsWith(hex)) return true
+    }
+  }
+  return false
+}
+
 class PortInUseError extends Error {
   constructor (port, slot) {
     super(`BDS port ${port} (slot ${slot}) is in use by a process outside the harness`)
@@ -299,6 +332,12 @@ class BdsServer extends EventEmitter {
   async _startContainer (opts = {}) {
     const timeout = opts.timeout ?? 120000
     const con = this.console
+    const nethernet = this.properties?.transport === 'nethernet'
+    if (nethernet) {
+      // restart / restore / snapshot reuse the port: let the previous run's TIME_WAIT connections clear first
+      const until = Date.now() + TCP_HELD_RETRY_MS + 10000
+      while (tcpPortHeld(this.port) && Date.now() < until) await new Promise((resolve) => setTimeout(resolve, 1000))
+    }
     const since = con.seq
     // unexpected ERROR lines up to "Server started." (the RakNet transport block that follows it is
     // harmless; later ERROR lines are command answers, not startup problems)
@@ -324,8 +363,12 @@ class BdsServer extends EventEmitter {
       const { line } = await con.waitFor((msg) => READY_RE.test(msg) || PORT_IN_USE_RE.test(msg), { since, timeout })
       const port = PORT_IN_USE_RE.exec(line.message)
       if (port) throw new PortInUseError(Number(port[1]), this.slot)
+      // NetherNet: the HTTP signalling listener is logged before "Server started." — or silently missing
+      if (nethernet && !con.linesSince(since).some((l) => NETHERNET_LISTEN_RE.test(l.message))) {
+        throw new TcpPortHeldError(this.port, this.slot)
+      }
     } catch (err) {
-      if (err instanceof PortInUseError) throw err
+      if (err instanceof PortInUseError || err instanceof TcpPortHeldError) throw err
       const state = await docker.inspect(this.container).catch(() => null)
       throw new Error(`BDS ${this.container} did not start (${state ? `container ${state.State.Status}, exit ${state.State.ExitCode}` : 'container gone'}): ${err.message.split('\n')[0]}\n${con.tail(40).join('\n')}`)
     } finally {
@@ -435,6 +478,8 @@ async function downServer (name) {
  * @param {'peaceful'|'easy'|'normal'|'hard'} [opts.difficulty] default peaceful
  * @param {string} [opts.levelName] default `bedboo`
  * @param {Record<string, string|number|boolean>} [opts.properties] server.properties overrides
+ * @param {'raknet'|'nethernet'} [opts.transport] server transport (default raknet; `nethernet`: BDS's default
+ *   transport, joined with `createBot({ transport: 'nethernet' })` over HTTP signalling on the server port)
  * @param {'deterministic'|'none'} [opts.profile] gamerule profile (default deterministic)
  * @param {Record<string, boolean|number>} [opts.gamerules] gamerule overrides on top of the profile
  * @param {boolean} [opts.persistent] keep running after this process exits (`bds up`)
@@ -484,13 +529,31 @@ async function startServer (opts = {}) {
   }
   const exclude = new Set()
   const retried = new Set() // slots retried once their port was free again
+  // NetherNet: slots whose TCP port was held → when to try them again (TIME_WAIT clears by itself)
+  const tcpHeld = new Map()
+  const deadline = Date.now() + (opts.slotTimeout ?? config.limits().slotTimeout)
   for (let attempt = 0; ; attempt++) {
-    const slot = await slots.acquire({ container, persistent: !!opts.persistent, timeout: opts.slotTimeout, exclude, log, onWait })
+    for (const [s, at] of tcpHeld) if (at <= Date.now()) tcpHeld.delete(s)
+    const nextRetry = tcpHeld.size ? Math.min(...tcpHeld.values()) : Infinity
+    // while slots are skipped for a held TCP port, queue only until the first of them may be retried
+    const timeout = Math.max(1000, Math.min(deadline, nextRetry) - Date.now())
+    let slot
+    try {
+      slot = await slots.acquire({ container, persistent: !!opts.persistent, timeout, exclude: new Set([...exclude, ...tcpHeld.keys()]), log, onWait })
+    } catch (err) {
+      if (tcpHeld.size && Date.now() < deadline && /^No BDS slot/.test(err.message)) continue
+      throw err
+    }
     let server
     try {
       server = await launch(container, slot, identity, opts, snap)
     } catch (err) {
       slot.release()
+      if (err instanceof TcpPortHeldError && Date.now() < deadline) {
+        log(`[bedboo] ${err.message}; trying another slot`)
+        tcpHeld.set(slot.slot, Date.now() + TCP_HELD_RETRY_MS)
+        continue
+      }
       if (err instanceof PortInUseError && attempt < config.limits().maxServers * 2) {
         // a process that died after the last reap may have left its BDS on the port: reap (here or in another
         // process) and try the slot again (once) if the port is free now; otherwise it is used outside the harness
@@ -548,6 +611,7 @@ function validateName (name) {
 
 async function launch (container, slot, identity, opts, snap) {
   const ports = slot.ports
+  if (opts.transport === 'nethernet' && tcpPortHeld(ports.v4)) throw new TcpPortHeldError(ports.v4, slot.slot)
   const propOpts = {
     ports,
     serverName: container,
@@ -556,6 +620,7 @@ async function launch (container, slot, identity, opts, snap) {
     world: opts.world ?? (snap?.levelType === 'DEFAULT' ? 'default' : undefined),
     seed: opts.seed,
     levelName: opts.levelName,
+    transport: opts.transport,
     properties: opts.properties
   }
   const inst = instance.createInstance(container, propOpts, { snapshotWorld: snap?.world })
@@ -625,6 +690,9 @@ async function applyGamerules (server, rules) {
 module.exports = {
   BdsServer,
   PortInUseError,
+  TcpPortHeldError,
+  tcpPortHeld,
+  NETHERNET_LISTEN_RE,
   startServer,
   externalServer,
   attachServer,

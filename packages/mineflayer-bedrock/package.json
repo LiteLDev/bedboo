@@ -1,10 +1,14 @@
 {
   "name": "mineflayer-bedrock",
   "version": "0.0.0",
-  "description": "mineflayer for Minecraft: Bedrock Edition — the same API, connecting to Bedrock Dedicated Server",
+  "description": "mineflayer for Minecraft: Bedrock Edition — mineflayer 4.39.0's API (createBot, bot.*, events, plugins, typings) for Bedrock Dedicated Server 1.26.51",
   "license": "MIT",
   "main": "index.js",
   "types": "index.d.ts",
+  "homepage": "https://github.com/LiteLDev/bedboo#readme",
+  "bugs": {
+    "url": "https://github.com/LiteLDev/bedboo/issues"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/LiteLDev/bedboo.git",
@@ -13,9 +17,15 @@
   "keywords": [
     "minecraft",
     "bedrock",
-    "bot",
+    "bedrock-edition",
+    "bds",
+    "bedrock-dedicated-server",
     "mineflayer",
-    "bds"
+    "bot",
+    "mcpe",
+    "raknet",
+    "nethernet",
+    "prismarine"
   ],
   "engines": {
     "node": ">=24"
@@ -24,7 +34,10 @@
     "index.js",
     "index.d.ts",
     "lib",
-    "types"
+    "types",
+    "examples",
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "test": "mocha",

@@ -10,6 +10,8 @@
  *   (gamemode, difficulty, world, seed, levelName) < `properties` overrides < {@link ENFORCED} + ports.
  * Overriding an enforced key with a different value throws: these keep parallel host-network
  * servers isolated (no LAN discovery on 19132/19133), RakNet-reachable and offline.
+ * The one exception is `transport`, chosen with the `transport` option (U16b): `'nethernet'` runs BDS on
+ * its default NetherNet transport (clients use HTTP signalling on the server port, no LAN discovery).
  */
 
 /** Non-overridable keys (plus `server-port` / `server-portv6`, which come from the slot). */
@@ -45,6 +47,8 @@ const PORT_KEYS = ['server-port', 'server-portv6']
 const GAMEMODES = ['survival', 'creative', 'adventure']
 const DIFFICULTIES = ['peaceful', 'easy', 'normal', 'hard']
 const LEVEL_TYPES = { flat: 'FLAT', default: 'DEFAULT', seeded: 'DEFAULT', legacy: 'LEGACY' }
+/** `transport` option values (server.properties `transport`); RakNet unless a suite opts in to NetherNet. */
+const TRANSPORTS = ['raknet', 'nethernet']
 
 /** @returns {Array<{ key?: string, value?: string, raw: string }>} lines of a properties file */
 function parse (text) {
@@ -82,11 +86,15 @@ function stringify (key, value) {
  * @param {string|number} [opts.seed]
  * @param {string} [opts.levelName]
  * @param {string} [opts.serverName]
+ * @param {'raknet'|'nethernet'} [opts.transport] server transport (default raknet)
  * @param {Record<string, string|number|boolean>} [opts.properties] raw overrides
  * @returns {Record<string,string>}
  */
 function resolve (opts) {
   const values = { ...DEFAULTS }
+  const transport = opts.transport ?? 'raknet'
+  if (!TRANSPORTS.includes(transport)) throw new Error(`Invalid transport ${transport} (expected ${TRANSPORTS.join('|')})`)
+  const enforced = { ...ENFORCED, transport }
   if (opts.serverName) values['server-name'] = opts.serverName
   if (opts.gamemode !== undefined) {
     if (!GAMEMODES.includes(opts.gamemode)) throw new Error(`Invalid gamemode ${opts.gamemode} (expected ${GAMEMODES.join('|')})`)
@@ -106,12 +114,12 @@ function resolve (opts) {
     const value = stringify(key, raw)
     if (value === undefined) continue
     if (PORT_KEYS.includes(key)) throw new Error(`server.properties "${key}" is assigned from the slot and cannot be overridden`)
-    if (key in ENFORCED && ENFORCED[key] !== value) {
-      throw new Error(`server.properties "${key}" is enforced by the harness (${ENFORCED[key]}), cannot set ${value}`)
+    if (key in enforced && enforced[key] !== value) {
+      throw new Error(`server.properties "${key}" is enforced by the harness (${enforced[key]}), cannot set ${value}`)
     }
     values[key] = value
   }
-  Object.assign(values, ENFORCED)
+  Object.assign(values, enforced)
   if (!opts.ports) throw new Error('ports are required')
   values['server-port'] = String(opts.ports.v4)
   values['server-portv6'] = String(opts.ports.v6)
@@ -144,4 +152,4 @@ function render (template, values) {
   return out.join('\n') + '\n'
 }
 
-module.exports = { ENFORCED, DEFAULTS, PORT_KEYS, GAMEMODES, DIFFICULTIES, LEVEL_TYPES, parse, toObject, resolve, render }
+module.exports = { ENFORCED, DEFAULTS, PORT_KEYS, GAMEMODES, DIFFICULTIES, LEVEL_TYPES, TRANSPORTS, parse, toObject, resolve, render }

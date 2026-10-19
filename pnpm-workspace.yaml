@@ -29,10 +29,19 @@ overrides:
   mineflayer-tool: 1.2.0
   mineflayer-armor-manager: 2.0.1
   mineflayer-auto-eat: 5.0.3
+  nethernet: 1.1.2
 
 # bedrock-protocol 3.60.1 depends on `prismarine-xbox-services` via a pinned GitHub commit
 # (github:PrismarineJS/prismarine-xbox-services#052a9676...); it is not published to npm.
 blockExoticSubdeps: false
+
+# nethernet 1.1.2 + the HTTP signalling backport (patches/nethernet@1.1.2.patch, PrismarineJS/node-nethernet#32,
+# merged but unreleased) verifies the server's SDP identity with jsonwebtoken, which the released package does not
+# depend on yet (upstream main adds it). Owner: U16b.
+packageExtensions:
+  nethernet@1.1.2:
+    dependencies:
+      jsonwebtoken: ^9.0.3
 
 # Dependency lifecycle scripts. raknet-native's install script would attempt a cmake build
 # (no C++ toolchain on the dev host); the patch makes it load its bundled prebuild instead.
@@ -41,6 +50,7 @@ allowBuilds:
 
 patchedDependencies:
   bedrock-protocol@3.60.1: patches/bedrock-protocol@3.60.1.patch
+  nethernet@1.1.2: patches/nethernet@1.1.2.patch
   prismarine-block@1.23.0: patches/prismarine-block@1.23.0.patch
   prismarine-chunk@1.41.0: patches/prismarine-chunk@1.41.0.patch
   prismarine-entity@2.6.0: patches/prismarine-entity@2.6.0.patch

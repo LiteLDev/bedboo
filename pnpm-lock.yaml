@@ -184,9 +184,13 @@ overrides:
   mineflayer-tool: 1.2.0
   mineflayer-armor-manager: 2.0.1
   mineflayer-auto-eat: 5.0.3
+  nethernet: 1.1.2
+
+packageExtensionsChecksum: sha256-iI1IoHYWvuJSK67BH9RIVizB3pzhP306C2a79Ve8Y9o=
 
 patchedDependencies:
-  bedrock-protocol@3.60.1: 89b59c8f1237d4708af0b225d8ed737956cc6b426a5ef141b9894695922f70e1
+  bedrock-protocol@3.60.1: 210a086d792ac39095e42352e11367547ed78674a220883a414d0497029ac922
+  nethernet@1.1.2: 52b72c4d012668748e6703b9bd90d12badb4c8334d7b40e4f836a0e52473f0b0
   prismarine-block@1.23.0: 5edfb19e7b0840f9838255865486627372ea1078d53100580d0e087607805899
   prismarine-chunk@1.41.0: 7efa8f2d8cb59a64092b890f446ccec9bde43145b4ecb87cf751479f1c330c0d
   prismarine-entity@2.6.0: 4dda3a4e7e9f7e51f0c16c4eb1771c34b634e594a32cb0deee199b5232614474
@@ -204,6 +208,9 @@ importers:
       '@types/node':
         specifier: 24.19.2
         version: 24.19.2
+      mineflayer-bedrock:
+        specifier: workspace:*
+        version: link:packages/mineflayer-bedrock
       mocha:
         specifier: 12.0.3
         version: 12.0.3
@@ -274,7 +281,7 @@ importers:
         version: link:../bedrock-data
       bedrock-protocol:
         specifier: 3.60.1
-        version: 3.60.1(patch_hash=89b59c8f1237d4708af0b225d8ed737956cc6b426a5ef141b9894695922f70e1)(supports-color@8.1.1)
+        version: 3.60.1(patch_hash=210a086d792ac39095e42352e11367547ed78674a220883a414d0497029ac922)(supports-color@8.1.1)
       minecraft-data:
         specifier: 3.117.0
         version: 3.117.0
@@ -2820,7 +2827,7 @@ snapshots:
 
   base64-js@1.5.1: {}
 
-  bedrock-protocol@3.60.1(patch_hash=89b59c8f1237d4708af0b225d8ed737956cc6b426a5ef141b9894695922f70e1)(supports-color@8.1.1):
+  bedrock-protocol@3.60.1(patch_hash=210a086d792ac39095e42352e11367547ed78674a220883a414d0497029ac922)(supports-color@8.1.1):
     dependencies:
       debug: 4.4.3(supports-color@8.1.1)
       json-bigint: 1.0.0
@@ -2828,7 +2835,7 @@ snapshots:
       jsp-raknet: 2.2.0(supports-color@8.1.1)
       minecraft-data: 3.117.0
       minecraft-folder-path: 1.2.0
-      nethernet: 1.1.2(supports-color@8.1.1)
+      nethernet: 1.1.2(patch_hash=52b72c4d012668748e6703b9bd90d12badb4c8334d7b40e4f836a0e52473f0b0)(supports-color@8.1.1)
       prismarine-auth: 3.1.1(supports-color@8.1.1)
       prismarine-nbt: 2.8.0
       prismarine-realms: 1.6.0(supports-color@8.1.1)
@@ -4055,8 +4062,9 @@ snapshots:
       railroad-diagrams: 1.0.0
       randexp: 0.4.6
 
-  nethernet@1.1.2(supports-color@8.1.1):
+  nethernet@1.1.2(patch_hash=52b72c4d012668748e6703b9bd90d12badb4c8334d7b40e4f836a0e52473f0b0)(supports-color@8.1.1):
     dependencies:
+      jsonwebtoken: 9.0.3
       protodef: 1.19.0
       werift: 0.24.4(supports-color@8.1.1)
     transitivePeerDependencies:

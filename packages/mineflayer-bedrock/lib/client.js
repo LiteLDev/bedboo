@@ -1,4 +1,4 @@
-// owner: U4 (core runtime)
+// owner: U4 (core runtime) → U16b (wave 5: transport options)
 'use strict'
 const { VERSION } = require('./bedrock/constants')
 
@@ -16,6 +16,18 @@ const { VERSION } = require('./bedrock/constants')
  * - `host: '127.0.0.1'`, `port: 19132`
  * - `conLog: null`               bedrock-protocol logs connection events to the console by default;
  *                                mineflayer prints nothing (pass `conLog: console.log` to get them)
+ *
+ * Transports (U16b):
+ * - `transport: 'raknet'` (default) — BDS must run with `transport=raknet` (BDS 1.26.51 still ships it;
+ *   Mojang announced its removal, possibly in 26.60).
+ * - `transport: 'nethernet'` — BDS's default transport (WebRTC data channels). Signalling defaults to
+ *   **HTTP on the server port** (`POST http://host:port/v1/join/<id>`, works with enable-lan-visibility=false;
+ *   PrismarineJS/bedrock-protocol#831 + node-nethernet#32, backported as pnpm patches). Options under
+ *   `nethernet`: `signalling` ('http' default, 'lan' = UDP 7551 discovery, 'services' = Xbox signalling),
+ *   `url` (signalling origin, default `http://host:port`), `serverKey` ('sha256:<hex>' pin of the server's
+ *   identity key), `onServerKey(fingerprint, url) → boolean` (approve an unpinned key), `networkId`,
+ *   `webrtcBackend`, `signallingConnectTimeout`. Without `serverKey`/`onServerKey` an unpinned plain-HTTP key
+ *   is accepted (the server is no more authenticated than over RakNet); pin it to reject anything else.
  *
  * Authentication follows mineflayer's options:
  * - `auth: 'offline'` (default) — no Xbox Live; `username` is the player name
@@ -36,6 +48,9 @@ const DEFAULTS = {
   conLog: null
 }
 
+const TRANSPORTS = ['raknet', 'nethernet']
+const SIGNALLING = ['http', 'lan', 'services']
+
 /** mineflayer-only options that must not reach bedrock-protocol (they mean something else there or nothing). */
 const MINEFLAYER_ONLY = new Set(['client', 'plugins', 'auth', 'viewDistance', 'brand', 'respawn', 'chat', 'physicsEnabled', 'maxCatchupTicks'])
 
@@ -48,6 +63,31 @@ function offlineFromAuth (auth) {
   if (auth === 'microsoft') return false
   if (auth === 'mojang') throw new Error("auth 'mojang' does not exist on Bedrock: use 'microsoft' (Xbox Live) or 'offline'")
   throw new Error(`unsupported auth '${typeof auth === 'function' ? 'function' : auth}': use 'microsoft' or 'offline'`)
+}
+
+/**
+ * bedrock-protocol `nethernet` options for `transport: 'nethernet'` (HTTP signalling unless told otherwise).
+ * @param {object} clientOptions resolved client options (mutated: `skipPing` for LAN discovery)
+ * @param {object} options the caller's options
+ */
+function nethernetOptions (clientOptions, options) {
+  const given = options.nethernet ?? {}
+  if (typeof given !== 'object') throw new TypeError('nethernet options must be an object')
+  const nethernet = { signalling: 'http' }
+  // like the top-level options: an explicit undefined / null keeps the default
+  for (const [key, value] of Object.entries(given)) if (value !== undefined && value !== null) nethernet[key] = value
+  if (!SIGNALLING.includes(nethernet.signalling)) {
+    throw new Error(`unsupported nethernet.signalling '${nethernet.signalling}' (${SIGNALLING.join(', ')})`)
+  }
+  if (nethernet.signalling === 'http' && nethernet.serverKey === undefined && nethernet.onServerKey === undefined) {
+    // Plain-HTTP signalling cannot authenticate the server by itself (bedrock-protocol#831 rejects an unpinned key
+    // unless the application approves it). Accept it, as RakNet does (its handshake key is not pinned either);
+    // `serverKey` pins it, `onServerKey` decides.
+    nethernet.onServerKey = () => true
+  }
+  // LAN signalling needs the server's network id: discover it (UDP 7551) unless one was given.
+  if (nethernet.signalling === 'lan' && nethernet.networkId == null && options.skipPing === undefined) clientOptions.skipPing = false
+  return nethernet
 }
 
 /**
@@ -65,7 +105,11 @@ function createClient (options) {
   clientOptions.offline = options.offline ?? offlineFromAuth(options.auth)
   clientOptions.version = options.version || VERSION
   if (typeof clientOptions.port === 'string') clientOptions.port = parseInt(clientOptions.port, 10)
+  if (!TRANSPORTS.includes(clientOptions.transport)) {
+    throw new Error(`unsupported transport '${clientOptions.transport}': use 'raknet' (default) or 'nethernet'`)
+  }
+  if (clientOptions.transport === 'nethernet') clientOptions.nethernet = nethernetOptions(clientOptions, options)
   return bedrock.createClient(clientOptions)
 }
 
-module.exports = { createClient, offlineFromAuth, DEFAULTS }
+module.exports = { createClient, offlineFromAuth, DEFAULTS, TRANSPORTS }

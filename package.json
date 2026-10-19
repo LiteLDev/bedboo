@@ -24,6 +24,7 @@
   "devDependencies": {
     "@bedboo/bds": "workspace:*",
     "@types/node": "24.19.2",
+    "mineflayer-bedrock": "workspace:*",
     "mocha": "12.0.3",
     "standard": "17.1.2",
     "typescript": "7.0.2"
