@@ -1,0 +1,35 @@
+diff --git a/dist/index.js b/dist/index.js
+index e26299fe3ccc356ba92d2dc4106147fd25280012..a40e2557b8dc32f8070c7b098f26a5e09433e859 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -14,10 +14,20 @@ const initializeBot = (bot) => {
+     if (!bot) {
+         throw new Error("Bot object is missing, provide mineflayer bot as first argument");
+     }
++    // bedboo (mineflayer-bedrock) patch, U15: one equip at a time. Equipping moves the item through the cursor with
++    // window clicks; picking up several pieces at once (or during equipAll) started overlapping equips, whose clicks
++    // interleave and swap the pieces around (on Bedrock every click waits for the server's item stack response, so
++    // they always overlap).
++    let equipQueue = Promise.resolve();
++    const enqueue = (itemType) => {
++        const next = equipQueue.catch(() => { }).then(() => (0, equipItem_1.equipItem)(bot, itemType));
++        equipQueue = next;
++        return next;
++    };
+     bot.armorManager = {
+         equipAll: () => __awaiter(void 0, void 0, void 0, function* () {
+             for (const item of bot.inventory.items()) {
+-                yield (0, equipItem_1.equipItem)(bot, item.type);
++                yield enqueue(item.type);
+             }
+         }),
+     };
+@@ -28,7 +38,7 @@ const initializeBot = (bot) => {
+         const item = collected.getDroppedItem();
+         if (item != null && (0, isArmor_1.isArmor)(item)) {
+             // Little delay to receive inventory
+-            setTimeout(() => (0, equipItem_1.equipItem)(bot, item.type), 100);
++            setTimeout(() => enqueue(item.type).catch(() => { }), 100);
+         }
+     });
+ };

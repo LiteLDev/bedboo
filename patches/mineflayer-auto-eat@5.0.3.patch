@@ -1,0 +1,52 @@
+diff --git a/dist/new.js b/dist/new.js
+index f256b9a440bd95414b26c7595c52d711ffebde02..a0687cf0919d614a54ac4638e25da3129d42264e 100644
+--- a/dist/new.js
++++ b/dist/new.js
+@@ -109,28 +109,41 @@ export class EatUtil extends EventEmitter {
+      */
+     buildEatingListener(relevantItem, timeout) {
+         return new Promise((res, rej) => {
++            // bedboo (mineflayer-bedrock) patch, U15: Bedrock has no entity_status packet; BDS reports a finished
++            // use (eat / drink) to the eater with completed_using_item (what mineflayer-bedrock's bot.consume waits for)
++            const cleanup = () => {
++                this.bot._client.off('entity_status', eatingListener);
++                this.bot._client.off('completed_using_item', completedListener);
++                this.bot.inventory.off('updateSlot', itemListener);
++            };
+             const eatingListener = (packet) => {
+                 if (packet.entityId === this.bot.entity.id && packet.entityStatus === 9) {
+-                    this.bot._client.off('entity_status', eatingListener);
+-                    this.bot.inventory.off('updateSlot', itemListener);
++                    cleanup();
+                     res();
+                 }
+             };
++            const completedListener = (packet) => {
++                // only a finished meal / drink (not an armor equip, a throw, a bucket, …)
++                if (packet && packet.use_method !== undefined && packet.use_method !== 'eat' && packet.use_method !== 'consume')
++                    return;
++                cleanup();
++                res();
++            };
+             const itemListener = (slot, oldItem, newItem) => {
+                 if (oldItem?.slot === relevantItem.slot && newItem?.type !== relevantItem.type) {
+-                    this.bot._client.off('entity_status', eatingListener);
+-                    this.bot.inventory.off('updateSlot', itemListener);
++                    cleanup();
+                     rej(new Error(`Item switched early to: ${newItem?.name}!\nItem: ${newItem}`));
+                 }
+             };
+             this.bot._client.on('entity_status', eatingListener);
++            this.bot._client.on('completed_using_item', completedListener);
+             this.bot.inventory.on('updateSlot', itemListener);
+             this._rejectionBinding = (error) => {
+-                this.bot._client.off('entity_status', eatingListener);
+-                this.bot.inventory.off('updateSlot', itemListener);
++                cleanup();
+                 rej(error);
+             };
+             setTimeout(() => {
++                cleanup(); // bedboo: a late completion must not end the next meal
+                 rej(new Error(`Eating timed out with a time of ${timeout} milliseconds!`));
+             }, timeout);
+         });

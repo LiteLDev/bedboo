@@ -50,6 +50,12 @@ allowBuilds:
 
 patchedDependencies:
   bedrock-protocol@3.60.1: patches/bedrock-protocol@3.60.1.patch
+  mineflayer-armor-manager@2.0.1: patches/mineflayer-armor-manager@2.0.1.patch
+  mineflayer-auto-eat@5.0.3: patches/mineflayer-auto-eat@5.0.3.patch
+  mineflayer-collectblock@1.6.0: patches/mineflayer-collectblock@1.6.0.patch
+  mineflayer-pathfinder@2.4.5: patches/mineflayer-pathfinder@2.4.5.patch
+  mineflayer-pvp@1.3.2: patches/mineflayer-pvp@1.3.2.patch
+  mineflayer-tool@1.2.0: patches/mineflayer-tool@1.2.0.patch
   nethernet@1.1.2: patches/nethernet@1.1.2.patch
   prismarine-block@1.23.0: patches/prismarine-block@1.23.0.patch
   prismarine-chunk@1.41.0: patches/prismarine-chunk@1.41.0.patch

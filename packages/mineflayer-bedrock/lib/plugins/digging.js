@@ -297,6 +297,11 @@ function inject (bot) {
     const currentBlock = block
     bot.stopDigging = () => {
       if (!bot.targetDigBlock) return
+      // The server's update that breaks the block is being dispatched: 'blockUpdate' listeners run before this dig's
+      // per-position one, and mineflayer-pathfinder stops digging on any change near its path. Complete like upstream
+      // (its finishDigging clears targetDigBlock before the local update, so that stopDigging is a no-op) (U15)
+      const now = bot.blockAt(position)
+      if (!state.done && now && isBroken(now, state.block)) return onBlockUpdate(state.block, now)
 
       // Replicate the odd vanilla cancellation face value.
       // When the cancellation is because of a new dig request on another block it's the same as the new dig start face. In all other cases it's 0.
@@ -543,7 +548,14 @@ function inject (bot) {
     active: () => current,
     /** diagnostics of the last finished dig (completed / aborted) */
     last: null,
-    history
+    history,
+    /**
+     * prismarine-block `block.digTime(heldItemType, creative, inWater, notOnGround, enchantments, effects)` with the
+     * Bedrock effect factors (lib/bedrock/dig_speed.js) — the cost estimates of the patched mineflayer-pathfinder /
+     * mineflayer-tool call it for every candidate tool (U15)
+     */
+    blockDigTime: (block, heldItemType = null, creative = false, inWater = false, notOnGround = false, enchantments = [], effects = {}) =>
+      digSpeed.digTime(bot.registry, block, { heldItemType, creative, inWater, notOnGround, enchantments, effects })
   }
 }
 

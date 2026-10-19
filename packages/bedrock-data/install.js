@@ -1,4 +1,4 @@
-// owner: U2 (wave 1) → U9 (wave 3) → U10 (wave 4)
+// owner: U2 (wave 1) → U9 (wave 3) → U10 (wave 4); U15 (wave 5): relaxVersionComparisons
 'use strict'
 
 /**
@@ -13,6 +13,9 @@
  *   refreshes that cached object in place, so late callers still see the overlay; data copied out of it
  *   before that — e.g. an existing prismarine-registry — keeps the old values.)
  * - Idempotent: a second call is a no-op and returns the same result.
+ * - It builds minecraft-data's `bedrock_1.26.51` version object (so the datasets are parsed then, not lazily) to relax its
+ *   version comparators for Java versions (relaxVersionComparisons, U15); mineflayer-bedrock builds it at require
+ *   time anyway (lib/registry.js aliasBotVersion).
  * - Mechanism: minecraft-data 3.117.0 keeps every version in `data.js` as an object of lazy getters
  *   (`data.bedrock['1.26.51'].blocks` → `require('…/bedrock/1.26.30/blocks.json')`). install() redefines
  *   the getters of the `bedrock` `1.26.51` entry for every dataset file found in `data/1.26.51/`
@@ -81,8 +84,58 @@ function install () {
 
   // If this throws, `result` stays unset: the next install() retries the refresh (the getters stay as they are).
   if (alreadyBuilt) refreshCachedVersion(entry)
+  relaxVersionComparisons(require('minecraft-data')('bedrock_' + VERSION).version)
   result = { installed: true, version: VERSION, datasets: patched.datasets }
   return result
+}
+
+const COMPARATORS = {
+  '>=': (c) => c >= 0,
+  '>': (c) => c > 0,
+  '<': (c) => c < 0,
+  '<=': (c) => c <= 0,
+  '==': (c) => c === 0
+}
+
+/** numeric comparison of two dotted versions ('1.26.51' vs '1.9' → 1), or null when one is not plain numeric */
+function compareDotted (a, b) {
+  if (!/^\d+(\.\d+)*$/.test(a) || !/^\d+(\.\d+)*$/.test(b)) return null
+  const pa = a.split('.').map(Number)
+  const pb = b.split('.').map(Number)
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] ?? 0) - (pb[i] ?? 0)
+    if (d !== 0) return Math.sign(d)
+  }
+  return 0
+}
+
+/**
+ * U15 (wave 5): code written for Java compares the registry version with Java versions —
+ * `bot.registry.isNewerOrEqualTo('1.9')` (mineflayer's examples/inventory.js and test exampleInventory),
+ * `registry.version['>=']('1.16')` (@nxg-org/mineflayer-util-plugin, loaded by mineflayer-auto-eat). minecraft-data
+ * only knows the Bedrock versions for a Bedrock version object and throws a RangeError for any other; a version it
+ * does not know is compared numerically (major.minor.patch) with this version instead (1.26.51 is newer than every
+ * Java 1.x release and older than Java 26.x). Bedrock versions compare exactly as before; anything else still throws.
+ * Mutates the cached Version object, which `registry.version`, `isNewerOrEqualTo` / `isOlderThan` and the
+ * `require('minecraft-data')(bot.version)` alias all share. Idempotent.
+ */
+function relaxVersionComparisons (version) {
+  if (!version || version.relaxedJavaComparisons) return
+  const own = String(version.minecraftVersion ?? VERSION)
+  for (const [op, test] of Object.entries(COMPARATORS)) {
+    const strict = version[op]
+    if (typeof strict !== 'function') continue
+    version[op] = (other) => {
+      try {
+        return strict(other)
+      } catch (err) {
+        const c = err instanceof RangeError ? compareDotted(own, String(other)) : null
+        if (c === null) throw err
+        return test(c)
+      }
+    }
+  }
+  Object.defineProperty(version, 'relaxedJavaComparisons', { value: true })
 }
 
 /**
@@ -99,4 +152,4 @@ function refreshCachedVersion (entry) {
   }
 }
 
-module.exports = { install, VERSION, DATA_DIR, readDataset }
+module.exports = { install, VERSION, DATA_DIR, readDataset, relaxVersionComparisons }

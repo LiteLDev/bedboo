@@ -1,0 +1,34 @@
+diff --git a/lib/Tool.js b/lib/Tool.js
+index a51b67f4a397703a943e6a2d19558b2b9f4028a2..d1d1898644bc19fd92cbbb10cce1012cc7e0b22c 100644
+--- a/lib/Tool.js
++++ b/lib/Tool.js
+@@ -34,7 +34,6 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
+ Object.defineProperty(exports, "__esModule", { value: true });
+ exports.Tool = exports.error = void 0;
+ const Inventory_1 = require("./Inventory");
+-const nbt = __importStar(require("prismarine-nbt"));
+ function error(name, message) {
+     const e = new Error(message);
+     e.name = name;
+@@ -67,10 +66,18 @@ class Tool {
+        * @returns The number of ticks it would take to mine.
+        */
+     getDigTime(block, item) {
+-        const effects = this.bot.entity.effects;
+-        const enchants = (item === null || item === void 0 ? void 0 : item.nbt) != null ? nbt.simplify(item.nbt).Enchantments : [];
++        var _a, _b, _c;
++        const effects = (_a = this.bot.entity.effects) !== null && _a !== void 0 ? _a : {};
++        // bedboo (mineflayer-bedrock) patch, U15: `item.enchants` (prismarine-item) reads Java `Enchantments` and
++        // Bedrock `ench` NBT alike as { name, lvl } — the simplified NBT has `id`, which prismarine-block never matched;
++        // a mineflayer-bedrock bot's `bot._bedrock.digging.blockDigTime` applies the Bedrock effect factors
++        const enchants = (_b = item === null || item === void 0 ? void 0 : item.enchants) !== null && _b !== void 0 ? _b : [];
++        const type = (_c = item === null || item === void 0 ? void 0 : item.type) !== null && _c !== void 0 ? _c : null;
++        const bedrock = this.bot._bedrock && this.bot._bedrock.digging && this.bot._bedrock.digging.blockDigTime;
++        if (typeof bedrock === 'function')
++            return bedrock(block, type, false, false, false, enchants, effects);
+         // @ts-expect-error ; enchants/effects not in digTime typescript header
+-        return block.digTime(item === null || item === void 0 ? void 0 : item.type, false, false, false, enchants, effects);
++        return block.digTime(type, false, false, false, enchants, effects);
+     }
+     /**
+        * Gets the item currently in the bot's hand.
