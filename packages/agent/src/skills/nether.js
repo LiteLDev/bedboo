@@ -84,6 +84,10 @@ function buried (bot, p, topY, { maxAir = 6 } = {}) {
 /** hurt (a crossbow piglin, a fall): wait a little for the health to come back before going on (the guard eats) */
 async function recover (bot, { guard, signal, below = 10, until = 14, maxMs = 20000 } = {}) {
   if (bot.health >= below) return
+  // nothing to eat and too hungry to regenerate: waiting heals nothing (N1M5H: 20 s before every ore at 9.6 hp)
+  const ae = bot.autoEat
+  const edible = typeof ae?.findBestChoices === 'function' ? ae.findBestChoices(bot.inventory.items(), ae.opts?.priority ?? 'foodPoints').length > 0 : !!u.findItem(bot, u.FOODS)
+  if (bot.food < 18 && !edible) return
   u.log(bot, `nether: health ${bot.health}, recovering`)
   const end = Date.now() + maxMs
   while (bot.health < until && Date.now() < end) {
