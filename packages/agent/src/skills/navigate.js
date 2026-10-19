@@ -197,11 +197,16 @@ function stopPathfinder (bot) {
 }
 
 /** one pathfinder.goto bounded by `ms`, the signal and a no-progress watchdog */
-function runOnce (bot, goal, { ms, signal, stuckMs }) {
+function runOnce (bot, goal, { ms, signal, stuckMs, noProgressMs = 30000 }) {
   return new Promise((resolve, reject) => {
     let done = false
     let lastPos = bot.entity.position.clone()
     let lastMove = Date.now()
+    // progress towards the goal: moving around (swimming in place, a path that keeps resetting) is not progress
+    const center = goalCenter(goal)
+    const distance = () => center ? bot.entity.position.distanceTo(center) : 0
+    let best = distance()
+    let lastProgress = Date.now()
     const finish = (err) => {
       if (done) return
       done = true
@@ -222,6 +227,14 @@ function runOnce (bot, goal, { ms, signal, stuckMs }) {
       } else if (Date.now() - lastMove > (busy ? Math.max(stuckMs, 25000) : stuckMs)) {
         stopPathfinder(bot)
         finish(Object.assign(new SkillError(`stuck at ${fmt(pos)}`, { code: 'STUCK' }), { name: 'Stuck' }))
+        return
+      }
+      if (center) {
+        const d = distance()
+        if (d < best - 1) { best = d; lastProgress = Date.now() } else if (Date.now() - lastProgress > noProgressMs) {
+          stopPathfinder(bot)
+          finish(Object.assign(new SkillError(`no progress towards ${fmt(center)} for ${noProgressMs / 1000} s (at ${fmt(pos)})`, { code: 'STUCK' }), { name: 'Stuck' }))
+        }
       }
     }, 500)
     signal?.addEventListener('abort', onAbort, { once: true })

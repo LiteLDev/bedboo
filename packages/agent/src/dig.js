@@ -117,7 +117,8 @@ async function collectBlocks (bot, { item = null, count = 1, blocks, maxDistance
       }
     } catch (err) {
       if (isAbort(err) || err.code === 'DIED' || err.code === 'MISSING') throw err
-      tried.add(key(pos))
+      // the same pocket of ore is just as unreachable: skip its neighbours too
+      for (let dx = -2; dx <= 2; dx++) for (let dy = -2; dy <= 2; dy++) for (let dz = -2; dz <= 2; dz++) tried.add(key(pos.offset(dx, dy, dz)))
       failures++
       log(bot, `could not mine ${name} at ${navigate.fmt(pos)}: ${err.message}`)
       if (failures >= 6) throw new SkillError(`collecting ${item ?? blocks.join('/')}: ${failures} failures in a row, last: ${err.message}`, { code: err.code ?? 'FAILED', cause: err })
