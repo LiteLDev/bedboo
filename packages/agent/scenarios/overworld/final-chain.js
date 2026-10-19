@@ -5,7 +5,7 @@
  * The final acceptance chain, ONE world (seed.json, seed 1234), ONE bot, no reconnects:
  *
  *   M1 → M2 → M3 → M4 → M5      U17's overworld milestones (cheat-free)
- *   provisions                  hunt (and cook) meat for the trip (best effort: never fails the chain)
+ *   provisions                  back to the spawn, hunt (and cook) meat for the trip (best effort: never fails the chain)
  *   N1M3                        U18's nether entry from the M3 state (cheat-free: second bucket, iron ingot, back to the
  *                               spawn, bucket-cast obsidian, build + light the portal, enter the Nether)
  *   home                        back through the bot's own portal (U18's nether skill; `--nether-ores` also mines
@@ -71,11 +71,15 @@ async function finalChain ({ log = () => {}, cfg = config(), netherOres = false 
       ok = await phase(m.id, () => scenario(m))
       if (!ok) break
     }
-    // best effort (never fails the chain): meat for the long trip, the Nether part has no animals and starving bots die
+    // best effort (never fails the chain): back to the spawn (M5 ends deep under the mountains; N1M3 builds its portal
+    // at the spawn, and the plains there have animals), then meat for the long trip — the Nether part has no animals
+    // and starving bots die
     ok = ok && await phase('provisions', async () => {
+      const home = await agent.run('navigate', { spawn: true, range: 16 }, { name: 'provisions: to the spawn', timeout: 240000, retries: 1 })
+        .catch((err) => ({ error: err.message }))
       const r = await agent.run('food', { min: 12, stock: true, radius: 48, timeout: 170000 }, { name: 'provisions', timeout: 180000, retries: 0 })
         .catch((err) => ({ error: err.message }))
-      return { ...r, carried: require('../../src/skills/survive').foodPoints(bot) }
+      return { home: home.error ?? 'reached', ...r, carried: require('../../src/skills/survive').foodPoints(bot) }
     })
     ok = ok && await phase('N1M3', () => scenario(N1M3))
     ok = ok && await phase('home', async () => {
