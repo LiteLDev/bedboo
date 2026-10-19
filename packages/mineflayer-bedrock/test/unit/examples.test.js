@@ -1,7 +1,7 @@
 'use strict'
 // owner: U15 (ecosystem plugins & examples) — every example ported from mineflayer 4.39.0 (packages/mineflayer-bedrock/
-// examples, the @bedboo/examples workspace package) parses and resolves each module it loads (require / import) from
-// its own directory: `mineflayer-bedrock` itself, vec3 and the ecosystem plugins. The examples that need a server are
+// examples) parses and resolves each module it loads (require / import) from its own directory: `mineflayer-bedrock`
+// itself (the root workspace link), vec3 and the ecosystem plugins (mineflayer-bedrock's devDependencies). The examples that need a server are
 // run against BDS by test/external/example*.test.js.
 const assert = require('assert')
 const fs = require('fs')
@@ -45,7 +45,7 @@ describe('examples (mineflayer 4.39.0 examples ported to mineflayer-bedrock)', f
   it('every example uses mineflayer-bedrock (not mineflayer)', () => {
     for (const file of files) {
       const source = fs.readFileSync(file, 'utf8')
-      assert.ok(!/require\('mineflayer'\)/.test(source), `${file} requires mineflayer`)
+      assert.ok(!/^[^/\n]*require\('mineflayer'\)/m.test(source), `${file} requires mineflayer`) // (comments may mention it)
     }
   })
 
