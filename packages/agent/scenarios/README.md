@@ -20,9 +20,9 @@ Skills (`src/skills/`, public mineflayer API + mineflayer-pathfinder only; helpe
 | skill | args | what the bot does |
 |---|---|---|
 | `combat` | `{ mode: 'nearby' \| 'hunt' \| 'survive', radius?, names?, mob?, count?, durationMs? }` | fight everything around / hunt `count` × `mob` / stand guard; melee with the best weapon, the bow for far or flying mobs, shield = sneak when cornered, hit-and-run vs creepers, retreat and eat when low, never steps into lava or off a ledge |
-| `portal` | `{ obsidian?: 10, origin?, axis?, enter?: true }` | bucket-cast obsidian at a lava pool (fill buckets, pour lava into a dug mold, water next to it, take the water back, mine with a diamond pickaxe), build a 4×5 frame (10 obsidian + 2 scaffolding corners), craft a flint and steel (flint from gravel), light it, walk in |
-| `nether` | `{ targets?: { quartz_ore, nether_gold_ore, ancient_debris }, returnHome?: true, portal?, home?, debrisY? }` | through the portal, gold armor on (piglins), mine quartz, ancient debris (buried, above the lava ocean first, then y 8–22, branch mining when none in reach) and nether gold (out of piglins' sight), guard against nether mobs, back home along its breadcrumbs |
-| `end` | `{ phase?: 'activate' \| 'fight' \| 'exit', endermen?: 2 }` | eyes of ender into the stronghold frames, into the End, kill endermen, exit portal → credits → overworld |
+| `portal` | `{ obsidian?: 10, origin?, axis?, enter?: true, lava?: [{x,y,z}], water?: [{x,y,z}], obsidianMs?, stallMs?, flintMs? }` | bucket-cast obsidian at a lava pool (fill buckets, pour lava into a dug mold, water next to it, take the water back, mine with a diamond pickaxe), build a 4×5 frame (10 obsidian + 2 scaffolding corners), craft a flint and steel (flint from gravel), light it, walk in. Bounded everywhere: night ahead and no armor → a sealed pocket / pit until the morning; up to the surface first; pools ranked (open sky, sources, distance), each left after `stallMs` (150 s) without a new obsidian; then the `lava` hints (known pools), natural obsidian, a surface spiral; 10 min in all (`obsidianMs`), every bucket fill ≤ 6 walks; eats standing still (auto-eat vs the pathfinder), a fight-only retry, lava fills from a cell with no lava around it, a pause when hurt |
+| `nether` | `{ targets?: { quartz_ore, nether_gold_ore, ancient_debris }, returnHome?: true, portal?, home?, debrisY?, timeMs?: 12 min, homeMs?: 5 min, oreMs? }` | through the portal (walks back to the remembered one first), gold armor on (piglins), mine quartz, ancient debris (buried, above the lava ocean first, then y 8–22, branch mining when none in reach) and nether gold (out of piglins' sight), guard against nether mobs (under an Agent: fireballs hit back, neutral attackers fought through its safety), back home along its breadcrumbs. Each ore has its share of the time and a failed ore never strands the bot: it goes home anyway (`failed` in the result). Started in the overworld with nothing to mine (the retry after a death in the Nether) → home already; without a pickaxe for the ores → a clear error |
+| `end` | `{ phase?: 'activate' \| 'fight' \| 'exit', endermen?: 2 }` | eyes of ender into the stronghold frames, into the End, kill endermen (one at a time, healed up in between; under an Agent angry endermen are fought through its safety), exit portal → credits → overworld; the walks into portals wait on the lifecycle (`util.tick`), not on bare ticks |
 
 Library API for runners (`require('@bedboo/agent/src/skills/combat')`): `defend(bot, opts) → guard` (the background
 safety behaviour: `guard.busy`, `await guard.idle()`, `guard.pause()` / `resume()`, `await guard.stop() → stats`),
@@ -45,7 +45,12 @@ BEDBOO_U18_RUNS=5 corepack pnpm --filter @bedboo/agent test:e2e -- --grep N2    
 BEDBOO_U18_RUNS=5 corepack pnpm --filter @bedboo/agent test:e2e -- --grep E1      # end/e1.e2e.js: the End (cheat-assisted)
 BEDBOO_U18_CHAIN=1 corepack pnpm --filter @bedboo/agent test:e2e -- --grep CHAIN  # nether/chain.e2e.js: N1 → N2 → E1 in one world
 BEDBOO_U18_FROM_M3=1 corepack pnpm --filter @bedboo/agent test:e2e -- --grep N1M3 # nether/n1-from-m3.e2e.js: N1 from U17's M3 snapshot
+BEDBOO_U18_FROM_M5=1 corepack pnpm --filter @bedboo/agent test:e2e -- --grep N1M5 # the same from U17's M5 snapshot (the chain's start)
+BEDBOO_U18_CHAIN_SEED=1 corepack pnpm --filter @bedboo/agent test:e2e -- --grep E1A # end/e1-agent.e2e.js: the chain's End phases, seed 1234
+node scenarios/nether/scout.js --pools 1234 -630,100 --out scenarios/nether/seed-1234.json  # lava pools, obsidian, stronghold
 ```
+
+(`BEDBOO_U18_RUNS=5` applies to N1M3 / N1M5 / E1A too.)
 
 The scenarios run on their own servers through `test/u18/harness.js` (a mineflayer-bedrock bot with the `bot.test`
 helpers, the skills through `runSkill`); under U17's `Agent` the same skills use the Agent's safety behaviours as their
@@ -55,7 +60,9 @@ guard (`combat.guardFor`).
 |---|---|---|
 | C1 survive the night | flat, normal, midnight, natural spawns | kit, time |
 | N1 nether entry | seed 35 (lava pool 28 blocks from the spawn) | kit (stands in for U17's M3 end state) |
-| N1M3 nether entry from M3 | U17's seed 1234, M3 snapshot, U17's Agent | nothing: second bucket and an iron ingot via U17's `obtain`, back to the spawn, `portal` |
+| N1M3 nether entry from M3 | U17's seed 1234, M3 snapshot (≈ 200 s before nightfall), U17's Agent | no command: second bucket and an iron ingot via U17's `obtain`, `portal` with seed-1234.json's scouted lava pool / lake as hints |
+| N1M5 nether entry from M5 | U17's seed 1234, M5 snapshot (≈ 135 blocks west of the spawn, y 1–7), U17's Agent | the same as N1M3 — the final chain's real starting point |
+| E1A the End in the chain's world | seed 1234 (stronghold portal room at −872, −34, 198), easy, U17's Agent | E1's locate + teleports, the chain's kit (12 eyes, food) + the End's fight gear (diamond sword / armor) when missing, the chain bot's gear (iron sword, pickaxes) as a stand-in, `/kill` of the dragon |
 | N2 nether ores | seed 35, normal | kit, the overworld portal frame (`/setblock`) |
 | E1 the End | seed 35 (stronghold portal room at 1703, -4, -869), normal | `/locate` + teleports into the portal room, kit (12 eyes), `/kill` of the ender dragon |
 | chain | seed 35, easy | N1's kit, then E1's stronghold teleport + eyes and the dragon kill |

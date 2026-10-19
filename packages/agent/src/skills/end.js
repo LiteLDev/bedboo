@@ -22,6 +22,8 @@
 const { Vec3 } = require('vec3')
 const u = require('../dims/util')
 const combat = require('./combat')
+const portal = require('./portal')
+const { retaliate } = require('../dims/retaliate')
 
 /** horizontal neighbours */
 const SIDES = [new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Vec3(0, 0, 1), new Vec3(0, 0, -1)]
@@ -90,7 +92,7 @@ async function fillFrames (bot, ring, { signal, guard, goals }) {
     const next = ring.frames.filter((f) => todo.has(f.position.toString()))
       .sort((a, b) => a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position))[0]
     const p = next.position
-    await combat.guarded(guard, async () => {
+    await u.fightGuarded(guard, async () => {
       for (let attempt = 0; ; attempt++) {
         const eye = bot.entity.position.offset(0, bot.entity.eyeHeight, 0)
         // from the stairs the frame's top is in view, from the room's floor its side (facingFace)
@@ -143,16 +145,22 @@ function walkInSpot (bot, ring) {
   return spots[0] ?? null
 }
 
-/** walk towards `center` (jumping onto the frame) until the dimension changes */
+/**
+ * Walk towards `center` (jumping onto the frame) until the dimension change starts: the lifecycle's 'game' event
+ * (bot.game.dimension switched) / 'spawn' end the walk — the ticks between pause while the bot changes dimension
+ * (u.tick, not a bare waitForTicks, which would reject across the change). The caller awaits the arrival's spawn.
+ */
 async function stepInto (bot, center, from, { signal, timeout = 15000 } = {}) {
   const until = Date.now() + timeout
   try {
     while (bot.game.dimension === from && Date.now() < until) {
       u.throwIfAborted(signal)
       await bot.lookAt(center.offset(0, bot.entity.eyeHeight, 0), true)
+      if (bot.game.dimension !== from) break
       bot.setControlState('forward', true)
       bot.setControlState('jump', bot.entity.onGround && (bot.entity.isCollidedHorizontally || center.y > bot.entity.position.y - 0.2))
-      await bot.waitForTicks(1)
+      // wakes up on the lifecycle's 'game' (the dimension switched) / 'spawn' as well as on the next tick
+      await u.tick(bot)
     }
   } finally {
     bot.setControlState('forward', false)
@@ -225,7 +233,7 @@ async function exitEnd (bot, { signal, exitTimeout = 120000, guard } = {}) {
       return { exited: true, arrival: u.plain(bot.entity.position.floored()) }
     } catch (err) {
       if (signal?.aborted) throw err
-      if (guard?.busy) throw err // a fight: guarded() runs the exit again afterwards
+      if (u.busyKind(guard) === 'fight') throw err // a fight: fightGuarded() runs the exit again afterwards
       lastErr = err
       u.log(bot, `end: exit via ${rim.o}: ${err.message}`)
     } finally {
@@ -233,6 +241,23 @@ async function exitEnd (bot, { signal, exitTimeout = 120000, guard } = {}) {
     }
   }
   throw new Error(`could not enter the exit portal: ${lastErr?.message}`)
+}
+
+/**
+ * Eat to a full bar and wait (bounded) for the health to come back to `min` before the next fight: health regenerates
+ * quickly with a full food bar and saturation (cooked beef). Angry endermen that come meanwhile are the guard's.
+ */
+async function healUp (bot, { guard, signal, min = 16, maxMs = 45000 } = {}) {
+  const t = Date.now()
+  if (bot.health >= min && bot.food >= 18) return 0
+  u.log(bot, `end: health ${bot.health}, food ${bot.food}: healing up before the next fight`)
+  while (Date.now() - t < maxMs && (bot.health < min || bot.food < 18)) {
+    u.throwIfAborted(signal)
+    if (guard) await guard.idle()
+    if (bot.food < 20) await portal.feed(bot, { signal, min: 20 })
+    await u.sleep(1000, signal)
+  }
+  return Date.now() - t
 }
 
 /**
@@ -285,7 +310,7 @@ async function toIslandTop (bot, { signal, guard } = {}) {
       }
       goal = new goals.GoalNear(f.x, top + 1, f.z, 2)
     }
-    await combat.guarded(guard, () => u.goto(bot, goal, { signal, timeout: 60000, retries: 1 }))
+    await u.fightGuarded(guard, () => u.goto(bot, goal, { signal, timeout: 60000, retries: 1 }))
       .catch((err) => { if (signal?.aborted) throw err; u.log(bot, `end: towards the island top: ${err.message}`) })
   }
   return Math.hypot(bot.entity.position.x, bot.entity.position.z) <= 40 && openSky()
@@ -303,11 +328,13 @@ async function endSkill (bot, args) {
         u.ensurePathfinder(bot, { fresh: true })
         // silverfish (the portal room's spawner), cave mobs: fought while the eyes go in
         const guard = combat.guardFor(bot, { radius: 6, retaliate: true, signal })
+        const stopRetaliating = retaliate(bot, guard)
         let a
         try {
           a = await activatePortal(bot, { signal, guard })
           await guard.idle()
         } finally {
+          stopRetaliating()
           result.guard = await guard.stop()
         }
         result.eyes = a.eyes
@@ -320,6 +347,8 @@ async function endSkill (bot, args) {
       // no parkour over the void
       u.ensurePathfinder(bot, { fresh: true, allowParkour: false, maxDropDown: 3 })
       const guard = combat.guardFor(bot, { radius: 8, retaliate: true, includeNeutral: false, signal })
+      // under the Agent: endermen that attack (looked at, or a hunt's target that comes back) are fought too
+      const stopRetaliating = retaliate(bot, guard)
       try {
         const t0 = Date.now()
         result.onTop = await toIslandTop(bot, { signal, guard })
@@ -331,20 +360,32 @@ async function endSkill (bot, args) {
           const r = 15 + Math.random() * 35 // never into the fountain (its portal opens with the dragon's death)
           return new Vec3(Math.cos(a) * r, b.entity.position.y, Math.sin(a) * r)
         }
-        const r = await combat.huntFor(bot, 'enderman', endermen, { radius: 96, signal, guard, exploreTo, filter: (e) => onIsland(bot, e), timeout: args.fightTimeout ?? 600000 })
-        result.killed.enderman = r.killed
-        result.fights = r.fights
+        // one enderman at a time, healed up in between: a hunt that provokes the next one at half health while the
+        // last one (teleported away, still angry) comes back is how the bot died (E1A in seed 1234, runs 1 and 4)
+        const until = Date.now() + (args.fightTimeout ?? 600000)
+        result.killed.enderman = 0
+        result.fights = []
+        while (result.killed.enderman < endermen) {
+          if (Date.now() > until) throw new Error(`endermen: ${result.killed.enderman}/${endermen} killed in ${Math.round((args.fightTimeout ?? 600000) / 1000)} s`)
+          await healUp(bot, { guard, signal })
+          const r = await combat.huntFor(bot, 'enderman', 1, { radius: 96, signal, guard, exploreTo, filter: (e) => onIsland(bot, e), timeout: Math.max(30000, until - Date.now()) })
+          result.killed.enderman += r.killed
+          result.fights.push(...r.fights)
+        }
       } finally {
+        stopRetaliating()
         result.guard = await guard.stop()
       }
     } else if (phase === 'exit') {
       if (bot.game.dimension !== 'the_end') throw new Error('not in The End')
       // provoked endermen may follow the bot to the fountain
       const guard = combat.guardFor(bot, { radius: 6, retaliate: true, includeNeutral: false, signal })
+      const stopRetaliating = retaliate(bot, guard)
       let r
       try {
-        r = await combat.guarded(guard, () => exitEnd(bot, { signal, exitTimeout: args.exitTimeout, guard }), { retries: 5 })
+        r = await u.fightGuarded(guard, () => exitEnd(bot, { signal, exitTimeout: args.exitTimeout, guard }), { retries: 5 })
       } finally {
+        stopRetaliating()
         result.exitGuard = await guard.stop()
       }
       result.exited = r.exited
@@ -367,5 +408,6 @@ module.exports = Object.assign(endSkill, {
   exitEnd,
   hasEye,
   onIsland,
+  healUp,
   toIslandTop
 })

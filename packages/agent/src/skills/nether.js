@@ -31,6 +31,7 @@ const u = require('../dims/util')
 const memory = require('../dims/memory')
 const combat = require('./combat')
 const portal = require('./portal')
+const { retaliate } = require('../dims/retaliate')
 
 const DEFAULT_TARGETS = { quartz_ore: 3, nether_gold_ore: 3, ancient_debris: 1 }
 /**
@@ -98,11 +99,11 @@ async function mineOne (bot, block, { guard, signal, timeout = 90000 }) {
   const p = block.position
   const drop = DROPS[block.name]
   const before = drop ? u.count(bot, drop) : 0
-  await combat.guarded(guard, () => u.goto(bot, new goals.GoalGetToBlock(p.x, p.y, p.z), { signal, timeout, retries: 2 }))
+  await u.fightGuarded(guard, () => u.goto(bot, new goals.GoalGetToBlock(p.x, p.y, p.z), { signal, timeout, retries: 2 }))
   const current = bot.blockAt(p)
   if (!current || current.name !== block.name) return false
   if (u.nearLava(bot, p, 1)) throw new Error(`lava next to ${block.name} at ${p}`)
-  await combat.guarded(guard, () => u.digBlock(bot, bot.blockAt(p), { signal, requireHarvest: true }))
+  await u.fightGuarded(guard, () => u.digBlock(bot, bot.blockAt(p), { signal, requireHarvest: true }))
   await u.waitForBlock(bot, p, (b) => b.name !== block.name, { timeout: 3000, signal })
   if (drop) {
     await u.waitFor(() => u.count(bot, drop) > before, { timeout: 1500, signal }).catch(() => {})
@@ -131,7 +132,7 @@ async function explore (bot, blockName, state, { guard, signal }) {
   if (blockName === 'ancient_debris' && Math.abs(pos.y - DEBRIS_Y) > 3 && !state.noDescent) {
     u.log(bot, `nether: going down to y ${DEBRIS_Y} for ancient debris`)
     try {
-      await combat.guarded(guard, () => u.goto(bot, new goals.GoalY(DEBRIS_Y), { signal, timeout: 120000, retries: 1 }))
+      await u.fightGuarded(guard, () => u.goto(bot, new goals.GoalY(DEBRIS_Y), { signal, timeout: 120000, retries: 1 }))
     } catch (err) {
       if (signal?.aborted) throw err
       // lava below (the pathfinder never digs next to it): branch-mine at this level, nearer veins get picked up
@@ -148,7 +149,7 @@ async function explore (bot, blockName, state, { guard, signal }) {
     ? new goals.GoalBlock(Math.floor(target.x), DEBRIS_Y, Math.floor(target.z))
     : new goals.GoalNearXZ(target.x, target.z, 3)
   try {
-    await combat.guarded(guard, () => u.goto(bot, goal, { signal, timeout: 90000, retries: 1 }))
+    await u.fightGuarded(guard, () => u.goto(bot, goal, { signal, timeout: 90000, retries: 1 }))
   } catch (err) {
     if (signal?.aborted) throw err
     // blocked (lava, a cliff): turn
@@ -159,7 +160,7 @@ async function explore (bot, blockName, state, { guard, signal }) {
 }
 
 /** mine `n` blocks of `blockName` */
-async function mineOres (bot, blockName, n, { guard, signal, maxDistance = 64, deadline, yRange, home }) {
+async function mineOres (bot, blockName, n, { guard, signal, maxDistance = 64, deadline, yRange, home, progress = () => {} }) {
   let mined = 0
   const bad = new Set()
   const state = {}
@@ -211,7 +212,7 @@ async function mineOres (bot, blockName, n, { guard, signal, maxDistance = 64, d
     const target = candidates[0]
     try {
       u.log(bot, `nether: mining ${blockName} at ${target.position} (${mined}/${n})`)
-      if (await mineOne(bot, target, { guard, signal, timeout: band && yRange && band[0] === yRange[0] ? 45000 : 90000 })) mined++
+      if (await mineOne(bot, target, { guard, signal, timeout: band && yRange && band[0] === yRange[0] ? 45000 : 90000 })) progress(++mined)
       fails = 0
     } catch (err) {
       if (signal?.aborted) throw err
@@ -244,14 +245,16 @@ function trackPath (bot) {
  * Walk back to the remembered nether portal: straight there when the pathfinder finds the way quickly, else back along
  * the breadcrumbs (short hops, each a quick search), then the last stretch.
  */
-async function goHome (bot, home, { guard, signal, crumbs = [] }) {
+async function goHome (bot, home, { guard, signal, crumbs = [], timeout = 6 * 60 * 1000 }) {
   const { goals } = u.ensurePathfinder(bot)
   const h = u.vec(home)
   const homeGoal = new goals.GoalNear(h.x, h.y, h.z, 3)
+  const deadline = Date.now() + timeout
+  const left = () => Math.max(5000, deadline - Date.now())
   u.log(bot, `nether: heading home to the portal at ${h} (${crumbs.length} breadcrumbs)`)
   if (bot.entity.position.distanceTo(h) <= 32 || crumbs.length < 3) {
     try {
-      await combat.guarded(guard, () => u.goto(bot, homeGoal, { signal, timeout: 45000, retries: 0, stallMs: 15000 }))
+      await u.fightGuarded(guard, () => u.goto(bot, homeGoal, { signal, timeout: Math.min(45000, left()), retries: 0, stallMs: 15000 }), { deadline })
       return
     } catch (err) {
       if (signal?.aborted) throw err
@@ -261,26 +264,77 @@ async function goHome (bot, home, { guard, signal, crumbs = [] }) {
   let i = crumbs.length - 1
   while (i >= 0) {
     u.throwIfAborted(signal)
+    if (Date.now() > deadline) break
     // the crumb nearest to home (in path order) still close to the bot: skip the detours
     let j = i
     for (let k = i; k >= 0; k--) if (crumbs[k].distanceTo(bot.entity.position) <= 10) j = k
     const c = crumbs[j]
-    const ok = await combat.guarded(guard, () => u.goto(bot, new goals.GoalNear(c.x, c.y, c.z, 1.5), { signal, timeout: 30000, retries: 1, stallMs: 15000 }))
+    const ok = await u.fightGuarded(guard, () => u.goto(bot, new goals.GoalNear(c.x, c.y, c.z, 1.5), { signal, timeout: Math.min(30000, left()), retries: 1, stallMs: 15000 }), { deadline })
       .then(() => true, (err) => { if (signal?.aborted) throw err; u.log(bot, `nether: breadcrumb ${c}: ${err.message}`); return false })
     // a shortcut that failed: follow the way the bot really walked (the next crumb back)
     i = ok || j >= i ? j - 1 : i - 1
   }
-  await combat.guarded(guard, () => u.goto(bot, homeGoal, { signal, timeout: 120000, retries: 3 }), { retries: 10 })
+  try {
+    await u.fightGuarded(guard, () => u.goto(bot, homeGoal, { signal, timeout: Math.min(120000, left()), retries: 3 }), { retries: 10, deadline })
+  } catch (err) {
+    if (signal?.aborted) throw err
+    throw new Error(`could not get back to the nether portal at ${h} from ${bot.entity.position.floored()} in ${Math.round(timeout / 1000)} s: ${err.message}`)
+  }
+}
+
+/**
+ * Hit ghast fireballs that come within 4 blocks back (the Agent's safety does not; combat.defend's guard does it
+ * itself). @returns {() => void} stop
+ */
+function deflectFireballs (bot, { log = () => {} } = {}) {
+  const names = new Set(['fireball', 'large_fireball'])
+  let busy = false
+  const timer = setInterval(async () => {
+    if (busy || !bot.entity || bot.health <= 0) return
+    const ball = Object.values(bot.entities).find((e) => names.has(e.name) && combat.hitboxDistance(bot, e) <= 4)
+    if (!ball) return
+    busy = true
+    try {
+      await bot.lookAt(ball.position, true)
+      bot.attack(ball)
+      log('deflected a fireball')
+    } catch {} finally { busy = false }
+  }, 100)
+  return () => clearInterval(timer)
+}
+
+/** a pickaxe that mines `blockName` (ancient debris: diamond / netherite; quartz / nether gold: any) */
+function canMine (bot, blockName) {
+  const picks = blockName === 'ancient_debris' ? ['netherite_pickaxe', 'diamond_pickaxe'] : ['netherite_pickaxe', 'diamond_pickaxe', 'iron_pickaxe', 'stone_pickaxe', 'golden_pickaxe', 'wooden_pickaxe']
+  return !!u.findItem(bot, picks)
 }
 
 async function netherSkill (bot, args) {
   args = args ?? {}
   const { signal, returnHome = true } = args
   const targets = args.targets ?? DEFAULT_TARGETS
+  const wanted = ORDER.filter((name) => (targets[name] ?? 0) > 0)
   const timings = {}
   const t0 = Date.now()
+  // the time for mining: what is left once a few minutes are kept for the way back home
+  const timeMs = args.timeMs ?? 12 * 60 * 1000
+  const homeMs = args.homeMs ?? 5 * 60 * 1000
+  const mineUntil = args.deadline ?? (t0 + timeMs - homeMs)
   if (bot.game.dimension !== 'the_nether') {
+    // in the overworld: a fresh start through the overworld portal — or the retry after a death in the Nether (the
+    // respawn is in the overworld, everything carried is lost): with nothing to mine, home already
+    if (!wanted.length) {
+      u.log(bot, `nether: in the ${bot.game.dimension} with nothing to mine: home already`)
+      return { mined: {}, failed: {}, items: {}, returned: bot.game.dimension === 'overworld', already: bot.game.dimension, home: null, gold: null, guard: null, timings }
+    }
+    const missing = wanted.filter((name) => !canMine(bot, name))
+    if (missing.length) throw new Error(`no pickaxe for ${missing.join(', ')} (lost in a death?): not going into the Nether`)
+    // the remembered portal (or, none remembered: enterPortal looks for the nearest lit one)
     const p = args.portal ?? memory.portalIn(bot, 'overworld')?.position
+    if (p && bot.entity.position.distanceTo(u.vec(p)) > 16) {
+      u.log(bot, `nether: to the overworld portal at ${JSON.stringify(u.plain(p))}`)
+      await portal.travelTo(bot, p, 4, { signal, timeout: 5 * 60 * 1000 })
+    }
     await portal.enterPortal(bot, p ?? undefined, { signal })
     timings.enterMs = Date.now() - t0
   }
@@ -290,7 +344,7 @@ async function netherSkill (bot, args) {
   home = u.plain(home)
   memory.rememberPortal(bot, { dimension: 'the_nether', position: home })
   u.ensurePathfinder(bot, { fresh: true })
-  const gold = await wearGold(bot)
+  const gold = await wearGold(bot).catch((err) => { u.log(bot, `nether: gold armor: ${err.message}`); return null })
   u.log(bot, `nether: home portal ${JSON.stringify(home)}, gold armor ${gold ?? 'none'}`)
   const guard = combat.guardFor(bot, {
     radius: 10,
@@ -299,28 +353,44 @@ async function netherSkill (bot, args) {
     ignore: (e) => (combat.FLYING_MOBS.has(e.name) && !combat.hasBowAndArrows(bot)),
     signal
   })
+  // the Agent's safety does not hit fireballs back: a small deflector next to it
+  const stopDeflecting = guard.delegated ? deflectFireballs(bot, { log: (m) => u.log(bot, `nether: ${m}`) }) : () => {}
+  // nor does it fight neutral mobs that attack (zombified piglins, piglins angered by gold): through it, here
+  const stopRetaliating = retaliate(bot, guard)
   const mined = {}
-  const result = { mined, items: {}, returned: false, home, gold, guard: null, timings }
+  const failed = {}
+  const result = { mined, failed, items: {}, returned: false, home, gold, guard: null, timings }
   const path = trackPath(bot)
   try {
-    for (const name of ORDER) {
-      const n = targets[name] ?? 0
-      if (!n) continue
+    for (const [i, name] of wanted.entries()) {
+      const n = targets[name]
       const t = Date.now()
-      mined[name] = await mineOres(bot, name, n, { guard, signal, home, deadline: args.deadline, yRange: name === 'ancient_debris' ? (args.debrisY ?? [32, 119]) : null })
+      // each ore gets its share of the time left (never past the time kept for the way home)
+      const oreDeadline = Math.min(mineUntil, t + (args.oreMs ?? Math.max(60000, (mineUntil - t) / (wanted.length - i))))
+      try {
+        mined[name] = await mineOres(bot, name, n, { guard, signal, home, deadline: oreDeadline, yRange: name === 'ancient_debris' ? (args.debrisY ?? [32, 119]) : null, progress: (k) => { mined[name] = k } })
+      } catch (err) {
+        if (signal?.aborted || bot.game.dimension !== 'the_nether') throw err
+        // out of time / nothing more in reach: the next ore, and home in any case
+        failed[name] = err.message
+        u.log(bot, `nether: ${name}: ${err.message}`)
+      }
       timings[`${name}Ms`] = Date.now() - t
-      u.log(bot, `nether: ${name} done (${mined[name]}) in ${((Date.now() - t) / 1000).toFixed(0)} s`)
+      u.log(bot, `nether: ${name} done (${mined[name] ?? 0}/${n}) in ${((Date.now() - t) / 1000).toFixed(0)} s`)
     }
     if (returnHome) {
       const t = Date.now()
-      await goHome(bot, home, { guard, signal, crumbs: path.crumbs })
+      await goHome(bot, home, { guard, signal, crumbs: path.crumbs, timeout: Math.max(homeMs, 60000) })
       await guard.stop()
+      stopDeflecting()
       const back = await portal.enterPortal(bot, home, { signal })
       result.returned = back.to === 'overworld' && bot.game.dimension === 'overworld'
       result.arrival = back.arrival
       timings.returnMs = Date.now() - t
     }
   } finally {
+    stopDeflecting()
+    stopRetaliating()
     path.stop()
     result.guard = await guard.stop()
     for (const name of Object.keys(DROPS)) result.items[DROPS[name]] = u.count(bot, DROPS[name])
@@ -338,6 +408,8 @@ module.exports = Object.assign(netherSkill, {
   mineOres,
   explore,
   goHome,
+  deflectFireballs,
+  canMine,
   DEFAULT_TARGETS,
   DROPS
 })

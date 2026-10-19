@@ -10,7 +10,7 @@ const store = new WeakMap()
 function memoryOf (bot) {
   let m = store.get(bot)
   if (!m) {
-    m = { portals: [] }
+    m = { portals: [], placed: new Set() }
     store.set(bot, m)
   }
   return m
@@ -33,4 +33,15 @@ function portalIn (bot, dimension) {
   return list.length ? list[list.length - 1] : null
 }
 
-module.exports = { memoryOf, rememberPortal, portalIn }
+/** obsidian the bot placed itself (a frame being built): never mined again as "natural" obsidian */
+function rememberPlaced (bot, position) {
+  const p = position
+  memoryOf(bot).placed.add(`${Math.floor(p.x)},${Math.floor(p.y)},${Math.floor(p.z)}`)
+}
+
+function placedByBot (bot, position) {
+  const p = position
+  return memoryOf(bot).placed.has(`${Math.floor(p.x)},${Math.floor(p.y)},${Math.floor(p.z)}`)
+}
+
+module.exports = { memoryOf, rememberPortal, portalIn, rememberPlaced, placedByBot }

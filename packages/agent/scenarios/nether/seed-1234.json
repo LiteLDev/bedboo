@@ -1,0 +1,27 @@
+{
+  "seed": "1234",
+  "world": "default",
+  "bds": "1.26.51.1",
+  "scoutedAt": "2026-10-19",
+  "note": "U17's chain seed, surveyed with `node scenarios/nether/scout.js --pools 1234 -630,100 -600,40` (creative, cheats used for scouting only). The portal skill gets `lava` / `water` below as hints (a player who remembers where the lava pool near the spawn was); it still finds, ranks and checks every pool itself.",
+  "spawn": { "x": -516, "y": 69, "z": 77 },
+  "lava": {
+    "hints": [{ "x": -459, "y": 62, "z": 83 }],
+    "pools": [
+      { "key": "(-459, 62, 83)", "center": { "x": -456, "y": 62, "z": 85 }, "sources": 70, "reachable": 53, "openSky": 28, "fromSpawn": 58, "what": "surface pool east of the spawn: the one to cast at" },
+      { "key": "(-526, 61, 87)", "center": { "x": -521, "y": 61, "z": 91 }, "sources": 103, "reachable": 75, "openSky": 0, "fromSpawn": 13, "what": "cave pool under the spawn's plains (no sky over it): chain run 4 stalled next to it" },
+      { "key": "(-518, -56, 91)", "center": { "x": -517, "y": -56, "z": 93 }, "sources": 29, "reachable": 8, "openSky": 0, "fromSpawn": 125, "what": "deep lava lake" }
+    ],
+    "nearM5": "none with reachable sources within 128 blocks of (-630, 100) and (-600, 40) (where M5 ends, deep under the meadow)"
+  },
+  "water": { "hints": [{ "x": -536, "y": 62, "z": 80 }], "what": "the lake west of the spawn (21 blocks)" },
+  "obsidian": "no natural obsidian within 128 blocks of the spawn, (-630, 100) or (-600, 40)",
+  "stronghold": {
+    "locate": { "x": -878, "z": 194 },
+    "portalRing": { "x": -872, "y": -34, "z": 198 },
+    "fromLocate": 7,
+    "fromSpawn": 389,
+    "eyesPresent": 0,
+    "walkIn": { "x": -875, "y": -33, "z": 197 }
+  }
+}
