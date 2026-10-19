@@ -260,6 +260,10 @@ class Safety extends EventEmitter {
     if (!this.enabled) return
     if (++this._tick % 4 !== 0) return
     this.staleMeal()
+    // air going down (in the water, or in a wall)
+    const air = this.bot.oxygenLevel ?? 20
+    if (air < (this._air ?? 20)) this._airFalling = Date.now()
+    this._air = air
     if (this.busy) return
     this.check(false)
   }
@@ -326,6 +330,8 @@ class Safety extends EventEmitter {
       this.run('suffocating', () => this.digOut())
       return
     }
+    // suffocating in a block the client does not see yet: no fight now (the task's next climb step gets out of it)
+    if (this.inWall()) return
     if ((bot.oxygenLevel ?? 20) < 8 && (bot.entity.isInWater || world.isWater(bot.blockAt(bot.entity.position.offset(0, 1.62, 0).floored())))) {
       this.run('drowning', () => this.swimUp())
       return
@@ -407,8 +413,9 @@ class Safety extends EventEmitter {
         maxChase: this.opts.maxChase,
         eat: true,
         bow: 'auto',
-        // another mob hitting the bot from up close while this one is out of reach: that one first
-        stop: () => this.betterTarget(target),
+        // another mob hitting the bot from up close while this one is out of reach: that one first; the bot
+        // suffocating (a falling block on its head mid-climb): out of the wall first
+        stop: () => this.betterTarget(target) || this.inWall(),
         log: this.log
       })
     } finally {
@@ -431,6 +438,18 @@ class Safety extends EventEmitter {
    */
   hardIgnored (id) {
     return (this._givenUp.get(id)?.n ?? 0) >= 2
+  }
+
+  /**
+   * Suffocating: a solid block in the head cell, or — the server's block, not yet in the client's world — losing air
+   * out of the water while being hurt
+   */
+  inWall () {
+    const bot = this.bot
+    if (!bot.entity) return false
+    const head = bot.blockAt(bot.entity.position.offset(0, bot.entity.eyeHeight ?? 1.62, 0).floored())
+    if (head?.boundingBox === 'block' && !world.isLiquid(head)) return true
+    return Date.now() - (this._airFalling ?? 0) < 1500 && Date.now() - this.lastHurt < 1000 && !bot.entity.isInWater && !world.isWater(head)
   }
 
   /** an attacker that hit the bot in the last 2 s from within melee reach while `target` is out of it */

@@ -140,6 +140,26 @@ describe('final fix (agent): safety under U18 guards', () => {
     assert.strictEqual(ae.enabled, true, 'the pause ends with the agent')
   })
 
+  it('suffocating in a block the client does not see yet (air going down out of the water): no fight starts', async () => {
+    const bot = fakeBot()
+    const safety = new Safety(bot)
+    safety.enabled = true
+    bot.entities[7] = mob(7, 'zombie', new Vec3(2.5, 0, 0.5), { kind: 'Hostile mobs' })
+    bot.oxygenLevel = 20
+    safety.check = () => {}
+    for (let i = 0; i < 4; i++) safety.onTick()
+    bot.oxygenLevel = 18
+    for (let i = 0; i < 4; i++) safety.onTick()
+    safety.lastHurt = Date.now()
+    assert.strictEqual(safety.inWall(), true)
+    delete safety.check
+    safety.check(true)
+    await sleep(10)
+    assert.strictEqual(safety.interventions.length, 0, 'no fight while in the wall')
+    safety._airFalling = 0
+    assert.strictEqual(safety.inWall(), false)
+  })
+
   it('a fight against a mob out of reach gives way to one hitting the bot from up close', () => {
     const bot = fakeBot()
     const safety = new Safety(bot)

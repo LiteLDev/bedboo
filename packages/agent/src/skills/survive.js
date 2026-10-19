@@ -469,7 +469,10 @@ async function swimUp (bot, signal) {
 async function clearCell (bot, pos, signal) {
   for (let k = 0; k < 10; k++) {
     const b = bot.blockAt(pos)
-    if (!b || world.isPassable(b) || world.isWater(b)) return
+    // gravel / sand on its way down into the cell (still a block over it, or a falling block entity): let it land
+    // and dig it too — a bot that jumps into the cell gets it on the head (suffocated in a wall: the server's block)
+    if ((!b || world.isPassable(b) || world.isWater(b)) && !(await fallingInto(bot, pos, signal))) return
+    if (!b || world.isPassable(b) || world.isWater(b)) continue
     const lavaNear = world.FACES.some((f) => f.y !== -1 && world.isLava(bot.blockAt(pos.plus(f))))
     if (!b.diggable || world.isLava(b) || lavaNear || world.isProtected(bot, pos)) throw new SkillError(`unsafe to dig ${b.name} at ${navigate.fmt(pos)}`, { code: 'UNSAFE' })
     await navigate.digSafe(bot, b, signal)
@@ -477,6 +480,21 @@ async function clearCell (bot, pos, signal) {
   }
   const after = bot.blockAt(pos)
   if (!world.isPassable(after) && !world.isWater(after)) throw new SkillError(`${navigate.fmt(pos)} keeps filling up`, { code: 'FAILED' })
+}
+
+/**
+ * Whether something falls into the empty cell `pos`: a gravity block right over it (it falls within a few ticks) or a
+ * falling block entity in the column above. Waits (≤ 2 s) until it landed; true → look at the cell again.
+ */
+async function fallingInto (bot, pos, signal) {
+  const inColumn = () => Object.values(bot.entities ?? {}).some((e) => e.name === 'falling_block' &&
+    Math.abs(e.position.x - (pos.x + 0.5)) < 0.9 && Math.abs(e.position.z - (pos.z + 0.5)) < 0.9 && e.position.y > pos.y - 0.5 && e.position.y < pos.y + 12)
+  const over = () => world.isFalling(bot.blockAt(pos.offset(0, 1, 0)))
+  const empty = () => { const c = bot.blockAt(pos); return !c || world.isPassable(c) || world.isWater(c) }
+  if (!over() && !inColumn()) return false
+  for (let t = 0; t < 40 && (over() || inColumn()) && empty(); t++) await waitTicks(bot, 1, signal)
+  await waitTicks(bot, 2, signal)
+  return !empty()
 }
 
 /** one pillar step: clear the cell over the head, centre, jump, place a filler block under the feet */
