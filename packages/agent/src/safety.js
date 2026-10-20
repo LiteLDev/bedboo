@@ -521,11 +521,15 @@ class Safety extends EventEmitter {
   /** an attacker that hit the bot in the last 2 s from within melee reach while `target` is out of it */
   betterTarget (target) {
     const combat = require('./skills/combat')
-    if (combat.hitboxDistance(this.bot, target) <= 3.5) return false
+    const far = combat.hitboxDistance(this.bot, target)
     const now = Date.now()
     for (const [e, until] of this.attackers) {
       if (e === target || !this.bot.entities[e.id]) continue
-      if (until - 20000 > now - 2000 && combat.hitboxDistance(this.bot, e) <= 3) return true
+      // it hit the bot in the last 2 s from melee reach — and the target is out of reach, or a block farther than it
+      // (FINAL-ROUND R1: a skeleton 3.4 from the bot's eyes, just inside the old cut-off, was fought for 7 s while a
+      // zombie 1.4 away hit the unarmored bot every second, 17.5 → 0 hp)
+      const d = combat.hitboxDistance(this.bot, e)
+      if (until - 20000 > now - 2000 && d <= 3 && (far > 3.5 || d < far - 1)) return true
     }
     return false
   }
