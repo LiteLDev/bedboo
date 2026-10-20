@@ -217,6 +217,188 @@ describe('mineflayer-pathfinder patch (Bedrock)', function () {
   })
 })
 
+describe('mineflayer-pathfinder: a failed equip / placement never hangs the path (FINAL-ROUND)', function () {
+  this.timeout(30000)
+  const { pathfinder, Movements, goals } = require('mineflayer-pathfinder')
+  const g = -60 // the flat world's feet level (grass at -61)
+  const settle = () => new Promise((resolve) => setImmediate(resolve))
+
+  /**
+   * The bot at (0.5, g, 0.5) on the east rim of a gap 3 wide (x 1..3, every layer down to the void), the goal across
+   * it (4, g, 0): every path places scaffolding (no digging, parkour or sprinting; search radius 6, so no way around).
+   * The placements need no walk to the edge (LOSWhenPlacingBlocks off): the first one is due at once.
+   */
+  async function bridgeSetup () {
+    const created = await spawned()
+    const { bot } = created
+    bot.game.gameMode = 'survival'
+    withOverlay(bot)(1, -64, -12, 3, -61, 12, 'air')
+    bot.inventory.updateSlot(36, item(bot, 'dirt'))
+    bot.inventory.slots[36].count = 64
+    bot.loadPlugin(pathfinder)
+    const moves = Object.assign(new Movements(bot), { canDig: false, allowParkour: false, allowSprinting: false, allow1by1towers: false })
+    bot.pathfinder.setMovements(moves)
+    bot.pathfinder.LOSWhenPlacingBlocks = false
+    bot.pathfinder.searchRadius = 6
+    const resets = []
+    bot.on('path_reset', (reason) => resets.push(reason))
+    /** physics ticks (each runs the pathfinder's monitorMovement) until `until()` or `max` ticks; the ticks it took */
+    const ticks = async (max, until = () => false) => {
+      for (let i = 1; i <= max; i++) {
+        created.tick(1)
+        await settle()
+        await new Promise((resolve) => setTimeout(resolve, 2)) // goto settles in a setTimeout(0)
+        if (until()) return i
+      }
+      return max
+    }
+    return { ...created, moves, resets, ticks, goal: new goals.GoalBlock(4, g, 0) }
+  }
+
+  /** the outcome of a goto promise, without awaiting it: { state: 'pending' | 'resolved' | 'rejected', error } */
+  function track (promise) {
+    const out = { state: 'pending', error: null }
+    promise.then(() => { out.state = 'resolved' }, (err) => { out.state = 'rejected'; out.error = err })
+    return out
+  }
+
+  it('bot.equip rejecting: the equip lock is released, the cell is retried once then avoided, goto rejects (NoPath) within a bound', async () => {
+    const { bot, resets, ticks, goal } = await bridgeSetup()
+    let equips = 0
+    let pending = 0
+    let overlapped = false
+    bot.equip = async () => {
+      equips++
+      if (pending++ > 0) overlapped = true
+      await settle()
+      pending--
+      throw new Error('equip refused')
+    }
+    const placed = []
+    bot.placeBlock = async (ref, face) => { placed.push(ref.position.plus(face)) }
+    const run = track(bot.pathfinder.goto(goal))
+    const took = await ticks(200, () => run.state !== 'pending')
+    assert.strictEqual(run.state, 'rejected', `goto settled (after ${took} ticks, ${equips} equips, resets ${resets})`)
+    assert.strictEqual(run.error.name, 'NoPath')
+    assert.match(run.error.message, /6 placements failed in a row/)
+    assert.ok(took < 100, `rejected after ${took} ticks`)
+    assert.strictEqual(equips, bot.pathfinder.maxPlaceFailures, 'one equip per failed placement (upstream: one, then the lock was held for good)')
+    assert.ok(!overlapped, 'never two equips at once')
+    assert.deepStrictEqual(placed, [], 'nothing placed without the block in hand')
+    assert.ok(resets.filter((r) => r === 'equip_error').length >= bot.pathfinder.maxPlaceFailures - 1, `resets ${resets}`)
+    // each cell was tried twice before the searches avoided it (maxPlaceRetries 1)
+    assert.ok(bot.pathfinder.refusedPlacements.size >= 2, `refused ${[...bot.pathfinder.refusedPlacements]}`)
+    assert.ok(bot.pathfinder.refusedPlacements.has('1,-61,0'), 'the first cell of the bridge')
+    assert.ok(!bot.pathfinder.isBuilding() && !bot.pathfinder.isMoving())
+    // the given-up goal is dropped and not searched again: no more equips
+    assert.strictEqual(bot.pathfinder.goal, null)
+    await ticks(20)
+    assert.strictEqual(equips, bot.pathfinder.maxPlaceFailures)
+    // the same goal again (a caller's retry) keeps what failed: no placement at a refused cell, given up at once
+    const refused = [...bot.pathfinder.refusedPlacements]
+    const retry = track(bot.pathfinder.goto(goal))
+    await ticks(100, () => retry.state !== 'pending')
+    assert.strictEqual(retry.state, 'rejected')
+    assert.strictEqual(retry.error.name, 'NoPath')
+    assert.ok(refused.every((k) => bot.pathfinder.refusedPlacements.has(k)), 'the refused cells are still avoided')
+    assert.ok(equips <= bot.pathfinder.maxPlaceFailures + 1, `at most one more equip: ${equips}`)
+    // a new goal tries every cell again, and the lock is free: the equip works now, the placements go out
+    bot.equip = async () => {}
+    const again = track(bot.pathfinder.goto(new goals.GoalBlock(4, g, 0)))
+    await ticks(10, () => placed.length > 0)
+    assert.ok(placed.length > 0, 'placing again for the new goal')
+    assert.strictEqual(bot.pathfinder.refusedPlacements.size, 0)
+    bot.pathfinder.setGoal(null)
+    await ticks(5, () => again.state !== 'pending')
+    assert.strictEqual(again.state, 'rejected')
+    assert.strictEqual(again.error.name, 'GoalChanged')
+  })
+
+  it('a refused placement: retried once, then the search goes another way (a neighbouring column of the bridge)', async () => {
+    const { bot, resets, ticks, goal } = await bridgeSetup()
+    bot.equip = async () => {}
+    const tries = new Map()
+    bot.placeBlock = async (ref, face) => {
+      const dest = ref.position.plus(face)
+      tries.set(dest.toString(), (tries.get(dest.toString()) ?? 0) + 1)
+      // the server refuses the bridge's first cell; we stop at the first placement elsewhere
+      if (dest.equals(new Vec3(1, -61, 0))) throw new Error(`Server refused to place dirt at ${dest}: the block is still air`)
+      bot.pathfinder.stop()
+    }
+    const run = track(bot.pathfinder.goto(goal))
+    await ticks(100, () => run.state !== 'pending')
+    assert.strictEqual(run.state, 'rejected')
+    assert.strictEqual(run.error.name, 'PathStopped', 'stopped by the test at the first placement elsewhere')
+    assert.strictEqual(tries.get(new Vec3(1, -61, 0).toString()), 2, `the refused cell was tried twice: ${[...tries]}`)
+    assert.ok([...tries.keys()].some((k) => k !== new Vec3(1, -61, 0).toString()), `then another cell: ${[...tries]}`)
+    assert.deepStrictEqual(resets.filter((r) => r === 'place_error'), ['place_error', 'place_error'])
+  })
+
+  it('stop() settles on the next tick while a placement never answers; a late answer changes nothing', async () => {
+    const { bot, ticks, goal } = await bridgeSetup()
+    bot.equip = async () => {}
+    let answer = null
+    let placements = 0
+    bot.placeBlock = () => { placements++; return new Promise((resolve) => { answer = resolve }) }
+    const run = track(bot.pathfinder.goto(goal))
+    await ticks(20, () => placements > 0)
+    assert.strictEqual(placements, 1)
+    assert.ok(bot.pathfinder.isBuilding())
+    await ticks(5)
+    assert.strictEqual(placements, 1, 'one placement at a time (upstream equipped again on every tick of it)')
+    bot.pathfinder.stop()
+    const took = await ticks(5, () => run.state !== 'pending')
+    assert.strictEqual(run.state, 'rejected', 'goto settled')
+    assert.strictEqual(run.error.name, 'PathStopped')
+    assert.ok(took <= 2, `settled after ${took} ticks`)
+    assert.ok(!bot.pathfinder.isBuilding() && bot.pathfinder.goal === null)
+    // the orphaned placement answers late: the next goal is not disturbed by it
+    const resets = []
+    bot.on('path_reset', (r) => resets.push(r))
+    bot.placeBlock = async () => { placements++ }
+    const next = track(bot.pathfinder.goto(goal))
+    answer()
+    await ticks(10, () => placements > 1)
+    assert.ok(placements > 1, 'the next goal places')
+    assert.ok(!resets.includes('place_error'))
+    bot.pathfinder.stop()
+    await ticks(5, () => next.state !== 'pending')
+  })
+
+  it('a bot leaning out over the edge (its centre over the gap) searches from the block it stands on', async () => {
+    const { bot, ticks, goal } = await bridgeSetup()
+    bot.equip = async () => {}
+    const refs = []
+    bot.placeBlock = (ref, face) => {
+      refs.push([ref.position.toString(), ref.name])
+      bot.pathfinder.stop()
+      return new Promise(() => {})
+    }
+    // standing on the grass at x 0 by the east 0.1 of its hitbox (sneaking to the edge left it there)
+    bot.entity.position = new Vec3(1.2, g, 0.5)
+    bot.entity.onGround = true
+    bot.pathfinder.setGoal(goal)
+    await ticks(10, () => refs.length > 0)
+    // upstream started from (1, g, 0) — over the gap — and placed against the air under it
+    assert.deepStrictEqual(refs[0], [new Vec3(0, -61, 0).toString(), 'grass_block'])
+  })
+
+  it('a placement that never settles times out (placeTimeout) and is tried again; a hung equip too', async () => {
+    const { bot, resets, ticks, goal } = await bridgeSetup()
+    bot.pathfinder.placeTimeout = 300
+    let equips = 0
+    bot.equip = () => { equips++; return new Promise(() => {}) } // never answers
+    const run = track(bot.pathfinder.goto(goal))
+    const t0 = Date.now()
+    await ticks(2500, () => equips >= 3 || Date.now() - t0 > 5000)
+    assert.ok(equips >= 3, `equipped again after each timeout: ${equips}`)
+    assert.ok(resets.includes('place_timeout'), `resets ${resets}`)
+    while (Date.now() - t0 < 10000 && run.state === 'pending') await ticks(1)
+    assert.strictEqual(run.state, 'rejected', 'given up after maxPlaceFailures timeouts in a row')
+    assert.strictEqual(run.error.name, 'NoPath')
+  })
+})
+
 describe('digging: stopDigging while the breaking update is dispatched completes the dig (U15)', function () {
   this.timeout(30000)
 

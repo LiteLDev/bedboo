@@ -40,6 +40,9 @@ describe('ecosystemCollectBlock', function () {
     bot.loadPlugin(require('mineflayer-collectblock').plugin)
     await bot.waitForTicks(2) // collectblock loads pathfinder and tool on the next tick
     assert.ok(bot.collectBlock && bot.pathfinder && bot.tool)
+    // a search on the default world (full-height chunks) under a loaded host (four e2e shards + agent runs) took over
+    // pathfinder's default 5 s once: "Took to long to decide path to goal!" (docs/ecosystem.md: thinkTimeout)
+    bot.pathfinder.thinkTimeout = 20000
     await bot.test.ctx.consoleOutput(`effect ${bot.username} resistance 100000 255 true`)
     const y = surfaceY(-31, 6)
     pad = new Vec3(-31, y, 6)

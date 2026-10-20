@@ -478,12 +478,15 @@ async function manualStep (bot, target, { signal, trail = [] } = {}) {
  * onto the island's top near the exit fountain (0, y, 0), where the endermen roam: hops of ≤ 30 blocks (quick
  * searches; the pathfinder bridges from the platform, digs up through end stone and pillars).
  *
- * A hop that does not move the bot 2 blocks in `stallMs` (15 s) is a stall: mineflayer-pathfinder never gets past a
- * scaffolding block whose equip or placement failed (its equip lock is not released on an equip error; a refused
- * placement resets the path into the same placement) — the walk then stood still on its half-built bridge for 10 × 30
- * s (4 chained runs). The next hop takes another way: the pathfinder without placements (dropping ≤ 6 off the
- * platform onto the island's slope, digging up through the end stone), then the bot's own steps (staircase, drop,
- * bridge, pillar: `manualStep`); each way that stalled counts against it. Bounded by `maxMs`.
+ * A hop that does not move the bot 2 blocks in `stallMs` (15 s), or that ends with the pathfinder giving up on failed
+ * placements, is a stall. The walk once stood still on its half-built bridge for 10 × 30 s (4 chained runs): unpatched,
+ * mineflayer-pathfinder never got past a scaffolding block whose equip or placement failed. The patched pathfinder
+ * (patches/mineflayer-pathfinder@2.4.5.patch, docs/differences/U15.md#pathfinder) releases its equip lock, retries a
+ * refused cell once and then plans around it or rejects with NoPath ("… placements failed in a row"), and its stop()
+ * settles at once; the ways below stay as a bounded defence in depth. The next hop after a stall takes another way:
+ * the pathfinder without placements (dropping ≤ 6 off the platform onto the island's slope, digging up through the end
+ * stone), then the bot's own steps (staircase, drop, bridge, pillar: `manualStep`); each way that stalled counts
+ * against it. Bounded by `maxMs`.
  * @returns {Promise<{ onTop: boolean, ms: number, hops: number, stalls: Array<{ hop, way, at, ms, error }>, ways: object,
  *   maxStillMs: number }>} `maxStillMs`: the longest the bot stayed within 1 block of a spot (not fighting)
  */
@@ -539,9 +542,8 @@ async function toIslandTop (bot, { signal, guard, maxMs = 150000, stallMs = 1500
       let error = null
       try {
         if (how === 'manual') {
-          // a few of the bot's own steps, then the pathfinder again — stopped for good first: a goto that stalled on
-          // a failed placement leaves mineflayer-pathfinder in it (stop() waits for a placement that never ends),
-          // still pressing 'back' and 'sneak' towards its bridge edge every tick
+          // a few of the bot's own steps, then the pathfinder again (stopped first: no goal of its own drives the
+          // controls during the steps)
           u.stopMoving(bot)
           walkMovements(bot)
           const steps = []
@@ -568,8 +570,9 @@ async function toIslandTop (bot, { signal, guard, maxMs = 150000, stallMs = 1500
         u.log(bot, `end: towards the island top (${how}): ${err.message}`)
       }
       out.ways[how] = (out.ways[how] ?? 0) + 1
-      // no 2 blocks gained, or a walk that stood still for stallMs at its end (after a few blocks of a bridge)
-      if (!onTop() && (bot.entity.position.distanceTo(start) < 2 || /stalled/.test(error ?? ''))) {
+      // no 2 blocks gained, a walk that stood still for stallMs at its end (after a few blocks of a bridge), or a
+      // pathfinder that gave up on its placements
+      if (!onTop() && (bot.entity.position.distanceTo(start) < 2 || /stalled|placements failed/.test(error ?? ''))) {
         // stalled: another way next
         fails[how]++
         const stall = { hop, way: how, at: u.plain(bot.entity.position.floored()), ms: Date.now() - t, error }

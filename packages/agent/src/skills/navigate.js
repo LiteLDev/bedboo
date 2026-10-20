@@ -419,10 +419,11 @@ function isDoorName (name) {
 }
 
 /** dig `block` with the best tool (no-op when it is gone) */
-async function digSafe (bot, block, signal) {
+async function digSafe (bot, block, signal, { passable = false } = {}) {
   checkAbort(signal)
   const current = bot.blockAt(block.position)
-  if (!current || world.isPassable(current)) return
+  // passable blocks (plants, torches) are walked through: dug only with `passable` (never air or a liquid)
+  if (!current || world.isAir(current) || world.isLiquid(current) || (world.isPassable(current) && !passable)) return
   const tool = inventory.bestToolFor(bot, current)
   if (tool) await inventory.equip(bot, tool)
   await bot.dig(current, true)

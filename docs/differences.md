@@ -2246,9 +2246,27 @@ below (`patches/mineflayer-*.patch`); each entry says what the patch changes and
     every other `diggingCompleted` / `diggingAborted` listener of the bot);
   - a dynamic goal (`GoalFollow`) re-plans when the bot was pushed more than a block away from where its finished path
     was computed (a skeleton's arrows pushed a mineflayer-pvp bot out of range for good: the target itself had not moved
-    far enough for `hasChanged()`).
+    far enough for `hasChanged()`);
+  - failed placements never hang the path (FINAL-ROUND; upstream 2.4.5 and master d773d15 both hang — master's open PR
+    #365 only moves the futility check; any server, Java too). Upstream: a rejected `bot.equip` of the scaffolding
+    block never released `lockEquipItem`, so the executor returned early on every tick, before its futility check,
+    for good; a refused placement reset the path into the same placement for ever; `stop()` waited for a node or a
+    reset that never came. Now the equip lock is held from the equip until the placement settles and released on every
+    outcome; a failed equip / placement / door click (`equip_error`, `place_error`, `use_error`) or one that takes over
+    `placeTimeout` (10 s, `place_timeout`) is counted at its cell: a cell that failed more than `maxPlaceRetries` (1)
+    times joins `bot.pathfinder.refusedPlacements`, which `Movements#getNeighbors` never plans a placement at for the
+    current goal (the same goal object set again — a caller's retry — keeps them; another goal or `stop()` clears
+    them); `maxPlaceFailures` (6) in a row give the goal up (`path_update` 'noPath', `goto` rejects `NoPath` "…
+    placements failed in a row"; the goal is dropped unless dynamic, so no later reset revives it). `stop()` during a
+    placement settles on the next tick; a placement abandoned by a stop / reset / new goal changes nothing when it
+    settles late (and never releases a newer placement's lock); the walk back to `returnPos` after a
+    placement is bounded like a walk to a node. After a failure the bot steps back onto the block it leaned out from,
+    and a search begins from the block the bot stands on when its floored position is over a gap (upstream started
+    from the cell over the gap and planned a placement against the air under it — after a stop at a bridge edge the
+    next `goto` spent 2 × 10 s on it). The End walk-up stall of the agent's chain runs (PR #37) was this bug.
 - **Tests:** `test/external/ecosystemPathfinder.test.js` (hills, lake, GoalXZ 120 + GoalY, ladder, parkour, pillar,
-  bridge, wall, door + gate, GoalFollow), `test/external/scaffold.test.js`, unit `test/unit/ecosystem.test.js`.
+  bridge, wall, door + gate, GoalFollow; an equip rejected mid-bridge, a placement refused mid-bridge, `stop()` with a
+  placement that never answers), `test/external/scaffold.test.js`, unit `test/unit/ecosystem.test.js`.
 
 #### mineflayer-tool 1.2.0 patch  {#tool}
 - **Affects:** `bot.tool.getDigTime`, `equipForBlock`, `retrieveTools`' cost order

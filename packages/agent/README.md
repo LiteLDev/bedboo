@@ -70,7 +70,7 @@ A skill is `async (bot, args) => result` (`args.signal` is the runner's AbortSig
 | `gather` | `{ item \| blocks, count }` | surface blocks: logs (`item: 'log'` = any), sand, gravel, … |
 | `craft` | `{ item, count }` | `bot.recipesFor` / `bot.craft`, 2×2 or a crafting table (placed and taken back) |
 | `smelt` | `{ item, count, input?, fuel?, furnaces?: 3 }` | `bot.openFurnace`; the furnace is placed and taken back; the window is only open to load / unload (a fight that closes it costs nothing); ≥ 12 items are split over up to 3 furnaces |
-| `build` | `{ blueprint, origin?, radius? }` | builds a blueprint near the bot, verifies it block by block |
+| `build` | `{ blueprint, origin?, radius?, repairMs? }` | builds a blueprint near the bot, verifies it block by block and repairs what is wrong (≤ 3 rounds) before it reports a failure |
 | `navigate` | `{ position \| spawn: true, goal?, range? }` | pathfinder with re-planning, legs for far goals (each leg's end on dry land, never in a lake), unsticking (own door, head block, out of the water onto a bank, a side dug open), the last resort after two failures in a pit / the water: `escape`; `spawn: true` is an x / z goal (the spawn column) |
 | `explore` | `{ blocks?, biomes?, maxDistance? }` | spiral walk until a block / biome is loaded |
 | `surface` | `{}` | out of a mine: pillar up (staircase where liquid is above, around lakes; over to the next column where gravel / sand is over the head) |
@@ -158,6 +158,26 @@ src/safety.js runs during every task. When it takes over, pathfinder and digging
 must stay empty, the checks and the materials; `verify(compiled, bot.blockAt)` compares block by block. The build skill
 obtains the materials first, picks a flat site, clears it, fills dips under the floor and places with
 `bot.placeBlock` against a solid neighbour face.
+
+Placement and repair (FINAL-ROUND):
+- **Placing a cell.**
+  - The bot's hitbox never touches the cell. That includes a 0.05 margin, since BDS refuses a block that touches the
+    player's server-side hitbox.
+  - A mob standing in the cell is waited for (≤ 10 s). An animal is hit, so it flees.
+  - After a refusal, or a placement that is never answered, the next attempt is made from another spot, a block away
+    from the cell. It clicks the face refused least, and it never repeats a refused face from a refused spot.
+- **Clearing the volume.**
+  - Plants that a placed block replaces (grass, ferns, snow layers, …) are left in place.
+  - Flowers and other passable blocks that are not replaceable are dug out. `GoalLookAtBlock` never ends at a block
+    without a shape, so the bot walks next to them instead.
+- **Repair.** After the build, `verify` runs. While blocks are wrong, up to 3 repair rounds run within `repairMs`
+  (180 s). Each round:
+  1. digs out wrong blocks;
+  2. takes out a door whose upper half is wrong, so it is placed again whole;
+  3. obtains the materials of the missing blocks again when the bot is short;
+  4. places every missing block again, with more attempts each round.
+
+  Only then does the skill fail, and its error lists the cells that are still wrong.
 
 ## Overworld milestones (e2e)
 
@@ -302,6 +322,17 @@ already drops those), the obsidian edge is walked over, and no enderman was invo
 full inventories into the End (the eyes' /give dropped the End's diamond boots and leggings); since the late declutter
 (≥ 12 free slots before every late phase) no run stalled.
 
+**Root cause fixed in the library (FINAL-ROUND).** The hang was in mineflayer-pathfinder itself. The patched pathfinder
+(`patches/mineflayer-pathfinder@2.4.5.patch`, [docs/differences/U15.md](../../docs/differences/U15.md#pathfinder)) now
+does the following:
+- It releases its equip lock on every outcome.
+- It retries a refused cell once, then plans around it.
+- After 6 failed placements in a row, it rejects with `NoPath` ("… placements failed in a row").
+- Its `stop()` settles at once.
+
+The ways below are kept as bounded defence in depth. A `NoPath` caused by failed placements counts as a stall of the
+`path` way.
+
 **The fix** (`skills/end.js` `toIslandTop`, bounded by `walkMs` = 150 s): a meal first, standing still (auto-eat
 starting one mid-bridge swaps the block in the hand for food), no meals during a hop. A hop that does not move the bot
 2 blocks, or whose walk stood still for `walkStallMs` (15 s), is a stall. The next hop then takes another way, the
@@ -413,7 +444,8 @@ the bot climbs out with U17's staircase steps (`stairStepUp`) and walks again.
 
 ✗ default-f2 (U17's build in M4): the bot could not clear the grass at one floor cell. Its walk there stalled
 ("Took to long to decide path", then stuck twice), and BDS refused both cobblestone placements beside it ("the block
-is still air"). The house ended with 1 of 125 blocks wrong after the repair pass. This change does not touch it.
+is still air"). The house ended with 1 of 125 blocks wrong after the repair pass. This change does not touch it. Fixed in
+FINAL-ROUND: the build now repairs block by block ([Blueprints](#blueprints)).
 
 ✗ default-r1: drowned twice in M4's climb to the surface (U17's `surface`), at the same spot. The pillar had come up
 under a flooded cave at y 52, with no air pocket within 6 blocks. Every 4 ticks the safety's drowning behaviour took

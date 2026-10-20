@@ -4,10 +4,12 @@
  * Build a structure from a blueprint (src/blueprint.js): pick a flat site, obtain the materials (obtain skill),
  * clear the volume, place every block in the compiled order (`bot.placeBlock` against a solid neighbour face, walking
  * to a spot within reach with pathfinder's GoalPlaceBlock), then verify the structure block by block with
- * `bot.blockAt` (one repair pass for mismatches).
+ * `bot.blockAt` and repair what is wrong: up to 3 rounds (within `repairMs`) that dig out wrong blocks, obtain the
+ * materials of the missing ones again when short, and place every missing block again — after a refusal from another
+ * spot (never touching the cell), against another face, once no mob stands in the cell. Only then does it fail.
  *
- * Skill `build` — args: { blueprint: 'house5x5' | object, origin?: {x,y,z}, obtain?: true, radius?: 24 }
- *                 result: { blueprint, origin, placed, verified, checked, mismatches, ms }
+ * Skill `build` — args: { blueprint: 'house5x5' | object, origin?: {x,y,z}, obtain?: true, radius?: 24, repairMs?: 180000 }
+ *                 result: { blueprint, origin, placed, verified, checked, mismatches, repairs, ms }
  */
 const { Vec3 } = require('vec3')
 const { SkillError, checkAbort, isAbort } = require('../errors')
@@ -21,6 +23,14 @@ const navigate = require('./navigate')
 
 const goals = () => require('mineflayer-pathfinder').goals
 const FACE_ORDER = [new Vec3(0, -1, 0), new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Vec3(0, 0, 1), new Vec3(0, 0, -1), new Vec3(0, 1, 0)]
+
+/** plants and the like that a placed block replaces (no need to dig them first); flowers, saplings, torches are not */
+const REPLACEABLE = new Set(['short_grass', 'tall_grass', 'fern', 'large_fern', 'deadbush', 'dead_bush', 'vine', 'snow_layer', 'fire', 'soul_fire', 'seagrass', 'tall_seagrass', 'glow_lichen', 'hanging_roots', 'leaf_litter', 'short_dry_grass', 'tall_dry_grass', 'bush', 'structure_void'])
+const replaceable = (b) => !!b && (world.isAir(b) || world.isLiquid(b) || REPLACEABLE.has(b.name))
+/** entities that never stand in the way of a placement */
+const NON_BLOCKING = /^(item|xp_orb|xp_bottle|arrow|thrown_trident|snowball|egg|ender_pearl|fireball|small_fireball|dragon_fireball|wither_skull.*|splash_potion|lingering_potion|fishing_hook|lightning_bolt|area_effect_cloud|eye_of_ender_signal|fireworks_rocket|wind_charge_projectile|breeze_wind_charge_projectile|evocation_fang|shulker_bullet|llama_spit|painting|leash_knot)$/
+/** animals that a hit sends out of the cell (they flee; anything else is waited for) */
+const SHOOABLE = new Set(['sheep', 'cow', 'mooshroom', 'pig', 'chicken', 'rabbit'])
 
 /**
  * A site for `size` (x, y, z) near the bot: ground as flat as possible, nothing much to clear, no liquid.
@@ -209,55 +219,144 @@ async function leave (bot, compiled, { signal }) {
   }
 }
 
-/** solid neighbour to click for placing at `pos`: { ref, face } (below first), or null */
-function referenceFor (bot, pos) {
+/**
+ * solid neighbour to click for placing at `pos`: { ref, face } (below first), or null. `refused` (refKey → refusals):
+ * the face refused least often first — after a refusal the next attempt clicks another face where there is one.
+ */
+function referenceFor (bot, pos, refused = null) {
+  let best = null
   for (const dir of FACE_ORDER) {
     const ref = bot.blockAt(pos.plus(dir))
-    if (ref && world.isSolid(ref) && !/door|chest|crafting_table|furnace/.test(ref.name)) return { ref, face: dir.scaled(-1) }
+    if (!ref || !world.isSolid(ref) || /door|chest|crafting_table|furnace/.test(ref.name)) continue
+    const r = { ref, face: dir.scaled(-1) }
+    if (!refused) return r
+    const n = refused.get(refKey(r)) ?? 0
+    if (!best || n < best.n) best = { r, n }
   }
-  return null
+  return best?.r ?? null
 }
 
-/** the bot's eyes are within `range` of the reference face, and the bot does not stand in the target cells */
+function refKey (r) {
+  return `${r.ref.position}|${r.face}`
+}
+
+/** whether the entity's bounding box reaches into the cell at `pos` (BDS refuses a block there), `margin` around it */
+function inCell (e, pos, margin = 0) {
+  const w = (e.width ?? 0.6) / 2 + margin
+  const h = e.height ?? 1.8
+  const p = e.position
+  return p.x + w > pos.x && p.x - w < pos.x + 1 && p.z + w > pos.z && p.z - w < pos.z + 1 && p.y + h > pos.y - margin && p.y < pos.y + 1 + margin
+}
+
+/** mobs, players, vehicles in the cell `pos` (not the bot; items, orbs and projectiles do not block a placement) */
+function entitiesIn (bot, pos) {
+  return Object.values(bot.entities ?? {}).filter((e) => e && e !== bot.entity && e.position && !NON_BLOCKING.test(e.name ?? '') && inCell(e, pos, 0.05))
+}
+
+/**
+ * Wait (≤ 10 s) until no mob stands in the cell `pos`; an animal in it is hit now and then (it flees). Whether the cell
+ * is clear.
+ */
+async function clearOfMobs (bot, pos, signal) {
+  for (let i = 0; i < 40; i++) {
+    const mobs = entitiesIn(bot, pos)
+    if (!mobs.length) return true
+    const m = mobs[0]
+    if (i === 0) log(bot, `build: a ${m.name} stands in ${navigate.fmt(pos)}: waiting for it to move`)
+    if (SHOOABLE.has(m.name) && i % 8 === 0 && m.position.distanceTo(bot.entity.position) < 3.5) {
+      try {
+        await bot.lookAt(m.position.offset(0, (m.height ?? 1) / 2, 0), true)
+        bot.attack(m)
+      } catch {}
+    }
+    await waitTicks(bot, 5, signal)
+  }
+  return !entitiesIn(bot, pos).length
+}
+
+/** the feet cell `feet` is within a block of the cell `pos` (a hitbox there could touch it) */
+function nextToCell (feet, pos) {
+  return Math.abs(feet.x - pos.x) <= 1 && Math.abs(feet.z - pos.z) <= 1 && (feet.y === pos.y || feet.y === pos.y - 1)
+}
+
+/** a pathfinder goal: a node a block away from the cell `pos` (its hitbox never touches it), none of `spots` */
+function awayGoal (pos, spots) {
+  return {
+    heuristic: () => 0,
+    isEnd: (node) => !nextToCell(node, pos) && !spots.some((s) => s.x === node.x && s.y === node.y && s.z === node.z),
+    hasChanged: () => false,
+    isValid: () => true
+  }
+}
+
+/** dig a block out of the structure's volume (in reach first; a flower too — no plant a placed block replaces) */
+async function digOut (bot, block, compiled, signal) {
+  checkAbort(signal)
+  if (!bot.canDigBlock(block)) {
+    // GoalLookAtBlock needs a block with a shape to look at (a raycast): a plant / flower is walked near instead
+    const g = goals()
+    const p = block.position
+    const goal = world.isSolid(block) ? new g.GoalLookAtBlock(p, bot.world, { reach: 4 }) : new g.GoalNear(p.x, p.y, p.z, 2)
+    await navigate.goto(bot, goal, { signal, timeout: 30000, attempts: 2, movements: buildMovements(bot, compiled) })
+  }
+  const current = bot.blockAt(block.position)
+  if (!current || replaceable(current) || !current.diggable) return
+  await navigate.digSafe(bot, current, signal, { passable: true })
+  heartbeat(bot)
+}
+
+/**
+ * the bot's eyes are within `range` of the reference face, and the bot does not stand in the target cells — nor touch
+ * them (0.05 around the hitbox: BDS refuses a block whose cell only touches the bot's server-side hitbox)
+ */
 function inPlaceRange (bot, pos, ref, face, tall, range = 4.3) {
   const eye = bot.entity.position.offset(0, bot.entity.eyeHeight ?? 1.62, 0)
   const faceCenter = ref.position.offset(0.5 + face.x * 0.5, 0.5 + face.y * 0.5, 0.5 + face.z * 0.5)
   if (eye.distanceTo(faceCenter) > range) return false
-  const p = bot.entity.position
   for (let dy = 0; dy < (tall ? 2 : 1); dy++) {
-    const c = pos.offset(0, dy, 0)
-    if (p.x + 0.3 > c.x && p.x - 0.3 < c.x + 1 && p.z + 0.3 > c.z && p.z - 0.3 < c.z + 1 && p.y < c.y + 1 && p.y + 1.8 > c.y) return false
+    if (inCell({ position: bot.entity.position, width: 0.6, height: 1.8 }, pos.offset(0, dy, 0), 0.05)) return false
   }
   return true
 }
 
-/** place one blueprint cell (walks into range first); returns true when the block is there */
-async function placeCell (bot, placement, compiled, { signal }) {
+/**
+ * Place one blueprint cell (walks into range first); returns true when the block is there. After a refusal the next
+ * attempt clicks the face refused least (another one where there is one) from another spot, a block away from the
+ * cell (BDS refuses a block that touches the player's server-side hitbox), and waits a little longer; a mob standing in
+ * the cell is waited for (an animal is hit, it flees).
+ */
+async function placeCell (bot, placement, compiled, { signal, attempts = 4 } = {}) {
   const { pos, names, tall } = placement
-  for (let attempt = 0; attempt < 4; attempt++) {
+  const refused = new Map() // refKey → refusals
+  const spots = [] // the bot's feet cells at the refusals
+  for (let attempt = 0; attempt < attempts; attempt++) {
     checkAbort(signal)
     await agentOf(bot)?.safety?.idle(signal)
     await outOfDip(bot, compiled, signal)
     const current = bot.blockAt(pos)
     if (current && names.includes(current.name)) return true
-    if (current && !world.isPassable(current)) {
-      // something else is in the way (a mob-placed block, gravel, scaffolding): dig it
-      await navigate.digSafe(bot, current, signal).catch((err) => { if (isAbort(err)) throw err })
+    if (current && !replaceable(current)) {
+      // something else is in the way (a mob-placed block, gravel, scaffolding, a flower): dig it
+      await digOut(bot, current, compiled, signal).catch((err) => { if (isAbort(err)) throw err; log(bot, `build: dig ${current.name} at ${navigate.fmt(pos)}: ${err.message}`) })
       continue
     }
     const stack = stackFor(bot, names)
     if (!stack) throw new SkillError(`out of ${names.join('/')}`, { code: 'MISSING' })
-    const r = referenceFor(bot, pos)
+    const r = referenceFor(bot, pos, refused)
     if (!r) throw new SkillError(`nothing to place ${names[0]} against at ${navigate.fmt(pos)}`, { code: 'FAILED' })
     // a door is placed from outside the footprint: the bot must not lock itself in
     const outsideNeeded = tall && !inFrontOf(compiled, pos, bot.entity.position)
-    if (!inPlaceRange(bot, pos, r.ref, r.face, tall) || outsideNeeded) {
+    // after a refusal: from another spot, a block away from the cell
+    const feet = bot.entity.position.floored()
+    const elsewhere = spots.length > 0 && (nextToCell(feet, pos) || spots.some((s) => s.equals(feet)))
+    if (!inPlaceRange(bot, pos, r.ref, r.face, tall) || outsideNeeded || elsewhere) {
       // within reach of the face, and never standing in (or overlapping) the cell itself
       const g = goals()
       const goal = new g.GoalCompositeAll([
-        new g.GoalPlaceBlock(pos, bot.world, { range: 4, LOS: false }),
+        new g.GoalPlaceBlock(pos, bot.world, { range: 4, LOS: false, ...(spots.length ? { faces: [r.face.scaled(-1)] } : {}) }),
         new g.GoalInvert(new g.GoalNear(pos.x, pos.y, pos.z, 1.1)),
-        ...(tall ? [new g.GoalInvert(new g.GoalNear(pos.x, pos.y + 1, pos.z, 1.1)), frontGoal(compiled, pos)] : [])
+        ...(tall ? [new g.GoalInvert(new g.GoalNear(pos.x, pos.y + 1, pos.z, 1.1)), frontGoal(compiled, pos)] : []),
+        ...(spots.length ? [awayGoal(pos, spots)] : [])
       ])
       try {
         await navigate.goto(bot, goal, { signal, timeout: 45000, attempts: 2, movements: buildMovements(bot, compiled) })
@@ -269,7 +368,16 @@ async function placeCell (bot, placement, compiled, { signal }) {
         log(bot, `build: still out of range / in the way of ${navigate.fmt(pos)} at ${navigate.fmt(bot.entity.position)}`)
         continue
       }
+      // no other spot reached: from a refused spot (or touching the cell) only with a face not refused yet
+      const at = bot.entity.position.floored()
+      if (spots.length && (nextToCell(at, pos) || spots.some((s) => s.equals(at))) && (refused.get(refKey(r)) ?? 0) > 0) {
+        log(bot, `build: no other spot to place ${navigate.fmt(pos)} from than ${navigate.fmt(bot.entity.position)}`)
+        await waitTicks(bot, 10, signal)
+        continue
+      }
     }
+    // a mob in the cell: BDS would refuse the block (not the face's or the spot's fault)
+    if (!await clearOfMobs(bot, pos, signal)) continue
     try {
       await agentOf(bot)?.safety?.idle(signal)
       await withoutMeals(bot, async () => {
@@ -279,8 +387,13 @@ async function placeCell (bot, placement, compiled, { signal }) {
       heartbeat(bot) // work done (the stuck watchdog)
     } catch (err) {
       if (isAbort(err)) throw err
-      log(bot, `build: place ${stack.name} at ${navigate.fmt(pos)}: ${err.message}`)
-      await waitTicks(bot, 4, signal)
+      // refused, or never answered: another face / spot next time
+      if (/refused|did not answer|did not fire|timed? ?out/i.test(err.message)) {
+        refused.set(refKey(r), (refused.get(refKey(r)) ?? 0) + 1)
+        spots.push(bot.entity.position.floored())
+      }
+      log(bot, `build: place ${stack.name} at ${navigate.fmt(pos)} against ${navigate.fmt(r.ref.position)} from ${navigate.fmt(bot.entity.position)}: ${err.message}`)
+      await waitTicks(bot, 4 + 4 * Math.min(spots.length, 4), signal)
     }
   }
   const b = bot.blockAt(pos)
@@ -301,13 +414,13 @@ async function clearVolume (bot, compiled, { signal }) {
   for (const p of cells) {
     checkAbort(signal)
     const b = bot.blockAt(p)
-    if (!b || world.isAir(b)) continue
+    // plants a placed block replaces are left (verify takes them for air; GoalLookAtBlock never ends at one: no shape)
+    if (!b || replaceable(b)) continue
     const names = want.get(`${p.x},${p.y},${p.z}`)
     if (names?.includes(b.name)) continue
-    if (world.isLiquid(b) || !b.diggable) continue
+    if (!b.diggable) continue
     try {
-      if (!bot.canDigBlock(b)) await navigate.goto(bot, new (goals().GoalLookAtBlock)(p, bot.world, { reach: 4 }), { signal, timeout: 30000, attempts: 2, movements: buildMovements(bot, compiled) })
-      await navigate.digSafe(bot, bot.blockAt(p), signal)
+      await digOut(bot, b, compiled, signal)
       dug++
     } catch (err) {
       if (isAbort(err)) throw err
@@ -371,13 +484,16 @@ async function build (bot, args) {
   }
   await placeAll()
   let v = verify(compiled, (pos) => bot.blockAt(pos))
-  if (!v.ok) {
-    log(bot, `build: ${v.mismatches.length} mismatch(es), repairing`)
-    await clearVolume(bot, compiled, { signal })
-    await placeAll()
+  // repair: block by block, until the structure verifies (≤ 3 rounds, within repairMs)
+  const repairs = []
+  const repairUntil = Date.now() + (args.repairMs ?? 180000)
+  for (let round = 1; !v.ok && round <= 3 && Date.now() < repairUntil; round++) {
+    log(bot, `build: ${v.mismatches.length} mismatch(es), repair round ${round}: ${v.mismatches.map((m) => `${m.actual ?? '?'} for ${m.expected[0]} at ${navigate.fmt(m.pos)}`).join(', ')}`)
+    await repair(bot, compiled, v.mismatches, { signal, round, deadline: repairUntil })
     v = verify(compiled, (pos) => bot.blockAt(pos))
+    repairs.push(v.mismatches.length)
   }
-  progress(bot, 'build-verified', { ok: v.ok, checked: v.checked, mismatches: v.mismatches.length })
+  progress(bot, 'build-verified', { ok: v.ok, checked: v.checked, mismatches: v.mismatches.length, repairs })
   // a house (a structure with a door): the Agent's shelter for the night when it has no bed (skills/rest.js)
   const door = compiled.placements.find((pl) => pl.tall)
   if (agent && v.ok && door) {
@@ -393,10 +509,53 @@ async function build (bot, args) {
     verified: v.ok,
     checked: v.checked,
     mismatches: v.mismatches.map((m) => ({ pos: { x: m.pos.x, y: m.pos.y, z: m.pos.z }, expected: m.expected, actual: m.actual })),
+    repairs,
     ms: Date.now() - started
   }
-  if (!v.ok) throw new SkillError(`${compiled.name}: ${v.mismatches.length} block(s) wrong after the repair pass`, { code: 'FAILED', details: result })
+  if (!v.ok) throw new SkillError(`${compiled.name}: ${v.mismatches.length} block(s) wrong after ${repairs.length} repair round(s): ${result.mismatches.map((m) => `${m.actual ?? '?'} for ${m.expected[0]} at (${m.pos.x}, ${m.pos.y}, ${m.pos.z})`).join(', ')}`, { code: 'FAILED', details: result })
   return result
+}
+
+/**
+ * One repair round after a verification found `mismatches`: wrong blocks dug out (the volume cleared again), the
+ * materials of the missing blocks obtained again when the bot is short of them, then every missing block placed again
+ * (more attempts each round: other spots, other faces). A door's upper half is repaired through its door.
+ */
+async function repair (bot, compiled, mismatches, { signal, round = 1, deadline = Infinity }) {
+  await clearVolume(bot, compiled, { signal })
+  const wanted = compiled.placements.filter((p) => mismatches.some((m) => m.pos.equals(p.pos) || (p.tall && m.pos.equals(p.pos.offset(0, 1, 0)))))
+  const isThere = (p) => p.names.includes(bot.blockAt(p.pos)?.name) && (!p.tall || p.names.includes(bot.blockAt(p.pos.offset(0, 1, 0))?.name))
+  // a door whose upper half is wrong: out with it, it is placed again whole
+  for (const p of wanted) {
+    if (!p.tall || isThere(p) || !p.names.includes(bot.blockAt(p.pos)?.name)) continue
+    await digOut(bot, bot.blockAt(p.pos), compiled, signal).catch((err) => { if (isAbort(err)) throw err; log(bot, `build: repair: dig the door at ${navigate.fmt(p.pos)}: ${err.message}`) })
+  }
+  const missing = wanted.filter((p) => !isThere(p))
+  // materials: the missing blocks of each kind, obtained again when short (a lost stack, a death, blocks used up)
+  const kinds = new Map()
+  for (const p of missing) {
+    const k = p.names.join('|')
+    if (!kinds.has(k)) kinds.set(k, { names: p.names, count: 0 })
+    kinds.get(k).count++
+  }
+  for (const { names, count } of kinds.values()) {
+    try {
+      await obtainAny(bot, names, count, { signal })
+    } catch (err) {
+      if (isAbort(err) || err.code === 'DIED') throw err
+      log(bot, `build: repair: could not obtain ${names[0]}: ${err.message}`)
+    }
+  }
+  for (const p of missing) {
+    if (Date.now() > deadline) break
+    try {
+      if (await placeCell(bot, p, compiled, { signal, attempts: 4 + 2 * round })) continue
+      log(bot, `build: repair: ${p.names[0]} at ${navigate.fmt(p.pos)} not placed`)
+    } catch (err) {
+      if (isAbort(err) || err.code === 'DIED') throw err
+      log(bot, `build: repair: ${p.names[0]} at ${navigate.fmt(p.pos)}: ${err.message}`)
+    }
+  }
 }
 
 /** a filler block under every bottom-layer cell that has none (dips in the ground), so the floor has support */
@@ -422,4 +581,4 @@ async function fillUnder (bot, compiled, { signal }) {
 
 const skill = defineSkill('build', build, { description: 'build a blueprint (materials obtained, verified block by block)' })
 
-module.exports = Object.assign(skill, { build, findSite, placeCell, clearVolume, fillUnder, referenceFor, obtainAny, leave, insideFootprint })
+module.exports = Object.assign(skill, { build, findSite, placeCell, clearVolume, fillUnder, referenceFor, obtainAny, leave, insideFootprint, repair, entitiesIn, inCell, nextToCell, awayGoal, replaceable })
