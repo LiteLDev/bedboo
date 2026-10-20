@@ -1210,13 +1210,25 @@ async function mineMold (bot, mold, before, { signal, goals }) {
       await u.sleep(1000, signal)
     }
   }
-  // the drop lies in the hole: step in
+  // the drop lies in the hole: step in — or wherever it is within 6 blocks of the mold (washed out by the water
+  // draining off: FINAL-ROUND ore4 lost all 10 casts at two pools, each one dug in 9 s, then 15 s of steps into the
+  // empty hole)
+  const centre = M.offset(0.5, 0.5, 0.5)
   const until = Date.now() + 15000
+  let reported = false
   while (u.count(bot, 'obsidian') <= before && Date.now() < until) {
-    await u.goto(bot, new goals.GoalBlock(M.x, M.y, M.z), { signal, timeout: 15000, retries: 1 }).catch((err) => { if (signal?.aborted) throw err })
+    const drop = u.dropsNear(bot, centre, { radius: 6, names: ['obsidian'] }).sort((a, b) => a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position))[0]
+    const at = drop ? drop.position.floored() : M
+    if (drop && !at.equals(M) && !reported) {
+      reported = true
+      u.log(bot, `the obsidian drop is out of the mold, ${drop.position.distanceTo(centre).toFixed(1)} blocks away at ${at}`)
+    }
+    await u.goto(bot, new goals.GoalBlock(at.x, at.y, at.z), { signal, timeout: Math.max(1000, until - Date.now()), retries: 1 }).catch((err) => { if (signal?.aborted) throw err })
     await u.sleep(250, signal)
   }
-  if (u.count(bot, 'obsidian') <= before) throw new Error('the obsidian drop was not picked up')
+  if (u.count(bot, 'obsidian') <= before) {
+    throw new Error(`the obsidian drop was not picked up (${u.dropsNear(bot, centre, { radius: 6, names: ['obsidian'] }).length ? 'it lies within 6 blocks of the mold' : 'none within 6 blocks of the mold'})`)
+  }
   // back out of the hole
   await u.goto(bot, new goals.GoalBlock(mold.stand.x, mold.stand.y, mold.stand.z), { signal, timeout: 30000 }).catch((err) => { if (signal?.aborted) throw err })
 }
