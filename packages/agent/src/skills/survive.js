@@ -328,6 +328,9 @@ function underOpenSky (bot) {
  */
 async function surface (bot, { signal, timeout = 240000 } = {}) {
   const started = Date.now()
+  // the time the Agent's safety held the bot (fights, flights) does not count against the climb: FINAL-ROUND ore1 fought
+  // zombies, skeletons, a witch and slimes for 145 s in the caves on the way up from y -59 and ran out of time at y 39
+  const spent = () => Date.now() - started - safetyMsSince(agentOf(bot)?.safety, started)
   if (!underOpenSky(bot)) {
     let feet = bot.entity.position.floored()
     if (columnWet(bot, feet.x, feet.z, feet.y)) {
@@ -345,11 +348,11 @@ async function surface (bot, { signal, timeout = 240000 } = {}) {
     }
     try {
       // staircase steps move the bot to other columns: aim again at the surface of the column it is in
-      for (let i = 0; i < 6 && !underOpenSky(bot) && Date.now() - started < timeout; i++) {
+      for (let i = 0; i < 6 && !underOpenSky(bot) && spent() < timeout; i++) {
         const f = bot.entity.position.floored()
         const top = world.surfaceY(bot, f.x, f.z, { top: 319, bottom: f.y, ground: (b) => world.isSolid(b) && !/leaves/.test(b.name) })
         progress(bot, 'surface', { from: f.y, to: top })
-        await climbUp(bot, { targetY: top ?? f.y + 64, signal, timeout: timeout - (Date.now() - started) })
+        await climbUp(bot, { targetY: top ?? f.y + 64, signal, timeout: timeout - spent() })
       }
     } catch (err) {
       if (isAbort(err)) throw err
@@ -358,10 +361,10 @@ async function surface (bot, { signal, timeout = 240000 } = {}) {
     if (!underOpenSky(bot)) {
       log(bot, 'surface: climbing did not get out; pathfinder')
       const { goals } = require('mineflayer-pathfinder')
-      for (let i = 0; i < 4 && !underOpenSky(bot) && Date.now() - started < timeout; i++) {
+      for (let i = 0; i < 4 && !underOpenSky(bot) && spent() < timeout; i++) {
         const f = bot.entity.position.floored()
         const t = world.surfaceY(bot, f.x, f.z, { top: 319, bottom: f.y, ground: (b) => world.isSolid(b) && !/leaves/.test(b.name) })
-        await navigate.goto(bot, new goals.GoalY(Math.min(t ?? f.y + 16, f.y + 24)), { signal, timeout: Math.min(90000, timeout - (Date.now() - started)), attempts: 2, escape: false })
+        await navigate.goto(bot, new goals.GoalY(Math.min(t ?? f.y + 16, f.y + 24)), { signal, timeout: Math.min(90000, timeout - spent()), attempts: 2, escape: false })
           .catch((e) => { if (isAbort(e)) throw e; log(bot, `surface: ${e.message}`) })
       }
     }
@@ -369,6 +372,18 @@ async function surface (bot, { signal, timeout = 240000 } = {}) {
   if (!underOpenSky(bot)) throw new SkillError(`could not reach the surface from ${navigate.fmt(bot.entity.position)}`, { code: 'NO_PATH' })
   const p = bot.entity.position
   return { position: { x: p.x, y: p.y, z: p.z } }
+}
+
+/** ms the safety behaviours held the bot since `since` (interventions started since then, and the one running) */
+function safetyMsSince (safety, since) {
+  if (!safety) return 0
+  let ms = 0
+  for (const r of safety.interventions ?? []) {
+    const t = Date.parse(r.startedAt)
+    if (t >= since) ms += r.ms ?? 0
+  }
+  if (safety.busy?.since >= since) ms += Date.now() - safety.busy.since
+  return ms
 }
 
 /** whether any liquid is in the column above `y` (up to the top of the world) */
@@ -573,4 +588,4 @@ const surfaceSkill = defineSkill('surface', (bot, args) => surface(bot, args), {
 const fishSkill = defineSkill('fish', (bot, args) => fish(bot, args), { description: 'fish with a rod on a shore (bot.fish)' })
 const escapeSkill = defineSkill('escape', (bot, args) => escape(bot, args), { description: 'out of the water, up to the sky, away from a spot (last-resort unstick)' })
 
-module.exports = { skills: { food: foodSkill, surface: surfaceSkill, fish: fishSkill, escape: escapeSkill }, food, surface, escape, fish, fishingSpot, nearestBank, climbUp, pillarStep, stairStepUp, swimUp, inWater, foodPoints, foodItems, underOpenSky, nearestPrey, PREY, COOKED }
+module.exports = { skills: { food: foodSkill, surface: surfaceSkill, fish: fishSkill, escape: escapeSkill }, food, surface, escape, fish, fishingSpot, nearestBank, climbUp, pillarStep, stairStepUp, swimUp, inWater, foodPoints, foodItems, safetyMsSince, underOpenSky, nearestPrey, PREY, COOKED }
