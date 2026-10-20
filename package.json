@@ -2,8 +2,8 @@
   "name": "bedboo",
   "version": "0.0.0",
   "private": true,
-  "description": "mineflayer for Minecraft: Bedrock Edition (Bedrock Dedicated Server)",
-  "license": "MIT",
+  "description": "Mineflayer for Minecraft: Bedrock Edition",
+  "license": "LGPL-3.0-only",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/LiteLDev/bedboo.git"

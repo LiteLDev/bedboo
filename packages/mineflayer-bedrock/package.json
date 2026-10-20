@@ -2,7 +2,7 @@
   "name": "mineflayer-bedrock",
   "version": "0.0.0",
   "description": "mineflayer for Minecraft: Bedrock Edition — mineflayer 4.39.0's API (createBot, bot.*, events, plugins, typings) for Bedrock Dedicated Server 1.26.51",
-  "license": "MIT",
+  "license": "LGPL-3.0-only",
   "main": "index.js",
   "types": "index.d.ts",
   "homepage": "https://github.com/LiteLDev/bedboo#readme",
@@ -37,7 +37,8 @@
     "types",
     "examples",
     "README.md",
-    "LICENSE"
+    "COPYING",
+    "COPYING.LESSER"
   ],
   "scripts": {
     "test": "mocha",

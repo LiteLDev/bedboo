@@ -2,7 +2,7 @@
   "name": "@bedboo/bds",
   "version": "0.0.0",
   "description": "Docker-based Bedrock Dedicated Server harness and CLI for bedboo tests",
-  "license": "MIT",
+  "license": "LGPL-3.0-only",
   "main": "index.js",
   "bin": {
     "bds": "bin/bds.js"

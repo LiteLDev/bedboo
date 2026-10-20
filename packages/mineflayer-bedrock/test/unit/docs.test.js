@@ -54,8 +54,8 @@ describe('user docs (U16b)', function () {
   it('the README quick start is the runnable example (same createBot, echo and "come" logic)', () => {
     const readme = fs.readFileSync(path.join(ROOT, 'README.md'), 'utf8')
     const example = fs.readFileSync(path.join(ROOT, 'packages/mineflayer-bedrock/examples/readme_quickstart.js'), 'utf8')
-    const snippet = /## Quick start\s+```js\n([\s\S]*?)```/.exec(readme)?.[1]
-    assert.ok(snippet, 'README quick start code block')
+    const snippet = /## Usage\n[\s\S]*?```js\n([\s\S]*?)```/.exec(readme)?.[1]
+    assert.ok(snippet, 'README usage (quick start) code block')
     const normalize = (code) => code.split('\n').map((l) => l.replace(/\s*\/\/.*$/, '').trim()).filter(Boolean)
     // the example adds argv handling and the test handshake; every other line of the snippet is in it verbatim
     const exampleLines = new Set(normalize(example))

@@ -19,5 +19,5 @@ dependencies (`patches/`): see the repository [README](https://github.com/LiteLD
 [API reference](https://github.com/LiteLDev/bedboo/blob/main/docs/api.md) (mineflayer's API plus the Bedrock
 differences) and `examples/readme_quickstart.js`.
 
-MIT licensed; includes code adapted from mineflayer (MIT, Copyright (c) 2013 Andrew Kelley) and PrismarineJS packages
-(MIT), with attribution in the adapted files.
+Licensed under LGPL-3.0-only (see `COPYING` and `COPYING.LESSER`); includes code adapted from mineflayer (MIT,
+Copyright (c) 2013 Andrew Kelley) and PrismarineJS packages (MIT), with attribution in the adapted files.

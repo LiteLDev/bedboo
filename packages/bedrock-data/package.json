@@ -2,7 +2,7 @@
   "name": "@bedboo/bedrock-data",
   "version": "0.0.0",
   "description": "Bedrock 1.26.51 data overlay injected into minecraft-data (bedrock_1.26.51)",
-  "license": "MIT",
+  "license": "LGPL-3.0-only",
   "main": "index.js",
   "repository": {
     "type": "git",

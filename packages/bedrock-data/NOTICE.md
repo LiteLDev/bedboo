@@ -19,7 +19,7 @@ minecraft-data's `bedrock_1.26.51` entry.
 The generated files contain material derived from CloudburstMC/Data (filtered, re-keyed and merged by
 `scripts/generate.js`); that material stays under the Apache License 2.0
 (<https://www.apache.org/licenses/LICENSE-2.0>), and this file is its attribution notice. Everything else in this
-package is MIT like the rest of the repository.
+package is LGPL-3.0-only like the rest of the repository.
 
 ## What the generator changes relative to PR #1335
 
