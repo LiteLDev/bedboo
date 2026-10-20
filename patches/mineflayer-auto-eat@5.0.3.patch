@@ -1,5 +1,5 @@
 diff --git a/dist/new.js b/dist/new.js
-index f256b9a440bd95414b26c7595c52d711ffebde02..1a8eedf2b1b10d7a14ca9fc39c54350806f9d7d7 100644
+index f256b9a440bd95414b26c7595c52d711ffebde02..a37f7e4a2730e13739e39f9987eb6541f6b12c7f 100644
 --- a/dist/new.js
 +++ b/dist/new.js
 @@ -15,6 +15,10 @@ export class EatUtil extends EventEmitter {
@@ -80,7 +80,7 @@ index f256b9a440bd95414b26c7595c52d711ffebde02..1a8eedf2b1b10d7a14ca9fc39c543508
                  rej(new Error(`Eating timed out with a time of ${timeout} milliseconds!`));
              }, timeout);
          });
-@@ -144,38 +173,54 @@ export class EatUtil extends EventEmitter {
+@@ -144,38 +173,55 @@ export class EatUtil extends EventEmitter {
          if (this._eating)
              throw new Error('Already eating!');
          this._eating = true;
@@ -130,7 +130,7 @@ index f256b9a440bd95414b26c7595c52d711ffebde02..1a8eedf2b1b10d7a14ca9fc39c543508
 +            this._eating = false;
 +            // the automatic mode tries again 2 s later, not on the next tick (a failing equip ~20 times a second)
 +            if (sanitized)
-+                this._retryAt = Date.now() + 2000;
++                this._retryAt = performance.now() + 2000;
 +            throw error;
          }
 -        // ! begin eating item
@@ -138,9 +138,11 @@ index f256b9a440bd95414b26c7595c52d711ffebde02..1a8eedf2b1b10d7a14ca9fc39c543508
 -        this.bot.deactivateItem();
 -        // trigger use state based on hand
 -        this.bot.activateItem(opts.offhand);
-         this.emit('eatStart', opts);
+-        this.emit('eatStart', opts);
          // Wait for eating to finish, handle errors gracefully if there are, and perform cleanup.
          try {
++            // bedboo patch, POLISH-LIB: inside the try, so a throwing 'eatStart' listener does not leave the flag set
++            this.emit('eatStart', opts);
              await this.buildEatingListener(opts.food, this.opts.eatingTimeout);
          }
          catch (error) {
@@ -157,11 +159,11 @@ index f256b9a440bd95414b26c7595c52d711ffebde02..1a8eedf2b1b10d7a14ca9fc39c543508
          }
          finally {
              if (opts.equipOldItem && switchedItems && currentItem)
-@@ -186,6 +231,8 @@ export class EatUtil extends EventEmitter {
+@@ -186,6 +232,8 @@ export class EatUtil extends EventEmitter {
          }
      }
      statusCheck = async () => {
-+        if (this._retryAt > Date.now())
++        if (this._retryAt > performance.now())
 +            return; // bedboo patch, POLISH-LIB: see eat()
          if ((this.bot.food < this.opts.minHunger || this.bot.health < this.opts.minHealth) &&
              !this._eating) {

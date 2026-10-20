@@ -16,6 +16,15 @@ const { toNetwork } = require('../../lib/bedrock/item')
 
 const G = -60
 
+/** wait until `fn()` (checked every 10 ms) */
+async function until (fn, what, ms = 3000) {
+  const end = Date.now() + ms
+  while (!fn()) {
+    if (Date.now() > end) throw new Error(`timed out waiting for ${what}`)
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  }
+}
+
 async function spawned () {
   const created = await createFakeBot()
   await replayJoin(created.bot, created.client)
@@ -191,6 +200,17 @@ describe('mineflayer-auto-eat patch: failures (POLISH-LIB)', function () {
     assert.deepStrictEqual(events, ['eatStart', 'eatFail: Eating manually canceled!', 'eatFinish'])
   })
 
+  it("a throwing 'eatStart' listener does not leave the eating flag set either", async () => {
+    const { bot } = await eater({ eatingTimeout: 50 })
+    bot.util.inv.customEquip = async () => true
+    const boom = () => { throw new Error('listener failed') }
+    bot.autoEat.on('eatStart', boom)
+    await assert.rejects(bot.autoEat.eat(), /^Error: listener failed$/)
+    bot.autoEat.removeListener('eatStart', boom)
+    assert.strictEqual(bot.autoEat.isEating, false)
+    await assert.rejects(bot.autoEat.eat(), /Eating timed out/, 'the next meal starts (no "Already eating!")')
+  })
+
   it("strictErrors false: 'eatFail' then eatFinish and eat() resolves, as upstream", async () => {
     const { bot, events } = await eater({ eatingTimeout: 50, strictErrors: false })
     bot.util.inv.customEquip = async () => true
@@ -315,10 +335,17 @@ describe('inventory resync: inventory_mismatch (POLISH-LIB)', function () {
     await new Promise((resolve) => setTimeout(resolve, 20))
     assert.strictEqual(mismatches().length, 1)
     assert.strictEqual(names(bot.inventory), '36:coalx10 37:dirtx1 38:stickx2')
-    // automatic resyncs are rate limited (one per second)
-    pickup(0, wireItem(bot, 'coal', 1), wireItem(bot, 'coal', 10, 24))
+    // automatic resyncs are rate limited (one per second): one asked for sooner goes out when the second is over
+    server.truth = { 0: ['coal', 11, 24], 1: ['dirt', 2, 25], 2: ['stick', 2, 23] }
+    pickup(0, wireItem(bot, 'coal', 1), wireItem(bot, 'coal', 11, 24))
+    pickup(1, wireItem(bot, 'dirt', 5), wireItem(bot, 'dirt', 2, 25))
     await macrotask()
     assert.strictEqual(mismatches().length, 1)
+    const t0 = Date.now()
+    await until(() => mismatches().length === 2, 'the deferred resync', 2000)
+    assert.ok(Date.now() - t0 > 700, 'about a second after the first')
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    assert.strictEqual(mismatches().length, 2, 'one for both')
   })
 
   it('a resend of the state a request was planned on (a resync, a command) while it is in flight does not replace its prediction', async () => {
@@ -377,6 +404,68 @@ describe('inventory resync: inventory_mismatch (POLISH-LIB)', function () {
     assert.strictEqual(bot.inventory.selectedItem, null)
     await macrotask()
     assert.strictEqual(mismatches().length, 0, 'explained rejections: no resync')
+  })
+
+  it('a request rejected after an accepted one on the slot (a resend in between) goes back to the accepted state', async () => {
+    const { bot, client, server } = await joined()
+    client.receive('inventory_content', inventoryContent(bot, { 0: ['dirt', 10] }, { firstStackId: 300 }))
+    const model = bot._bedrock.inventoryModel
+    server.hold = true
+    const a = model.execute(bot.inventory, [{ type: 'place', count: 1, src: 'p:0', dst: 'p:1' }])
+    await macrotask()
+    server.reject(50)
+    const b = model.execute(bot.inventory, [{ type: 'place', count: 1, src: 'p:0', dst: 'p:2' }])
+    await macrotask()
+    assert.strictEqual(names(bot.inventory), '36:dirtx8 37:dirtx1 38:dirtx1', 'both predicted')
+    // a resend of the state before both (e.g. after a command)
+    client.receive('inventory_slot', { window_id: 'inventory', slot: 0, item: wireItem(bot, 'dirt', 10, 300) })
+    assert.strictEqual(names(bot.inventory), '36:dirtx8 37:dirtx1 38:dirtx1', 'the predictions stay shown')
+    server.hold = false
+    server.flush()
+    await a
+    await assert.rejects(b, (err) => err.status === 50)
+    assert.strictEqual(names(bot.inventory), '36:dirtx9 37:dirtx1', 'a\'s result, not the resent 10')
+    assert.notStrictEqual(bot.inventory.slots[36].stackId, 300)
+  })
+
+  it('a resend of a server update that raced a request keeps the prediction of the request planned on that update', async () => {
+    const { bot, client, server } = await joined()
+    client.receive('inventory_content', inventoryContent(bot, { 0: ['dirt', 10] }, { firstStackId: 300 }))
+    const model = bot._bedrock.inventoryModel
+    server.hold = true
+    server.reject(49) // a: the pickup changed the stack first
+    const a = model.execute(bot.inventory, [{ type: 'place', count: 1, src: 'p:0', dst: 'p:1' }])
+    await macrotask()
+    client.receive('inventory_slot', { window_id: 'inventory', slot: 0, item: wireItem(bot, 'dirt', 11, 301) }) // a pickup
+    assert.strictEqual(bot.inventory.slots[36].count, 11)
+    const b = model.execute(bot.inventory, [{ type: 'place', count: 1, src: 'p:0', dst: 'p:2' }])
+    await macrotask()
+    assert.strictEqual(bot.inventory.slots[36].count, 10, 'b predicted on the 11')
+    client.receive('inventory_slot', { window_id: 'inventory', slot: 0, item: wireItem(bot, 'dirt', 11, 301) }) // resent
+    assert.strictEqual(bot.inventory.slots[36].count, 10, 'b\'s prediction stays shown')
+    server.hold = false
+    server.flush()
+    await assert.rejects(a, (err) => err.raced === true)
+    await b
+    assert.strictEqual(names(bot.inventory), '36:dirtx10 38:dirtx1')
+  })
+
+  it('status 7 (no screen) of a raced fixed-steps request: the screen is reopened and it is sent once more', async () => {
+    const { bot, client, server } = await joined()
+    client.receive('inventory_content', inventoryContent(bot, { 9: ['dirt', 10] }, { firstStackId: 400 }))
+    const model = bot._bedrock.inventoryModel
+    await model.screen.open()
+    server.hold = true
+    server.reject(7)
+    const req = model.execute(bot.inventory, [{ type: 'place', count: 1, src: 'p:9', dst: 'p:10' }])
+    await macrotask()
+    client.receive('inventory_slot', { window_id: 'inventory', slot: 9, item: wireItem(bot, 'dirt', 10, 401) }) // raced
+    server.hold = false
+    server.flush()
+    await req
+    assert.strictEqual(server.requests.length, 2, 'sent once more')
+    assert.strictEqual(client.sent('interact').filter((p) => p.action_id === 'open_inventory').length, 2, 'the screen was reopened')
+    assert.strictEqual(server.requests[1].actions[0].source.stack_id, 401)
   })
 
   it('a request rejected because the one it was planned on was rejected is no desync (no resync)', async () => {

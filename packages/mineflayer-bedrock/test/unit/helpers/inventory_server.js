@@ -9,7 +9,8 @@
  *   every slot the request touched (from the bot's own prediction), or `{ status: <code> }` when `reject(code)`
  *   was armed for the next request.
  * - `inventory_transaction inventory_mismatch` → inventory_content of the inventory (the model's state, or
- *   `server.truth`), armor, ui and off-hand (`server.resyncs` counts them; `server.ignoreResync`: no answer).
+ *   `server.truth`), armor, ui and off-hand, then player_hotbar { select_slot: true } (`server.resyncs` counts them;
+ *   `server.ignoreResync`: no answer).
  * Packets are answered asynchronously (setImmediate), like a network round trip.
  *
  *   const server = serveInventory(bot, client)
@@ -108,6 +109,7 @@ function serveInventory (bot, client, { firstWindowId = 2 } = {}) {
         const content = (window, items) => client.receive('inventory_content', { window_id: window, input: items, container: { container_id: 'anvil_input' }, storage_item: wireItem(bot, null) })
         content('inventory', input)
         for (const [window, items] of others) content(window, items)
+        client.receive('player_hotbar', { selected_slot: bot.quickBarSlot ?? 0, window_id: 'inventory', select_slot: true })
       })
     }
   }
