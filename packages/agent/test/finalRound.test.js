@@ -135,6 +135,24 @@ describe('final round (agent): the build repairs block by block', () => {
     assert.ok(hits >= 1, 'the sheep was shooed out of the cell')
   })
 
+  it('a hunt makes room for the drops first (chain d2: 36 of 36 slots taken, no beef or porkchop picked up)', async () => {
+    const { roomForDrops } = require('../src/skills/obtain')
+    const bot = fakeBot()
+    const stacks = { cobblestone: 356, feather: 2, leather: 6, white_wool: 3, mutton: 1 }
+    bot.inventory.items = () => Object.entries(stacks).filter(([, c]) => c > 0).map(([name, count]) => ({ name, count, type: name }))
+    let free = 0
+    bot.inventory.emptySlotCount = () => free
+    bot.registry = { itemsByName: Object.fromEntries(Object.keys(stacks).map((n) => [n, { id: n }])) }
+    bot.toss = async (id, meta, n) => { stacks[id] -= n; free += id === 'cobblestone' ? Math.floor(n / 64) : 1 }
+    const tossed = await roomForDrops(bot)
+    assert.ok(free >= 3, `free slots: ${free}`)
+    assert.ok(tossed.feather && tossed.leather, `junk first: ${JSON.stringify(tossed)}`)
+    assert.strictEqual(stacks.mutton, 1, 'food stays')
+    assert.strictEqual(stacks.white_wool, 3)
+    // room enough: nothing tossed
+    assert.deepStrictEqual(await roomForDrops(bot), {})
+  })
+
   it('entitiesIn / replaceable: what blocks a placement', () => {
     const bot = fakeBot()
     bot.entities[1] = { id: 1, name: 'item', position: new Vec3(0.5, 0, 0.5) }

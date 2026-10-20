@@ -65,6 +65,19 @@ function preyOk (bot, e) {
 }
 
 /**
+ * Room for an animal's drops before it is killed: with no free slot a new kind of item (the meat) stays on the ground.
+ * A final chain's provisions (FINAL-ROUND d2) killed 3 cows and 3 pigs and picked up no beef or porkchop, all 36 slots
+ * taken (356 cobblestone, the wool, feathers and leather of earlier kills), and failed with 3 food items of 8. Junk and
+ * surplus go (inventory.declutter) until 3 slots are free. @returns {Promise<Record<string, number>>} what was tossed
+ */
+async function roomForDrops (bot) {
+  if (inventory.freeSlots(bot) >= 2) return {}
+  const tossed = await inventory.declutter(bot, { minFree: 3 }).catch(() => ({}))
+  if (Object.keys(tossed).length) progress(bot, 'tossed', { items: tossed, reason: 'room for the drops' })
+  return tossed
+}
+
+/**
  * Chase an animal with the pathfinder (a hit animal flees; fences, ledges and water are walked around, nothing is
  * dug) and hit it whenever it is in reach. skills/combat.js `fight` walks straight at its target, which suits a
  * hostile coming at the bot but loses a chicken behind the first fence. Safety (a hostile, lava, …) takes the
@@ -175,6 +188,7 @@ async function hunt (bot, { mobs, item, count, signal, radius = 64, filter = () 
       // (a mob killed a moment ago stays in bot.entities during its death animation)
       const target = bot.nearestEntity((e) => mobs.includes(e.name) && !dead.has(e) && preyOk(bot, e) && e.position.distanceTo(bot.entity.position) <= radius && filter(e))
       if (!target) throw new SkillError(`no ${mobs.join('/')} in sight`, { code: 'NOT_FOUND' })
+      await roomForDrops(bot)
       const outcome = await strike(bot, target, { signal, timeout: 20000 }) // a fleeing animal is not worth more
       log(bot, `hunt: ${target.name} at ${target.position.floored()} → ${outcome}`)
       if (outcome === 'died') throw new SkillError('died while hunting', { code: 'DIED' })
@@ -327,4 +341,4 @@ async function obtainAll (bot, { items, signal }) {
   return { results }
 }
 
-module.exports = Object.assign(skill, { skills: { hunt: defineSkill('hunt', (bot, args) => huntSkill(bot, args), { description: 'kill passive mobs for an item (exploring for them)' }) }, obtain, obtainAll, execute, hunt, huntSkill, preyOk, describe, FOODS: data.FOODS })
+module.exports = Object.assign(skill, { skills: { hunt: defineSkill('hunt', (bot, args) => huntSkill(bot, args), { description: 'kill passive mobs for an item (exploring for them)' }) }, obtain, obtainAll, execute, hunt, huntSkill, preyOk, roomForDrops, describe, FOODS: data.FOODS })
