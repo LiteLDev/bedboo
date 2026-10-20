@@ -174,6 +174,12 @@ describe('final fix (agent): safety under U18 guards', () => {
     safety.attackers.set(zombie, Date.now() + 20000) // it just hit the bot
     assert.strictEqual(safety.betterTarget(creeper), true)
     assert.strictEqual(safety.betterTarget(zombie), false, 'the target itself in reach: no switch')
+    // (FINAL-ROUND) a target within reach but a block farther than the mob hitting the bot: the closer one
+    const skeleton = mob(10, 'skeleton', new Vec3(3.6, 0, 0.5), { kind: 'Hostile mobs' })
+    bot.entities[10] = skeleton
+    assert.strictEqual(safety.betterTarget(skeleton), true)
+    zombie.position = new Vec3(3.2, 0, 0.5) // about as far as the skeleton: no switch
+    assert.strictEqual(safety.betterTarget(skeleton), false)
   })
 
   it('a ghast fireball within reach is hit back', async () => {
