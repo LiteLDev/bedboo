@@ -163,10 +163,20 @@ function walkInSpot (bot, ring) {
  * (u.tick, not a bare waitForTicks, which would reject across the change). The caller awaits the arrival's spawn.
  */
 async function stepInto (bot, center, from, { signal, timeout = 15000 } = {}) {
-  const until = Date.now() + timeout
+  let until = Date.now() + timeout
   try {
     while (bot.game.dimension === from && Date.now() < until) {
       u.throwIfAborted(signal)
+      // a fight has the controls (the portal room's silverfish): the walk waits for it, and the time does not count
+      const busy = fighting(bot)
+      if (busy) {
+        const t = Date.now()
+        bot.setControlState('forward', false)
+        bot.setControlState('jump', false)
+        await busy.idle()
+        until += Date.now() - t
+        continue
+      }
       await bot.lookAt(center.offset(0, bot.entity.eyeHeight, 0), true)
       if (bot.game.dimension !== from) break
       bot.setControlState('forward', true)
@@ -180,6 +190,14 @@ async function stepInto (bot, center, from, { signal, timeout = 15000 } = {}) {
   }
 }
 
+/** the Agent's safety or a combat guard while it fights (not while it only eats), or null */
+function fighting (bot) {
+  const guard = u.guardOf(bot)
+  if (u.busyKind(guard) === 'fight') return guard
+  const safety = require('../skill').agentOf(bot)?.safety
+  return safety?.busy && safety.busy.type !== 'eat' ? safety : null
+}
+
 /** climb onto the frame ring and drop into the end portal → The End */
 async function enterEndPortal (bot, ring, { signal, timeout = 120000 } = {}) {
   const { goals } = u.ensurePathfinder(bot)
@@ -190,21 +208,26 @@ async function enterEndPortal (bot, ring, { signal, timeout = 120000 } = {}) {
   const center = ring.center.offset(0.5, 0, 0.5)
   const from = bot.game.dimension
   const deadline = Date.now() + timeout
-  // walks in until the bot is through: a fight takes the controls on the way (the portal room's silverfish spawner:
-  // FINAL-ROUND E1A run 1 was held 3 s by two silverfish mid-walk, its one walk-in ran out and the arrival wait timed
-  // out after 30 s) — after the fight the bot walks in again
+  // walks in until the bot is through (≤ `timeout`): a fight takes the controls on the way — the portal room's
+  // silverfish spawner (FINAL-ROUND E1A run 1: two silverfish held the bot mid-walk, its one walk-in ran out, and the
+  // arrival wait timed out 30 s later). The walk waits for the fight (stepInto), and a walk that did not get the bot
+  // through goes again
   for (let walk = 1; ; walk++) {
-    const guard = u.guardOf(bot)
-    if (guard?.busy) await guard.idle()
-    await u.goto(bot, new goals.GoalBlock(spot.o.x, spot.o.y, spot.o.z), { signal, timeout: 60000 })
-    const arrived = u.waitForDimension(bot, 'the_end', { timeout: 20000, signal })
+    await u.goto(bot, new goals.GoalBlock(spot.o.x, spot.o.y, spot.o.z), { signal, timeout: Math.max(5000, Math.min(60000, deadline - Date.now())) })
+    const arrived = u.waitForDimension(bot, 'the_end', { timeout: 30000, signal })
     arrived.catch(() => {})
     await stepInto(bot, center, from, { signal })
     try {
       await arrived
       break
     } catch (err) {
-      if (signal?.aborted || bot.game.dimension === 'the_end' || Date.now() + 30000 > deadline) throw err
+      if (signal?.aborted) throw err
+      // through, its spawn late: wait for it a while longer
+      if (bot.game.dimension === 'the_end') {
+        await u.onceEvent(bot, 'spawn', { timeout: 30000, signal })
+        break
+      }
+      if (Date.now() + 45000 > deadline) throw err
       u.log(bot, `end: not through the portal after walk ${walk} (${err.message}); again`)
     }
   }
@@ -650,17 +673,15 @@ async function endSkill (bot, args) {
         const guard = combat.guardFor(bot, { radius: 6, retaliate: true, signal })
         const stopRetaliating = retaliate(bot, guard)
         let a
-        let e
         try {
           a = await activatePortal(bot, { signal, guard })
           await guard.idle()
-          // (the guard stays up for the walk in: the silverfish follow the bot to the ring, and the walk waits for it)
-          e = await enterEndPortal(bot, a.ring, { signal })
         } finally {
           stopRetaliating()
           result.guard = await guard.stop()
         }
         result.eyes = a.eyes
+        const e = await enterEndPortal(bot, a.ring, { signal })
         result.entered = true
         result.arrival = e.arrival
       }
