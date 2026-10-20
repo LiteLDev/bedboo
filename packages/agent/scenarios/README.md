@@ -7,7 +7,7 @@ milestone ≤ 10 min.
 
 | Directory | Owner | |
 |---|---|---|
-| `overworld/` | U17 | M1–M5 (`milestones.js`), the e2e harness (`harness.js`, `milestones.e2e.js`), `full-run.js`, the final chain (`final-chain.js`: M1 → camp → M2 → gear → M3 → M4 → M5 → provisions → N1M3 → home → E1, see [../README.md](../README.md#the-final-chain)), `seed.json` |
+| `overworld/` | U17 | M1–M5 (`milestones.js`), the e2e harness (`harness.js`, `milestones.e2e.js`), `full-run.js`, the final chain (`final-chain.js`: M1 → camp → M2 → gear → victuals → M3 → M4 → M5 → provisions → N1M3 → home → E1, see [../README.md](../README.md#the-final-chain)), `seed.json`; B1 (`build-repair.js` + `.e2e.js`, FINAL-ROUND): the build's block-by-block repair on BDS — house5x5 on a flat world with a cow in a floor cell, 5 refused placements and a griefed wall block (`--grep B1`, `BEDBOO_U18_RUNS` runs) |
 | `combat/`, `nether/`, `end/` | U18 | C1 / N1 / N2 / E1 / chain scenarios + their `*.e2e.js`, `seed.json` per directory (section below) |
 
 e2e files are `*.e2e.js` (`corepack pnpm --filter @bedboo/agent test:e2e`, config `.mocharc.e2e.json`); unit tests
@@ -105,3 +105,29 @@ Five runs each on main with FINAL-FIX-AGENT-A (#32) under it; wall time per run 
   - default-f2 failed: U17's build left 1 of 125 blocks wrong in M4, after a stalled walk and two refused placements.
 - **E1A after the rebase:** 10/10 more runs on the rebased code and 10/10 on the final code (70–106 s each, walk up
   29–34 s, no stall). That is 49/50 in all.
+
+### Results (FINAL-ROUND, BDS 1.26.51.1, 2026-10-20/21)
+
+These are the final acceptance runs, on the merged final code 77314f1 (#43): seed 1234, easy, a fresh world per run,
+two at a time. Per-run phase times and the failures fixed on the way are in
+[../README.md](../README.md#final-acceptance-final-round).
+
+| scenario | target | result |
+|---|---|---|
+| default `final-chain` (M1 → … → E1) | ≥ 4/5 | **4/5** — 46.1, 35.7, 40.3, 37.1 min; X2 failed in N1M3: no diamond pickaxe left (it burned in a covered lava pocket at the spawn during provisions) |
+| `final-chain --nether-ores` | ≥ 2/3 | **3/3** — 36.7, 44.0, 46.8 min; Nether ores and home in 46–50 s; no deaths |
+| E1A, the End phases (the Agent, seed 1234) | ≥ 9/10 | **10/10** — 69–141 s; walk up 29–30 s, 3 hops, no stall |
+| M1 – M5 gates | ≥ 4/5 each | **M1–M4 5/5, M5 4/5**. M5 run 2 died 4 times at night on the way to the mountains (the gate's snapshot has no armor) |
+| B1, the build's repair (`--grep B1`) | | **6/6** — 21–23 s; a cow in a floor cell, 5 refused placements and a griefed wall block, repaired in one round |
+
+The fixes made during the acceptance, each of which restarted the counts it affected:
+- **#39**: a hunt makes room for its drops (a provisions phase had all 36 slots taken).
+- **#40**: a `victuals` phase before the mines, and a meal between fights against mobs out of reach (M3 deaths with no
+  food).
+- **#41**: the surface climb leaves out the fights' time (M4 timed out at y 39).
+- **#42**: the End walk-in survives a silverfish fight (E1A), and the obsidian drop is followed out of the mold (N1M3).
+- **#43**: a fight gives way to a closer mob hitting the bot (deaths in the gear phase).
+
+On #41's code the E1A score was 8/10:
+- one walk-in timeout, fixed by #42;
+- one death to endermen at the exit (not changed).

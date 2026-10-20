@@ -126,7 +126,10 @@ src/safety.js runs during every task. When it takes over, pathfinder and digging
   `Safety#suppressMeals`); 3 meals that fail in 15 s pause it for 10 s; before a climb and between tasks the bot eats
   standing still; between tasks the agent hunts passive animals
   in sight when hungry and out of food (chased with the pathfinder around fences and ledges), and cooks the meat in
-  its furnace;
+  its furnace. A hunt first makes room for the drops (`inventory.makeRoom`: junk and surplus tossed away from the prey,
+  never the hunted item); after a fight given up on a mob out of reach (`unreachable`, `timeout`, `escaped`), the bot,
+  if hurt and with no hostile within 4 blocks, eats right away, standing still for at most 6 s — back-to-back fights
+  otherwise kept every meal suppressed (`Safety#mealBetweenFights`; rotten flesh only at 8 hp or less, below 18 food);
 - nights: between tasks, in the overworld at night, the agent sleeps in its bed (`rest`: the night is skipped); with
   `shelter: true` (the final chain) and neither a bed nor armor it waits for the morning in its house or a sealed hole;
 - the stuck watchdog: a task (obtain, mine, gather, navigate, explore, build, food, hunt, fish, surface) whose bot
@@ -198,18 +201,23 @@ node packages/agent/scenarios/overworld/final-chain.js --log          # M1→M5 
 | M4 | M3's end | surface, walk to the world spawn, build house5x5 | every block of the house, ≤ 48 blocks from the spawn |
 | M5 | M4's end | coal, copper, iron; emerald (mountains); lapis, gold, redstone, diamond | one new item from each of the 8 ores |
 
-Gate on BDS 1.26.51.1 (2026-10-20, seed 1234, easy, 5 runs each from the previous milestone's snapshot; failure
-reasons and timings in `$AGENT_REPORT_DIR/runs.jsonl`; code of e4e832b — the final chain's code minus its late
-declutter, the cobwebs for a fishing rod and the camp's extra meat, which only the chain uses):
+**Final gate** (FINAL-ROUND): BDS 1.26.51.1, 2026-10-21, seed 1234, easy. Each milestone ran 5 times from the
+previous milestone's snapshot, on the merged final code 77314f1. Failure reasons and timings are in
+`$AGENT_REPORT_DIR/runs.jsonl`.
 
 | | passed | wall time per run (s) | notes |
 |---|---|---|---|
-| M1 | 5/5 | 76, 91, 93, 82, 96 | |
-| M2 | 5/5 | 210, 232, 221, 200, 237 | night falls during the run: zombies fought |
-| M3 | 5/5 | 126, 92, 113, 113, 97 | diamonds at y 3–4 (deepslate diamond ore) |
-| M4 | 5/5 | 183, 174, 172, 176, 172 | 125 cells verified |
-| M5 | 5/5 | 409, 303, 461, 483, 533 | |
+| M1 | 5/5 | 101, 69, 65, 93, 88 | |
+| M2 | 5/5 | 222, 212, 229, 268, 204 | |
+| M3 | 5/5 | 87, 91, 121, 115, 87 | |
+| M4 | 5/5 | 166, 155, 153, 149, 153 | 125 cells verified; the build's repair round was not needed |
+| M5 | 4/5 | 281, 447 ✗, 310, 307, 302 | run 2 failed: the snapshot starts at night with no armor, and the bot died 4 times on the way to the mountains (emerald). Runs 3–5 each recovered from 1 death |
 
+The same gate on 82aa007 (#41) also passed 5/5 each: M1 92, 88, 72, 89, 97; M2 216, 210, 211, 197, 239; M3 114, 127,
+113, 110, 111; M4 151, 148, 153, 159, 164; M5 480, 429, 546, 267, 393. In M5, 4 of those 5 runs recovered from 1–4
+deaths. The M4 build's repair was also gated alone, on #38's code: 5/5 (151, 164, 161, 152, 157).
+
+The gate before (U17, code e4e832b) passed 5/5 each: M1 76–96 s, M2 200–237 s, M3 92–126 s, M4 172–183 s, M5 303–533 s.
 Earlier rounds on the way there: M4 4/5 (one run failed after a death at night), M5 3/5 (copper dug under
 the lake, its drops lost in the water → a spot whose digs give nothing is left; redstone dug in a shaft without a
 'mine' event → ores dug by shafts and the pathfinder are counted).
@@ -237,6 +245,7 @@ and no reconnects:
 | camp | at the spawn while it is day: 3 wool of one colour from sheep → a bed; logs; meat (best effort) | ~6 min |
 | M2 | iron tools, a bucket | 10 min |
 | gear | all the iron in one trip and one 3-furnace smelt → iron helmet, chestplate, leggings, boots (worn) and a shield (off-hand), a spare iron pickaxe, the second bucket and the iron for the flint and steel; sticks; the camp's meat cooked | 9 + 2×7 min |
+| victuals | fewer than 6 food items carried: food (hunted, cooked) for the mines, best effort — the camp's meat is eaten in M2's and the gear trip's fights | 3 min |
 | down to the diamonds | a safe shaft to y -54 (`descend`): diamonds are a deepslate thing, and M3 checks a deepslate diamond ore is among its three | 4 min |
 | M3, M4, M5 | diamonds, the house at the spawn, every overworld ore (the milestones) | 10 min each |
 | gold armor | `--nether-ores` only: golden boots (`obtain`: M5's raw gold smelted, more gold ore mined from the vein M5 found) — one gold piece keeps piglins neutral | 2 × 8 min |
@@ -253,12 +262,67 @@ it started at are printed; the report goes to `$AGENT_REPORT_DIR/final-chain-<ti
 acceptance run): `--from m5` starts from a milestone snapshot after that milestone, `--until provisions` stops after a
 phase.
 
+### Final acceptance (FINAL-ROUND)
+
+These runs used BDS 1.26.51.1, seed 1234 and difficulty easy, on 2026-10-20 and 21. Each run had a fresh world, two
+ran at a time, and all phase times are in seconds. The code was the merged final code, **77314f1 (#43)**.
+
+| | target | result |
+|---|---|---|
+| default `final-chain` | ≥ 4/5 | **4/5**: 46.1, 35.7, 40.3, 37.1 min; X2 failed |
+| `final-chain --nether-ores` | ≥ 2/3 | **3/3**: 36.7, 44.0, 46.8 min |
+| M1 – M5 gates, 5 runs each | ≥ 4/5 each | **M1–M4 5/5, M5 4/5** ([the gate](#overworld-milestones-e2e)) |
+| E1A, the End phases, 10 runs | ≥ 9/10 | **10/10** ([the walk up](#the-end-walk-up)) |
+
+Default chain:
+
+| run | result | M1, camp, M2, gear, victuals, down, M3, M4, M5, provisions, N1M3, home | E1: stronghold, activate, dragon, endermen, exit | nights slept / deaths |
+|---|---|---|---|---|
+| X1 | passed, 46.1 min | 84, 353, 177, 691, 0, 28, 45, 160, 533, 391, 209, 5 | 5, 14, 2, 42, 9 | 3 / 0 |
+| X2 | failed, 39.3 min | 99, 261, 188, 540, 0, 81, 50, 192, 282, 351, 312 ✗ | — | 3 / 1 |
+| X3 | passed, 35.7 min | 109, 199, 187, 562, 118, 70, 52, 169, 201, 136, 247, 5 | 8, 11, 2, 40, 9 | 3 / 0 |
+| X4 | passed, 40.3 min | 85, 200, 244, 686, 0, 97, 26, 249, 199, 280, 211, 5 | 6, 15, 2, 88, 6 | 3 / 0 |
+| X5 | passed, 37.1 min | 98, 67, 184, 741, 0, 77, 49, 212, 220, 256, 216, 5 | 6, 14, 2, 42, 11 | 3 / 0 |
+
+`--nether-ores`:
+
+| run | result | M1, camp, M2, gear, victuals, down, M3, M4, M5, gold armor, provisions, N1M3, nether ores + home | E1: stronghold, activate, dragon, endermen, exit | nights slept / deaths |
+|---|---|---|---|---|
+| Y1 | passed, 36.7 min | 97, 107, 194, 522, 0, 19, 92, 131, 217, 167, 303, 216, 46 | 6, 15, 2, 45, 5 | 2 / 0 |
+| Y2 | passed, 44.0 min | 93, 170, 214, 506, 151, 133, 24, 231, 234, 162, 329, 244, 47 | 6, 12, 2, 49, 12 | 3 / 0 |
+| Y3 | passed, 46.8 min | 88, 205, 200, 512, 168, 103, 54, 255, 291, 169, 352, 249, 50 | 6, 13, 2, 60, 12 | 3 / 0 |
+
+Every End walk up took 29–35 s in 3 hops, with no stall and a longest stand-still of at most 4 s. A victuals time of 0
+means the bot already carried 6 food items. The Nether trip of the `--nether-ores` runs took 46–50 s (quartz, ancient
+debris and nether gold next to the portal).
+
+✗ **X2** failed in N1M3 with "obsidian needs a diamond (or netherite) pickaxe".
+- During provisions, a pig chase at the spawn ended in a covered lava pocket at about (-523, 61, 91). The safety's
+  lava escape did not get out, and the diamond pickaxe burned with the drops.
+- def1 (#40's code) died in the same pocket, after digging stone at (-523, 65, 88).
+- Not fixed, to keep the measured code final. Two remedies are possible: N1M3 could obtain a diamond pickaxe again when
+  one was lost, and digs and chases could keep out of the spawn's covered lava.
+
+**Failures fixed during the acceptance, in order.** Each fix restarted the affected counts.
+
+| code | runs | failure | fix |
+|---|---|---|---|
+| #38 350950f | d1 passed (36.4 min); d2 failed | provisions: 3 food items of 8. All 36 slots were taken (356 cobblestone, wool, feathers, leather), so 3 cows and 3 pigs were killed and no meat was picked up | #39: a hunt makes room for its drops (`inventory.makeRoom`, junk tossed away from the prey, the hunted item kept and picked up) |
+| #39 1b1f402 | A1 passed (40.9 min); O1 (`--nether-ores`) failed | M3: died 3 times at y 5. The bot carried no food but rotten flesh, under a skeleton's arrows and zombies out of reach, fight after fight with every meal suppressed (18 → 0 hp in 2 min) | #40: a `victuals` phase (6 food items before the mines); `Safety#mealBetweenFights` |
+| #40 e13b7fc | def1 passed (48.3 min, 2 deaths recovered); ore1 failed | M4: "could not reach the surface" after 240 s, 145 s of which were cave fights on the way up from y -59 | #41: the climb's time leaves out the safety's fights |
+| #41 82aa007 | default 5/5 (41.3, 34.7, 36.4, 40.3, 43.3 min); `--nether-ores` 2/3 (43.4, 54.4 min; ore4 failed); E1A 8/10; M1–M5 5/5 each | ore4: N1M3, all 10 obsidian casts at two pools lost their drop. E1A run 1: silverfish held the walk into the End portal until it ran out. E1A run 9: slain by endermen at the exit | #42: the walk-in waits for fights, walks again and waits for a late spawn; the obsidian drop is followed out of the mold |
+| #42 058cbe9 | E1A 10/10; F1 passed (38.8 min); R1 (`--nether-ores`) failed | gear: died 3 times in a cave at night, unarmored. A zombie 1.4 blocks away hit the bot for 7 s while the safety fought a skeleton 3.4 blocks away | #43: a fight gives way to a mob hitting the bot from a block closer than its target |
+
+Before FINAL-ROUND, POLISH-AGENT's default-f2 failed in M4 with 1 of 125 blocks wrong after refused placements. The
+build now repairs block by block ([Blueprints](#blueprints)), and the B1 scenario checks that on BDS: 6/6 runs passed.
+
 Earlier runs (before FINAL-FIX-AGENT-A, M1 → M5 → provisions → N1M3 only): none passed every phase — drowned in a
 flooded cave going back to the spawn; no food, the portal skill searching a mineshaft for 13 min, a starving fall;
 stuck in the lake west of the spawn; killed by a spider at night during provisions; stuck 8 min in its own copper pit.
 
-**Acceptance** (BDS 1.26.51.1, 2026-10-20, seed 1234, easy, code of 4903066 = this version; a fresh world per run,
-three runs at a time; phase seconds): **5/5 end to end**, no deaths, no stuck task.
+**Earlier acceptance** (FINAL-FIX-AGENT-A): BDS 1.26.51.1, 2026-10-20, seed 1234, easy, code 4903066. Each run had a
+fresh world, three ran at a time, and phase times are in seconds. Result: **5/5 end to end**, no deaths, no stuck
+task.
 
 | run | total | M1 | camp | M2 | gear | down | M3 | M4 | M5 | provisions | N1M3 | home | E1: stronghold, activate, dragon, endermen, exit | nights slept |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
@@ -375,6 +439,17 @@ a run whose walk stood still for over 60 s; wall time per run in seconds):
 | 3 | the exit at low health, the review fixes | 10/10 | 79, 86, 79, 83, 75, 90, 83, 76, 93, 78 | 30 s, 3 hops, no stall, longest stand-still 1 s |
 | 4 | rebased on POLISH-LIB (#36) | 10/10 | 72, 82, 76, 106, 80, 79, 72, 87, 72, 70 | 30 s, 3 hops, no stall, longest stand-still 1 s |
 | 5 | final (the second review's fixes) | 10/10 | 76, 81, 97, 78, 70, 82, 79, 89, 82, 98 | 29–34 s, 3 hops, no stall, longest stand-still 1 s |
+| 6 | FINAL-ROUND 82aa007 (#41) | 8/10 | 53 ✗, 70, 88, 80, 76, 91, 99, 84, 98 ✗, 76 | 29–30 s, 3 hops, no stall |
+| 7 | FINAL-ROUND 058cbe9 (#42: the walk-in survives a fight) | 10/10 | 83, 76, 120, 72, 72, 85, 81, 72, 92, 100 | 29–30 s, 3 hops, no stall, longest stand-still 1 s |
+| 8 | **FINAL-ROUND final, 77314f1 (#43)** | **10/10** | 94, 87, 77, 69, 71, 74, 95, 87, 77, 141 | 29–30 s, 3 hops, no stall, longest stand-still 1 s |
+
+Batch 6 failures:
+- Run 1 failed: two silverfish from the portal room's spawner held the bot's single walk into the End portal until it
+  ran out. The spawn wait then timed out after 30 s. #42 fixed this: the walk waits for the fight, walks again, and
+  waits for a late spawn.
+- Run 9 failed: endermen killed the bot during the exit. One enderman hit it every second (1.1 damage) while it hunted
+  another, and the exit at ≤ 10 hp then walked 36 blocks to the portal under the same hits. This was not changed. The
+  POLISH-AGENT exit policy stands, and batches 7 and 8 had no deaths.
 
 ✗ batch 1 run 4: the bot died in the endermen fight, 59 s into the phase. No event log was kept then, so failed E1A
 runs now write the agent's report next to `BEDBOO_U18_REPORT`. 49 of 50 runs passed. In 49 recorded walks none
