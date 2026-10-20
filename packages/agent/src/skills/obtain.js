@@ -65,14 +65,14 @@ function preyOk (bot, e) {
 }
 
 /**
- * Room for an animal's drops before it is killed: with no free slot a new kind of item (the meat) stays on the ground.
- * A final chain's provisions (FINAL-ROUND d2) killed 3 cows and 3 pigs and picked up no beef or porkchop, all 36 slots
- * taken (356 cobblestone, the wool, feathers and leather of earlier kills), and failed with 3 food items of 8. Junk and
- * surplus go (inventory.declutter) until 3 slots are free. @returns {Promise<Record<string, number>>} what was tossed
+ * Room for an animal's drops before it is killed (a kill brings up to 2 new kinds: meat and wool / leather / feathers):
+ * with no free slot a new kind of item stays on the ground. A final chain's provisions (FINAL-ROUND d2) killed 3 cows
+ * and 3 pigs and picked up no beef or porkchop, all 36 slots taken (356 cobblestone, the wool, feathers and leather of
+ * earlier kills), and failed with 3 food items of 8. Fewer than 3 free: junk and surplus go until 4 are, never the
+ * hunted items, tossed away from the prey. @returns {Promise<Record<string, number>>} what was tossed
  */
-async function roomForDrops (bot) {
-  if (inventory.freeSlots(bot) >= 2) return {}
-  const tossed = await inventory.declutter(bot, { minFree: 3 }).catch(() => ({}))
+async function roomForDrops (bot, { keep = null, away = null } = {}) {
+  const tossed = await inventory.makeRoom(bot, { min: 3, target: 4, keep, away }).catch(() => ({}))
   if (Object.keys(tossed).length) progress(bot, 'tossed', { items: tossed, reason: 'room for the drops' })
   return tossed
 }
@@ -188,7 +188,7 @@ async function hunt (bot, { mobs, item, count, signal, radius = 64, filter = () 
       // (a mob killed a moment ago stays in bot.entities during its death animation)
       const target = bot.nearestEntity((e) => mobs.includes(e.name) && !dead.has(e) && preyOk(bot, e) && e.position.distanceTo(bot.entity.position) <= radius && filter(e))
       if (!target) throw new SkillError(`no ${mobs.join('/')} in sight`, { code: 'NOT_FOUND' })
-      await roomForDrops(bot)
+      await roomForDrops(bot, { keep: items, away: target.position })
       const outcome = await strike(bot, target, { signal, timeout: 20000 }) // a fleeing animal is not worth more
       log(bot, `hunt: ${target.name} at ${target.position.floored()} → ${outcome}`)
       if (outcome === 'died') throw new SkillError('died while hunting', { code: 'DIED' })
@@ -200,7 +200,8 @@ async function hunt (bot, { mobs, item, count, signal, radius = 64, filter = () 
       if (outcome === 'killed') {
         kills++
         const had = inventory.counts(bot)
-        await dig.pickupNear(bot, target.position.clone(), { signal, radius: 5, wait: 1500, timeout: 10000 })
+        // the hunted item is picked up even when it is junk / surplus to the agent (leather for a book)
+        await dig.pickupNear(bot, target.position.clone(), { signal, radius: 5, wait: 1500, timeout: 10000, item: items.length === 1 ? items[0] : undefined })
         const got = Object.entries(inventory.counts(bot)).filter(([n, c]) => c > (had[n] ?? 0)).map(([n, c]) => `${c - (had[n] ?? 0)} ${n}`)
         progress(bot, 'pickup', { from: target.name, got })
       }

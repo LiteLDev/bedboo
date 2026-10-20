@@ -3,7 +3,8 @@
 /**
  * B1 — the build repairs block by block (U17's `build` skill, house5x5 on a flat world, materials given). During the
  * build the "world" goes wrong in the three ways a real run met:
- * - a cow is summoned into a floor cell: BDS itself refuses a block whose cell a mob stands in;
+ * - a cow is summoned into a floor cell: BDS itself refuses a block whose cell a mob stands in (it wanders: whether it
+ *   is still in the way when the build gets there varies; reported);
  * - the first 5 placements at another floor cell are refused (the library's refusal error; default-f2's failure:
  *   BDS refused the same cobblestone 4 times from the same spot): the build's 4 attempts fail, a repair round places
  *   it;
@@ -34,6 +35,12 @@ module.exports = {
     data.wallCell = wallCell
     data.forced = 0
     data.griefed = false
+    data.cowWaits = 0
+    // the skills' log (src/skill.js context): count the waits for a mob in a cell
+    const skill = require('../../src/skill')
+    const base = skill.context(bot)
+    skill.setContext(bot, { ...base, log: (m) => { if (/stands in/.test(m)) data.cowWaits++; base.log(m) } })
+    const inHouse = (p) => p.x >= origin.x && p.x <= origin.x + 4 && p.z >= origin.z && p.z <= origin.z + 4
     ctx.log(`summon: ${(await cmd(`summon cow ${cowCell.x + 0.5} ${cowCell.y} ${cowCell.z + 0.5}`)).join(' | ')}`)
     const placeBlock = bot.placeBlock
     bot.placeBlock = async function (ref, face) {
@@ -43,7 +50,8 @@ module.exports = {
         throw new Error(`Server refused to place ${bot.heldItem?.name} at ${dest}: the block is still air (forced by the test, ${data.forced}/5)`)
       }
       const out = await placeBlock.call(bot, ref, face)
-      if (!data.griefed && dest.y === origin.y + 4) {
+      // the first roof block (the pathfinder's scaffolding outside the house never counts)
+      if (!data.griefed && dest.y === origin.y + 4 && inHouse(dest)) {
         data.griefed = true
         ctx.log(`grief: ${(await cmd(`setblock ${wallCell.x} ${wallCell.y} ${wallCell.z} dirt`)).join(' | ')}`)
       }
@@ -62,6 +70,7 @@ module.exports = {
       const b = bot.blockAt(new Vec3(cell.x, cell.y, cell.z))
       if (b?.name !== 'cobblestone') throw new Error(`${name} at ${cell}: ${b?.name}`)
     }
-    ctx.log(`repaired: ${r.repairs.length} round(s) (${r.repairs.join(' → ')} mismatches left), ${r.placed} placed, ${(r.ms / 1000).toFixed(0)} s`)
+    // (the cow wanders: whether it stood in the way of a placement varies — reported, not required)
+    ctx.log(`repaired: ${r.repairs.length} round(s) (${r.repairs.join(' → ')} mismatches left), ${r.placed} placed, ${(r.ms / 1000).toFixed(0)} s; the cow stood in the way ${data.cowWaits} time(s)`)
   }
 }
