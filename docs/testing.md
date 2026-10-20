@@ -354,6 +354,13 @@ coordinates; "in dim" = prefixed with `execute in <bot's dimension> run`.
   `inventory_content` of every window (inventory 36, armor 5, ui 54, offhand 1); armor `replaceitem` →
   `inventory_slot` (armor); off-hand `replaceitem` → `inventory_content` (offhand); `/give` also sends an
   `inventory_transaction`. Player items carry `stack_id`s (server-authoritative inventory).
+- **Falling blocks:** a block starting to fall and a falling block landing come as `update_block_synced` only
+  (`transition_type` `create`: the block → air, then `add_entity minecraft:falling_block`; `destroy`: the landed block,
+  then `remove_entity`), never as `update_block` (POLISH-LIB, docs/differences/U4.md#falling-blocks).
+- **Inventory resend:** a client `inventory_transaction { transaction_type: 'inventory_mismatch' }` makes BDS resend
+  the player's inventory (`inventory_content` × 4 + `player_hotbar`); a rejected item stack request or reopening the
+  inventory screen resends nothing; `clear <player> <item> -1 0` prints `<player> has <n> items that match the
+  criteria` without clearing (POLISH-LIB, docs/differences/U8.md#inventory-resync).
 - **Entities:** `summon` → `Object successfully summoned` + `add_entity` (feet position, centered);
   `kill @e[type=pig]` → `Killed Pig`, `entity_event death_animation`, drops (`add_item_entity`), then
   `remove_entity { entity_id_self: <unique id> }`.

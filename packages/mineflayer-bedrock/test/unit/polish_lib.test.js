@@ -339,12 +339,44 @@ describe('inventory resync: inventory_mismatch (POLISH-LIB)', function () {
     // the server resends the inventory as it was before it handled the click (same items, same stack ids)
     client.receive('inventory_content', { window_id: 'inventory', input: before, container: { container_id: 'anvil_input' }, storage_item: wireItem(bot, null) })
     client.receive('inventory_content', { window_id: 'ui', input: [cursor, ...Array.from({ length: 53 }, () => wireItem(bot, null))], container: { container_id: 'anvil_input' }, storage_item: wireItem(bot, null) })
+    assert.strictEqual(bot.inventory.slots[10].name, 'dirt', 'the prediction stays shown (a click planned now builds on it)')
+    assert.strictEqual(bot.inventory.selectedItem?.name, 'stone')
     server.hold = false
     server.flush()
     await click
     assert.strictEqual(names(bot.inventory), '10:dirtx10', 'the accepted swap, not the resent stone with the dirt\'s count')
     assert.strictEqual(bot.inventory.selectedItem?.name, 'stone')
     assert.strictEqual(bot.inventory.selectedItem?.count, 5)
+  })
+
+  it('a pickup that lands on a slot while chained requests on it are in flight survives their rejection (it was lost: live trace)', async () => {
+    // seen live (BDS 1.26.51.1, ores dug while the coal stack was moved by overlapping clicks): take 28 coal from
+    // hotbar 2 (stack 236) → the pickup merges into it (29, stack 237) → a click planned on the carried 28 and the 29
+    // shown → BDS rejects both; the rollbacks handed the pre-pickup stack down the chain and wrote it back: the model
+    // showed 28 / 236 while the server had 29 / 237 (the pickup lost, every later click on it rejected)
+    const { bot, client, server, mismatches } = await joined()
+    client.receive('inventory_content', inventoryContent(bot, { 2: ['coal', 28] }, { firstStackId: 236 }))
+    const model = bot._bedrock.inventoryModel
+    await model.screen.open() // cursor moves need the inventory screen
+    server.hold = true
+    server.reject(49) // the take: the pickup changed its stack first
+    server.reject(49) // the place: names the take's request id
+    const take = model.execute(bot.inventory, [{ type: 'take', count: 28, src: 'p:2', dst: 'c' }])
+    await macrotask()
+    client.receive('inventory_transaction', { transaction: { legacy: { legacy_request_id: 0 }, transaction_type: 'normal', actions: [{ source_type: 'container', window_id: 0, slot: 2, old_item: wireItem(bot, 'coal', 28), new_item: wireItem(bot, 'coal', 29, 237) }] } })
+    assert.strictEqual(bot.inventory.slots[38].count, 29, 'the server wins at once')
+    const place = model.execute(bot.inventory, [{ type: 'place', count: 28, src: 'c', dst: 'p:2' }])
+    await macrotask()
+    assert.strictEqual(bot.inventory.slots[38].count, 57, 'predicted')
+    server.hold = false
+    server.flush()
+    await assert.rejects(take, (err) => err.status === 49 && err.raced === true)
+    await assert.rejects(place, (err) => err.status === 49 && err.chained === true)
+    assert.strictEqual(names(bot.inventory), '38:coalx29')
+    assert.strictEqual(bot.inventory.slots[38].stackId, 237, 'the server\'s stack')
+    assert.strictEqual(bot.inventory.selectedItem, null)
+    await macrotask()
+    assert.strictEqual(mismatches().length, 0, 'explained rejections: no resync')
   })
 
   it('a request rejected because the one it was planned on was rejected is no desync (no resync)', async () => {

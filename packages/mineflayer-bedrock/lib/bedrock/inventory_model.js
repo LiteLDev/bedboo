@@ -360,21 +360,36 @@ function createInventoryModel (bot, { Item, Window }) {
    * stack is not the one such a request was planned on (a pickup, /give, a hopper, another player changed it — new
    * stack id), BDS rejects the request (49 stack id mismatch / 50): it is marked `raced` so execute() plans it again
    * on the server's state (Java's server applies a click to its own current state instead of rejecting it).
+   * @returns {boolean} the packet only restates the state the requests in flight on the slot were planned on (a
+   *   resync, the resend after a command), while their prediction is shown: nothing to write (POLISH-LIB)
    */
   function noteServerWrite (key, item) {
-    if (inflight.size === 0) return
+    if (inflight.size === 0) return false
     const cw = key.startsWith('w:') ? currentWindow() : null
+    let raced = false
     for (const entry of inflight.values()) {
       const change = entry.byKey.get(key)
       if (!change) continue
       if (cw && entry.window !== cw) continue
+      // the server's latest copy of the slot: a rejected request restores it (rollback), not what it was planned on
+      change.serverItem = item
       const before = change.before
       // planned on another request's prediction (chained): that one is compared; its rejection propagates (rollback)
       if (before && inflight.has(before.stackId)) continue
       if (sameServerStack(before, item)) continue // a resend of what it was planned on (a resync, a command's resend)
       change.racedWrite = true // applyResponse: the server's newer item is the base, not the prediction
       entry.raced = true
+      raced = true
     }
+    if (raced) return false
+    // keep the shown prediction (a request planned now builds on it, like on the one before the resend): the server
+    // applies the requests to the restated state; a rejection restores it (serverItem)
+    const ck = key.startsWith('w:') ? (cw ? `${tagOf(cw)}|${key}` : null) : key
+    const chain = ck ? chains.get(ck) : null
+    if (!chain || chain.length === 0) return false
+    const head = chain[0].byKey.get(key)
+    const tail = chain[chain.length - 1].byKey.get(key)
+    return !!head && !!tail && sameServerStack(head.before, item) && read(key) === tail.after
   }
   /** the same server stack: type, count and stack id (null = empty) */
   function sameServerStack (a, b) {
@@ -383,8 +398,7 @@ function createInventoryModel (bot, { Item, Window }) {
   }
   /** write() of a server packet */
   function serverWrite (key, item) {
-    noteServerWrite(key, item)
-    write(key, item)
+    if (!noteServerWrite(key, item)) write(key, item)
   }
 
   function onInventoryContent (packet) {
@@ -547,9 +561,10 @@ function createInventoryModel (bot, { Item, Window }) {
   // Requests are not serialized: a click planned while another is in flight builds on its prediction (and names the
   // pending request id as stack id, like the vanilla client). BDS answers in send order. Each slot keeps the requests
   // in flight that changed it; a settled request hands its result for the slot (the server's count + stack id, or its
-  // own `before` when rejected) to the NEXT request on that slot as that request's `before`, and only the last
-  // request on a slot writes the slot. So a later prediction is never overwritten by an earlier answer, and a chain
-  // of rejections ends at the state before the first request.
+  // own `before` when rejected) to the NEXT request on that slot as that request's `before` — when that one was
+  // planned on its prediction —, and only the last request on a slot writes the slot. So a later prediction is never
+  // overwritten by an earlier answer, and a chain of rejections ends at the state before the first request, or at what
+  // the server sent for the slot meanwhile (`serverItem`: a pickup, /give — POLISH-LIB).
 
   function tagOf (window) {
     let tag = windowTags.get(window)
@@ -640,17 +655,29 @@ function createInventoryModel (bot, { Item, Window }) {
     }
   }
 
-  /** undo `entry`'s prediction (rejected, timed out, disconnected) */
+  /**
+   * undo `entry`'s prediction (rejected, timed out, disconnected). Per slot the state to go back to is what the server
+   * last said about it while the request was in flight (a pickup, /give: `serverItem`), else what it was planned on.
+   */
   function rollback (entry) {
     for (let k = entry.changes.length - 1; k >= 0; k--) {
-      const { key, before, after } = entry.changes[k]
+      const change = entry.changes[k]
+      const { key, before, after } = change
       if (!windowKeyValid(entry, key)) continue
+      const base = 'serverItem' in change ? change.serverItem : before
       const next = nextOnSlot(entry, key)
       if (next) {
-        next.byKey.get(key).before = before // the next request was planned on our (rejected) prediction
-        if (entry.raced) next.raced = true // and named its request id: rejected too, planned again like this one
-        next.chained = true // its stack id mismatch is explained: no resync for it
-      } else if (read(key) === after) write(key, before) // else a server packet replaced the slot meanwhile: keep it
+        const nextChange = next.byKey.get(key)
+        // the next request was planned on our (rejected) prediction: it builds on our base now, and named our request
+        // id — rejected too, its stack id mismatch is explained (no resync). One planned on a server packet that
+        // replaced our prediction meanwhile (a pickup) keeps that as its base: handing it our `before` restored the
+        // state before the pickup once the chain was rolled back — the pickup was lost (POLISH-LIB, seen live)
+        if (nextChange.before === after || (!!after && nextChange.before?.stackId === entry.id)) {
+          nextChange.before = base
+          next.chained = true
+        }
+        if (entry.raced) next.raced = true // planned again like this one when rejected
+      } else if (read(key) === after) write(key, base) // else a server packet replaced the slot meanwhile: keep it
     }
     unlink(entry)
   }

@@ -1295,17 +1295,21 @@ protocol forces underneath and the few visible consequences.
   they were planned on (same type, count, stack id) does not replace their predictions: the server applies them to
   that state, so their responses complete the predicted items (before, a swap answered after such a resend showed the
   old item with the new count).
-- **Pickup desync investigation (POLISH-LIB):** an agent run once reported 13 coal ores dug with no change of the coal
-  count. It did not reproduce live (BDS 1.26.51.1, `bot.inventory` compared with the server's count from
-  `clear <bot> coal -1 0` after each round): plain `dig` of 16 adjacent ores × 3 rounds, the same with the coal stack
-  moved back and forth by overlapping `moveSlotItem`s (requests in flight on the very slot the pickups merge into,
-  ~290 item stack responses per round), with the pickaxe equipped back and forth, pickups merging into hotbar and main
-  inventory stacks, a full inventory (60 coal + 34 full stacks: 4 picked up, the rest left on the ground, picked up
-  once slots were freed), pickups with a chest open (deposits in between), and mineflayer-collectblock collecting 52
-  ores × 2 — every count matched. Pickups arrive as `take_item_entity` + a server `inventory_transaction` (normal:
-  the container slot's old and new item, then a `world_interaction` action), never as `inventory_slot`. The most likely
-  cause of the agent's observation is drops that fell into water / lava or out of reach, or a full inventory; the
-  resync above heals a real desync should one ever happen.
+- **Pickup desync (POLISH-LIB):** an agent run once reported 13 coal ores dug with no change of the coal count. The
+  live hunt (BDS 1.26.51.1, `bot.inventory` compared with the server's count from `clear <bot> coal -1 0` after every
+  round) found every count right for plain `dig` of 16 adjacent ores × 3 rounds, the pickaxe equipped back and forth,
+  pickups merging into hotbar and main-inventory stacks, a full inventory (60 coal + 34 full stacks: 4 picked up, the
+  rest left on the ground and picked up once slots were freed), pickups with a chest open, and
+  mineflayer-collectblock collecting 52 ores × 2. Pickups arrive as `take_item_entity` + a server
+  `inventory_transaction` (normal: the container slot's old and new item, then a `world_interaction` action), never
+  as `inventory_slot`. The desync showed up (about 1 round in 40) with the coal stack moved back and forth by
+  overlapping `moveSlotItem`s while the pickups merged into it: a pickup landed on the stack while a take from it
+  and a click planned on that take were in flight; BDS rejected both (49: the stack changed / the request it named
+  was rejected) and the rollbacks handed the pre-pickup stack down the chain and wrote it back — `bot.inventory`
+  showed 28 coal (stack 236) while the server had 29 (stack 237): the pickup was lost and every later click on that
+  stack was rejected. Fixed in the per-slot chains ([overlapping requests](differences/W3FIXB.md#overlapping-requests)): a
+  rejected request goes back to what the server last sent for the slot, and a request planned on a server update
+  keeps it as its base. The resync above heals any desync that remains.
 - **Tests:** `test/unit/polish_lib.test.js` › "inventory resync: inventory_mismatch (POLISH-LIB)",
   `test/external/polishLib.test.js` › "inventory resync".
 
@@ -3161,8 +3165,10 @@ units' entries, which link here.
 - **mineflayer-bedrock:** the inventory model keeps, per slot, the requests in flight that changed it. A settled
   request hands its result for the slot to the next request on that slot (the server's count and stack id, or its
   own starting state when rejected) instead of overwriting that request's prediction; only the last request on a slot
-  writes the slot. Chained rejections therefore end at the state before the first request, and late (timed-out)
-  answers are applied in order. Answers for a container window that was closed meanwhile no longer touch the next
+  writes the slot. Chained rejections therefore end at the state before the first request — or at what the server
+  last sent for the slot while they were in flight (a pickup, `/give`; POLISH-LIB: a request planned on such a server
+  update keeps it as its base, and a resend of the very state the requests were planned on leaves their predictions
+  shown, [inventory resync](differences/U8.md#inventory-resync)) — and late (timed-out) answers are applied in order. Answers for a container window that was closed meanwhile no longer touch the next
   window. A click's prediction is committed synchronously when the inventory screen is open (and re-planned after
   waiting for the screen otherwise), so clicks issued without awaiting the previous one build on it, like Java's
   client-side click.
