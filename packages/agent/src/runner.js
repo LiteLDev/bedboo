@@ -176,8 +176,14 @@ function guardAutoEat (autoEat) {
     try {
       return await eat(opts)
     } catch (err) {
-      // the flag is cleared 2 s later: auto-eat's tick check would retry the equip on every tick meanwhile
-      if (!started && !/Already eating/.test(err.message)) setTimeout(() => { autoEat._eating = false }, 2000)
+      // the flag is cleared 2 s later: auto-eat's tick check would retry the equip on every tick meanwhile (only when
+      // the failure left it set)
+      if (!started && !/Already eating/.test(err.message) && autoEat._eating) setTimeout(() => { autoEat._eating = false }, 2000)
+      // a meal that began and failed (a tool swap cancelled it): auto-eat's strictErrors throws instead of emitting
+      // 'eatFail' — emitted here, after the meal's 'eatFinish' (the Safety's count of failed meals, hunt's meat count)
+      if (started) {
+        try { autoEat.emit('eatFail', err) } catch {}
+      }
       throw err
     } finally {
       autoEat.removeListener('eatStart', onStart)
@@ -275,13 +281,18 @@ class Agent extends EventEmitter {
     bot.on('death', () => this.onDeath())
     // an ore the bot dug — whoever dug it (the pathfinder on its way, a shaft): it was mined (the milestones count
     // these events; a pickaxe swing that the pathfinder makes does not go through dig.mineAt)
-    bot.on('blockUpdate', (oldBlock, newBlock) => {
-      if (!oldBlock || !newBlock || !/_ore$/.test(oldBlock.name) || /_ore$/.test(newBlock.name)) return
-      const last = bot.lastDigTime
-      if (last == null || performance.now() - last > 2000 || !bot.entity) return
-      if (bot.entity.position.distanceTo(oldBlock.position) > 7) return
-      const p = oldBlock.position
-      this.event('mine', { block: oldBlock.name, at: { x: p.x, y: p.y, z: p.z }, by: 'dig' })
+    // (the block the bot is digging — or stopped digging a moment before the server's break arrived —, not one blown
+    // up next to it; first among the listeners: mineflayer-pathfinder's stops — completes — the dig on this very
+    // update, which clears targetDigBlock)
+    bot.on('diggingAborted', (block) => { if (block?.position) this._abortedDig = { pos: block.position.clone(), at: Date.now() } })
+    bot.prependListener('blockUpdate', (oldBlock, newBlock) => {
+      try {
+        if (!oldBlock || !newBlock || !/_ore$/.test(oldBlock.name) || /_ore$/.test(newBlock.name)) return
+        const p = oldBlock.position
+        const aborted = this._abortedDig
+        const dug = bot.targetDigBlock?.position?.equals?.(p) || (aborted && Date.now() - aborted.at < 2000 && aborted.pos.equals(p))
+        if (dug) this.event('mine', { block: oldBlock.name, at: { x: p.x, y: p.y, z: p.z }, by: 'dig' })
+      } catch {} // never in the way of the world's other listeners (the dig's completion)
     })
     bot.on('kicked', (reason) => this.event('kicked', { reason: typeof reason === 'string' ? reason : JSON.stringify(reason) }))
     bot.on('end', (reason) => this.event('end', { reason: String(reason) }))

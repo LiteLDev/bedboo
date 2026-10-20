@@ -73,7 +73,7 @@ A skill is `async (bot, args) => result` (`args.signal` is the runner's AbortSig
 | `build` | `{ blueprint, origin?, radius? }` | builds a blueprint near the bot, verifies it block by block |
 | `navigate` | `{ position \| spawn: true, goal?, range? }` | pathfinder with re-planning, legs for far goals (each leg's end on dry land, never in a lake), unsticking (own door, head block, out of the water onto a bank, a side dug open), the last resort after two failures in a pit / the water: `escape`; `spawn: true` is an x / z goal (the spawn column) |
 | `explore` | `{ blocks?, biomes?, maxDistance? }` | spiral walk until a block / biome is loaded |
-| `surface` | `{}` | out of a mine: pillar up (staircase where liquid is above, around lakes) |
+| `surface` | `{}` | out of a mine: pillar up (staircase where liquid is above, around lakes; over to the next column where gravel / sand is over the head) |
 | `food` | `{ min, items?, stock?, explore?, fishing? }` | carry `min` hunger points and `items` food items: hunt passive animals (exploring for them), cook the meat; fish when no animal is left |
 | `hunt` | `{ mobs, item, count }` | kill passive mobs for an item (wool, leather, …), exploring until one is in sight |
 | `fish` | `{ count, obtainRod? }` | `bot.fish()` from a shore next to open water (≥ 2 deep); each cast waits ≤ 40 s for a bite |
@@ -107,8 +107,10 @@ src/safety.js runs during every task. When it takes over, pathfinder and digging
 
 - a hostile that hurt the bot or comes close (creepers from 6 blocks) is fought with skills/combat.js `fight` with
   `safe: true` (melee, bow when available, retreat and eat when low; its moves never step into lava / fire / a portal
-  or off a ledge higher than 3) — or fled from without a weapon at low health; a mob the bot neither hit nor got
-  closer to for 12 s, or that ran 24 blocks away, is left alone for a minute; a neutral mob (piglin, enderman) that
+  or off a ledge higher than 3) — or fled from without a weapon at low health, and a creeper at 10 hp or less (unless
+  the last flight from it went nowhere: then it is fought); a mob the bot neither hit nor got closer to for 12 s, or
+  that ran 24 blocks away, is left alone for a minute — until it hurts the bot (a creeper within 5 blocks only once it
+  was given up on twice in 3 minutes); a neutral mob (piglin, enderman) that
   swung at the bot and hurt it is fought back (`combat.likelyAttacker`); a ghast fireball within 4 blocks is hit
   back; what a killed mob dropped next to the bot (string, bones) is picked up;
 - U18's skills (portal, nether, end) run under `combat.guardFor()`: under an Agent it pushes the skill's guard options
@@ -116,10 +118,13 @@ src/safety.js runs during every task. When it takes over, pathfinder and digging
   behaviours for as long as the skill runs, so they keep their own guard's protections; the combat skill's hunt /
   nearby modes pause the safety behaviours while they fight themselves (one fighter per mob);
 - in lava: jump towards the nearest solid ground; low on air: swim up (centred in the water column), or to the
-  nearest pocket of air under a ceiling; a falling block in the head cell (gravel, sand): dig it out (never towards
+  nearest pocket of air under a ceiling; losing air in a block the client does not show yet: no fight starts (a fight
+  stops) until the climb gets out; a falling block in the head cell (gravel, sand): dig it out (never towards
   lava);
 - mineflayer-auto-eat eats when the food level drops below 16 — below 18 while the bot is hurt (natural regeneration
-  needs 18) — (rotten flesh too when starving), never during a fight; between tasks the agent hunts passive animals
+  needs 18) — (rotten flesh only when starving), never during a fight, a pillar step or a placement (counted holds:
+  `Safety#suppressMeals`); 3 meals that fail in 15 s pause it for 10 s; before a climb and between tasks the bot eats
+  standing still; between tasks the agent hunts passive animals
   in sight when hungry and out of food (chased with the pathfinder around fences and ledges), and cooks the meat in
   its furnace;
 - nights: between tasks, in the overworld at night, the agent sleeps in its bed (`rest`: the night is skipped); with
@@ -240,6 +245,16 @@ three runs at a time; phase seconds): **5/5 end to end**, no deaths, no stuck ta
 | e3 | 34.6 min | 92 | 110 | 189 | 667 | 95 | 70 | 228 | 201 | 101 | 208 | 5 | 5, 11, 2, 44, 16 | 2 |
 | e4 | 37.5 min | 78 | 161 | 374 | 524 | 96 | 63 | 248 | 199 | 181 | 214 | 5 | 6, 14, 2, 44, 23 | 2 |
 | e5 | 37.0 min | 96 | 188 | 292 | 666 | 79 | 38 | 238 | 194 | 148 | 191 | 5 | 6, 12, 2, 42, 7 | 3 |
+
+The code-review fixes after it (counted meal holds, ore counting by the dig target, creepers, climbs under gravel)
+were validated the same way:
+
+- M3 5/5 (106, 89, 99, 107, 89 s) and M5 5/5 (366, 270, 262, 297, 393 s).
+- M4 5/5 on the final code (180, 192, 187, 219, 187 s). The M4 climb starts under a gravel column; the bot steps over
+  to the next column twice.
+- Final chain: 6 of 6 runs passed since the climbs step aside under gravel (36.2–47.8 min, no deaths). Three of them ran the final code (36.2, 43.8, 39.4 min).
+- Before that change, 2 of 5 runs failed. In both the bot suffocated under gravel it dug into on the way up; one of
+  them first died in a cave that the shaft down opened into.
 
 Chained runs before (each failure fixed before the next round): full5, full6, full7 and a1 passed (40.1, 52.2, 32.9
 and 42.5 min); full8 failed M3 — three plain diamond ores at y 9–10, none of deepslate (→ the "down to the diamonds"

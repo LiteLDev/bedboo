@@ -137,7 +137,7 @@ const KEEP = { cobblestone: 128, cobbled_deepslate: 64, dirt: 32, stone: 32, dee
  * `late` (the overworld's work is done, the Nether / the End ahead): building stone for pillars and bridges only, the
  * ores the milestones wanted are no longer needed
  */
-const KEEP_LATE = { ...KEEP, cobblestone: 64, cobbled_deepslate: 0, dirt: 0, andesite: 0, diorite: 0, granite: 0, tuff: 0, deepslate: 0, stone: 0, rotten_flesh: 0, raw_copper: 0, raw_iron: 0, raw_gold: 0, redstone: 0, lapis_lazuli: 0, emerald: 0, coal: 8 }
+const KEEP_LATE = { ...KEEP, cobblestone: 64, cobbled_deepslate: 32, dirt: 0, andesite: 0, diorite: 0, granite: 0, tuff: 0, deepslate: 0, stone: 0, rotten_flesh: 0, raw_copper: 0, raw_iron: 8, raw_gold: 0, redstone: 0, lapis_lazuli: 0, emerald: 0, coal: 8 }
 
 /**
  * What can go when the inventory is full: junk, blocks above their KEEP amount, tools a better one of the same kind

@@ -182,7 +182,9 @@ async function fish (bot, { count = 3, timeout = 180000, signal, obtainRod = fal
     if (inventory.count(bot, 'string') < 2) {
       const web = world.findBlocks(bot, ['web'], { maxDistance: 48, count: 1 })[0]
       if (!web) throw new SkillError(`no fishing rod, ${inventory.count(bot, 'string')} string and no cobweb in sight`, { code: 'MISSING' })
-      await require('./obtain').obtain(bot, { item: 'string', count: 2, signal })
+      // (the webs in sight only: obtain would explore for more) — with a sword (shears would keep the web whole)
+      if (!bot.inventory.items().some((i) => i.name.endsWith('_sword'))) await require('./obtain').obtain(bot, { item: 'wooden_sword', count: 1, signal })
+      await require('../dig').collectBlocks(bot, { item: 'string', count: 2 - inventory.count(bot, 'string'), blocks: ['web'], maxDistance: 48, exploreDistance: 0, timeout: 60000, signal })
     }
     await require('./obtain').obtain(bot, { item: 'fishing_rod', count: 1, signal })
   }
@@ -403,6 +405,7 @@ async function climbUp (bot, { targetY, signal, timeout = 240000, maxSteps = 400
   // eat before the climb (standing still), not in the middle of a jump
   await require('../skill').eatNow(bot, { below: 18 })
   let interrupted = 0
+  let sideSteps = 0
   for (let i = 0; i < maxSteps; i++) {
     checkAbort(signal)
     if (Date.now() - started > timeout) throw new SkillError(`still underground at ${navigate.fmt(bot.entity.position)}`, { code: 'TIMEOUT' })
@@ -411,6 +414,14 @@ async function climbUp (bot, { targetY, signal, timeout = 240000, maxSteps = 400
     if (inWater(bot)) {
       await swimUp(bot, signal)
       if (bot.entity.position.floored().y > feet.y) continue
+    }
+    // gravel over the head: not straight up under it (it falls onto the bot: suffocated in a wall) — the next column
+    if (gravelOver(bot, feet) && sideSteps < 8) {
+      sideSteps++
+      if (await sideStep(bot, signal)) {
+        log(bot, `climb: gravel over ${navigate.fmt(feet)}; over to ${navigate.fmt(bot.entity.position)}`)
+        continue
+      }
     }
     try {
       await pillarStep(bot, signal)
@@ -475,6 +486,35 @@ async function clearCell (bot, pos, signal) {
   }
   const after = bot.blockAt(pos)
   if (!world.isPassable(after) && !world.isWater(after)) throw new SkillError(`${navigate.fmt(pos)} keeps filling up`, { code: 'FAILED' })
+}
+
+/** gravel / sand over the cell over the head: digging that cell brings it down onto the bot */
+function gravelOver (bot, feet) {
+  return world.isFalling(bot.blockAt(feet.offset(0, 3, 0)))
+}
+
+/**
+ * Over to a neighbouring column with no gravel / sand over it (cleared at feet and head height, ground under it, no
+ * liquid): the climb goes on there. @returns {Promise<boolean>}
+ */
+async function sideStep (bot, signal) {
+  const feet = bot.entity.position.floored()
+  for (const d of world.HORIZONTAL) {
+    const low = feet.plus(d)
+    const cells = [low, low.offset(0, 1, 0)]
+    if (!world.isSolid(bot.blockAt(low.offset(0, -1, 0)))) continue
+    if ([...cells, low.offset(0, 2, 0), low.offset(0, 3, 0)].some((c) => world.isFalling(bot.blockAt(c)) || world.isLiquid(bot.blockAt(c)) || world.lavaAround(bot, c))) continue
+    if (cells.some((c) => world.isProtected(bot, c)) || columnWet(bot, low.x, low.z, low.y)) continue
+    try {
+      for (const c of cells) await clearCell(bot, c, signal)
+    } catch (err) {
+      if (isAbort(err)) throw err
+      continue
+    }
+    // (a step that went wrong left the bot elsewhere: the next direction would be from where it was)
+    return navigate.stepTo(bot, low, signal, { ticks: 30 })
+  }
+  return false
 }
 
 /** one pillar step: clear the cell over the head, centre, jump, place a filler block under the feet */

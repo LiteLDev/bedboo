@@ -145,12 +145,22 @@ async function hunt (bot, { mobs, item, count, signal, radius = 64, filter = () 
   const items = [].concat(item)
   const start = Object.fromEntries(items.map((i) => [i, inventory.count(bot, i)]))
   // a hungry bot eats the meat as soon as it is picked up (mineflayer-auto-eat): that counts as collected
-  // ('eatFinish' also follows a failed meal: 'eatFail' comes right before it then)
+  // ('eatFinish' also follows a failed meal: 'eatFail' comes right before it — or, under auto-eat's strictErrors, right
+  // after it, from runner.js guardAutoEat: the meal is taken back)
   let eaten = 0
   let failed = false
-  const onFail = () => { failed = true }
+  let finished = 0 // when the last meal ended
+  let counted = false // whether it was counted
+  const onFail = () => {
+    if (Date.now() - finished < 1000) {
+      if (counted) eaten--
+      counted = false
+    } else failed = true
+  }
   const onEat = (o) => {
-    if (!failed && items.includes(o?.food?.name)) eaten++
+    counted = !failed && items.includes(o?.food?.name)
+    if (counted) eaten++
+    finished = Date.now()
     failed = false
   }
   bot.autoEat?.on?.('eatFail', onFail)
