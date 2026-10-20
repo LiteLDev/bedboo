@@ -19,10 +19,13 @@ const u = require('./util')
 /**
  * @param {object} bot
  * @param {object} guard combat.guardFor()'s result
- * @param {{ reach?: number }} [opts] `reach`: blame a neutral mob this close (hitbox distance) when no swing was seen
+ * @param {{ reach?: number, exclude?: (e) => boolean }} [opts] `reach`: blame a neutral mob this close (hitbox
+ *   distance) when no swing was seen; `exclude`: mobs never blamed (piglins next to a bot in gold armor: one swinging
+ *   at a hoglin beside the bot, or standing there when a fireball hits it, did not hurt it — and hitting one angers
+ *   the group)
  * @returns {() => void} stop
  */
-function retaliate (bot, guard, { reach = 3.5 } = {}) {
+function retaliate (bot, guard, { reach = 3.5, exclude } = {}) {
   const safety = guard?.safety
   if (!guard?.delegated || !safety || typeof safety.run !== 'function' || typeof safety.fight !== 'function') return () => {}
   const combat = require('../skills/combat')
@@ -46,9 +49,9 @@ function retaliate (bot, guard, { reach = 3.5 } = {}) {
     // the safety's own hurt check (hostiles) goes first: it runs on the same event
     setImmediate(() => {
       if (stopped || safety.busy || !safety.enabled || !bot.entity || bot.health <= 0) return
-      let attacker = combat.likelyAttacker(bot, { swings })
+      let attacker = combat.likelyAttacker(bot, { swings, exclude })
       if (attacker && !combat.NEUTRAL_MOBS.has(attacker.name)) return // a hostile: the safety's business
-      if (!attacker && Date.now() - fall.landedAt > 1000) attacker = neutralInReach(bot, combat, reach)
+      if (!attacker && Date.now() - fall.landedAt > 1000) attacker = neutralInReach(bot, combat, reach, exclude)
       if (!attacker) return
       u.log(bot, `retaliating against ${attacker.name} at ${attacker.position.floored()} (health ${bot.health})`)
       safety.run('fight', () => safety.fight(attacker), attacker)
@@ -69,7 +72,7 @@ function retaliate (bot, guard, { reach = 3.5 } = {}) {
  * The nearest neutral mob within `reach` — not when something else explains the damage (no mob to blame): fire, lava,
  * starving, drowning, a block in the head, a cactus / berry bush at the feet (falls: the caller).
  */
-function neutralInReach (bot, combat, reach) {
+function neutralInReach (bot, combat, reach, exclude) {
   const feet = bot.blockAt?.(bot.entity.position.floored())
   const head = bot.blockAt?.(bot.entity.position.offset(0, 1.62, 0).floored())
   if (bot.entity.onFire || u.isLava(feet) || /fire|cactus|sweet_berry/.test(feet?.name ?? '')) return null
@@ -77,7 +80,7 @@ function neutralInReach (bot, combat, reach) {
   if (head && head.boundingBox === 'block' && !u.isWater(head)) return null
   const dead = combat.deadEntities(bot)
   return Object.values(bot.entities)
-    .filter((e) => e !== bot.entity && combat.NEUTRAL_MOBS.has(e.name) && !dead.has(e) && combat.hitboxDistance(bot, e) <= reach)
+    .filter((e) => e !== bot.entity && combat.NEUTRAL_MOBS.has(e.name) && !dead.has(e) && combat.hitboxDistance(bot, e) <= reach && !(exclude && exclude(e)))
     .sort((a, b) => a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position))[0] ?? null
 }
 

@@ -1411,7 +1411,32 @@ async function lightPortal (bot, frame, { signal } = {}) {
   const spot = frame.spot ?? frame.stand[0]
   // down in a gravel pit after the flint: up first (a straight walk out of a 1×1 shaft stalls)
   if (bot.entity.position.y < spot.y - 4) await toSurface(bot, { signal })
-  await u.goto(bot, new goals.GoalBlock(spot.x, spot.y, spot.z), { signal, timeout: 120000 })
+  const goSpot = () => u.goto(bot, new goals.GoalBlock(spot.x, spot.y, spot.z), { signal, timeout: 120000, stallMs: 20000 })
+  try {
+    await goSpot()
+  } catch (err) {
+    if (signal?.aborted || !/stalled/.test(err.message)) throw err
+    // stood still in the flint's pit, 2–3 deep (a final chain run: 30 s at the bottom, then the whole N1M3 failed): the
+    // pathfinder stopped for good (a failed placement leaves it hanging), the bot's own staircase steps out, again
+    u.log(bot, `portal: to the frame: ${err.message}; climbing out first`)
+    u.stopMoving(bot)
+    const survive = optional('./survive')
+    // the frame (and its inside) is never a step of that staircase: a protected zone of the Agent while it climbs
+    const zones = optional('../skill')?.agentOf?.(bot)?.state?.protectedZones
+    const cells = [...(frame.frame ?? []), ...(frame.interior ?? [])].map(u.vec)
+    const zone = cells.length
+      ? { name: 'nether portal frame', min: { x: Math.min(...cells.map((c) => c.x)), y: Math.min(...cells.map((c) => c.y)), z: Math.min(...cells.map((c) => c.z)) }, max: { x: Math.max(...cells.map((c) => c.x)), y: Math.max(...cells.map((c) => c.y)), z: Math.max(...cells.map((c) => c.z)) } }
+      : null
+    if (zones && zone) zones.push(zone)
+    try {
+      for (let i = 0; i < 6 && bot.entity.position.y < spot.y && typeof survive?.stairStepUp === 'function'; i++) {
+        if (!await survive.stairStepUp(bot, signal).catch((e) => { if (signal?.aborted) throw e; return false })) break
+      }
+    } finally {
+      if (zones && zone) zones.splice(zones.indexOf(zone), 1)
+    }
+    await goSpot()
+  }
   await u.equipItem(bot, 'flint_and_steel')
   await bot.placeBlock(bot.blockAt(frame.light.ref), frame.light.face)
   for (const p of frame.interior) await u.waitForBlock(bot, p, (b) => b.name === 'portal', { timeout: 5000, signal })

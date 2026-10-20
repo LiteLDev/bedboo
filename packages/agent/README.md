@@ -219,10 +219,12 @@ and no reconnects:
 | gear | all the iron in one trip and one 3-furnace smelt → iron helmet, chestplate, leggings, boots (worn) and a shield (off-hand), a spare iron pickaxe, the second bucket and the iron for the flint and steel; sticks; the camp's meat cooked | 9 + 2×7 min |
 | down to the diamonds | a safe shaft to y -54 (`descend`): diamonds are a deepslate thing, and M3 checks a deepslate diamond ore is among its three | 4 min |
 | M3, M4, M5 | diamonds, the house at the spawn, every overworld ore (the milestones) | 10 min each |
-| provisions | back to the spawn; ≥ 8 food items (hunted around the spawn, exploring for animals; fishing when none is left; cooked) | 5 + 2×4 min |
+| gold armor | `--nether-ores` only: golden boots (`obtain`: M5's raw gold smelted, more gold ore mined from the vein M5 found) — one gold piece keeps piglins neutral | 2 × 8 min |
+| provisions | back to the spawn; ≥ 8 food items (hunted around the spawn, exploring for animals; fishing when none is left; cooked); `--nether-ores`: aims for 14 (N1M3 eats some before the ores) | 5 + 2×4 min |
 | N1M3 | U18's nether entry: second bucket, iron ingot (both carried by then), bucket-cast obsidian at a lava pool, frame, flint and steel, into the Nether | 45 min |
-| home | U18's nether skill: back through the bot's own portal (`--nether-ores`: N2's quartz, nether gold and ancient debris on the way) | 14 min |
-| E1 | U18's End part — the stronghold portal room reached with cheats (locate + teleport, eyes of ender given; docs/differences/U18.md), the bot fills the frames, enters the End, the dragon is killed by `/kill` (cheat), the bot fights two endermen and leaves through the exit portal | 4 + 13 + 4 min (the fight's budget includes ~5 min for U18's walk up from the arrival platform, which stalled for ~5 min in four development runs, in none of the acceptance runs) |
+| home | U18's nether skill: back through the bot's own portal | 14 min |
+| nether ores + home | `--nether-ores` instead of home: a gold piece carried and ≥ 8 food items (short of food: home through the portal first, food on the plains, back in), then the nether skill mines N2's quartz, nether gold and ancient debris (the gold piece worn; at least one of each, or the phase fails) and goes home | (6 + 4) + 14 min |
+| E1 | U18's End part — the stronghold portal room reached with cheats (locate + teleport, eyes of ender given; docs/differences/U18.md), the bot fills the frames, enters the End, the dragon is killed by `/kill` (cheat), the bot walks up from the arrival platform to the island top ([the walk up](#the-end-walk-up)), fights two endermen and leaves through the exit portal | 4 + 11 + 4 min (the fight's budget includes 3 min for the walk up, bounded at 150 s) |
 
 Between scenario steps the Agent sleeps through a night in its bed (and before every phase; without a bed and
 without armor it would wait in its house or a sealed hole), tosses junk when the inventory fills up, hunts when
@@ -277,6 +279,153 @@ next round):
 | ow4 | 100, 368, 227, 426, 121, — | M4: suffocated in a pillar step retried after a meal (→ retried after a fight only); recovery left the drops at the first fight (→ goes on) |
 | ow5 | 94, 302, 188, — | gear: the shield's planks were a log trip from underground (→ shield and spares best effort) |
 | full1 | 79, 131, 260, 405, 59, 197, 196 | provisions: an x/z goal skipped the climb to the surface, a zombie behind a wall fought every 12 s (→ both fixed); stopped |
+
+
+### The End walk up
+
+From the arrival platform (an obsidian platform at (100, 49, 0) whose top floats 4–5 blocks over the island's slope in
+seed 1234) the end skill's `toIslandTop` walks to the island top near the exit fountain in hops of ≤ 30 blocks. Its
+usual way (≈ 30 s): mineflayer-pathfinder bridges west along z = 2 from x 97 to x 87 (10 scaffolding blocks, ≈ 2 s
+each), drops 2 blocks onto the slope and climbs it, digging a few steps into the end stone.
+
+**The stall** (4 development chain runs before the acceptance runs: 10 × "goto stalled: no progress for 30000 ms" at
+x 89–95, z 2, y 50 — on the bot's own half-built bridge): when the equip or the placement of a bridge block fails,
+mineflayer-pathfinder never gets past it. Its equip lock is not released when `bot.equip` rejects, and a refused
+placement resets the path into the same placement. `stop()` waits for a placement that never ends, so the
+pathfinder keeps pressing 'back' and 'sneak' towards its bridge edge. The walk gave up each hop after 30 s and started
+the same hop again, 10 times. What made the equip / placement fail comes from the chain's state and was never
+reproduced in E1A: 13 dedicated attempts (full inventories, mixed small scaffolding stacks, a hungry bot) and the 49
+recorded runs below all walked up in 29–34 s. Simulating it — `bot.equip` of a scaffolding block rejected, or
+`bot.placeBlock` rejected, in the End — reproduces the signature exactly:
+"goto stalled … at (96, 50, 2)". None of the candidate causes was it — no tower under the island (`bedrockTowers`
+already drops those), the obsidian edge is walked over, and no enderman was involved. The chain runs that stalled carried
+full inventories into the End (the eyes' /give dropped the End's diamond boots and leggings); since the late declutter
+(≥ 12 free slots before every late phase) no run stalled.
+
+**The fix** (`skills/end.js` `toIslandTop`, bounded by `walkMs` = 150 s): a meal first, standing still (auto-eat
+starting one mid-bridge swaps the block in the hand for food), no meals during a hop. A hop that does not move the bot
+2 blocks, or whose walk stood still for `walkStallMs` (15 s), is a stall. The next hop then takes another way, the
+first of these that stalled least:
+1. `path`: the pathfinder as before (bridges, digs, towers where BDS accepts them);
+2. `no placement`: the pathfinder without scaffolding and with drops of ≤ 6. It walks off the platform onto the slope
+   under it (a fall of ≤ 3 damage) and digs up through the end stone;
+3. `manual`: the bot's own steps (`manualStep`, after stopping the hung pathfinder). Each step is one of a staircase
+   into the rock ahead, a step or a drop of ≤ 6 onto the ground ahead (never the void), a bridge block across a gap,
+   or a pillar step where the 3×3 columns over the bot are clear.
+
+Each way was verified on its own in E1A, from the platform to the island top:
+
+| way | how it was forced | time to the island top |
+|---|---|---|
+| `path` | none (the normal walk) | 30 s, no stall |
+| `no placement` | `bot.equip` of the scaffolding rejected (stall after 15 s) | 37 s |
+| `no placement` | `bot.placeBlock` rejected | 55 s (two hops of 15 s, before a stall after a few bridge blocks counted) |
+| `manual` | equip rejected, the `no placement` way left out | 43 s |
+| `manual` | the only way | 27 s |
+
+The walk's record — hops, stalls with their way, and the longest stand-still — is in the fight phase's result
+(`walk`) and in the log line "end: on the island at … (30 s, 3 hops, longest stand-still 1 s, 0 stalls)". E1A prints
+it for every run.
+
+The exit phase also counts a bot that reached the overworld through the exit portal before its own step in as
+exited. One E1A run had been knocked in by an enderman at the fountain, and the walk then went on towards (0, 0) in the
+overworld for 4 minutes. A death during the exit is not counted as an exit. Endermen that follow the bot to the
+fountain are fought while it has more than 10 hp. Below that it leaves them behind through the portal; a fight in
+progress also ends, since the safety's fights end when a guard starts ignoring their target. A default chain run was
+slain there by five endermen in a row, 17 → 0 hp in 12 s, three of them killed.
+
+**End phases** (E1A: `BEDBOO_U18_CHAIN_SEED=1 BEDBOO_U18_RUNS=10 … --grep E1A`, seed 1234, easy, the Agent; E1A now fails
+a run whose walk stood still for over 60 s; wall time per run in seconds):
+
+| batch | code | passed | wall time per run (s) | walk up |
+|---|---|---|---|---|
+| 1 | the walk's fallbacks | 9/10 | 83, 87, 89, 85 ✗, 71, 136, 69, 144, 88, 82 | 29–30 s, 3 hops, no stall (9 recorded) |
+| 2 | + failed runs keep the agent's report | 10/10 | 117, 83, 82, 80, 74, 99, 75, 69, 82, 81 | 29–30 s, 3 hops, no stall |
+| 3 | the exit at low health, the review fixes | 10/10 | 79, 86, 79, 83, 75, 90, 83, 76, 93, 78 | 30 s, 3 hops, no stall, longest stand-still 1 s |
+| 4 | rebased on POLISH-LIB (#36) | 10/10 | 72, 82, 76, 106, 80, 79, 72, 87, 72, 70 | 30 s, 3 hops, no stall, longest stand-still 1 s |
+| 5 | final (the second review's fixes) | 10/10 | 76, 81, 97, 78, 70, 82, 79, 89, 82, 98 | 29–34 s, 3 hops, no stall, longest stand-still 1 s |
+
+✗ batch 1 run 4: the bot died in the endermen fight, 59 s into the phase. No event log was kept then, so failed E1A
+runs now write the agent's report next to `BEDBOO_U18_REPORT`. 49 of 50 runs passed. In 49 recorded walks none
+stalled and none stood still for more than a second. The fallback was needed in a chain run instead: in default-1
+the pathfinder found no path off the platform (no bridge), and the `no placement` way had the bot on the island in
+20 s. In the 9 other chain runs that reached the End, the walk took 30–33 s with no stall.
+
+### `--nether-ores`
+
+`final-chain --nether-ores` adds the Nether's ores to the chain:
+- **gold armor** after M5: golden boots, `obtain`ed from M5's raw gold. The planner smelts it, mines more gold ore
+  from the vein M5 found, and makes a crafting table when none is carried.
+- **provisions** aims for 14 food items instead of 8.
+- **nether ores + home** replaces home. It checks that the bot carries a gold piece and ≥ 8 food items; short of food,
+  it goes home through the portal first, hunts, and goes back in. Then the nether skill wears the gold piece and mines
+  quartz, nether gold and ancient debris (3 / 3 / 1). The phase fails unless it mines at least one of each and gets home.
+
+Under the Agent the Nether trip's guard (`nether.netherGuard`) works as follows:
+- Piglins are nobody's attacker while the bot wears gold, unless one hits it with no other mob to blame (a hostile,
+  a ghast's fireball, a zombified piglin). That piglin is then angry and fought back for a minute.
+- No arrows fly with piglins or zombified piglins within 24 blocks.
+- Hoglins are fought with a retreat and a meal at low health, rather than to the end. At ≤ 8 hp they are fled from.
+- A fight's `equipForCombat` never swaps the worn gold piece for iron in the Nether, and the gold goes back on when
+  something took it off.
+
+Runs (BDS 1.26.51.1, 2026-10-20, seed 1234, easy; a fresh world per run, phase seconds):
+
+| run | code | result | M1, camp, M2, gear, down, M3, M4, M5 | gold armor | provisions | N1M3 | nether ores + home | E1: stronghold, activate, dragon, endermen, exit |
+|---|---|---|---|---|---|---|---|---|
+| dev | `--from m5` (M5 snapshot) | passed, 29.1 min (partial) | — | 207 | 443 | 963 (a night in a shelter: the snapshot's bot has no armor) | 49 | 6, 15, 2, 43, 8 |
+| ores-1 | first version | ✗ 37.3 min | 78, 192, 209, 473, 89, 29, 283, 213 | 194 | 190 | 270 ✗ | — | — |
+| ores-2 | + exit at low health | passed, 41.5 min | 86, 125, 190, 488, 45, 69, 161, 278 | 282 | 371 | 193 | 44 | 6, 15, 2, 89, 12 |
+| ores-3 | + portal out of the flint pit | passed, 52.1 min | 84, 186, 167, 682, 61, 92, 178, 515 | 360 | 427 | 211 | 47 | 6, 10, 2, 49, 20 |
+| ores-4 | same | passed, 47.7 min | 98, 260, 210, 499, 30, 92, 161, 474 | 74 | 650 | 192 | 45 | 5, 13, 2, 39, 11 |
+| ores-r1 | rebased on POLISH-LIB (#36), `guardAutoEat` removed | ✗ 45.1 min | 78, 297, 366, 1018, 47, 473 ✗ | — | — | — | — | — |
+| ores-r2 | + drowning under a ceiling | passed, 39.6 min | 77, 233, 200, 572, 30, 96, 132, 288 | 169 | 239 | 211 | 44 | 6, 14, 2, 43, 4 |
+| ores-r3 | same | passed, 43.9 min | 96, 239, 199, 637, 89, 28, 216, 281 | 167 | 285 | 260 | 47 | 5, 15, 2, 38, 6 |
+| ores-f1 | final (the second review's fixes) | passed, 43.2 min | 72, 242, 189, 772, 25, 54, 135, 255 | 83 | 381 | 247 | 48 | 6, 15, 2, 43, 16 |
+
+Every Nether trip went the same way: the portal comes out at (-53, 68, 5) in the Nether. The bot mined 3 quartz
+there in 6–11 s, the ancient debris at (-60, 73, 18) in 14–16 s and 3 nether gold in 7–8 s, then went home along its
+breadcrumbs. No piglin or hoglin fight, no death.
+
+6 of 8 full runs passed end to end: 5 of 6 since the portal fix, and 3 of 3 since the drowning fix (the last one on
+the final code). No death in any Nether or End phase.
+
+✗ ores-r1 (overworld, before the Nether): the camp found no animals and the bot carried only rotten flesh, so it
+could not regenerate. A creeper blast left it at 1 hp, and a skeleton and then a zombie villager killed it in M3 (U17's
+food supply; not this change).
+
+✗ ores-1: U18's portal skill dug its flint from a gravel pit 2–3 deep beside the lava pool. The walk back to the
+frame then stood still at the pit's bottom for 30 s, and the stall error failed N1M3. That is the same mineflayer-
+pathfinder hang on a failed placement. Now (`portal.lightPortal`) a stalled walk to the frame stops the pathfinder, and
+the bot climbs out with U17's staircase steps (`stairStepUp`) and walks again.
+
+**Default chain regression** (no `--nether-ores`):
+
+| run | code | result | M1, camp, M2, gear, down, M3, M4, M5, provisions, N1M3, home | E1: stronghold, activate, dragon, endermen, exit |
+|---|---|---|---|---|
+| default-1 | first version | ✗ 47.3 min | 79, 448, 168, 373, 85, 72, 321, 326, 677, 194, 5 | 6, 15, 2, 42, 17 ✗ |
+| default-2 | + exit at low health, portal out of the flint pit | passed, 40.6 min | 84, 100, 177, 501, 18, 239, 169, 496, 332, 194, 5 | 5, 12, 2, 56, 20 |
+| default-r1 | rebased on POLISH-LIB (#36), `guardAutoEat` removed | ✗ 26.4 min | 86, 173, 167, 567, 62, 34, 489 ✗ | — |
+| default-r2 | same | passed, 42.0 min | 80, 305, 253, 437, 94, 72, 235, 412, 308, 207, 3 | 6, 10, 2, 47, 13 |
+| default-r3 | + drowning under a ceiling | passed, 41.6 min | 98, 211, 220, 508, 18, 62, 180, 323, 498, 281, 5 | 5, 14, 2, 54, 10 |
+| default-f1 | final (the second review's fixes) | passed, 36.5 min | 99, 212, 206, 581, 92, 70, 210, 212, 97, 257, 5 | 5, 13, 2, 87, 20 |
+| default-f2 | same | ✗ 21.3 min | 92, 215, 214, 469, 28, 49, 204 ✗ | — |
+
+✗ default-f2 (U17's build in M4): the bot could not clear the grass at one floor cell. Its walk there stalled
+("Took to long to decide path", then stuck twice), and BDS refused both cobblestone placements beside it ("the block
+is still air"). The house ended with 1 of 125 blocks wrong after the repair pass. This change does not touch it.
+
+✗ default-r1: drowned twice in M4's climb to the surface (U17's `surface`), at the same spot. The pillar had come up
+under a flooded cave at y 52, with no air pocket within 6 blocks. Every 4 ticks the safety's drowning behaviour took
+the controls again, and each time it stopped the climb's dig of the ceiling, the only way out. Now (`safety.js`) a
+drowning claim that found no air pocket digs up through the ceiling itself. It digs at most 2 blocks, and never next to
+lava, under gravel or sand, or when the dig would outlast the air. Where the last claim found no way out, no new one
+is made until the bot moved, or for 30 s, so the task's own dig goes on.
+
+✗ default-1: an enderman slew the bot at the exit fountain. Five endermen came in a row, 17 → 0 hp in 12 s, and three
+of them were killed. That led to the exit change above. The run had died twice in the overworld before: slain by a
+zombie while hunting sheep at the camp, which cost the bed's wool, and shot by a skeleton at night in provisions with
+no bed. The Agent recovered from both.
 
 
 ## Seed scouting

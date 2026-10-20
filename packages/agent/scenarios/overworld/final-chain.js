@@ -65,10 +65,17 @@ const GEAR_ROUNDS = [['iron_chestplate', 'iron_leggings'], ['iron_helmet', 'iron
 const ARMOR_SLOT = { iron_helmet: 5, iron_chestplate: 6, iron_leggings: 7, iron_boots: 8 }
 /** a bed takes 3 wool of one colour */
 const WOOL = ['white', 'light_gray', 'gray', 'black', 'brown', 'pink', 'orange', 'magenta', 'light_blue', 'yellow', 'lime', 'cyan', 'purple', 'blue', 'green', 'red'].map((c) => `${c}_wool`)
-/** extra time for the End fight: the walk from the arrival platform to the island top (see the E1 phases below) */
-const END_WALK_MS = 5 * MINUTES
+/**
+ * extra time for the End fight: the walk from the arrival platform to the island top (≈ 30 s; bounded at 150 s by the
+ * end skill, which takes another way after a 15 s stall)
+ */
+const END_WALK_MS = 3 * MINUTES
 /** food items to carry into the Nether */
 const PROVISIONS = 8
+/** `--nether-ores`: food items the provisions phase aims for (N1M3 eats some before the ores) */
+const ORE_PROVISIONS = 14
+/** gold armor pieces, cheapest first (one worn keeps piglins neutral): boots take 4 gold ingots, a helmet 5 */
+const GOLD_ARMOR = ['golden_boots', 'golden_helmet', 'golden_leggings', 'golden_chestplate']
 
 /** the bot carries `item` (armor worn counts) */
 const has = (bot, item) => inventory.count(bot, item) > 0
@@ -122,6 +129,8 @@ async function finalChain ({ log = () => {}, cfg = config(), netherOres = false,
     const who = JSON.stringify(bot.username)
     const ctx = { bot, server, cmd: (c) => server.commandOutput(c.replaceAll('{bot}', who)), who, log: (m) => agent.event('log', { msg: m }), data: {} }
     const milestone = (id) => ({ name: id, run: () => scenario(MILESTONES.find((m) => m.id === id)) })
+    /** the gold armor piece the bot carries or wears, or null */
+    const goldPiece = () => GOLD_ARMOR.find((item) => has(bot, item)) ?? null
     /** 3 wool of one colour from sheep (the plains around the spawn have flocks), then the bed is crafted */
     const bed = async (ms) => {
       if (Math.max(...WOOL.map((w) => inventory.count(bot, w))) < 3) {
@@ -211,6 +220,24 @@ async function finalChain ({ log = () => {}, cfg = config(), netherOres = false,
     plan.push(milestone('M3'))
     plan.push(milestone('M4'))
     plan.push(milestone('M5'))
+    if (netherOres) {
+      plan.push({
+        name: 'gold armor',
+        // (the raw gold M5 mined is what this phase smelts: not tossed before it)
+        keep: 'raw_gold',
+        // --nether-ores: a gold armor piece, so piglins stay neutral while the bot mines the Nether's ores (unarmored
+        // in gold, a piglin killed the bot mining quartz: N1M5H #1); the gold of M5's ore, smelted, more mined if
+        // needed (the gold vein M5 found is close by: the phase starts where M5 ended)
+        run: async () => {
+          if (!goldPiece()) {
+            await task('obtain', { item: GOLD_ARMOR[0], count: 1 }, { name: `gold armor: ${GOLD_ARMOR[0]}`, timeout: 8 * MINUTES, retries: 1 })
+          }
+          const piece = goldPiece()
+          if (!piece) throw new Error('no gold armor piece')
+          return { piece, rawGold: inventory.count(bot, 'raw_gold'), ingots: inventory.count(bot, 'gold_ingot') }
+        }
+      })
+    }
     plan.push({
       name: 'provisions',
       // back to the spawn (M5 ends deep under the mountains; N1M3 builds its portal at the spawn, and the plains there
@@ -220,9 +247,11 @@ async function finalChain ({ log = () => {}, cfg = config(), netherOres = false,
         const home = await task('navigate', { spawn: true, range: 16 }, { name: 'provisions: to the spawn', timeout: 5 * MINUTES, retries: 1 })
           .catch((err) => ({ error: err.message }))
         let r = null
-        for (let round = 0; round < 2 && require('../../src/skills/survive').foodItems(bot) < PROVISIONS; round++) {
+        // (--nether-ores: more, the ores come after N1M3's meals; PROVISIONS is what must be carried)
+        const want = netherOres ? ORE_PROVISIONS : PROVISIONS
+        for (let round = 0; round < 2 && require('../../src/skills/survive').foodItems(bot) < (round ? PROVISIONS : want); round++) {
           await agent.maintain()
-          r = await task('food', { min: 30, items: PROVISIONS, stock: true, radius: 64, explore: true, fishing: true, timeout: 230000 }, { name: `provisions${round ? ' (again)' : ''}`, timeout: 4 * MINUTES, retries: 1 })
+          r = await task('food', { min: 30, items: want, stock: true, radius: 64, explore: true, fishing: true, timeout: 230000 }, { name: `provisions${round ? ' (again)' : ''}`, timeout: 4 * MINUTES, retries: 1 })
             .catch((err) => ({ error: err.message }))
         }
         const items = require('../../src/skills/survive').foodItems(bot)
@@ -236,12 +265,37 @@ async function finalChain ({ log = () => {}, cfg = config(), netherOres = false,
     })
     plan.push({ name: 'N1M3', run: async () => { await agent.maintain(); return scenario(N1M3) } })
     plan.push({
-      name: 'home',
+      name: netherOres ? 'nether ores + home' : 'home',
       run: async () => {
-        // retries 1: a death in the Nether ends in the overworld — the retry finds the bot home already (U18)
-        const r = await task('nether', { targets: netherOres ? NETHER_ORES : {}, returnHome: true }, { name: 'back home', timeout: 14 * MINUTES, retries: 1 })
+        const out = {}
+        if (netherOres) {
+          // the Nether's ores: a gold armor piece (worn by the nether skill) and ≥ PROVISIONS food items — short of
+          // food after N1M3, home first for more (the plains around the portal), then back in through the bot's portal
+          const survive = require('../../src/skills/survive')
+          if (!goldPiece()) throw new Error('no gold armor piece for the Nether ores')
+          out.food = survive.foodItems(bot)
+          if (out.food < PROVISIONS) {
+            if (bot.game.dimension === 'the_nether') {
+              const h = await task('nether', { targets: {}, returnHome: true }, { name: 'home for food', timeout: 6 * MINUTES, retries: 1 })
+              if (!h.returned || bot.game.dimension !== 'overworld') throw new Error(`${out.food} food items, and not home for more (${bot.game.dimension})`)
+            }
+            await task('food', { min: 30, items: PROVISIONS, stock: true, radius: 64, explore: true, fishing: true, timeout: 230000 }, { name: 'food for the Nether ores', timeout: 4 * MINUTES, retries: 1 })
+              .catch((err) => { out.restock = err.message })
+            out.food = survive.foodItems(bot)
+          }
+          if (out.food < PROVISIONS) throw new Error(`${out.food} food items for the Nether ores (need ${PROVISIONS})`)
+        }
+        // retries 1: a death in the Nether ends in the overworld — the retry finds the bot home already (U18) or, with
+        // ores to mine, goes back in through its portal
+        const r = await task('nether', { targets: netherOres ? NETHER_ORES : {}, returnHome: true }, { name: netherOres ? 'nether ores, back home' : 'back home', timeout: 14 * MINUTES, retries: 1 })
         if (!r.returned || bot.game.dimension !== 'overworld') throw new Error(`not back in the overworld (${bot.game.dimension})`)
-        return { mined: r.mined }
+        Object.assign(out, { mined: r.mined, failed: r.failed, gold: r.gold, timings: r.timings })
+        if (netherOres) {
+          // every kind of the Nether's ores (quartz, nether gold, ancient debris) mined at least once
+          const none = Object.keys(NETHER_ORES).filter((ore) => !(r.mined?.[ore] > 0))
+          if (none.length) throw new Error(`no ${none.join(', ')} mined (${JSON.stringify(r.mined)}; ${JSON.stringify(r.failed)})`)
+        }
+        return out
       }
     })
     plan.push({ name: 'E1 stronghold (cheat-assisted)', run: () => e1.toPortalRoom(ctx, { kit: e1.CHAIN_KIT }) })
@@ -256,8 +310,8 @@ async function finalChain ({ log = () => {}, cfg = config(), netherOres = false,
             if (/kill/.test(step.console) && !out.some((l) => /Killed/.test(l))) throw new Error(`${step.console}: ${out.join(' | ')}`)
             return out
           }
-          // the fight's budget covers the walk up from the arrival platform too: U18's toIslandTop stalled ~5 min at
-          // x 89–95 (10 × "goto stalled") in 4 of 6 chained runs (30 s in E1A and the others) — reported to U18
+          // the fight's budget covers the walk up from the arrival platform too (≈ 30 s; it stalled ~5 min on its
+          // half-built bridge in 4 development runs before the end skill took another way after a stall)
           const timeout = step.args?.phase === 'fight' ? step.timeout + END_WALK_MS : step.timeout
           const r = await task(step.skill, step.args ?? {}, { name: `E1 ${step.name}`, timeout, retries: 0 })
           if (step.args?.phase === 'activate' && !r.entered) throw new Error('did not enter the End')
@@ -277,7 +331,7 @@ async function finalChain ({ log = () => {}, cfg = config(), netherOres = false,
       // room in the inventory: junk and surplus go; after M5 the milestones' ores and most building stone too
       // (a full inventory drops what /give hands over at the stronghold — the eyes of ender)
       const late = plan.indexOf(p) > plan.findIndex((q) => q.name === 'M5')
-      const tossed = await inventory.declutter(bot, { minFree: late ? 12 : 6, late }).catch(() => ({}))
+      const tossed = await inventory.declutter(bot, { minFree: late ? 12 : 6, late, keep: p.keep }).catch(() => ({}))
       if (Object.keys(tossed).length) agent.event('tossed', { items: tossed, phase: p.name })
       if (!await phase(p.name, p.run)) break
     }
@@ -310,4 +364,4 @@ if (require.main === module) {
     }, (err) => { console.error(err); process.exit(1) })
 }
 
-module.exports = { finalChain, NETHER_ORES, GEAR, PROVISIONS }
+module.exports = { finalChain, NETHER_ORES, GEAR, PROVISIONS, ORE_PROVISIONS, GOLD_ARMOR }
