@@ -180,8 +180,9 @@ async function declutter (bot, { minFree = 4, keep = null, late = false } = {}) 
   const tossed = {}
   if (freeSlots(bot) >= minFree || typeof bot.toss !== 'function') return tossed
   try { if (bot.currentWindow) bot.closeWindow(bot.currentWindow) } catch {}
-  // whole stacks first (junk), then the surplus of the blocks
-  const list = junk(bot, { late }).filter((j) => j.name !== keep).sort((a, b) => (JUNK.test(b.name) ? 1 : 0) - (JUNK.test(a.name) ? 1 : 0))
+  // whole stacks first (junk), then the surplus of the blocks; `keep`: a name or names never tossed (what is collected)
+  const keeps = [].concat(keep ?? [])
+  const list = junk(bot, { late }).filter((j) => !keeps.includes(j.name)).sort((a, b) => (JUNK.test(b.name) ? 1 : 0) - (JUNK.test(a.name) ? 1 : 0))
   for (const { name, count: n } of list) {
     if (freeSlots(bot) >= minFree) break
     const def = bot.registry.itemsByName[name]
@@ -194,4 +195,19 @@ async function declutter (bot, { minFree = 4, keep = null, late = false } = {}) 
   return tossed
 }
 
-module.exports = { allItems, count, counts, find, findAny, toolTier, toolKind, toolKindsFor, harvestToolNames, canHarvest, bestToolFor, equip, freeSlots, FILLER, filler, TIERS, junk, unwanted, declutter, JUNK, KEEP, KEEP_LATE }
+/**
+ * Room before collecting: fewer than `min` free slots → junk and surplus tossed until `target` are free (never what is
+ * being collected: `keep`). A full inventory leaves a new kind of drop on the ground: an ore dug for nothing, again and
+ * again; meat a hunt killed for (FINAL-ROUND chain d2). `away`: a point to toss away from (the prey: the chase would
+ * walk over the tossed stacks and take them back). @returns {Promise<Record<string, number>>} what was tossed
+ */
+async function makeRoom (bot, { min = 3, target = min + 2, keep = null, away = null } = {}) {
+  if (freeSlots(bot) >= min) return {}
+  if (away && bot.entity?.position && typeof bot.lookAt === 'function') {
+    const p = bot.entity.position
+    await bot.lookAt(p.offset(p.x - away.x, 1.6, p.z - away.z), true).catch(() => {})
+  }
+  return declutter(bot, { minFree: target, keep })
+}
+
+module.exports = { allItems, count, counts, find, findAny, toolTier, toolKind, toolKindsFor, harvestToolNames, canHarvest, bestToolFor, equip, freeSlots, FILLER, filler, TIERS, junk, unwanted, declutter, makeRoom, JUNK, KEEP, KEEP_LATE }
