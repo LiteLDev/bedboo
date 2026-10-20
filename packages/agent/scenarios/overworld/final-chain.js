@@ -221,6 +221,7 @@ async function finalChain ({ log = () => {}, cfg = config(), netherOres = false,
       run: async () => {
         const items = () => require('../../src/skills/survive').foodItems(bot)
         if (items() >= VICTUALS) return { items: items() }
+        await agent.maintain()
         const r = await task('food', { min: 12, items: VICTUALS, stock: true, radius: 64, explore: true, fishing: false, timeout: 150000 }, { name: 'victuals for the mines', timeout: 3 * MINUTES, retries: 0 })
           .catch((err) => ({ error: err.message }))
         return { items: items(), hunted: r?.hunted, error: r?.error }
