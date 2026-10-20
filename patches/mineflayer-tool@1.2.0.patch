@@ -1,5 +1,5 @@
 diff --git a/lib/Tool.js b/lib/Tool.js
-index a51b67f4a397703a943e6a2d19558b2b9f4028a2..d1d1898644bc19fd92cbbb10cce1012cc7e0b22c 100644
+index a51b67f4a397703a943e6a2d19558b2b9f4028a2..96e7c23605317b5cba1be1ad27efe02024cf825f 100644
 --- a/lib/Tool.js
 +++ b/lib/Tool.js
 @@ -34,7 +34,6 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
@@ -32,3 +32,26 @@ index a51b67f4a397703a943e6a2d19558b2b9f4028a2..d1d1898644bc19fd92cbbb10cce1012c
      }
      /**
         * Gets the item currently in the bot's hand.
+@@ -116,7 +123,12 @@ class Tool {
+             }
+             itemList.sort((a, b) => this.getDigTime(block, a) - this.getDigTime(block, b));
+             if (itemList.length === 0) {
+-                if (options.getFromChest != null && options.getFromChest) {
++                // bedboo (mineflayer-bedrock) patch, POLISH-LIB: only with chests to search, and one round of them —
++                // retrieveTools() returns without an error when there is no chest (or none had a tool), and the
++                // recursive call then retried for ever: with no chest an endless chain of microtasks that froze the
++                // process until it ran out of memory (mineflayer-collectblock's collect() without a pickaxe). Without
++                // a chest (or after the round) a harvest-requiring call fails with NoItem as without getFromChest
++                if (options.getFromChest != null && options.getFromChest && this.chestLocations.length > 0) {
+                     try {
+                         yield (0, Inventory_1.retrieveTools)(this.bot, {
+                             toolFilter: Inventory_1.standardToolFilter,
+@@ -124,7 +136,7 @@ class Tool {
+                             toolCostFilter: (item) => this.getDigTime(block, item),
+                             maxTools: options.maxTools
+                         });
+-                        yield this.equipForBlock(block, options);
++                        yield this.equipForBlock(block, Object.assign({}, options, { getFromChest: false }));
+                     }
+                     catch (err) {
+                         if (err != null && (cb != null))

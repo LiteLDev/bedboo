@@ -18,7 +18,8 @@
 //   dimension's minY/height (prismarine-chunk patch).
 // - update_block: runtime id → registry.blocksByRuntimeId[id].stateId (unknown ids → minecraft:unknown);
 //   layer 0 = the block, layer 1 = the liquid layer (waterlogging). update_subchunk_blocks: `blocks` = layer 0,
-//   `extra` = layer 1. Both emit 'blockUpdate' / 'blockUpdate:(x, y, z)'.
+//   `extra` = layer 1. update_block_synced (falling blocks starting to fall / landing; POLISH-LIB) like update_block.
+//   All emit 'blockUpdate' / 'blockUpdate:(x, y, z)'.
 //   Waterlogging (docs/differences/U4.md#waterlogging): bot.blockAt() returns the layer-0 block; when layer 1
 //   holds water it carries `block.superimposed` (the layer-1 Block), `block.computedStates.waterlogged = true`
 //   and `block.isWaterlogged = true` (prismarine-chunk's Bedrock representation, patched to skip air).
@@ -520,6 +521,16 @@ function inject (bot) {
   bot._client.on('update_subchunk_blocks', (packet) => {
     for (const update of packet.blocks ?? []) applyBlockUpdate(update.position, update.runtime_id, 0)
     for (const update of packet.extra ?? []) applyBlockUpdate(update.position, update.runtime_id, 1)
+  })
+
+  // Falling blocks (POLISH-LIB, BDS 1.26.51.1): a block that starts falling (gravel, sand, concrete powder, an anvil …)
+  // and a falling block that lands are sent as update_block_synced only, never as update_block — the start position
+  // turns into air with transition 'create' (then add_entity minecraft:falling_block), the landing position into the
+  // block with 'destroy' (then remove_entity of the falling block). Same layer / runtime id handling as update_block:
+  // 'blockUpdate' fires (pathfinder re-plans, a dig of a block that fell away completes, the bot sees the block it
+  // stands in).
+  bot._client.on('update_block_synced', (packet) => {
+    applyBlockUpdate(packet.position, packet.block_runtime_id, packet.layer)
   })
 
   // ---- queries ----------------------------------------------------------------------------------------

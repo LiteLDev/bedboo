@@ -37,8 +37,10 @@ units' entries, which link here.
 - **mineflayer-bedrock:** the inventory model keeps, per slot, the requests in flight that changed it. A settled
   request hands its result for the slot to the next request on that slot (the server's count and stack id, or its
   own starting state when rejected) instead of overwriting that request's prediction; only the last request on a slot
-  writes the slot. Chained rejections therefore end at the state before the first request, and late (timed-out)
-  answers are applied in order. Answers for a container window that was closed meanwhile no longer touch the next
+  writes the slot. Chained rejections therefore end at the state before the first request — or at what the server
+  last sent for the slot while they were in flight (a pickup, `/give`; POLISH-LIB: a request planned on such a server
+  update keeps it as its base, and a resend of the very state the requests were planned on leaves their predictions
+  shown, [inventory resync](U8.md#inventory-resync)) — and late (timed-out) answers are applied in order. Answers for a container window that was closed meanwhile no longer touch the next
   window. A click's prediction is committed synchronously when the inventory screen is open (and re-planned after
   waiting for the screen otherwise), so clicks issued without awaiting the previous one build on it, like Java's
   client-side click.

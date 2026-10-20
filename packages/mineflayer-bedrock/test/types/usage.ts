@@ -47,6 +47,7 @@ bot._client.queue('text', {})
 const extras: BedrockExtras = bot.bedrock
 const furnaceIds: number[] = bot.bedrock.blockVariants('furnace')
 console.log(bot.findBlock({ matching: furnaceIds }), bot.bedrock.gameRules.doDayLightCycle)
+bot.bedrock.resyncInventory().then((synced: boolean) => console.log(synced))
 
 const loc = new Location(new Vec3(1, 2, 3))
 const painting = new Painting(1, new Vec3(0, 0, 0), 'kebab', new Vec3(0, 0, 1))

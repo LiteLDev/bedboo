@@ -21,6 +21,8 @@
 //   predicts it, sends one item_stack_request (lib/bedrock/stack_request.js) and waits for the response
 //   (rejected → rolled back + "Server rejected transaction …"). Clicks on bot.inventory open the player's
 //   inventory screen (interact open_inventory) and close it again when idle (BDS rejects cursor moves without it).
+// - resync (POLISH-LIB): inventory_transaction inventory_mismatch makes BDS resend the player's inventory; the model
+//   sends it when it finds a slot out of date, Bedrock extra `bot.bedrock.resyncInventory()` on demand.
 // - opening a window (openBlock / openEntity, or activating a container / station block or a trading / storage
 //   entity) while a container window is open closes that one first (windowClose), like Java's server: BDS would
 //   ignore the activation.
@@ -104,6 +106,9 @@ function inject (bot) {
   const windows = require('prismarine-windows')(bot.registry)
   const model = createInventoryModel(bot, { Item, Window: windows.Window })
   bot._bedrock.inventoryModel = model
+  // Bedrock extra (POLISH-LIB): ask BDS for its copy of the player's inventory (inventory_mismatch → inventory_content
+  // of the inventory, armor, ui and off-hand); resolves true once it was applied (false: no answer within 2 s)
+  if (bot.bedrock) bot.bedrock.resyncInventory = () => model.resync('bot.bedrock.resyncInventory()')
 
   let eatingTask = createDoneTask()
   // the window we closed last (the server echoes container_close; later units may inspect it)
@@ -779,9 +784,10 @@ function inject (bot) {
     }
   })
 
-  // Java 1.17.1+ resyncs a window on an impossible click; Bedrock has no client-initiated resync and BDS does not
-  // resend anything after a rejected item stack request: the model rolls its prediction back (inventory_model.js),
-  // so there is nothing to wait for.
+  // Java 1.17.1+ resyncs a window on an impossible click. On Bedrock every click is answered (item stack response) and
+  // BDS resends nothing after a rejected request: the model rolls its prediction back (inventory_model.js), so there is
+  // nothing to wait for here. (A slot found out of date makes the model ask for the server's copy of the player's
+  // inventory itself — inventory_mismatch, model.resync / bot.bedrock.resyncInventory(), POLISH-LIB.)
   async function syncWindow (window) {}
   bot._syncWindow = syncWindow
 

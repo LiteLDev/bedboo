@@ -1,4 +1,5 @@
-// owner: U9 (player state, world extras & dimensions); U17 minimal fix: the spawn search height is resolved
+// owner: U9 (player state, world extras & dimensions); U17 minimal fix: the spawn search height is resolved;
+//   POLISH-LIB: no 'game' for the join's resolution (before the first spawn)
 // Adapted from mineflayer 4.39.0 lib/plugins/spawn_point.js (MIT, Copyright (c) 2013 Andrew Kelley)
 // Surface: bot.spawnPoint (Vec3): the world spawn ("where all compasses point to")
 // Events: 'game' (when the spawn point changes, like upstream)
@@ -50,14 +51,22 @@ function inject (bot) {
     }
   }
 
+  // the spawn column usually loads before the join's 'spawn': that resolution is part of start_game's spawn position,
+  // covered by the login's 'game' (mineflayer order connect → login → game → spawn, test coreJoin); later ones (a
+  // respawn, a dimension change back) emit 'game' (POLISH-LIB)
+  let spawned = false
   bot.on('chunkColumnLoad', (pos) => {
     if (bot.spawnPoint.y < SEARCH_Y) return
-    if (Math.floor(bot.spawnPoint.x / 16) * 16 === pos.x && Math.floor(bot.spawnPoint.z / 16) * 16 === pos.z) resolveHeight()
+    if (Math.floor(bot.spawnPoint.x / 16) * 16 === pos.x && Math.floor(bot.spawnPoint.z / 16) * 16 === pos.z) resolveHeight(spawned)
   })
-  bot.on('spawn', () => resolveHeight())
+  bot.on('spawn', () => {
+    spawned = true
+    resolveHeight()
+  })
 
   // part of start_game: covered by game.js' 'game' of the login (set right after it, like Java's spawn_position)
   bot._client.on('start_game', (packet) => {
+    spawned = false
     setSpawnPoint(packet.spawn_position)
   })
 

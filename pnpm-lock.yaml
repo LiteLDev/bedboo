@@ -191,11 +191,11 @@ packageExtensionsChecksum: sha256-iI1IoHYWvuJSK67BH9RIVizB3pzhP306C2a79Ve8Y9o=
 patchedDependencies:
   bedrock-protocol@3.60.1: 210a086d792ac39095e42352e11367547ed78674a220883a414d0497029ac922
   mineflayer-armor-manager@2.0.1: c9eacbaa8216eda33fbd3e0076148b75a987163663b93153351d8b39ab13d57e
-  mineflayer-auto-eat@5.0.3: 5be067c4e7109b2e3a99cee979736c09d092e232b6430ea6fc610f22d67b8f5b
+  mineflayer-auto-eat@5.0.3: ac0a87efa86ea438b92da285435fb3fcc49fb30642e4ef79df934895ebbd782f
   mineflayer-collectblock@1.6.0: d5d5059fc7aa027251f654c685c568990572791abfc4c27ee62c76a501ba38a8
   mineflayer-pathfinder@2.4.5: 443db8b83fc622f054baaad36c9642a24eb6b4f8df1f82d011e7d11dd01a5a23
   mineflayer-pvp@1.3.2: 72298567202555b399404e6eb54e759945c205ff401a80c8e60098537c8fda2e
-  mineflayer-tool@1.2.0: 1ba8c1bc2c8ee9f690cb3c38a6ea699a12fa32b9a4bec1afb8b6e6984be54da5
+  mineflayer-tool@1.2.0: d2e6fca9c8dc8b71776f0184fefe353a24d4083a22bbd0b0e9ffc2c5b7e48395
   nethernet@1.1.2: 52b72c4d012668748e6703b9bd90d12badb4c8334d7b40e4f836a0e52473f0b0
   prismarine-block@1.23.0: 5edfb19e7b0840f9838255865486627372ea1078d53100580d0e087607805899
   prismarine-chunk@1.41.0: 7efa8f2d8cb59a64092b890f446ccec9bde43145b4ecb87cf751479f1c330c0d
@@ -234,7 +234,7 @@ importers:
         version: 2.0.1(patch_hash=c9eacbaa8216eda33fbd3e0076148b75a987163663b93153351d8b39ab13d57e)(mineflayer@4.39.0(supports-color@8.1.1))
       mineflayer-auto-eat:
         specifier: 5.0.3
-        version: 5.0.3(patch_hash=5be067c4e7109b2e3a99cee979736c09d092e232b6430ea6fc610f22d67b8f5b)(supports-color@8.1.1)(vec3@0.1.10)
+        version: 5.0.3(patch_hash=ac0a87efa86ea438b92da285435fb3fcc49fb30642e4ef79df934895ebbd782f)(supports-color@8.1.1)(vec3@0.1.10)
       mineflayer-bedrock:
         specifier: workspace:*
         version: link:../mineflayer-bedrock
@@ -249,7 +249,7 @@ importers:
         version: 1.3.2(patch_hash=72298567202555b399404e6eb54e759945c205ff401a80c8e60098537c8fda2e)(supports-color@8.1.1)
       mineflayer-tool:
         specifier: 1.2.0
-        version: 1.2.0(patch_hash=1ba8c1bc2c8ee9f690cb3c38a6ea699a12fa32b9a4bec1afb8b6e6984be54da5)(supports-color@8.1.1)
+        version: 1.2.0(patch_hash=d2e6fca9c8dc8b71776f0184fefe353a24d4083a22bbd0b0e9ffc2c5b7e48395)(supports-color@8.1.1)
       vec3:
         specifier: 0.1.10
         version: 0.1.10
@@ -357,7 +357,7 @@ importers:
         version: 2.0.1(patch_hash=c9eacbaa8216eda33fbd3e0076148b75a987163663b93153351d8b39ab13d57e)(mineflayer@4.39.0(supports-color@8.1.1))
       mineflayer-auto-eat:
         specifier: 5.0.3
-        version: 5.0.3(patch_hash=5be067c4e7109b2e3a99cee979736c09d092e232b6430ea6fc610f22d67b8f5b)(supports-color@8.1.1)(vec3@0.1.10)
+        version: 5.0.3(patch_hash=ac0a87efa86ea438b92da285435fb3fcc49fb30642e4ef79df934895ebbd782f)(supports-color@8.1.1)(vec3@0.1.10)
       mineflayer-collectblock:
         specifier: 1.6.0
         version: 1.6.0(patch_hash=d5d5059fc7aa027251f654c685c568990572791abfc4c27ee62c76a501ba38a8)(supports-color@8.1.1)
@@ -369,7 +369,7 @@ importers:
         version: 1.3.2(patch_hash=72298567202555b399404e6eb54e759945c205ff401a80c8e60098537c8fda2e)(supports-color@8.1.1)
       mineflayer-tool:
         specifier: 1.2.0
-        version: 1.2.0(patch_hash=1ba8c1bc2c8ee9f690cb3c38a6ea699a12fa32b9a4bec1afb8b6e6984be54da5)(supports-color@8.1.1)
+        version: 1.2.0(patch_hash=d2e6fca9c8dc8b71776f0184fefe353a24d4083a22bbd0b0e9ffc2c5b7e48395)(supports-color@8.1.1)
       mocha:
         specifier: 12.0.3
         version: 12.0.3
@@ -3939,7 +3939,7 @@ snapshots:
       minecraft-data: 3.117.0
       mineflayer: 4.39.0(supports-color@8.1.1)
 
-  mineflayer-auto-eat@5.0.3(patch_hash=5be067c4e7109b2e3a99cee979736c09d092e232b6430ea6fc610f22d67b8f5b)(supports-color@8.1.1)(vec3@0.1.10):
+  mineflayer-auto-eat@5.0.3(patch_hash=ac0a87efa86ea438b92da285435fb3fcc49fb30642e4ef79df934895ebbd782f)(supports-color@8.1.1)(vec3@0.1.10):
     dependencies:
       '@nxg-org/mineflayer-util-plugin': 1.9.4(vec3@0.1.10)
       mineflayer: 4.39.0(supports-color@8.1.1)
@@ -3952,7 +3952,7 @@ snapshots:
     dependencies:
       mineflayer: 4.39.0(supports-color@8.1.1)
       mineflayer-pathfinder: 2.4.5(patch_hash=443db8b83fc622f054baaad36c9642a24eb6b4f8df1f82d011e7d11dd01a5a23)(supports-color@8.1.1)
-      mineflayer-tool: 1.2.0(patch_hash=1ba8c1bc2c8ee9f690cb3c38a6ea699a12fa32b9a4bec1afb8b6e6984be54da5)(supports-color@8.1.1)
+      mineflayer-tool: 1.2.0(patch_hash=d2e6fca9c8dc8b71776f0184fefe353a24d4083a22bbd0b0e9ffc2c5b7e48395)(supports-color@8.1.1)
     transitivePeerDependencies:
       - encoding
       - supports-color
@@ -3978,7 +3978,7 @@ snapshots:
       - encoding
       - supports-color
 
-  mineflayer-tool@1.2.0(patch_hash=1ba8c1bc2c8ee9f690cb3c38a6ea699a12fa32b9a4bec1afb8b6e6984be54da5)(supports-color@8.1.1):
+  mineflayer-tool@1.2.0(patch_hash=d2e6fca9c8dc8b71776f0184fefe353a24d4083a22bbd0b0e9ffc2c5b7e48395)(supports-color@8.1.1):
     dependencies:
       mineflayer: 4.39.0(supports-color@8.1.1)
       mineflayer-pathfinder: 2.4.5(patch_hash=443db8b83fc622f054baaad36c9642a24eb6b4f8df1f82d011e7d11dd01a5a23)(supports-color@8.1.1)

@@ -10,4 +10,8 @@ export interface BedrockExtras {
   // U16 (parity hardening): ids of the Bedrock blocks Java models as one block with a state (`furnace` →
   // [furnace, lit_furnace]), for findBlock/findBlocks `matching` (docs/differences/U16a.md#block-variants)
   blockVariants: (block: string | number) => number[]
+  // POLISH-LIB: ask the server for its copy of the player's inventory (BDS resends the inventory, armor, cursor and
+  // off-hand); resolves true once it was applied, false when no answer came within 2 s
+  // (docs/differences/U8.md#inventory-resync)
+  resyncInventory: () => Promise<boolean>
 }
