@@ -13,9 +13,11 @@
  *   when none is in range the bot goes down to y 15 and branch-mines (a straight tunnel) until one shows up.
  *   Nether gold comes last and never in sight of a piglin (mining gold angers them).
  * - Safety: a gold armor piece (golden helmet/boots/…) is worn when the bot has one, so piglins stay neutral;
- *   combat.guardFor() (the Agent's safety under an Agent, else combat.defend()) guards the whole trip: it retaliates against any mob that hurt the bot (piglins, hoglins,
- *   zombified piglins only then), fights hostiles that come close (hoglins, magma cubes, …), knocks ghast fireballs back,
- *   eats; ghasts are never chased without a bow. Fights never step into lava (combat.hazardAhead).
+ *   combat.guardFor() (the Agent's safety under an Agent, else combat.defend()) guards the whole trip (`netherGuard`):
+ *   it retaliates against any mob that hurt the bot (zombified piglins only then; piglins never while the bot wears
+ *   gold), fights hostiles that come close (hoglins — with a retreat at low health, fled from at ≤ 8 hp —, magma cubes,
+ *   …), knocks ghast fireballs back, eats; ghasts are never chased without a bow, and no arrow flies with piglins
+ *   around. Fights never step into lava (combat.hazardAhead).
  * - Home: the arrival portal (remembered by portal.enterPortal, or `args.home`); the bot walks back to it and goes
  *   through.
  *
@@ -195,6 +197,8 @@ async function mineOres (bot, blockName, n, { guard, signal, maxDistance = 64, d
     }
     const band = bands[phase]
     await recover(bot, { guard, signal })
+    // the gold piece back on when something took it off (mineflayer-armor-manager equips armor the bot picks up)
+    if (!wearsGold(bot)) await wearGold(bot).catch((err) => u.log(bot, `nether: gold armor: ${err.message}`))
     const debris = blockName === 'ancient_debris'
     // gold: never in sight of a piglin (it would turn on the bot)
     const piglins = blockName === 'nether_gold_ore' ? Object.values(bot.entities).filter((e) => e.name === 'piglin' || e.name === 'piglin_brute') : []
@@ -307,6 +311,89 @@ function deflectFireballs (bot, { log = () => {} } = {}) {
   return () => clearInterval(timer)
 }
 
+/** a gold armor piece is worn (piglins stay neutral) */
+function wearsGold (bot) {
+  return Object.values(ARMOR_SLOT).some((slot) => /^golden_/.test(bot.inventory.slots[slot]?.name ?? ''))
+}
+
+/** bot → Map(piglin id → angry until (ms)): piglins that hit the bot anyway (watchPiglins) */
+const angryPiglins = new WeakMap()
+
+/**
+ * A piglin that leaves the bot alone: the bot wears gold (and never mines gold in a piglin's sight, never hits one) —
+ * unless this one hit it anyway (see watchPiglins): that one is angry and fought back for a minute.
+ */
+function calmPiglin (bot, e) {
+  if (e?.name !== 'piglin' || !wearsGold(bot)) return false
+  return !((angryPiglins.get(bot)?.get(e.id) ?? 0) > Date.now())
+}
+
+/**
+ * Watch for piglins that hurt the bot in spite of its gold: a hurt with no other mob to blame (a hostile, a ghast's
+ * fireball, a zombified piglin; a fall, fire, lava, starving excepted) and a piglin within reach — it swung or not
+ * (Bedrock does not always send a mob's swing) — makes that piglin angry (calmPiglin false) for a minute: its next hit
+ * is fought back. @returns {() => void} stop
+ */
+function watchPiglins (bot) {
+  const { neutralInReach } = require('../dims/retaliate')
+  const fall = { fromY: null, landedAt: 0 }
+  const onMove = () => {
+    const e = bot.entity
+    if (!e) return
+    if (!e.onGround) {
+      if (fall.fromY === null || e.position.y > fall.fromY) fall.fromY = e.position.y
+    } else if (fall.fromY !== null) {
+      if (fall.fromY - e.position.y > 3) fall.landedAt = Date.now()
+      fall.fromY = null
+    }
+  }
+  const onHurt = (e) => {
+    if (e !== bot.entity || bot.health <= 0) return
+    setImmediate(() => {
+      if (!bot.entity || Date.now() - fall.landedAt < 1000) return
+      // a hostile (or a neutral mob that is not a piglin) next to the bot did it
+      if (combat.likelyAttacker(bot, { exclude: (m) => m.name === 'piglin' })) return
+      const piglin = neutralInReach(bot, combat, 4, (m) => m.name !== 'piglin')
+      if (!piglin) return
+      const map = angryPiglins.get(bot) ?? new Map()
+      angryPiglins.set(bot, map)
+      if (!((map.get(piglin.id) ?? 0) > Date.now())) u.log(bot, `nether: the piglin at ${piglin.position.floored()} hit the bot in spite of its gold: angry, fought back`)
+      map.set(piglin.id, Date.now() + 60000)
+    })
+  }
+  bot.on('entityHurt', onHurt)
+  bot.on('move', onMove)
+  return () => {
+    bot.removeListener('entityHurt', onHurt)
+    bot.removeListener('move', onMove)
+  }
+}
+
+/** piglins / zombified piglins within `radius`: an arrow that misses its target there angers the whole group */
+function piglinsNear (bot, radius = 24) {
+  const pos = bot.entity?.position
+  return !!pos && Object.values(bot.entities).some((e) => /^(piglin|piglin_brute|zombified_piglin|zombie_pigman)$/.test(e.name ?? '') && e.position.distanceTo(pos) <= radius)
+}
+
+/**
+ * The guard of the Nether trip (combat.guardFor options; under an Agent pushed onto its safety):
+ * - ghasts hover out of reach: only with a bow; never provoke neutral mobs; calm piglins are nobody's attacker;
+ * - no bow shots with piglins / zombified piglins around (a miss angers the group);
+ * - hoglins (40 hp, hard hits, a toss): fought with a retreat (and a meal) at low health rather than to the end, fled
+ *   from when the bot is at 8 hp or less or has no weapon.
+ */
+function netherGuard (bot, signal) {
+  return {
+    radius: 10,
+    retaliate: true,
+    ignore: (e) => (combat.FLYING_MOBS.has(e.name) && !combat.hasBowAndArrows(bot)) || calmPiglin(bot, e),
+    noBow: () => piglinsNear(bot),
+    flee: (e) => (e.name === 'hoglin' || e.name === 'zoglin') && (bot.health <= 8 || !combat.bestWeapon(bot)),
+    retreat: (e) => e.name === 'hoglin' || e.name === 'zoglin',
+    signal
+  }
+}
+
 /** a pickaxe that mines `blockName` (ancient debris: diamond / netherite; quartz / nether gold: any) */
 function canMine (bot, blockName) {
   const picks = blockName === 'ancient_debris' ? ['netherite_pickaxe', 'diamond_pickaxe'] : ['netherite_pickaxe', 'diamond_pickaxe', 'iron_pickaxe', 'stone_pickaxe', 'golden_pickaxe', 'wooden_pickaxe']
@@ -350,18 +437,16 @@ async function netherSkill (bot, args) {
   u.ensurePathfinder(bot, { fresh: true })
   const gold = await wearGold(bot).catch((err) => { u.log(bot, `nether: gold armor: ${err.message}`); return null })
   u.log(bot, `nether: home portal ${JSON.stringify(home)}, gold armor ${gold ?? 'none'}`)
-  const guard = combat.guardFor(bot, {
-    radius: 10,
-    retaliate: true,
-    // ghasts hover out of reach: only with a bow; never provoke neutral mobs
-    ignore: (e) => (combat.FLYING_MOBS.has(e.name) && !combat.hasBowAndArrows(bot)),
-    signal
-  })
+  const guard = combat.guardFor(bot, netherGuard(bot, signal))
   // next to the Agent's safety: a small fireball deflector of its own (the safety deflects only while it is enabled and
   // not busy — a meal, a fight, a hunt's pause would let a fireball through)
   const stopDeflecting = guard.delegated ? deflectFireballs(bot, { log: (m) => u.log(bot, `nether: ${m}`) }) : () => {}
-  // nor does it fight neutral mobs that attack (zombified piglins, piglins angered by gold): through it, here
-  const stopRetaliating = retaliate(bot, guard)
+  // nor does it fight neutral mobs that attack (zombified piglins, piglins angered by gold): through it, here — never
+  // a piglin while the bot wears gold (it did not hurt the bot: a piglin swinging at a hoglin beside it, or standing
+  // there when a fireball hit)
+  const stopRetaliating = retaliate(bot, guard, { exclude: (e) => calmPiglin(bot, e) })
+  // (a piglin that hits the bot anyway is angry: no longer calm, fought back)
+  const stopWatchingPiglins = watchPiglins(bot)
   const mined = {}
   const failed = {}
   const result = { mined, failed, items: {}, returned: false, home, gold, guard: null, timings }
@@ -396,6 +481,7 @@ async function netherSkill (bot, args) {
   } finally {
     stopDeflecting()
     stopRetaliating()
+    stopWatchingPiglins()
     path.stop()
     result.guard = await guard.stop()
     for (const name of Object.keys(DROPS)) result.items[DROPS[name]] = u.count(bot, DROPS[name])
@@ -406,6 +492,11 @@ async function netherSkill (bot, args) {
 
 module.exports = Object.assign(netherSkill, {
   wearGold,
+  wearsGold,
+  calmPiglin,
+  watchPiglins,
+  piglinsNear,
+  netherGuard,
   trackPath,
   buried,
   safeOre,

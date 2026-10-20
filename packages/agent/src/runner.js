@@ -144,7 +144,6 @@ async function loadPlugins (bot, { autoEat = true, pvp = true, armor = true } = 
     bot.loadPlugin(loader)
   }
   await bot.waitForTicks(2).catch(() => {})
-  if (bot.autoEat) guardAutoEat(bot.autoEat)
   if (bot.autoEat) {
     bot.autoEat.setOpts({
       minHunger: 16,
@@ -156,39 +155,6 @@ async function loadPlugins (bot, { autoEat = true, pvp = true, armor = true } = 
   }
   bot.pathfinder.thinkTimeout = 10000 // ms per search (upstream 5 s): hills and caves need more nodes
   bot.pathfinder.setMovements(require('./skills/navigate').movements(bot))
-}
-
-/**
- * mineflayer-auto-eat 5.0.3 sets its "eating" flag before equipping the food and only clears it on the paths after
- * the meal started: an equip that fails (a window open, a skill swapping the hand at the same moment) leaves the flag
- * set for good and the bot never eats again (seen in a chained run: food 5 with 5 cooked meals carried). The wrapper
- * clears the flag when `eat()` fails before the meal began (instance property: auto-eat's own tick check calls
- * `this.eat()`, so it goes through it too).
- */
-function guardAutoEat (autoEat) {
-  if (autoEat._bedbooGuarded || typeof autoEat.eat !== 'function') return
-  autoEat._bedbooGuarded = true
-  const eat = autoEat.eat.bind(autoEat)
-  autoEat.eat = async (opts) => {
-    let started = false
-    const onStart = () => { started = true }
-    autoEat.once('eatStart', onStart)
-    try {
-      return await eat(opts)
-    } catch (err) {
-      // the flag is cleared 2 s later: auto-eat's tick check would retry the equip on every tick meanwhile (only when
-      // the failure left it set)
-      if (!started && !/Already eating/.test(err.message) && autoEat._eating) setTimeout(() => { autoEat._eating = false }, 2000)
-      // a meal that began and failed (a tool swap cancelled it): auto-eat's strictErrors throws instead of emitting
-      // 'eatFail' — emitted here, after the meal's 'eatFinish' (the Safety's count of failed meals, hunt's meat count)
-      if (started) {
-        try { autoEat.emit('eatFail', err) } catch {}
-      }
-      throw err
-    } finally {
-      autoEat.removeListener('eatStart', onStart)
-    }
-  }
 }
 
 class Agent extends EventEmitter {
@@ -701,4 +667,4 @@ function createAgent (opts) {
   return Agent.create(opts)
 }
 
-module.exports = { Agent, createAgent, loadPlugins, guardAutoEat, runSkill, runScenario, skills: defaultSkills, formatEvent, jsonSafe, DEFAULT_STEP_TIMEOUT, STUCK_MS, WIND_DOWN_MS }
+module.exports = { Agent, createAgent, loadPlugins, runSkill, runScenario, skills: defaultSkills, formatEvent, jsonSafe, DEFAULT_STEP_TIMEOUT, STUCK_MS, WIND_DOWN_MS }

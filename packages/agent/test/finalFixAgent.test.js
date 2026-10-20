@@ -129,7 +129,7 @@ describe('final fix (agent): safety under U18 guards', () => {
     assert.strictEqual(ae.enabled, false, 'still held by the placement (and a double release counts once)')
     placement()
     assert.strictEqual(ae.enabled, true)
-    // meals that began and failed, as runner.js guardAutoEat reports them
+    // meals that began and failed, as the patched auto-eat reports them
     ae.emit('eatFail')
     ae.emit('eatFail')
     assert.strictEqual(ae.enabled, true)
@@ -285,58 +285,6 @@ describe('final fix (agent): runner', () => {
     assert.strictEqual(await agent.run('wait', {}, { stuckMs: 60 }), 'done')
     assert.strictEqual(await agent.run('walk', {}, { stuckMs: 60 }), 'walked')
     assert.ok(!agent.events.some((e) => e.type === 'heartbeat'), 'heartbeats are not in the report')
-  })
-})
-
-describe('final fix (agent): mineflayer-auto-eat guard', () => {
-  it('a meal that failed before it started (equip refused) does not leave auto-eat "eating" for good', async () => {
-    const { guardAutoEat } = require('../src/runner')
-    // auto-eat 5.0.3's eat(): the flag first, then the equip (which may throw), eatStart only once the meal began
-    class FakeEat extends EventEmitter {
-      constructor () { super(); this._eating = false; this.equipFails = true }
-      get isEating () { return this._eating }
-      async eat () {
-        if (this._eating) throw new Error('Already eating!')
-        this._eating = true
-        if (this.equipFails) throw new Error('Failed to equip: cooked_beef!')
-        this.emit('eatStart')
-        this._eating = false
-        this.emit('eatFinish')
-      }
-    }
-    const ae = new FakeEat()
-    guardAutoEat(ae)
-    await assert.rejects(ae.eat(), /Failed to equip/)
-    assert.strictEqual(ae.isEating, true, 'not on the next tick (no equip retry every tick)…')
-    await sleep(2100)
-    assert.strictEqual(ae.isEating, false, '…but 2 s later')
-    ae.equipFails = false
-    await ae.eat()
-    assert.strictEqual(ae.isEating, false)
-    // a meal in progress keeps its flag: "Already eating" is no reason to clear it
-    ae._eating = true
-    await assert.rejects(ae.eat(), /Already eating/)
-    assert.strictEqual(ae.isEating, true)
-  })
-
-  it('a meal that began and failed is reported (auto-eat throws, no eatFail event)', async () => {
-    const { guardAutoEat } = require('../src/runner')
-    const ae = new EventEmitter()
-    ae._eating = false
-    ae.eat = async () => {
-      ae.emit('eatStart')
-      throw new Error('Eating was cancelled')
-    }
-    let fails = 0
-    ae.on('eatFail', () => fails++)
-    guardAutoEat(ae)
-    await assert.rejects(ae.eat(), /cancelled/)
-    assert.strictEqual(fails, 1)
-    ae.eat = async () => { throw new Error('No food') } // before the meal: no report
-    ae._bedbooGuarded = false
-    guardAutoEat(ae)
-    await assert.rejects(ae.eat(), /No food/)
-    assert.strictEqual(fails, 1)
   })
 })
 

@@ -88,8 +88,8 @@ class Safety extends EventEmitter {
     // (suppressMeals) restore it
     this._autoEatWanted ??= !!this.bot.autoEat?.enabled
     if (this.bot.autoEat) {
-      // a meal that starts or ends is no stuck one (back-to-back meals keep isEating set for long); 'eatFail' under
-      // auto-eat's strictErrors comes from runner.js guardAutoEat
+      // a meal that starts or ends is no stuck one (back-to-back meals keep isEating set for long); the patched
+      // auto-eat emits 'eatFail' for a failed meal (under strictErrors too), before its 'eatFinish'
       on(this.bot.autoEat, 'eatStart', () => { this._eatingSince = 0; this.claim('eat') })
       on(this.bot.autoEat, 'eatFinish', () => { this._eatingSince = 0; this.release('eat') })
       on(this.bot.autoEat, 'eatFail', () => { this._eatingSince = 0; this.release('eat'); this.mealFailed() })
@@ -110,9 +110,12 @@ class Safety extends EventEmitter {
   }
 
   /**
-   * A U18 skill's guard options, in force until `popGuard(token)`.
+   * A U18 skill's guard options, in force until `popGuard(token)`. `noBow(target)`: no bow shots in this fight (an
+   * arrow that misses a hoglin and hits a piglin turns the whole group against the bot); `flee(target)`: run from it
+   * instead of fighting (a hoglin at low health); `retreat(target)`: a fight that keeps its retreat at low health even
+   * against a mob as fast as the bot (a hoglin hits too hard to trade blows to the end).
    * @param {{ radius?: number, maxDy?: number, ignore?: (e) => boolean, includeNeutral?: boolean, retaliate?: boolean,
-   *   deflect?: boolean, names?: string[] }} opts
+   *   deflect?: boolean, names?: string[], noBow?: (e) => boolean, flee?: (e) => boolean, retreat?: (e) => boolean }} opts
    * @returns {object} token
    */
   pushGuard (opts = {}) {
@@ -127,7 +130,7 @@ class Safety extends EventEmitter {
 
   /** the options in force: the Agent's own, widened by every pushed guard */
   effective () {
-    const out = { radius: this.opts.engageRadius, maxDy: Infinity, includeNeutral: false, retaliate: true, deflect: true, ignores: [] }
+    const out = { radius: this.opts.engageRadius, maxDy: Infinity, includeNeutral: false, retaliate: true, deflect: true, ignores: [], noBow: [], flee: [], retreat: [] }
     for (const { opts } of this.guards) {
       if (opts.radius > out.radius) out.radius = opts.radius
       if (opts.maxDy !== undefined) out.maxDy = Number.isFinite(out.maxDy) ? Math.max(out.maxDy, opts.maxDy) : opts.maxDy
@@ -135,6 +138,7 @@ class Safety extends EventEmitter {
       if (opts.retaliate === false) out.retaliate = false
       if (opts.deflect === false) out.deflect = false
       if (typeof opts.ignore === 'function') out.ignores.push(opts.ignore)
+      for (const k of ['noBow', 'flee', 'retreat']) if (typeof opts[k] === 'function') out[k].push(opts[k])
     }
     // a guard keeps its fights to its own height band (the default band of combat.defend)
     if (this.guards.length && !Number.isFinite(out.maxDy)) out.maxDy = 4
@@ -274,7 +278,7 @@ class Safety extends EventEmitter {
 
   /**
    * mineflayer-auto-eat stuck "eating" (a meal that never started or never ended: no eatStart / eatFinish) for 15 s:
-   * reset it, release the 'eat' claim — the bot would never eat again (see runner.js guardAutoEat).
+   * reset it, release the 'eat' claim (a last resort: the patched auto-eat clears its flag after a failed meal).
    */
   staleMeal () {
     const ae = this.bot.autoEat
@@ -335,11 +339,16 @@ class Safety extends EventEmitter {
     }
     // suffocating in a block the client does not see yet: no fight now (the task's next climb step gets out of it)
     if (this.inWall()) return
-    if ((bot.oxygenLevel ?? 20) < 8 && (bot.entity.isInWater || world.isWater(bot.blockAt(bot.entity.position.offset(0, 1.62, 0).floored())))) {
+    // (not again and again where it found no way out moments ago: each time it stopped the task digging its way up
+    // through the ceiling over the water — the only way out — until the bot drowned, POLISH-AGENT default chain; again
+    // once the bot moved, or after 30 s)
+    const noAir = this._noAir && Date.now() - this._noAir.at < 30000 && this._noAir.pos.distanceTo(bot.entity.position) < 1.5
+    if ((bot.oxygenLevel ?? 20) < 8 && !noAir && (bot.entity.isInWater || this.headWet())) {
       this.run('drowning', () => this.swimUp())
       return
     }
-    if (this.effective().deflect) {
+    const eff = this.effective()
+    if (eff.deflect) {
       const fireball = this.fireball()
       if (fireball) { this.run('deflect', () => this.deflect(fireball), fireball); return }
     }
@@ -349,7 +358,8 @@ class Safety extends EventEmitter {
     // no weapon and low, or a creeper while the bot could not take its blast: run (unless the last flight from that
     // creeper went nowhere — a ledge, lava, a wall: then it is fought, hit and run, rather than waited for)
     const cornered = this._cornered?.id === t.target.id && this._cornered.until > Date.now()
-    const weak = (!combat.bestWeapon(bot) && bot.health <= this.opts.fleeHealth) || (t.target.name === 'creeper' && bot.health <= 10 && !cornered)
+    const weak = (!combat.bestWeapon(bot) && bot.health <= this.opts.fleeHealth) || (t.target.name === 'creeper' && bot.health <= 10 && !cornered) ||
+      (!cornered && eff.flee.some((f) => f(t.target)))
     if (weak) this.run('flee', () => this.flee(t.target), t.target)
     else this.run('fight', () => this.fight(t.target), t.target)
   }
@@ -401,6 +411,7 @@ class Safety extends EventEmitter {
     const combat = require('./skills/combat')
     // auto-eat would swap the weapon for food mid-fight: the fight eats itself (while it retreats, out of reach)
     const releaseMeals = this.suppressMeals()
+    const eff = this.effective()
     let r
     try {
       await combat.equipForCombat(bot, { shield: true }).catch(() => {})
@@ -410,15 +421,17 @@ class Safety extends EventEmitter {
         timeout: this.opts.fightTimeout,
         // running from a mob as fast as the bot (a zombie, a spider) only takes hits in the back: armored and armed,
         // the bot fights it to the end; retreating stays for creepers, ranged mobs and an unarmored bot
-        ...(CHASERS.has(target.name) && combat.bestWeapon(bot) && require('./skills/rest').wearsArmor(bot) >= 2 ? { retreatHealth: 0 } : {}),
+        ...(CHASERS.has(target.name) && combat.bestWeapon(bot) && require('./skills/rest').wearsArmor(bot) >= 2 && !eff.retreat.some((f) => f(target)) ? { retreatHealth: 0 } : {}),
         safe: true,
         giveUpMs: this.opts.fightGiveUpMs,
         maxChase: this.opts.maxChase,
         eat: true,
-        bow: 'auto',
+        bow: eff.noBow.some((f) => f(target)) ? false : 'auto',
         // another mob hitting the bot from up close while this one is out of reach: that one first; the bot
         // suffocating (a falling block on its head mid-climb): out of the wall first
-        stop: () => this.betterTarget(target) || this.inWall() || (!!this.headInBlock() && !(this.headBlockedUntil > Date.now())),
+        // a target a guard now ignores (an enderman once the End's exit runs low on health): left
+        stop: () => this.betterTarget(target) || this.inWall() || (!!this.headInBlock() && !(this.headBlockedUntil > Date.now())) ||
+          this.effective().ignores.some((f) => f(target)),
         log: this.log
       })
     } finally {
@@ -593,14 +606,54 @@ class Safety extends EventEmitter {
       if (still > 10) break // a ceiling over the water (flooded cave)
     }
     bot.clearControlStates()
-    const head = bot.blockAt(bot.entity.position.offset(0, 1.62, 0).floored())
-    if (!world.isWater(head)) return 'surfaced'
+    if (!this.headWet()) return 'surfaced'
     // no air above: swim to the nearest pocket of air instead
     const pocket = this.airPocket(6)
-    if (!pocket) return 'no air'
-    const { goals } = require('mineflayer-pathfinder')
-    await require('./skills/navigate').goto(bot, new goals.GoalBlock(pocket.x, pocket.y, pocket.z), { timeout: 8000, attempts: 1, legs: false, safety: false }).catch(() => {})
-    return world.isWater(bot.blockAt(bot.entity.position.offset(0, 1.62, 0).floored())) ? 'no air' : 'air pocket'
+    if (pocket) {
+      const { goals } = require('mineflayer-pathfinder')
+      await require('./skills/navigate').goto(bot, new goals.GoalBlock(pocket.x, pocket.y, pocket.z), { timeout: 8000, attempts: 1, legs: false, safety: false }).catch(() => {})
+      if (!this.headWet()) return 'air pocket'
+    }
+    // none: up through the ceiling over the water (a flooded cave under a pillar's way up), never towards lava
+    if (await this.digUp()) return 'dug up'
+    this._noAir = { at: Date.now(), pos: bot.entity.position.clone() }
+    return 'no air'
+  }
+
+  /**
+   * Under water with a ceiling over it: dig the solid block over the water column (≤ 2) and swim up through it —
+   * never a block next to lava or under a falling block (gravel / sand would come down into the bot's head cell),
+   * never one that takes longer than the air left lasts (`maxDigMs`, 6 s: underwater and afloat a dig is ~25× slower).
+   * @returns {Promise<boolean>} whether the head came out of the water
+   */
+  async digUp ({ maxDigMs = 6000 } = {}) {
+    const bot = this.bot
+    const navigate = require('./skills/navigate')
+    for (let i = 0; i < 2; i++) {
+      // the first solid block over the head, through the water (and the plants in it) above it (≤ 3 up)
+      const top = bot.entity.position.offset(0, bot.entity.eyeHeight ?? 1.62, 0).floored()
+      let cell = null
+      for (let dy = 0; dy <= 3; dy++) {
+        const b = bot.blockAt(top.offset(0, dy, 0))
+        if (!b) break
+        if (world.isWater(b) || b.boundingBox === 'empty') continue
+        if (b.diggable && !world.isLiquid(b)) cell = b
+        break
+      }
+      if (!cell || world.isProtected(bot, cell.position) || world.isFalling(bot.blockAt(cell.position.offset(0, 1, 0)))) return false
+      if (world.FACES.some((f) => world.isLava(bot.blockAt(cell.position.plus(f))))) return false
+      if (typeof bot.digTime === 'function' && bot.digTime(cell) > maxDigMs) return false
+      try {
+        await navigate.digSafe(bot, cell)
+      } catch {
+        return false
+      }
+      bot.setControlState('jump', true)
+      for (let t = 0; t < 40 && this.headWet(); t++) await bot.waitForTicks(1).catch(() => {})
+      bot.setControlState('jump', false)
+      if (!this.headWet()) return true
+    }
+    return false
   }
 
   /** the nearest cell (≤ radius) with air at the feet and the head, on something to stand / float on */

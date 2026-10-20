@@ -21,8 +21,8 @@ Skills (`src/skills/`, public mineflayer API + mineflayer-pathfinder only; helpe
 |---|---|---|
 | `combat` | `{ mode: 'nearby' \| 'hunt' \| 'survive', radius?, names?, mob?, count?, durationMs? }` | fight everything around / hunt `count` × `mob` / stand guard; melee with the best weapon, the bow for far or flying mobs, shield = sneak when cornered, hit-and-run vs creepers, retreat and eat when low, never steps into lava or off a ledge |
 | `portal` | `{ obsidian?: 10, origin?, axis?, enter?: true, lava?: [{x,y,z}], water?: [{x,y,z}], obsidianMs?, stallMs?, flintMs? }` | bucket-cast obsidian at a lava pool (fill buckets, pour lava into a dug mold, water next to it, take the water back, mine with a diamond pickaxe), build a 4×5 frame (10 obsidian + 2 scaffolding corners), craft a flint and steel (flint from gravel), light it, walk in. Bounded everywhere: night ahead and no armor → a sealed pocket / pit until the morning; up to the surface first; pools ranked (open sky, sources, distance), each left after `stallMs` (150 s) without a new obsidian; then the `lava` hints (known pools), natural obsidian, a surface spiral; 10 min in all (`obsidianMs`), every bucket fill ≤ 6 walks; eats standing still (auto-eat vs the pathfinder), a fight-only retry, lava fills from a cell with no lava around it, a pause when hurt |
-| `nether` | `{ targets?: { quartz_ore, nether_gold_ore, ancient_debris }, returnHome?: true, portal?, home?, debrisY?, timeMs?: 12 min, homeMs?: 5 min, oreMs? }` | through the portal (walks back to the remembered one first), gold armor on (piglins), mine quartz, ancient debris (buried, above the lava ocean first, then y 8–22, branch mining when none in reach) and nether gold (out of piglins' sight), guard against nether mobs (under an Agent: fireballs hit back, neutral attackers fought through its safety), back home along its breadcrumbs. Each ore has its share of the time and a failed ore never strands the bot: it goes home anyway (`failed` in the result). Started in the overworld with nothing to mine (the retry after a death in the Nether) → home already; without a pickaxe for the ores → a clear error |
-| `end` | `{ phase?: 'activate' \| 'fight' \| 'exit', endermen?: 2 }` | eyes of ender into the stronghold frames, into the End, kill endermen (one at a time, healed up in between; under an Agent angry endermen are fought through its safety), exit portal → credits → overworld; the walks into portals wait on the lifecycle (`util.tick`), not on bare ticks |
+| `nether` | `{ targets?: { quartz_ore, nether_gold_ore, ancient_debris }, returnHome?: true, portal?, home?, debrisY?, timeMs?: 12 min, homeMs?: 5 min, oreMs? }` | through the portal (walks back to the remembered one first), gold armor on (piglins; kept on: a fight's `equipForCombat` never swaps the gold piece for iron in the Nether, and it goes back on when something took it off), mine quartz, ancient debris (buried, above the lava ocean first, then y 8–22, branch mining when none in reach) and nether gold (out of piglins' sight), guard against nether mobs (`netherGuard`; under an Agent: fireballs hit back, neutral attackers fought through its safety — a piglin never while the bot wears gold, unless it hit the bot with no other mob to blame; no arrows with piglins / zombified piglins within 24 blocks; hoglins fought with a retreat and a meal at low health, fled from at ≤ 8 hp), back home along its breadcrumbs. Each ore has its share of the time and a failed ore never strands the bot: it goes home anyway (`failed` in the result). Started in the overworld with nothing to mine (the retry after a death in the Nether) → home already; without a pickaxe for the ores → a clear error |
+| `end` | `{ phase?: 'activate' \| 'fight' \| 'exit', endermen?: 2, walkMs?: 150 s, walkStallMs?: 15 s, walkWays? }` | eyes of ender into the stronghold frames (a walk to a frame that stalls: clicked from where the bot is when in reach, else walked to again), into the End, from the arrival platform up to the island top (`toIslandTop`: another way after a 15 s stall — the pathfinder without placements, then the bot's own staircase / drop / bridge / pillar steps; [the walk up](../README.md#the-end-walk-up)), kill endermen (one at a time, healed up in between; under an Agent angry endermen are fought through its safety), exit portal → credits → overworld (knocked into the portal before its own step in: exited too; a death is not); the walks into portals wait on the lifecycle (`util.tick`), not on bare ticks |
 
 Library API for runners (`require('@bedboo/agent/src/skills/combat')`): `defend(bot, opts) → guard` (the background
 safety behaviour: `guard.busy`, `await guard.idle()`, `guard.pause()` / `resume()`, `await guard.stop() → stats`),
@@ -81,3 +81,27 @@ Five runs each on main with FINAL-FIX-AGENT-A (#32) under it; wall time per run 
 | N1M3 from M3 (Agent) | 5/5 | 954, 969, 959, 1001, 960 | ≈ 10 min of each in a night shelter (the snapshot is ≈ 200 s before nightfall); no deaths |
 | N1M5 from M5 (Agent) | 4/5, 4/5 | 459, 463, 461, 476, ✗; 466, 467, ✗, 469, 570 | ✗: a death in the lava pool between two fills (before the rim fixes); two creeper blasts at dawn at 9.6 hp (the snapshot's health). On the final code 0/2 so far: both stuck in U17's `obtain` of the second bucket before the portal (the surface climb holds rotten flesh instead of a block: auto-eat) |
 | N1M5H from M5 + back home, nether ores (Agent) | 0/2 | 612 ✗, 484 ✗ | #1: the Nether reached (portal 326 s), 3 quartz in 67 s, then slain by a piglin (no gold armor; mining near piglins) — the retry stopped at once with "no pickaxe … (lost in a death?)"; #2: U17's `obtain` as above |
+
+### Results (POLISH-AGENT, BDS 1.26.51.1, 2026-10-20)
+
+- **E1A, the End phases** (seed 1234, the Agent; a run now also fails when the walk up from the arrival platform stood
+  still for over 60 s). 29/30 runs passed in three batches of 10: 9/10, then 10/10, then 10/10 on the final End code.
+  - Every walk up took 29–30 s in 3 hops, with no stall; the longest stand-still was 1 s.
+  - The one failure was a death in the endermen fight (batch 1). Failed runs now keep the agent's report
+    (`$BEDBOO_U18_REPORT.run<i>.json`).
+  - Root cause of the walk's earlier 5-minute stalls, and the fallback ways, in
+    [../README.md](../README.md#the-end-walk-up).
+- **`final-chain --nether-ores`** (M1 → … → M5 → gold armor → provisions → N1M3 → Nether ores + home → E1): see
+  [../README.md](../README.md#--nether-ores). Runs that passed end to end:
+  ores-3 52.1 min, ores-4 47.7 min, ores-r2 39.6 min, ores-r3 43.9 min and, on the final code, ores-f1 43.2 min.
+  One run between them (ores-r1) failed in the overworld: no food, then deaths in M3. That is 6 of 8 full runs.
+  - The Nether's ores took 44–49 s per trip: 3 quartz, 1 ancient debris, 3 nether gold next to the bot's portal,
+    and back home.
+  - Before the portal fix, 1 of 2 runs passed. The one failure was in N1M3: the walk back from the flint pit stalled.
+- **Default `final-chain`** (regression): 4 of 7 passed.
+  - Rebased on POLISH-LIB: default-r2 42.0 min, default-r3 41.6 min, and on the final code default-f1 36.5 min.
+  - default-1 failed: endermen at the exit fountain (→ the exit change).
+  - default-r1 failed: drowned under a flooded cave's ceiling in M4's climb (→ the safety digs up there).
+  - default-f2 failed: U17's build left 1 of 125 blocks wrong in M4, after a stalled walk and two refused placements.
+- **E1A after the rebase:** 10/10 more runs on the rebased code and 10/10 on the final code (70–106 s each, walk up
+  29–34 s, no stall). That is 49/50 in all.

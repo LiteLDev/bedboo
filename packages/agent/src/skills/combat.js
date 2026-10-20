@@ -196,8 +196,16 @@ async function equipForCombat (bot, { armor = true, shield = true } = {}) {
   deadEntities(bot) // start tracking deaths before the fight
   const out = { weapon: null, armor: [], shield: false }
   if (armor) {
+    // the Nether: a gold piece worn stays on (piglins attack a player wearing none) — an iron one is no upgrade there
+    const golden = (item) => /^golden_/.test(item?.name ?? '')
+    let keepGold = bot.game?.dimension === 'the_nether'
     for (const [dest, names] of Object.entries(ARMOR)) {
       const worn = bot.inventory.slots[ARMOR_SLOTS[dest]]
+      if (keepGold && golden(worn)) {
+        keepGold = false // (one is enough: the others may be upgraded)
+        out.armor.push(worn.name)
+        continue
+      }
       const wornRank = worn ? names.indexOf(worn.name) : -1
       const piece = findItem(bot, names)
       // the lists are best first: keep what is worn unless the inventory has something better
@@ -646,8 +654,9 @@ function likelyAttacker (bot, { exclude, swings } = {}) {
   // a neutral mob (piglin, zombified piglin, enderman) is only blamed when it swung its arm just before: provoking one
   // by mistake turns its whole group against the bot
   const swung = (e) => !swings || (swings.get(e) ?? 0) > Date.now() - 1500
-  const melee = mobs.find((e) => hitboxDistance(bot, e) <= 4 && (isHostile(e) || (NEUTRAL_MOBS.has(e.name) && swung(e)) || (!NEUTRAL_MOBS.has(e.name) && e.kind === 'Hostile mobs')))
-  if (melee) return exclude && exclude(melee) ? null : melee
+  // (a mob the caller excludes is passed over: a calm piglin beside the bot is not who hit it)
+  const melee = mobs.find((e) => hitboxDistance(bot, e) <= 4 && !(exclude && exclude(e)) && (isHostile(e) || (NEUTRAL_MOBS.has(e.name) && swung(e)) || (!NEUTRAL_MOBS.has(e.name) && e.kind === 'Hostile mobs')))
+  if (melee) return melee
   const ranged = mobs.find((e) => RANGED_MOBS.has(e.name) && (!NEUTRAL_MOBS.has(e.name) || swung(e)))
   // the nearest shooter is one the caller ignores (a ghast without a bow): blame nobody else
   return ranged && !(exclude && exclude(ranged)) ? ranged : null
@@ -674,6 +683,7 @@ function likelyAttacker (bot, { exclude, swings } = {}) {
  * @param {number} [opts.minFood=14]
  * @param {boolean} [opts.deflect=true] hit ghast fireballs coming within 4 blocks
  * @param {(entity) => boolean} [opts.ignore] never engage these
+ * @param {(entity) => boolean} [opts.noBow] no bow shots in a fight against these (piglins around: a miss angers them)
  * @param {number} [opts.interval=200] ms between threat checks
  * @param {number} [opts.fightTimeout=45000]
  * @param {number} [opts.maxChase=24] give up a target that ran this far from where the fight started
@@ -842,6 +852,8 @@ class Guard extends EventEmitter {
             bow: 'auto',
             safe: true,
             ...this.opts.fight,
+            // (`noBow`: no arrows near mobs a miss would anger — the Agent's safety honours it the same way)
+            ...(typeof this.opts.noBow === 'function' && this.opts.noBow(t.entity) ? { bow: false } : {}),
             timeout: this.opts.fightTimeout,
             maxChase: this.opts.maxChase,
             giveUpMs: this.opts.giveUpMs ?? 12000,
