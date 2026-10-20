@@ -45,7 +45,27 @@ moves.allow1by1towers = true     // default: pillars up with scaffolding items (
                                  // moves.scafoldingBlocks, e.g. bot.registry.itemsByName.netherrack.id)
 moves.canDig = true              // default; dig costs use Bedrock dig speed (effects, ench enchantments)
 bot.pathfinder.setMovements(moves)
+bot.pathfinder.thinkTimeout = 20000 // recommended (upstream 5000 ms): see below
 ```
+
+- `thinkTimeout`: overworld chunks span y -64..319 and a search on natural terrain visits many nodes; on a loaded host
+  (other bots, servers or tests on the same CPUs) a plain goal of a few blocks once took over the default 5 s and
+  `goto` rejected with `Timeout: Took to long to decide path to goal!` (the ecosystem e2e suites and
+  @bedboo/agent use 20 s / 10 s). Raising it costs nothing when the search is quick.
+- A failed placement never hangs the path (patched; upstream 2.4.5 and master hang on each of these):
+  - a rejected `bot.equip` of the scaffolding block releases pathfinder's equip lock (upstream held it for good: the
+    bot stood at its bridge edge and `stop()` never settled);
+  - a refused placement is retried once, then that cell is avoided by the next searches for the current goal
+    (`bot.pathfinder.refusedPlacements`, `maxPlaceRetries` = 1): the path goes another way (the next column of a
+    bridge) or the goal has no path; after `maxPlaceFailures` (6) failed placements in a row `goto` rejects with
+    `NoPath` ("… placements failed in a row"). A retry with the same goal object keeps the refused cells; a new goal
+    starts afresh;
+  - a placement or door click that takes longer than `bot.pathfinder.placeTimeout` (10 s: an equip / placement that
+    never settles, an edge never reached) counts as failed;
+  - `stop()` settles on the next tick while a placement is pending (its late outcome is ignored);
+  - after a failure the bot steps back from the edge it leaned over, and a search started at an edge begins from the
+    block the bot stands on (upstream: the cell over the gap, with a placement against the air under it).
+  `path_reset` reasons: `equip_error`, `place_error`, `use_error`, `place_timeout`, `stop`.
 
 - Names are Bedrock names; flowing water / lava, water-filled plants and waterlogged blocks count as liquid.
 - The executor's `fullStop()` no longer recentres the bot client-side (BDS corrected it back); expect at most an

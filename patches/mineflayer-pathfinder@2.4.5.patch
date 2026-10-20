@@ -1,5 +1,24 @@
+diff --git a/index.d.ts b/index.d.ts
+index 81bf9373b3aa0fe0e3b970e744f5a04a3785bd8c..488883b3c82c48c159d8f7b5232c0cafe67ca480 100644
+--- a/index.d.ts
++++ b/index.d.ts
+@@ -14,6 +14,14 @@ declare module 'mineflayer-pathfinder' {
+ 		thinkTimeout: number;
+ 		/** ms, amount of thinking per tick (max 50 ms) */
+ 		tickTimeout: number;
++		/** bedboo: ms a placement (or a door click) of the path may take before it counts as failed */
++		placeTimeout: number;
++		/** bedboo: retries of a failed placement at the same cell before the searches avoid that cell (this goal) */
++		maxPlaceRetries: number;
++		/** bedboo: failed placements in a row before the goal is given up ('noPath') */
++		maxPlaceFailures: number;
++		/** bedboo: cells ('x,y,z') no search plans a placement at for the current goal (they failed repeatedly) */
++		readonly refusedPlacements: Set<string>;
+ 		readonly goal: goals.Goal | null;
+ 		readonly movements: Movements;
+ 
 diff --git a/index.js b/index.js
-index b38bd30c0c1babb4d7d3d396067ed828d9dc9f6a..c58f9548f46f8b23fdc8886b5fe2c8ea3d3d5607 100644
+index b38bd30c0c1babb4d7d3d396067ed828d9dc9f6a..19af155fde08616e5e27cd97ef2ac624c8939438 100644
 --- a/index.js
 +++ b/index.js
 @@ -9,11 +9,10 @@ const Lock = require('./lib/lock')
@@ -15,7 +34,7 @@ index b38bd30c0c1babb4d7d3d396067ed828d9dc9f6a..c58f9548f46f8b23fdc8886b5fe2c8ea
    const ladderId = bot.registry.blocksByName.ladder.id
    const vineId = bot.registry.blocksByName.vine.id
    let stateMovements = new Movements(bot)
-@@ -23,6 +22,7 @@ function inject (bot) {
+@@ -23,14 +22,23 @@ function inject (bot) {
    let dynamicGoal = false
    let path = []
    let pathUpdated = false
@@ -23,7 +42,35 @@ index b38bd30c0c1babb4d7d3d396067ed828d9dc9f6a..c58f9548f46f8b23fdc8886b5fe2c8ea
    let digging = false
    let placing = false
    let placingBlock = null
-@@ -44,13 +44,12 @@ function inject (bot) {
+   let lastNodeTime = performance.now()
+   let returningPos = null
+   let stopPathing = false
++  // bedboo: the placement (scaffolding block or door click) in progress: `placeOwner` is its id while it may still act
++  // on its outcome (0: none; a stop, a new goal, a newer placement or its own failure orphans it), `placeStartedAt` when
++  // it began; failed placements of `placeGoal` (the current goal) per cell ('x,y,z') and in a row
++  let placeSeq = 0
++  let placeGoal = null
++  let placeOwner = 0
++  let placeStartedAt = 0
++  let placeFailuresInARow = 0
++  const placeFailuresAt = new Map()
+   const physics = new Physics(bot)
+-  const lockPlaceBlock = new Lock()
+   const lockEquipItem = new Lock()
+   const lockUseBlock = new Lock()
+ 
+@@ -41,16 +49,23 @@ function inject (bot) {
+   bot.pathfinder.searchRadius = -1 // in blocks, limits of the search area, -1: don't limit the search
+   bot.pathfinder.enablePathShortcut = false // disabled by default as it can cause bugs in specific configurations
+   bot.pathfinder.LOSWhenPlacingBlocks = true
++  // bedboo: bounds on building the path (upstream waited for ever on an equip or a placement that failed: see
++  // placeScaffolding). A placement / door click that takes longer than `placeTimeout` ms has failed; a cell where one
++  // failed more than `maxPlaceRetries` times is in `refusedPlacements`, and no search plans one there again for this
++  // goal (Movements#getNeighbors); after `maxPlaceFailures` failures in a row the goal is given up ('noPath').
++  bot.pathfinder.placeTimeout = 10000 // ms
++  bot.pathfinder.maxPlaceRetries = 1
++  bot.pathfinder.maxPlaceFailures = 6
++  bot.pathfinder.refusedPlacements = new Set()
  
    bot.pathfinder.bestHarvestTool = (block) => {
      const availableTools = bot.inventory.items()
@@ -39,7 +86,61 @@ index b38bd30c0c1babb4d7d3d396067ed828d9dc9f6a..c58f9548f46f8b23fdc8886b5fe2c8ea
        if (digTime < fastest) {
          fastest = digTime
          bestTool = tool
-@@ -116,8 +115,10 @@ function inject (bot) {
+@@ -77,11 +92,12 @@ function inject (bot) {
+     if (options.startMove) {
+       start = options.startMove
+     } else {
+-      const p = startPos.floored()
++      let p = startPos.floored()
+       const dy = startPos.y - p.y
+       const b = bot.blockAt(p) // The block we are standing in
+       // Offset the floored bot position by one if we are standing on a block that has not the full height but is solid
+       const offset = (b && dy > 0.001 && bot.entity.onGround && !stateMovements.emptyBlocks.has(b.type)) ? 1 : 0
++      if (offset === 0) p = standingCell(startPos, p)
+       start = new Move(p.x, p.y + offset, p.z, movements.countScaffoldingItems(), 0)
+     }
+     if (movements.allowEntityDetection) {
+@@ -101,6 +117,39 @@ function inject (bot) {
+     }
+   }
+ 
++  /**
++   * bedboo: the cell the bot stands in when it is on the ground with nothing solid under its floored position — it
++   * leans out over an edge (sneaking to it to place a block, or left there by a stop) and stands on a neighbour's edge
++   * under its hitbox: that neighbour's cell (the one nearest to its centre). Upstream started the search from the cell
++   * over the gap and planned a placement against the air under it, with an edge the bot could never sneak back to.
++   */
++  function standingCell (pos, p) {
++    if (!bot.entity.onGround || pos.distanceTo(bot.entity.position) > 0.01) return p
++    const solid = (cell) => {
++      const block = bot.blockAt(cell)
++      return !!block && block.boundingBox === 'block'
++    }
++    if (solid(p.offset(0, -1, 0))) return p
++    const half = (bot.entity.width || 0.6) / 2
++    let best = null
++    let bestDistance = Infinity
++    for (let dx = -1; dx <= 1; dx++) {
++      for (let dz = -1; dz <= 1; dz++) {
++        if (dx === 0 && dz === 0) continue
++        const q = p.offset(dx, 0, dz)
++        // the hitbox reaches over that column, which has a floor and room for the bot
++        if (pos.x + half <= q.x || pos.x - half >= q.x + 1 || pos.z + half <= q.z || pos.z - half >= q.z + 1) continue
++        if (!solid(q.offset(0, -1, 0)) || solid(q) || solid(q.offset(0, 1, 0))) continue
++        const d = Math.hypot(q.x + 0.5 - pos.x, q.z + 0.5 - pos.z)
++        if (d < bestDistance) {
++          best = q
++          bestDistance = d
++        }
++      }
++    }
++    return best || p
++  }
++
+   Object.defineProperties(bot.pathfinder, {
+     goal: {
+       get () {
+@@ -116,8 +165,10 @@ function inject (bot) {
  
    function detectDiggingStopped () {
      digging = false
@@ -52,7 +153,29 @@ index b38bd30c0c1babb4d7d3d396067ed828d9dc9f6a..c58f9548f46f8b23fdc8886b5fe2c8ea
    }
  
    function resetPath (reason, clearStates = true) {
-@@ -160,7 +161,16 @@ function inject (bot) {
+@@ -131,8 +182,10 @@ function inject (bot) {
+     placing = false
+     pathUpdated = false
+     astarContext = null
++    // bedboo: the placement in flight is abandoned with the path (its late outcome must not act on the next one) —
++    // except on the block update a placement causes itself: its own success follows right after, in the same tick
++    if (reason !== 'block_updated') placeOwner = 0
+     lockEquipItem.release()
+-    lockPlaceBlock.release()
+     lockUseBlock.release()
+     stateMovements.clearCollisionIndex()
+     if (clearStates) bot.clearControlStates()
+@@ -142,6 +195,9 @@ function inject (bot) {
+   bot.pathfinder.setGoal = (goal, dynamic = false) => {
+     stateGoal = goal
+     dynamicGoal = dynamic
++    // bedboo: another goal tries every placement again (the same goal again — a caller's retry — keeps what failed)
++    if (goal !== placeGoal) forgetPlacements()
++    placeGoal = goal
+     bot.emit('goal_updated', goal, dynamic)
+     resetPath('goal_updated')
+   }
+@@ -160,7 +216,22 @@ function inject (bot) {
    }
  
    bot.pathfinder.stop = () => {
@@ -62,14 +185,20 @@ index b38bd30c0c1babb4d7d3d396067ed828d9dc9f6a..c58f9548f46f8b23fdc8886b5fe2c8ea
      stopPathing = true
 +    // bedboo: a goal without a path being walked (a failed search, a reached dynamic goal) reaches no node and no reset
 +    // that would act on the flag: stop on the next tick (async, like a stop at a node: a path_stop listener added right
-+    // after stop() — mineflayer-pvp's — still hears it)
-+    if (path.length === 0 && !digging && !placing) {
-+      setImmediate(() => { if (stopPathing && path.length === 0 && !digging && !placing) stop() })
++    // after stop() — mineflayer-pvp's — still hears it). Nor does a placement in progress that never settles (an equip
++    // that failed, a placement the server never answers): it is abandoned on the next tick too (upstream waited for it,
++    // for ever)
++    if (!digging && (path.length === 0 || placing)) {
++      setImmediate(() => {
++        if (!stopPathing || digging) return
++        if (path.length === 0) stop()
++        else if (placing) resetPath('stop') // → stop()
++      })
 +    }
    }
  
    bot.on('physicsTick', monitorMovement)
-@@ -168,9 +178,14 @@ function inject (bot) {
+@@ -168,9 +239,14 @@ function inject (bot) {
    function postProcessPath (path) {
      for (let i = 0; i < path.length; i++) {
        const curPoint = path[i]
@@ -86,7 +215,7 @@ index b38bd30c0c1babb4d7d3d396067ed828d9dc9f6a..c58f9548f46f8b23fdc8886b5fe2c8ea
          curPoint.x = Math.floor(curPoint.x) + 0.5
          curPoint.y = Math.floor(curPoint.y)
          curPoint.z = Math.floor(curPoint.z) + 0.5
-@@ -335,6 +350,11 @@ function inject (bot) {
+@@ -335,6 +411,11 @@ function inject (bot) {
      bot.entity.velocity.x = 0
      bot.entity.velocity.z = 0
  
@@ -98,7 +227,129 @@ index b38bd30c0c1babb4d7d3d396067ed828d9dc9f6a..c58f9548f46f8b23fdc8886b5fe2c8ea
      const blockX = Math.floor(bot.entity.position.x) + 0.5
      const blockZ = Math.floor(bot.entity.position.z) + 0.5
  
-@@ -462,12 +482,16 @@ function inject (bot) {
+@@ -391,6 +472,8 @@ function inject (bot) {
+     stopPathing = false
+     stateGoal = null
+     path = []
++    returningPos = null // bedboo: upstream walked back to it after the stop
++    forgetPlacements()
+     bot.emit('path_stop')
+     fullStop()
+   }
+@@ -416,6 +499,98 @@ function inject (bot) {
+     }
+   })
+ 
++  /**
++   * bedboo: equip the scaffolding block and place it against `target`. Every outcome settles the placement: upstream
++   * never released the equip lock when bot.equip rejected (the path waited for good, and stop() with it), swallowed the
++   * errors after the equip (no reference block: the same placement on every tick) and reset a refused placement into
++   * the same placement, for ever. An orphaned placement (placeOwner changed: a stop, a new goal, a timeout, a newer
++   * placement after a reset) changes nothing when it settles late, and never releases a lock a newer one holds.
++   */
++  function placeScaffolding (target, item) {
++    const id = ++placeSeq
++    placeOwner = id
++    let stage = 'equip'
++    Promise.resolve()
++      .then(() => bot.equip(item, 'hand'))
++      .then(() => {
++        if (placeOwner !== id) return
++        stage = 'place'
++        const refBlock = bot.blockAt(new Vec3(target.x, target.y, target.z), false)
++        if (!refBlock) throw new Error(`no block to place against at ${target.x}, ${target.y}, ${target.z}`)
++        if (interactableBlocks.includes(refBlock.name)) {
++          bot.setControlState('sneak', true)
++        }
++        return bot.placeBlock(refBlock, new Vec3(target.dx, target.dy, target.dz)).then(() => {
++          if (placeOwner !== id) return
++          placeOwner = 0
++          // Dont release Sneak if the block placement was not successful
++          bot.setControlState('sneak', false)
++          if (bot.pathfinder.LOSWhenPlacingBlocks && target.returnPos) returningPos = target.returnPos.clone()
++          lockEquipItem.release()
++          placing = false
++          lastNodeTime = performance.now()
++          placeSucceeded()
++        })
++      })
++      .catch(_ignoreError => {
++        if (placeOwner !== id) return
++        placeFailed(stage === 'equip' ? 'equip_error' : 'place_error', target)
++      })
++  }
++
++  /** bedboo: the cell a toPlace entry fills (a door click: the door's own cell) */
++  function placeKey (target) {
++    return `${target.x + (target.dx || 0)},${target.y + (target.dy || 0)},${target.z + (target.dz || 0)}`
++  }
++
++  function placeSucceeded () {
++    placeFailuresInARow = 0
++  }
++
++  /**
++   * bedboo: a placement / door click failed (equip_error, place_error, use_error, place_timeout). It counts at its
++   * cell — a cell that failed more than maxPlaceRetries times is avoided by the next searches — and the path is reset:
++   * the next search goes another way, or tries again. After maxPlaceFailures failures in a row the goal has no path the
++   * bot can build: 'noPath' (goto rejects), and no new search until the goal changes.
++   */
++  function placeFailed (reason, target) {
++    placeOwner = 0
++    if (target) {
++      const key = placeKey(target)
++      const n = (placeFailuresAt.get(key) || 0) + 1
++      placeFailuresAt.set(key, n)
++      if (n > bot.pathfinder.maxPlaceRetries) bot.pathfinder.refusedPlacements.add(key)
++    }
++    placeFailuresInARow++
++    // back onto the block it placed from: a bot that leant out over the edge (moveToEdge) stands in the cell over the
++    // gap by its floored position, where the next search would start — and plan a placement against the air under it,
++    // with an edge it can never sneak back to
++    if (target && !target.useOne && target.dy === 0) {
++      const from = new Vec3(target.x, target.y + 1, target.z)
++      const p = bot.entity.position
++      if (!p.floored().equals(from) && Math.abs(p.x - from.x - 0.5) < 1.5 && Math.abs(p.z - from.z - 0.5) < 1.5 && Math.abs(p.y - from.y) < 1) returningPos = from
++    }
++    lastNodeTime = performance.now()
++    resetPath(reason)
++    if (stateGoal && !stopPathing && placeFailuresInARow >= bot.pathfinder.maxPlaceFailures) {
++      pathUpdated = true
++      returningPos = null // the bot is handed back as it stands
++      bot.emit('path_update', { status: 'noPath', cost: 0, time: 0, visitedNodes: 0, generatedNodes: 0, path: [], context: null, placeFailures: placeFailuresInARow })
++      // a goal given up is dropped, so no later reset ('stuck', a chunk load) revives what goto rejected; a dynamic
++      // goal (GoalFollow) stays and searches again when its target moves
++      if (!dynamicGoal) stateGoal = null
++    }
++  }
++
++  /** bedboo: no placement in progress, every cell may be placed at again */
++  function forgetPlacements () {
++    placeGoal = null
++    placeOwner = 0
++    placeFailuresInARow = 0
++    placeFailuresAt.clear()
++    bot.pathfinder.refusedPlacements.clear()
++  }
++
+   function monitorMovement () {
+     // Test freemotion
+     if (stateMovements && stateMovements.allowFreeMotion && stateGoal && stateGoal.entity) {
+@@ -449,6 +624,13 @@ function inject (bot) {
+     }
+ 
+     if (bot.pathfinder.LOSWhenPlacingBlocks && returningPos) {
++      // bedboo: bounded like the walk to a node, and a stop is not kept waiting for it (upstream returned before the
++      // futility check: a spot the bot could not get back to held it, and stop(), for good)
++      if (stopPathing || performance.now() - lastNodeTime > 3500) {
++        returningPos = null
++        resetPath(stopPathing ? 'stop' : 'stuck')
++        return
++      }
+       if (!moveToBlock(returningPos)) return
+       returningPos = null
+     }
+@@ -462,12 +644,16 @@ function inject (bot) {
              stateGoal = null
              fullStop()
            }
@@ -116,17 +367,83 @@ index b38bd30c0c1babb4d7d3d396067ed828d9dc9f6a..c58f9548f46f8b23fdc8886b5fe2c8ea
          }
        }
      }
-@@ -524,6 +548,10 @@ function inject (bot) {
-         bot.activateBlock(bot.blockAt(new Vec3(placingBlock.x, placingBlock.y, placingBlock.z))).then(() => {
+@@ -515,18 +701,39 @@ function inject (bot) {
+       if (!placing) {
+         placing = true
+         placingBlock = nextPoint.toPlace.shift()
++        placeStartedAt = performance.now()
+         fullStop()
+       }
+ 
++      // bedboo: a placement / door click that takes too long (an equip or a placement that never settles, an edge or a
++      // jump height the bot never gets to) has failed — upstream returned before the futility check below, for ever
++      if (performance.now() - placeStartedAt > bot.pathfinder.placeTimeout) {
++        placeFailed('place_timeout', placingBlock)
++        return
++      }
++
+       // Open gates or doors
+       if (placingBlock?.useOne) {
+         if (!lockUseBlock.tryAcquire()) return
+-        bot.activateBlock(bot.blockAt(new Vec3(placingBlock.x, placingBlock.y, placingBlock.z))).then(() => {
++        const id = ++placeSeq
++        placeOwner = id
++        const target = placingBlock
++        Promise.resolve().then(() => bot.activateBlock(bot.blockAt(new Vec3(target.x, target.y, target.z)))).then(() => {
++          if (placeOwner !== id) return
++          placeOwner = 0
            lockUseBlock.release()
++          placeSucceeded()
            placingBlock = nextPoint.toPlace.shift()
 +          // bedboo: nothing left to place on this node: walk on (upstream kept `placing` and then read
 +          // `placingBlock.y` of undefined, or reset the path for want of scaffolding blocks)
 +          if (!placingBlock) placing = false
++          placeStartedAt = performance.now()
 +          lastNodeTime = performance.now()
          }, err => {
++          if (placeOwner !== id) return
++          // bedboo: a failed click counts as a failed placement (upstream clicked again on every tick, for ever)
            console.error(err)
-           lockUseBlock.release()
+-          lockUseBlock.release()
++          placeFailed('use_error', target)
+         })
+         return
+       }
+@@ -544,31 +751,10 @@ function inject (bot) {
+         canPlace = placingBlock.y + 1 < bot.entity.position.y
+       }
+       if (canPlace) {
++        // bedboo: the lock is held from the equip until the placement settled (upstream released it after the equip and
++        // equipped again on every tick of the placement — and never released it when the equip failed)
+         if (!lockEquipItem.tryAcquire()) return
+-        bot.equip(block, 'hand')
+-          .then(function () {
+-            lockEquipItem.release()
+-            const refBlock = bot.blockAt(new Vec3(placingBlock.x, placingBlock.y, placingBlock.z), false)
+-            if (!lockPlaceBlock.tryAcquire()) return
+-            if (interactableBlocks.includes(refBlock.name)) {
+-              bot.setControlState('sneak', true)
+-            }
+-            bot.placeBlock(refBlock, new Vec3(placingBlock.dx, placingBlock.dy, placingBlock.dz))
+-              .then(function () {
+-                // Dont release Sneak if the block placement was not successful
+-                bot.setControlState('sneak', false)
+-                if (bot.pathfinder.LOSWhenPlacingBlocks && placingBlock.returnPos) returningPos = placingBlock.returnPos.clone()
+-              })
+-              .catch(_ignoreError => {
+-                resetPath('place_error')
+-              })
+-              .then(() => {
+-                lockPlaceBlock.release()
+-                placing = false
+-                lastNodeTime = performance.now()
+-              })
+-          })
+-          .catch(_ignoreError => {})
++        placeScaffolding(placingBlock, block)
+       }
+       return
+     }
 diff --git a/lib/bedrock.js b/lib/bedrock.js
 new file mode 100644
 index 0000000000000000000000000000000000000000..419ccc5f48514488e645e56c3ac7397cd01ec0a2
@@ -198,21 +515,23 @@ index 0000000000000000000000000000000000000000..419ccc5f48514488e645e56c3ac7397c
 +
 +module.exports = { digTimeOf, idsOf, isOpenableName, isOpen, passableAlong, serverAuthoritativeMovement }
 diff --git a/lib/goto.js b/lib/goto.js
-index 0b8b9de4e3459c896fda1485d4c71fb98704e720..e46af4adb56e6b7d93d6baf4bbae0a88be984c4a 100644
+index 0b8b9de4e3459c896fda1485d4c71fb98704e720..f3391c9658df37353ae25dfbf77924e9ffa982a3 100644
 --- a/lib/goto.js
 +++ b/lib/goto.js
-@@ -20,12 +20,15 @@ function goto (bot, goal) {
+@@ -20,12 +20,16 @@ function goto (bot, goal) {
      }
  
      function noPathListener (results) {
 -      if (results.path.length === 0) {
 -        cleanup()
 -      } else if (results.status === 'noPath') {
+-        cleanup(error('NoPath', 'No path to the goal!'))
 +      // A search that fails or is still slicing reconstructs its best node, which is the start node
 +      // and so an empty path. Only a 'success' with nothing to walk means the goal is already met.
 +      // (backport of master #375)
 +      if (results.status === 'noPath') {
-         cleanup(error('NoPath', 'No path to the goal!'))
++        // bedboo: the pathfinder gave the goal up after placements that failed in a row (index.js placeFailed)
++        cleanup(error('NoPath', results.placeFailures ? `No path to the goal! (${results.placeFailures} placements failed in a row)` : 'No path to the goal!'))
        } else if (results.status === 'timeout') {
          cleanup(error('Timeout', 'Took to long to decide path to goal!'))
 +      } else if (results.status === 'success' && results.path.length === 0) {
@@ -389,7 +708,7 @@ index ca4928c3515fa388e613aed9c8649ba864be9182..24b1db7541c78f7abe361cb2a54debe3
  ]
 \ No newline at end of file
 diff --git a/lib/movements.js b/lib/movements.js
-index a7e35053cde64e3cd32880af2aafa5f03e919ff8..eebc31f5215ece8a6f16ea28738f41a8f8ae4c33 100644
+index a7e35053cde64e3cd32880af2aafa5f03e919ff8..36574ffb6374e15e133338fbcd163de913c5c59c 100644
 --- a/lib/movements.js
 +++ b/lib/movements.js
 @@ -1,6 +1,6 @@
@@ -497,6 +816,20 @@ index a7e35053cde64e3cd32880af2aafa5f03e919ff8..eebc31f5215ece8a6f16ea28738f41a8
    }
  
    getMoveDiagonal (node, dir, neighbors) {
+@@ -656,6 +675,13 @@ class Movements {
+     this.getMoveDown(node, neighbors)
+     this.getMoveUp(node, neighbors)
+ 
++    // bedboo: no move that places a block (or clicks a door) where the pathfinder's placements failed repeatedly for the
++    // current goal (bot.pathfinder.refusedPlacements: a block the server refused, one the bot could not hold): another
++    // way, or no path — upstream planned the same placement again, for ever
++    const refused = this.bot.pathfinder && this.bot.pathfinder.refusedPlacements
++    if (refused && refused.size > 0) {
++      return neighbors.filter(n => !n.toPlace.some(p => refused.has(`${p.x + (p.dx || 0)},${p.y + (p.dy || 0)},${p.z + (p.dz || 0)}`)))
++    }
+     return neighbors
+   }
+ }
 diff --git a/lib/passableEntities.json b/lib/passableEntities.json
 index 641d5c8d918b8f8ee6c91fd0741c9dbdc97506fd..f0f8c2357ae0c19421a12212401491a310760fd7 100644
 --- a/lib/passableEntities.json

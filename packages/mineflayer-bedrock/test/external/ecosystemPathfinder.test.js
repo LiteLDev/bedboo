@@ -42,6 +42,7 @@ describe('ecosystemPathfinder', function () {
     this.timeout(0)
     const { bot } = ctx
     bot.loadPlugin(pathfinder)
+    bot.pathfinder.thinkTimeout = 20000 // default world under a loaded host (docs/ecosystem.md: thinkTimeout)
     await bot.test.ctx.consoleOutput(`effect ${bot.username} resistance 100000 255 true`)
     bot.on('path_reset', onReset)
   })
@@ -231,6 +232,128 @@ describe('ecosystemPathfinder', function () {
     let placed = 0
     for (let z = -31; z <= -27; z++) for (let x = -62; x <= -60; x++) if (bot.blockAt(new Vec3(x, DECK_Y, z)).name === 'dirt') placed++
     assert.ok(placed >= 5, `bridge blocks: ${placed}`)
+  })
+
+  // ---- failures mid-path (FINAL-ROUND): an equip / a placement that fails never hangs goto or stop() ----------------
+
+  /** two platforms x -62..-60 (z -38..-40 and z -46..-48), a 5-block gap z -41..-45 between them; the bot on the first */
+  async function gapAhead () {
+    await build(`fill -62 ${DECK_Y} -38 -60 ${DECK_Y} -48 air`)
+    await build(`fill -62 ${DECK_Y} -38 -60 ${DECK_Y} -40 stone`)
+    await build(`fill -62 ${DECK_Y} -46 -60 ${DECK_Y} -48 stone`)
+    await teleport(new Vec3(-61, Y, -38))
+    await give('dirt', 32)
+  }
+  const bridgeGoal = () => new goals.GoalBlock(-61, Y, -47)
+  const bridgeMoves = () => movements({ canDig: false, allowParkour: false, allow1by1towers: false })
+  const isScaffold = (item) => item?.name === 'dirt'
+
+  /** goto(goal), settled within maxMs either way: { ok, error, ms } */
+  async function settleGoto (goal, maxMs) {
+    const t0 = Date.now()
+    let timer
+    const bound = new Promise((resolve, reject) => { timer = setTimeout(() => reject(new Error(`goto neither reached the goal nor rejected within ${maxMs} ms (at ${ctx.bot.entity.position}, resets ${resets})`)), maxMs) })
+    try {
+      await Promise.race([ctx.bot.pathfinder.goto(goal), bound])
+      return { ok: true, ms: Date.now() - t0 }
+    } catch (error) {
+      if (/neither reached/.test(error.message)) throw error
+      return { ok: false, error, ms: Date.now() - t0 }
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+
+  it('bot.equip rejected mid-bridge: goto rejects within a bound (no hang on the equip lock); the next goto finishes the bridge', async () => {
+    const { bot } = ctx
+    await gapAhead()
+    bot.pathfinder.setMovements(bridgeMoves())
+    const equip = bot.equip
+    let scaffoldEquips = 0
+    let refused = 0
+    // the third scaffolding equip and every one after it is rejected (two bridge blocks go out first)
+    bot.equip = function (item, ...args) {
+      if (isScaffold(item) && ++scaffoldEquips > 2) { refused++; return Promise.reject(new Error('equip refused (forced by the test)')) }
+      return equip.call(bot, item, ...args)
+    }
+    let r
+    try {
+      r = await settleGoto(bridgeGoal(), 60000)
+    } finally {
+      bot.equip = equip
+    }
+    console.log(`      equip refused: ${r.ok ? 'reached' : `${r.error.name} (${r.error.message})`} in ${(r.ms / 1000).toFixed(1)} s, ${refused} refused equips, resets ${JSON.stringify(resets)}`)
+    assert.ok(!r.ok, 'the bridge cannot be finished without the block in hand')
+    assert.strictEqual(r.error.name, 'NoPath')
+    assert.ok(refused >= 2 && refused <= bot.pathfinder.maxPlaceFailures, `${refused} refused equips: bounded`)
+    assert.ok(resets.includes('equip_error'), `resets ${resets}`)
+    let built = 0
+    for (let z = -45; z <= -41; z++) for (let x = -62; x <= -60; x++) if (bot.blockAt(new Vec3(x, DECK_Y, z)).name === 'dirt') built++
+    assert.ok(built >= 1, `the bridge was begun: ${built}`)
+    // nothing is left holding the pathfinder: the same goal again, the equip working, is reached
+    await run('bridge after refused equips', bridgeGoal(), bridgeMoves(), { maxMs: 60000, maxCorrections: 12 }) // corrections: the whole test's
+  })
+
+  it('a placement refused mid-bridge: retried once, then the bridge goes on in the next column — goal reached', async () => {
+    const { bot } = ctx
+    await gapAhead()
+    const placeBlock = bot.placeBlock
+    const tries = new Map()
+    let forced = null
+    // the third bridge cell is refused (the library's refusal error), as BDS refuses a block an entity stands in
+    bot.placeBlock = function (ref, face) {
+      const dest = ref.position.plus(face)
+      if (!forced && tries.size === 2 && !tries.has(dest.toString())) forced = dest
+      tries.set(dest.toString(), (tries.get(dest.toString()) ?? 0) + 1)
+      if (forced && dest.equals(forced)) return Promise.reject(new Error(`Server refused to place dirt at ${dest}: the block is still air`))
+      return placeBlock.call(bot, ref, face)
+    }
+    let r
+    try {
+      r = await run('bridge with a refused cell', bridgeGoal(), bridgeMoves(), { maxMs: 60000, maxCorrections: 6 })
+    } finally {
+      bot.placeBlock = placeBlock
+    }
+    console.log(`      refused at ${forced}: tried ${tries.get(String(forced))} times; cells ${JSON.stringify([...tries])}`)
+    assert.ok(forced, 'a cell was refused')
+    assert.strictEqual(tries.get(forced.toString()), 2, 'the refused cell was tried twice, then avoided')
+    assert.strictEqual(bot.blockAt(forced).name, 'air')
+    assert.deepStrictEqual(resets.filter((x) => x === 'place_error'), ['place_error', 'place_error'])
+    assert.ok(r.ms < 60000)
+  })
+
+  it('stop() while a placement never answers: goto rejects (PathStopped) at once; the next goto finishes the bridge', async () => {
+    const { bot } = ctx
+    await gapAhead()
+    bot.pathfinder.setMovements(bridgeMoves())
+    const placeBlock = bot.placeBlock
+    const state = { placements: 0, hung: false }
+    // the second placement never answers (a server that drops it)
+    bot.placeBlock = function (ref, face) {
+      if (++state.placements === 2) { state.hung = true; return new Promise(() => {}) }
+      return placeBlock.call(bot, ref, face)
+    }
+    const goto = bot.pathfinder.goto(bridgeGoal())
+    let outcome
+    try {
+      for (let i = 0; i < 600 && !state.hung; i++) await bot.waitForTicks(1) // ≤ 30 s
+      assert.ok(state.hung, 'the second placement went out')
+      await bot.waitForTicks(10)
+      assert.ok(bot.pathfinder.isBuilding(), 'waiting for the placement')
+      const t1 = Date.now()
+      bot.pathfinder.stop()
+      outcome = await Promise.race([goto.then(() => 'resolved', (err) => err.name), new Promise((resolve) => setTimeout(() => resolve('pending'), 2000))])
+      console.log(`      stop() with a hung placement: goto ${outcome} after ${Date.now() - t1} ms`)
+    } finally {
+      bot.placeBlock = placeBlock
+    }
+    assert.strictEqual(outcome, 'PathStopped')
+    assert.ok(!bot.pathfinder.isBuilding() && bot.pathfinder.goal === null)
+    // the bot was left leaning over the edge: the next search starts from the block it stands on, not from the cell
+    // over the gap (whose placement against the air under it would time out)
+    const before = resets.length
+    await run('bridge after a stop', bridgeGoal(), bridgeMoves(), { maxMs: 30000, maxCorrections: 8 }) // corrections: the whole test's
+    assert.ok(!resets.slice(before).some((r) => r !== 'block_updated'), `resets after the stop: ${resets.slice(before)}`)
   })
 
   it('digging through a wall: a bedrock corridor closed by stone (canDig, iron pickaxe)', async () => {

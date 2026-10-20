@@ -1416,8 +1416,9 @@ async function lightPortal (bot, frame, { signal } = {}) {
     await goSpot()
   } catch (err) {
     if (signal?.aborted || !/stalled/.test(err.message)) throw err
-    // stood still in the flint's pit, 2–3 deep (a final chain run: 30 s at the bottom, then the whole N1M3 failed): the
-    // pathfinder stopped for good (a failed placement leaves it hanging), the bot's own staircase steps out, again
+    // stood still in the flint's pit, 2–3 deep (a final chain run: 30 s at the bottom, then the whole N1M3 failed —
+    // the unpatched pathfinder hung on a failed placement; the patched one plans around it, docs/differences/U15.md):
+    // the pathfinder stopped, the bot's own staircase steps out, again (a bounded fallback)
     u.log(bot, `portal: to the frame: ${err.message}; climbing out first`)
     u.stopMoving(bot)
     const survive = optional('./survive')
