@@ -246,6 +246,16 @@ three runs at a time; phase seconds): **5/5 end to end**, no deaths, no stuck ta
 | e4 | 37.5 min | 78 | 161 | 374 | 524 | 96 | 63 | 248 | 199 | 181 | 214 | 5 | 6, 14, 2, 44, 23 | 2 |
 | e5 | 37.0 min | 96 | 188 | 292 | 666 | 79 | 38 | 238 | 194 | 148 | 191 | 5 | 6, 12, 2, 42, 7 | 3 |
 
+The code-review fixes after it (counted meal holds, ore counting by the dig target, creepers, climbs under gravel)
+were validated the same way:
+
+- M3 5/5 (106, 89, 99, 107, 89 s) and M5 5/5 (366, 270, 262, 297, 393 s).
+- M4 5/5 on the final code (180, 192, 187, 219, 187 s). The M4 climb starts under a gravel column; the bot steps over
+  to the next column twice.
+- Final chain: 6 of 6 runs passed since the climbs step aside under gravel (36.2–47.8 min, no deaths). Three of them ran the final code (36.2, 43.8, 39.4 min).
+- Before that change, 2 of 5 runs failed. In both the bot suffocated under gravel it dug into on the way up; one of
+  them first died in a cave that the shaft down opened into.
+
 Chained runs before (each failure fixed before the next round): full5, full6, full7 and a1 passed (40.1, 52.2, 32.9
 and 42.5 min); full8 failed M3 — three plain diamond ores at y 9–10, none of deepslate (→ the "down to the diamonds"
 phase); full9 failed the End: U18's walk from the arrival platform up to the island stalled 305 s and the fight ran
