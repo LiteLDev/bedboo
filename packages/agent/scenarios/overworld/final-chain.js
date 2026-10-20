@@ -72,6 +72,8 @@ const WOOL = ['white', 'light_gray', 'gray', 'black', 'brown', 'pink', 'orange',
 const END_WALK_MS = 3 * MINUTES
 /** food items to carry into the Nether */
 const PROVISIONS = 8
+/** food items to carry down into the mines (M3–M5) */
+const VICTUALS = 6
 /** `--nether-ores`: food items the provisions phase aims for (N1M3 eats some before the ores) */
 const ORE_PROVISIONS = 14
 /** gold armor pieces, cheapest first (one worn keeps piglins neutral): boots take 4 gold ingots, a helmet 5 */
@@ -209,6 +211,20 @@ async function finalChain ({ log = () => {}, cfg = config(), netherOres = false,
         // the camp's meat: cooked while the furnace is out anyway (best effort)
         await task('food', { min: 0, items: 0, stock: true, explore: false, fishing: false, timeout: 90000 }, { name: 'gear: cook', timeout: 2 * MINUTES, retries: 0 }).catch(() => {})
         return { made, worn, shield: bot.inventory.slots[45]?.name ?? null, failed }
+      }
+    })
+    plan.push({
+      name: 'victuals',
+      // food for the mines (M3–M5): the camp's meat is eaten by then in the fights of M2 and the gear trip (FINAL-ROUND
+      // O1 went down with 2 cooked mutton, ate them after a creeper's blast, then died at y 5 with nothing but rotten
+      // flesh under a skeleton's arrows; POLISH-AGENT ores-r1 the same way) — best effort, never fails the chain
+      run: async () => {
+        const items = () => require('../../src/skills/survive').foodItems(bot)
+        if (items() >= VICTUALS) return { items: items() }
+        await agent.maintain()
+        const r = await task('food', { min: 12, items: VICTUALS, stock: true, radius: 64, explore: true, fishing: false, timeout: 150000 }, { name: 'victuals for the mines', timeout: 3 * MINUTES, retries: 0 })
+          .catch((err) => ({ error: err.message }))
+        return { items: items(), hunted: r?.hunted, error: r?.error }
       }
     })
     plan.push({

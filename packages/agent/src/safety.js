@@ -434,6 +434,11 @@ class Safety extends EventEmitter {
           this.effective().ignores.some((f) => f(target)),
         log: this.log
       })
+      // a mob it could not get at, the bot hurt: a meal now, still holding the claim (and the meal hold: auto-eat must
+      // not start one of its own), when nothing is in melee reach. Fight after fight against mobs out of reach (zombies
+      // behind a wall, a skeleton shooting down its shaft) kept every meal suppressed: FINAL-ROUND O1 went 18 → 0 hp in
+      // 2 min with food 16 (no regeneration below 18)
+      if (['unreachable', 'timeout', 'escaped'].includes(r.outcome)) await this.mealBetweenFights().catch(() => {})
     } finally {
       releaseMeals()
     }
@@ -446,6 +451,40 @@ class Safety extends EventEmitter {
     }
     if (r.outcome === 'killed' && this.opts.pickupDrops) await this.collectDrops(target.position.clone()).catch(() => {})
     return r.outcome
+  }
+
+  /**
+   * Eat (standing still, ≤ 6 s) when hurt and the food bar is below 20, with no hostile — nor a provoked attacker —
+   * within 4 blocks: the regeneration a siege by mobs out of reach never lets auto-eat start (a skeleton further away
+   * may still shoot: 1.6 s under fire beats no regeneration at all). Rotten flesh only at 8 hp or less with the food bar
+   * below the 18 regeneration needs, and nothing else carried. @returns {Promise<string|null>} what was eaten
+   */
+  async mealBetweenFights () {
+    const bot = this.bot
+    if (!bot.entity || bot.health <= 0 || bot.health >= 16 || bot.food >= 20 || bot.autoEat?.isEating) return null
+    const combat = require('./skills/combat')
+    const near = (e) => e.position.distanceTo(bot.entity.position) <= 4
+    if (combat.nearestHostile(bot, { radius: 4 }) || [...this.attackers.keys()].some(near)) return null
+    const util = require('./dims/util')
+    try { bot.clearControlStates() } catch {}
+    const meal = async () => {
+      const food = await util.eatIfNeeded(bot, { minFood: 20, minHealth: 20 })
+      if (food || bot.health > 8 || bot.food >= 18) return food
+      const flesh = bot.inventory.items().find((i) => i.name === 'rotten_flesh')
+      if (!flesh) return null
+      try {
+        await bot.equip(flesh, 'hand')
+        await bot.consume()
+        return 'rotten_flesh'
+      } finally {
+        await combat.equipForCombat(bot, { shield: true }).catch(() => {})
+      }
+    }
+    let timer
+    const food = await Promise.race([meal(), new Promise((resolve, reject) => { timer = setTimeout(() => reject(new Error('meal timed out')), 6000) })])
+      .finally(() => clearTimeout(timer))
+    if (food) this.log(`safety: ate ${food} between fights (${bot.health.toFixed(1)} hp, food ${bot.food})`)
+    return food
   }
 
   /**

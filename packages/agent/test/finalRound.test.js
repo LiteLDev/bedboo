@@ -158,6 +158,44 @@ describe('final round (agent): the build repairs block by block', () => {
     assert.deepStrictEqual(await roomForDrops(bot), {})
   })
 
+  it('a meal between fights against mobs out of reach (chain O1: 18 → 0 hp in 2 min, every meal suppressed)', async () => {
+    const { Safety } = require('../src/safety')
+    const bot = fakeBot()
+    const inv = [{ name: 'cooked_mutton', count: 1, type: 3 }, { name: 'rotten_flesh', count: 4, type: 4 }]
+    bot.inventory.items = () => inv.filter((i) => i.count > 0)
+    bot.health = 6
+    bot.food = 16
+    const eaten = []
+    bot.consume = async () => { const it = inv.find((i) => i.name === bot.heldItem?.name); it.count--; eaten.push(it.name); bot.food = Math.min(20, bot.food + 4) }
+    bot.nearestEntity = (match) => {
+      let best = null
+      for (const e of Object.values(bot.entities)) {
+        if (e === bot.entity || !match(e)) continue
+        if (!best || e.position.distanceTo(bot.entity.position) < best.position.distanceTo(bot.entity.position)) best = e
+      }
+      return best
+    }
+    const safety = new Safety(bot)
+    // a zombie 4.5 blocks away (behind a wall): not in melee reach → the meal goes ahead
+    bot.entities[5] = { id: 5, name: 'zombie', type: 'hostile', position: new Vec3(9, 0, 0.5), width: 0.6, height: 1.9 }
+    assert.strictEqual(await safety.mealBetweenFights(), 'cooked_mutton')
+    // one within 4 blocks: no meal
+    bot.food = 16
+    bot.entities[5].position = new Vec3(6.5, 0, 0.5)
+    assert.strictEqual(await safety.mealBetweenFights(), null)
+    delete bot.entities[5]
+    // nothing but rotten flesh: only at 8 hp or less
+    bot.health = 12
+    assert.strictEqual(await safety.mealBetweenFights(), null)
+    bot.health = 7
+    assert.strictEqual(await safety.mealBetweenFights(), 'rotten_flesh')
+    // healthy enough, or full: none
+    bot.health = 17
+    bot.food = 10
+    assert.strictEqual(await safety.mealBetweenFights(), null)
+    assert.deepStrictEqual(eaten, ['cooked_mutton', 'rotten_flesh'])
+  })
+
   it('entitiesIn / replaceable: what blocks a placement', () => {
     const bot = fakeBot()
     bot.entities[1] = { id: 1, name: 'item', position: new Vec3(0.5, 0, 0.5) }
