@@ -196,6 +196,23 @@ describe('final round (agent): the build repairs block by block', () => {
     assert.deepStrictEqual(eaten, ['cooked_mutton', 'rotten_flesh'])
   })
 
+  it("the climb to the surface does not count the safety's fights against its time (chain ore1: out of time at y 39)", () => {
+    const { safetyMsSince } = require('../src/skills/survive')
+    const t0 = Date.now() - 100000
+    const iso = (t) => new Date(t).toISOString()
+    const safety = {
+      interventions: [
+        { startedAt: iso(t0 - 5000), ms: 4000 }, // before the climb
+        { startedAt: iso(t0 + 10000), ms: 30000 },
+        { startedAt: iso(t0 + 50000), ms: 12000 }
+      ],
+      busy: { type: 'fight', since: Date.now() - 2000 }
+    }
+    const ms = safetyMsSince(safety, t0)
+    assert.ok(ms >= 44000 && ms < 44500, `${ms}`)
+    assert.strictEqual(safetyMsSince(null, t0), 0)
+  })
+
   it('entitiesIn / replaceable: what blocks a placement', () => {
     const bot = fakeBot()
     bot.entities[1] = { id: 1, name: 'item', position: new Vec3(0.5, 0, 0.5) }
