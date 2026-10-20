@@ -73,7 +73,7 @@ A skill is `async (bot, args) => result` (`args.signal` is the runner's AbortSig
 | `build` | `{ blueprint, origin?, radius? }` | builds a blueprint near the bot, verifies it block by block |
 | `navigate` | `{ position \| spawn: true, goal?, range? }` | pathfinder with re-planning, legs for far goals (each leg's end on dry land, never in a lake), unsticking (own door, head block, out of the water onto a bank, a side dug open), the last resort after two failures in a pit / the water: `escape`; `spawn: true` is an x / z goal (the spawn column) |
 | `explore` | `{ blocks?, biomes?, maxDistance? }` | spiral walk until a block / biome is loaded |
-| `surface` | `{}` | out of a mine: pillar up (staircase where liquid is above, around lakes) |
+| `surface` | `{}` | out of a mine: pillar up (staircase where liquid is above, around lakes; over to the next column where gravel / sand is over the head) |
 | `food` | `{ min, items?, stock?, explore?, fishing? }` | carry `min` hunger points and `items` food items: hunt passive animals (exploring for them), cook the meat; fish when no animal is left |
 | `hunt` | `{ mobs, item, count }` | kill passive mobs for an item (wool, leather, …), exploring until one is in sight |
 | `fish` | `{ count, obtainRod? }` | `bot.fish()` from a shore next to open water (≥ 2 deep); each cast waits ≤ 40 s for a bite |
@@ -118,7 +118,8 @@ src/safety.js runs during every task. When it takes over, pathfinder and digging
   behaviours for as long as the skill runs, so they keep their own guard's protections; the combat skill's hunt /
   nearby modes pause the safety behaviours while they fight themselves (one fighter per mob);
 - in lava: jump towards the nearest solid ground; low on air: swim up (centred in the water column), or to the
-  nearest pocket of air under a ceiling; a falling block in the head cell (gravel, sand): dig it out (never towards
+  nearest pocket of air under a ceiling; losing air in a block the client does not show yet: no fight starts (a fight
+  stops) until the climb gets out; a falling block in the head cell (gravel, sand): dig it out (never towards
   lava);
 - mineflayer-auto-eat eats when the food level drops below 16 — below 18 while the bot is hurt (natural regeneration
   needs 18) — (rotten flesh only when starving), never during a fight, a pillar step or a placement (counted holds:

@@ -37,6 +37,7 @@ const { AbortError } = require('./errors')
 const DEFLECTABLE = new Set(['fireball', 'large_fireball'])
 /** how long fights given up on a mob count towards ignoring it for good */
 const GIVEN_UP_MS = 3 * 60 * 1000
+const fullCube = (b) => b.shapes?.length === 1 && b.shapes[0].join(',') === '0,0,0,1,1,1'
 /** melee mobs that follow the bot at its own speed: no use running from them */
 const CHASERS = new Set(['zombie', 'husk', 'drowned', 'zombie_villager', 'zombie_villager_v2', 'spider', 'cave_spider', 'zombified_piglin', 'zombie_pigman', 'piglin', 'piglin_brute', 'hoglin', 'zoglin', 'vindicator', 'enderman', 'silverfish', 'endermite', 'slime', 'magma_cube'])
 
@@ -77,6 +78,7 @@ class Safety extends EventEmitter {
   start () {
     if (this.enabled) return
     this.enabled = true
+    this._air = undefined // (sampled again: a reading from before a stop is no fall)
     const on = (emitter, event, fn) => { emitter.on(event, fn); this._listeners.push([emitter, event, fn]) }
     on(this.bot, 'entityHurt', (e) => { if (e === this.bot.entity) this.onHurt() })
     on(this.bot, 'entitySwingArm', (e) => { if (e !== this.bot.entity) this.swings.set(e, Date.now()) })
@@ -260,9 +262,11 @@ class Safety extends EventEmitter {
     if (!this.enabled) return
     if (++this._tick % 4 !== 0) return
     this.staleMeal()
-    // air going down (in the water, or in a wall)
+    // air going down (in the water, or in a wall); none left out of the water: still in the wall
     const air = this.bot.oxygenLevel ?? 20
-    if (air < (this._air ?? 20)) this._airFalling = Date.now()
+    const wet = !!this.bot.entity?.isInWater || this.headWet()
+    if (wet) this._lastWet = Date.now()
+    if (air < (this._air ?? 20) || (air <= 0 && !wet)) this._airFalling = Date.now()
     this._air = air
     if (this.busy) return
     this.check(false)
@@ -325,8 +329,7 @@ class Safety extends EventEmitter {
     if (bot.entity.isInLava || world.isLava(feet)) { this.run('lava', () => this.escapeLava()); return }
     // suffocating: gravel / sand fell into the head cell
     const head = bot.blockAt(bot.entity.position.offset(0, bot.entity.eyeHeight ?? 1.62, 0).floored())
-    const fullCube = (b) => b.shapes?.length === 1 && b.shapes[0].join(',') === '0,0,0,1,1,1'
-    if (head && head.boundingBox === 'block' && fullCube(head) && !world.isLiquid(head) && head.diggable && !world.isProtected(bot, head.position) && !(this.headBlockedUntil > Date.now())) {
+    if (head && this.headInBlock() && head.diggable && !world.isProtected(bot, head.position) && !(this.headBlockedUntil > Date.now())) {
       this.run('suffocating', () => this.digOut())
       return
     }
@@ -415,13 +418,13 @@ class Safety extends EventEmitter {
         bow: 'auto',
         // another mob hitting the bot from up close while this one is out of reach: that one first; the bot
         // suffocating (a falling block on its head mid-climb): out of the wall first
-        stop: () => this.betterTarget(target) || this.inWall(),
+        stop: () => this.betterTarget(target) || this.inWall() || (!!this.headInBlock() && !(this.headBlockedUntil > Date.now())),
         log: this.log
       })
     } finally {
       releaseMeals()
     }
-    this.attackers.delete(target)
+    if (r.outcome !== 'switched') this.attackers.delete(target) // (stopped for another one / to get out of a wall: still one)
     if (['timeout', 'unreachable', 'escaped'].includes(r.outcome)) {
       this.ignored.set(target.id, Date.now() + this.opts.ignoreMs)
       const g = this._givenUp.get(target.id)
@@ -441,15 +444,26 @@ class Safety extends EventEmitter {
   }
 
   /**
-   * Suffocating: a solid block in the head cell, or — the server's block, not yet in the client's world — losing air
-   * out of the water while being hurt
+   * Suffocating in a block the client does not show yet (the server's block): air going down — out of the water for
+   * 2 s and more — while being hurt
    */
   inWall () {
+    if (!this.bot.entity) return false
+    const now = Date.now()
+    return now - (this._airFalling ?? 0) < 1500 && now - this.lastHurt < 1000 && now - (this._lastWet ?? 0) > 2000
+  }
+
+  headWet () {
+    const e = this.bot.entity
+    return !!e && world.isWater(this.bot.blockAt(e.position.offset(0, e.eyeHeight ?? 1.62, 0).floored()))
+  }
+
+  /** a full block in the head cell (gravel, sand fell into it): suffocating */
+  headInBlock () {
     const bot = this.bot
-    if (!bot.entity) return false
+    if (!bot.entity) return null
     const head = bot.blockAt(bot.entity.position.offset(0, bot.entity.eyeHeight ?? 1.62, 0).floored())
-    if (head?.boundingBox === 'block' && !world.isLiquid(head)) return true
-    return Date.now() - (this._airFalling ?? 0) < 1500 && Date.now() - this.lastHurt < 1000 && !bot.entity.isInWater && !world.isWater(head)
+    return head && head.boundingBox === 'block' && fullCube(head) && !world.isLiquid(head) ? head : null
   }
 
   /** an attacker that hit the bot in the last 2 s from within melee reach while `target` is out of it */

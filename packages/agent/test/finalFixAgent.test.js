@@ -156,6 +156,9 @@ describe('final fix (agent): safety under U18 guards', () => {
     safety.check(true)
     await sleep(10)
     assert.strictEqual(safety.interventions.length, 0, 'no fight while in the wall')
+    safety._lastWet = Date.now()
+    assert.strictEqual(safety.inWall(), false, 'just out of the water: the air was going down there')
+    safety._lastWet = 0
     safety._airFalling = 0
     assert.strictEqual(safety.inWall(), false)
   })

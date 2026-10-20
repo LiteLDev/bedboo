@@ -488,9 +488,9 @@ async function clearCell (bot, pos, signal) {
   if (!world.isPassable(after) && !world.isWater(after)) throw new SkillError(`${navigate.fmt(pos)} keeps filling up`, { code: 'FAILED' })
 }
 
-/** gravel / sand over the bot's head (the next 2 cells): digging straight up brings it down onto the bot */
+/** gravel / sand over the cell over the head: digging that cell brings it down onto the bot */
 function gravelOver (bot, feet) {
-  return world.isFalling(bot.blockAt(feet.offset(0, 2, 0))) || world.isFalling(bot.blockAt(feet.offset(0, 3, 0)))
+  return world.isFalling(bot.blockAt(feet.offset(0, 3, 0)))
 }
 
 /**
@@ -504,14 +504,15 @@ async function sideStep (bot, signal) {
     const cells = [low, low.offset(0, 1, 0)]
     if (!world.isSolid(bot.blockAt(low.offset(0, -1, 0)))) continue
     if ([...cells, low.offset(0, 2, 0), low.offset(0, 3, 0)].some((c) => world.isFalling(bot.blockAt(c)) || world.isLiquid(bot.blockAt(c)) || world.lavaAround(bot, c))) continue
-    if (cells.some((c) => world.isProtected(bot, c))) continue
+    if (cells.some((c) => world.isProtected(bot, c)) || columnWet(bot, low.x, low.z, low.y)) continue
     try {
       for (const c of cells) await clearCell(bot, c, signal)
     } catch (err) {
       if (isAbort(err)) throw err
       continue
     }
-    if (await navigate.stepTo(bot, low, signal, { ticks: 30 })) return true
+    // (a step that went wrong left the bot elsewhere: the next direction would be from where it was)
+    return navigate.stepTo(bot, low, signal, { ticks: 30 })
   }
   return false
 }
