@@ -524,3 +524,27 @@ describe('inventory resync: inventory_mismatch (POLISH-LIB)', function () {
     assert.strictEqual(bot.inventory.selectedItem?.count, 43)
   })
 })
+
+describe("spawn point: no 'game' for the join's spawn height (POLISH-LIB)", function () {
+  it("the spawn column loading before the first spawn emits no 'game' (login → game → spawn); later resolutions do", () => {
+    const { EventEmitter } = require('events')
+    const bot = new EventEmitter()
+    bot._client = new EventEmitter()
+    bot.game = { dimension: 'overworld', minY: -64, height: 384 }
+    bot.blockAt = (p) => ({ position: p, boundingBox: p.y < -60 ? 'block' : 'empty', name: p.y < -60 ? 'grass_block' : 'air' })
+    require('../../lib/plugins/spawn_point')(bot)
+    const games = []
+    bot.on('game', () => games.push(String(bot.spawnPoint)))
+    bot._client.emit('start_game', { spawn_position: { x: 0, y: 32767, z: 0 } })
+    bot.emit('chunkColumnLoad', new Vec3(0, 0, 0))
+    assert.ok(bot.spawnPoint.equals(new Vec3(0, -60, 0)), `${bot.spawnPoint}`)
+    assert.deepStrictEqual(games, [], 'part of the login')
+    bot.emit('spawn')
+    // after the spawn: like upstream on a change
+    bot._client.emit('set_spawn_position', { spawn_type: 'world', player_position: { x: 0, y: 32767, z: 0 } })
+    assert.deepStrictEqual(games, ['(0, -60, 0)'])
+    bot.spawnPoint = new Vec3(0, 32767, 0)
+    bot.emit('chunkColumnLoad', new Vec3(0, 0, 0))
+    assert.deepStrictEqual(games, ['(0, -60, 0)', '(0, -60, 0)'])
+  })
+})

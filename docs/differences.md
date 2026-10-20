@@ -2855,9 +2855,13 @@ agent works around in its own code.
 - **mineflayer-bedrock (fixed, lib/plugins/spawn_point.js, minimal U17 edit):** a 32767 height is replaced by the spawn
   column's highest solid block + 1 as soon as that overworld column is loaded (`chunkColumnLoad` / `spawn`); x and z
   are kept, a real height (`/setworldspawn`) is never touched, and nothing is resolved while the bot is in another
-  dimension. The agent's `navigate { spawn: true }` also treats a still-unresolved height as x / z only.
+  dimension. The agent's `navigate { spawn: true }` also treats a still-unresolved height as x / z only. The
+  resolution during the join (the spawn column loads before `spawn`) emits no `game` of its own — it is part of
+  `start_game`'s spawn position, covered by the login's `game` (mineflayer's connect → login → game → spawn; POLISH-LIB:
+  test coreJoin failed on it); a later resolution emits `game` like upstream on a spawn point change.
 - **Tests:** `packages/mineflayer-bedrock/test/unit/spawn_height.test.js`, `test/unit/player_state.test.js` › "spawn
-  point" (the flat capture's spawn resolves to y -60).
+  point" (the flat capture's spawn resolves to y -60), `test/unit/polish_lib.test.js` › "spawn point: no 'game' for
+  the join's spawn height", `test/external/coreJoin.test.js` › "login → game → spawn in mineflayer order".
 
 #### A bed placed a moment ago is "half a bed"  {#bed-halves}
 - **Affects:** `bot.sleep(bed)` right after `bot.placeBlock` placed the bed (the agent's `rest` skill)
