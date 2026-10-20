@@ -175,6 +175,7 @@ function createTracker (bot) {
   })
   client.on('update_block', () => { state.worldDirty = true })
   client.on('update_subchunk_blocks', () => { state.worldDirty = true })
+  client.on('update_block_synced', () => { state.worldDirty = true }) // falling blocks
   return state
 }
 

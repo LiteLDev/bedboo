@@ -76,13 +76,17 @@ bot.pathfinder.setMovements(moves)
 ESM: `const { loader } = await import('mineflayer-auto-eat')`. Configure with `bot.autoEat.setOpts({ minHunger,
 priority, bannedFood })`, `enableAuto()` / `disableAuto()`, events `eatStart` / `eatFinish` / `eatFail` on
 `bot.autoEat`. Meals complete on Bedrock's `completed_using_item` (patched). On peaceful the food level never drops.
+Two upstream bugs are patched: a failed equip no longer leaves the plugin "eating" for good, and `eatFail` is also
+emitted with `strictErrors` (the default) before `eat()` rejects ([U15](differences/U15.md#auto-eat)).
 
 ## mineflayer-collectblock / -tool / -armor-manager
 
 - collectblock: `collect(blocks)` with a tool and scaffolding blocks in the inventory; `chestLocations` (Vec3 of a
   chest block) are used when the inventory is full. The callback form `collect(target, cb)` works (patched);
   `cancelTask()` ends the job after the step in progress (patched).
-- tool: `equipForBlock(block, { requireHarvest })` — rejects with `NoItem` when nothing can harvest the block.
+- tool: `equipForBlock(block, { requireHarvest })` — rejects with `NoItem` when nothing can harvest the block; with
+  `getFromChest` and no chest too (patched: upstream recursed for ever and the process ran out of memory, e.g.
+  collectblock's `collect()` of ores without a pickaxe — [U15](differences/U15.md#tool)).
 - armor-manager: picked-up armor / shields / totems are equipped one at a time (patched); `equipAll()`.
 
 ## Test world  {#test-world}

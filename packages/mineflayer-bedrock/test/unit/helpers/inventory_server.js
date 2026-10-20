@@ -8,6 +8,8 @@
  * - `item_stack_request`                → item_stack_response: `ok` with the resulting count + a new stack id for
  *   every slot the request touched (from the bot's own prediction), or `{ status: <code> }` when `reject(code)`
  *   was armed for the next request.
+ * - `inventory_transaction inventory_mismatch` → inventory_content of the inventory (the model's state, or
+ *   `server.truth`), armor, ui and off-hand (`server.resyncs` counts them; `server.ignoreResync`: no answer).
  * Packets are answered asynchronously (setImmediate), like a network round trip.
  *
  *   const server = serveInventory(bot, client)
@@ -17,6 +19,7 @@
  *   server.ignoreRequests = true      // never answer item stack requests (timeouts)
  */
 const { windowIdOf } = require('../../../lib/bedrock/inventory_model')
+const { toNetwork } = require('../../../lib/bedrock/item')
 
 function serveInventory (bot, client, { firstWindowId = 2 } = {}) {
   let nextWindowId = firstWindowId
@@ -83,8 +86,32 @@ function serveInventory (bot, client, { firstWindowId = 2 } = {}) {
         const answer = respond(request)
         later(() => client.receive('item_stack_response', answer))
       }
+    } else if (name === 'inventory_transaction' && params?.transaction?.transaction_type === 'inventory_mismatch') {
+      // BDS resends the player's inventory (POLISH-LIB): the inventory window's content, then armor / ui / off-hand —
+      // the state when the request arrives (here: the model's, predictions included), or `server.truth`
+      // ({ bedrockSlot: [name, count, stackId] }) for the inventory window
+      server.resyncs++
+      if (server.ignoreResync) return
+      const model = bot._bedrock.inventoryModel
+      const wire = (key) => {
+        const item = model.read(key)
+        return item ? toNetwork(bot.registry, item, { stackId: item.stackId }) : wireItem(bot, null)
+      }
+      const input = Array.from({ length: 36 }, (_, i) => {
+        if (!server.truth) return wire(`p:${i}`)
+        const t = server.truth[i]
+        return t ? wireItem(bot, t[0], t[1], t[2]) : wireItem(bot, null)
+      })
+      const others = [['armor', 4], ['ui', 54], ['offhand', 1]].map(([window, size]) => [window, Array.from({ length: size }, (_, i) =>
+        wire(window === 'armor' ? `a:${i}` : window === 'offhand' ? 'o' : i === 0 ? 'c' : `u:${i}`))])
+      later(() => {
+        const content = (window, items) => client.receive('inventory_content', { window_id: window, input: items, container: { container_id: 'anvil_input' }, storage_item: wireItem(bot, null) })
+        content('inventory', input)
+        for (const [window, items] of others) content(window, items)
+      })
     }
   }
+  server.resyncs = 0
   return server
 }
 

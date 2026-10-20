@@ -31,6 +31,9 @@ const { placeBackPlan, armorSlotFor, sameItem } = require('./click')
  * Steps on bot.inventory need the player's inventory screen (BDS rejects cursor / cross-container moves and
  * craft_creative without one): the model opens it (`interact open_inventory` → container_open window_type
  * 'inventory') and closes it again 100 ms after the last request when the cursor is empty (`screen`).
+ * Server packets always win; when the model finds a player slot out of date (an un-raced stack id mismatch, a
+ * server transaction whose old item is not ours) it asks for the server's copy of the inventory (`resync`, an
+ * inventory_mismatch transaction) — see "resync".
  */
 
 const IDLE_CLOSE_MS = 100
@@ -40,6 +43,14 @@ const SCREEN_TIMEOUT_MS = 8000
 /** the open request is repeated this often while unanswered (BDS ignores it while the player is in a portal) */
 const SCREEN_RESEND_MS = 1500
 const CLOSE_ECHO_TIMEOUT_MS = 1000
+/** item_stack_response status of a request naming a stack id the server does not have in that slot */
+const STACK_ID_MISMATCH_STATUS = 49
+/** a resync (inventory_mismatch → the server's inventory_content) that gets no answer gives up after this long */
+const RESYNC_TIMEOUT_MS = 2000
+/** ms a resync waits for the armor / ui / off-hand contents after the inventory window's content */
+const RESYNC_TAIL_MS = 250
+/** automatic resyncs (a stale slot detected) are at most one per this interval */
+const AUTO_RESYNC_INTERVAL_MS = 1000
 
 /** bedrock-protocol WindowID enum names → numbers */
 const WINDOW_IDS = {
@@ -354,16 +365,21 @@ function createInventoryModel (bot, { Item, Window }) {
     if (inflight.size === 0) return
     const cw = key.startsWith('w:') ? currentWindow() : null
     for (const entry of inflight.values()) {
-      if (entry.raced) continue
       const change = entry.byKey.get(key)
       if (!change) continue
       if (cw && entry.window !== cw) continue
       const before = change.before
       // planned on another request's prediction (chained): that one is compared; its rejection propagates (rollback)
       if (before && inflight.has(before.stackId)) continue
-      const same = !before && !item ? true : !!before && !!item && before.type === item.type && before.count === item.count && (before.stackId ?? 0) === (item.stackId ?? 0)
-      if (!same) entry.raced = true
+      if (sameServerStack(before, item)) continue // a resend of what it was planned on (a resync, a command's resend)
+      change.racedWrite = true // applyResponse: the server's newer item is the base, not the prediction
+      entry.raced = true
     }
+  }
+  /** the same server stack: type, count and stack id (null = empty) */
+  function sameServerStack (a, b) {
+    if (!a || !b) return !a && !b
+    return a.type === b.type && a.count === b.count && (a.stackId ?? 0) === (b.stackId ?? 0)
   }
   /** write() of a server packet */
   function serverWrite (key, item) {
@@ -425,19 +441,104 @@ function createInventoryModel (bot, { Item, Window }) {
     }
   }
 
-  /** server-driven inventory_transaction (normal): /give, pickups … carry the new items with their stack ids */
+  /**
+   * server-driven inventory_transaction (normal): /give, pickups … carry the new items with their stack ids. Each
+   * action also names the slot's previous content (`old_item`, BDS sends it before the inventory_content of a /give):
+   * a slot no request of ours is changing that holds neither the old nor the new item was out of date — the server's
+   * copy of the whole inventory is asked for (resync).
+   */
   function onInventoryTransaction (packet) {
     const tx = packet.transaction
     if (!tx || tx.transaction_type !== 'normal') return
+    let stale = null
     for (const action of tx.actions ?? []) {
       if (action.source_type !== 'container') continue
       const id = windowIdOf(action.window_id)
+      let key = null
+      if (id === INVENTORY_WINDOW && action.slot >= 0 && action.slot < 36) key = `p:${action.slot}`
+      else if (id === ARMOR_WINDOW && action.slot >= 0 && action.slot < 4) key = `a:${action.slot}`
+      else if (id === OFFHAND_WINDOW) key = 'o'
+      else if (id === UI_WINDOW && action.slot === 0) key = 'c'
+      if (key === null) continue
       const item = fromNetwork(bot.registry, action.new_item)
-      if (id === INVENTORY_WINDOW && action.slot >= 0 && action.slot < 36) serverWrite(`p:${action.slot}`, item)
-      else if (id === ARMOR_WINDOW && action.slot >= 0 && action.slot < 4) serverWrite(`a:${action.slot}`, item)
-      else if (id === OFFHAND_WINDOW) serverWrite('o', item)
-      else if (id === UI_WINDOW && action.slot === 0) serverWrite('c', item)
+      if (key !== 'c' && !chains.has(key) && action.old_item) {
+        const local = read(key)
+        if (!sameContent(local, fromNetwork(bot.registry, action.old_item)) && !sameContent(local, item)) stale = key
+      }
+      serverWrite(key, item)
     }
+    if (stale) resync(`a server change of ${stale} found it out of date`, { auto: true })
+  }
+
+  /** same item type and count (null = empty) */
+  function sameContent (a, b) {
+    if (!a || !b) return !a && !b
+    return a.type === b.type && a.count === b.count
+  }
+
+  // ---------------------------------------------------------------- resync (POLISH-LIB)
+  // BDS resends the player's whole inventory (inventory_content of the inventory, armor, ui and off-hand windows, then
+  // player_hotbar) when the client sends inventory_transaction { transaction_type: 'inventory_mismatch' } — measured on
+  // 1.26.51.1, nothing else happens. Nothing else makes it resend: not (re)opening the inventory screen, not a rejected
+  // item stack request (the vanilla client would stay out of sync as well). A slot that went out of date would make
+  // every request on it fail (status 49) for good; the model asks for the server's copy when it sees evidence of that:
+  // an un-raced status-49 rejection (execute), a server transaction whose old item is not the local one
+  // (onInventoryTransaction), a response counting items in a slot the model holds nothing in (applyResponse).
+  // `bot.bedrock.resyncInventory()` asks for it explicitly.
+  const resyncState = { pending: null, lastAuto: -Infinity, count: 0, last: null }
+  /**
+   * @param {string} [reason]
+   * @param {{ auto?: boolean }} [opts] auto: skipped (resolves false) within AUTO_RESYNC_INTERVAL_MS of the last one
+   * @returns {Promise<boolean>} true once the server's inventory_content arrived and was applied, false on a timeout
+   *   (or a skipped automatic resync)
+   */
+  function resync (reason = 'requested', { auto = false } = {}) {
+    if (resyncState.pending) return resyncState.pending
+    const now = Date.now()
+    if (auto && now - resyncState.lastAuto < AUTO_RESYNC_INTERVAL_MS) return Promise.resolve(false)
+    if (auto) resyncState.lastAuto = now
+    resyncState.count++
+    resyncState.last = { reason, at: now }
+    if (auto) bot._warn?.(`inventory resync: ${reason}`)
+    const pending = new Promise((resolve) => {
+      let tail = null
+      const done = (ok) => {
+        clearTimeout(timer)
+        clearTimeout(tail)
+        bot._client.removeListener('inventory_content', onContent)
+        bot.removeListener('end', onEnd)
+        if (resyncState.pending === pending) resyncState.pending = null
+        resolve(ok)
+      }
+      // BDS answers with the inventory window's content, then armor, ui (cursor) and off-hand in the same batch: settle
+      // once the off-hand window is in (applied: the inventory plugin's listener runs first), or shortly after the
+      // inventory window should the rest not come
+      let inventorySeen = false
+      const onContent = (packet) => {
+        const id = windowIdOf(packet?.window_id)
+        if (id === INVENTORY_WINDOW && !inventorySeen) {
+          inventorySeen = true
+          tail = setTimeout(() => done(true), RESYNC_TAIL_MS)
+          tail.unref?.()
+        } else if (id === OFFHAND_WINDOW && inventorySeen) {
+          setImmediate(() => done(true))
+        }
+      }
+      const onEnd = () => done(false)
+      const timer = setTimeout(() => done(false), RESYNC_TIMEOUT_MS)
+      timer.unref?.()
+      bot._client.on('inventory_content', onContent)
+      bot.once('end', onEnd)
+    })
+    resyncState.pending = pending
+    try {
+      bot._client.queue('inventory_transaction', {
+        transaction: { legacy: { legacy_request_id: 0 }, transaction_type: 'inventory_mismatch', actions: [] }
+      })
+    } catch (err) {
+      bot._warn?.(`inventory resync: ${err.message}`)
+    }
+    return pending
   }
 
   // ---------------------------------------------------------------- requests
@@ -513,10 +614,15 @@ function createInventoryModel (bot, { Item, Window }) {
         if (s.count) {
           let base
           if (next) base = change ? (change.after ?? change.before) : next.byKey.get(key).before
-          else if (change && (late || !current)) base = change.after ?? change.before ?? current
+          // the request's own prediction, unless a server packet replaced the slot with something else meanwhile (a
+          // resend of the state it was planned on — a resync, a command's resend — does not count: the server applied
+          // the request to that state, POLISH-LIB)
+          else if (change && (late || !current || !change.racedWrite)) base = change.after ?? change.before ?? current
           else base = current ?? change?.after ?? change?.before
           if (!base) {
             bot._warn?.(`item stack response ${response.request_id}: ${containerId} ${s.slot} holds ${s.count} unknown item(s)`)
+            // the server counts items in a slot the model holds nothing in: ask for its copy (POLISH-LIB)
+            if (!key.startsWith('w:') && !key.startsWith('u:')) resync(`${key} holds ${s.count} item(s) the model does not know`, { auto: true })
             continue
           }
           item = cloneItem(base, s.count, s.item_stack_id ?? base.stackId)
@@ -543,6 +649,7 @@ function createInventoryModel (bot, { Item, Window }) {
       if (next) {
         next.byKey.get(key).before = before // the next request was planned on our (rejected) prediction
         if (entry.raced) next.raced = true // and named its request id: rejected too, planned again like this one
+        next.chained = true // its stack id mismatch is explained: no resync for it
       } else if (read(key) === after) write(key, before) // else a server packet replaced the slot meanwhile: keep it
     }
     unlink(entry)
@@ -599,23 +706,54 @@ function createInventoryModel (bot, { Item, Window }) {
    */
   async function execute (window, steps, opts = {}) {
     if (!steps || (Array.isArray(steps) && steps.length === 0)) return null
-    try {
-      return await executeOnce(window, steps, opts)
-    } catch (err) {
-      if (err.name !== 'StackRequestError' || opts.retried) throw err
+    let retried = !!opts.retried
+    for (;;) {
+      try {
+        return await executeOnce(window, steps, opts)
+      } catch (err) {
+        if (err.name !== 'StackRequestError' || !(await retryAfter(err, retried))) throw err
+        retried = true
+      }
+    }
+
+    /** whether to send the request once more after `err` (at most one retry) */
+    async function retryAfter (err, retried) {
+      // planned requests (clickWindow, returnItems, craft) can be planned again; fixed steps were sized for the old state
+      const replannable = () => typeof steps === 'function' && opts.requestId === undefined &&
+        (slots.isPlayerInventory(window) || window === currentWindow())
+      // a stack id mismatch no server packet explains (not raced, not planned on a rejected request): the model's copy
+      // of a slot is out of date (a desync) — every request on that slot would fail for good. Ask for the server's copy;
+      // when it differs from what the request was planned on, plan it again once on it (POLISH-LIB)
+      if (err.outcome === 'error' && err.status === STACK_ID_MISMATCH_STATUS && !err.raced && !err.chained) {
+        if (retried || !replannable()) {
+          resyncAfterMismatch(err).catch(() => {}) // heals the model for the next request; nothing to wait for here
+          return false
+        }
+        return (await resyncAfterMismatch(err)) && replannable()
+      }
+      if (retried) return false
       // a server packet changed a slot of the request while it was in flight (a pickup, /give, a hopper: new stack
       // id) and BDS rejected it: plan it again on the server's state, once (FINAL-FIX-LIB; Java's server applies the
-      // click to its current state). Only planned requests (clickWindow, returnItems, craft): fixed steps were sized
-      // for the old state
-      if (err.raced && err.outcome === 'error' && typeof steps === 'function' && opts.requestId === undefined) {
-        if (!slots.isPlayerInventory(window) && window !== currentWindow()) throw err
-        return executeOnce(window, steps, { ...opts, retried: true })
-      }
+      // click to its current state)
+      if (err.raced && err.outcome === 'error') return replannable()
       // status 7: BDS has no matching screen (e.g. it dropped our inventory screen on a respawn) → reopen, retry once
-      if (err.status !== NO_SCREEN_STATUS || !slots.isPlayerInventory(window) || currentWindow()) throw err
-      screen.reset()
-      return executeOnce(window, steps, { ...opts, retried: true })
+      if (err.status === NO_SCREEN_STATUS && slots.isPlayerInventory(window) && !currentWindow()) {
+        screen.reset()
+        return true
+      }
+      return false
     }
+  }
+
+  /**
+   * After an un-raced stack id mismatch: resync when the request touched the player's slots (the server resends
+   * those only). @returns {Promise<boolean>} whether a touched slot now differs from what the request was planned on
+   */
+  async function resyncAfterMismatch (err) {
+    const touched = (err.inventoryChanges ?? []).filter(({ key }) => /^(?:p:\d+|a:\d|o|c)$/.test(key))
+    if (touched.length === 0) return false
+    await resync(`item stack request ${err.request?.request_id} rejected: stack id mismatch`, { auto: true })
+    return touched.some(({ key, before }) => !sameServerStack(read(key), before))
   }
 
   async function executeOnce (window, plan, opts) {
@@ -736,7 +874,12 @@ function createInventoryModel (bot, { Item, Window }) {
       try {
         return await response
       } catch (err) {
-        if (entry.raced && err && typeof err === 'object') err.raced = true
+        if (err && typeof err === 'object') {
+          if (entry.raced) err.raced = true
+          if (entry.chained) err.chained = true
+          // the slots it changed and what it was planned on (resyncAfterMismatch)
+          Object.defineProperty(err, 'inventoryChanges', { value: entry.changes, configurable: true, writable: true })
+        }
         throw err
       }
     } finally {
@@ -937,7 +1080,10 @@ function createInventoryModel (bot, { Item, Window }) {
     currentWindow,
     uiStore,
     inflight,
-    chains
+    chains,
+    resync,
+    /** diagnostics: { count, last: { reason, at } | null, pending: boolean } */
+    get resyncs () { return { count: resyncState.count, last: resyncState.last, pending: !!resyncState.pending } }
   }
 }
 

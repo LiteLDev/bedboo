@@ -10,11 +10,11 @@ each unit documents its own in `docs/differences/<unit>.md` (format: [`differenc
 |---|---|---|---|
 | U1 | [`U1.md`](differences/U1.md) | 7 | 0 |
 | U2 | [`U2.md`](differences/U2.md) | 7 | 4 |
-| U4 | [`U4.md`](differences/U4.md) | 21 | 44 |
+| U4 | [`U4.md`](differences/U4.md) | 22 | 44 |
 | U5 | [`U5.md`](differences/U5.md) | 9 | 21 |
 | U6 | [`U6.md`](differences/U6.md) | 15 | 44 |
 | U7 | [`U7.md`](differences/U7.md) | 17 | 23 |
-| U8 | [`U8.md`](differences/U8.md) | 13 | 22 |
+| U8 | [`U8.md`](differences/U8.md) | 14 | 22 |
 | U9 | [`U9.md`](differences/U9.md) | 15 | 41 |
 | U10 | [`U10.md`](differences/U10.md) | 8 | 5 |
 | U11 | [`U11.md`](differences/U11.md) | 9 | 8 |
@@ -459,6 +459,25 @@ Observed against BDS 1.26.51.1 (protocol 2193, bedrock-protocol 3.60.1): the U0 
   updates emit `blockUpdate` like layer 0. BDS sends only layer 0 when a block replaces water or a waterlogged block:
   the liquid layer follows Bedrock's rule ([liquid layer](differences/W3FIXB.md#liquid-layer)).
 - **Tests:** `test/unit/blocks.test.js`.
+
+#### Falling blocks (update_block_synced)  {#falling-blocks}
+- **Affects:** `bot.blockAt`, `blockUpdate` / `blockUpdate:(x, y, z)`, `bot.world`, everything reading them (physics,
+  digging, mineflayer-pathfinder).
+- **Java:** `block_update` turns the block into air when it starts falling (the falling block is an entity) and sets
+  it where it lands.
+- **Bedrock (measured on BDS 1.26.51.1, POLISH-LIB):** gravel, sand, concrete powder, anvils … starting to fall and
+  landing are sent as `update_block_synced` only — never as `update_block`: the start position becomes air with
+  `transition_type: 'create'` (followed by `add_entity minecraft:falling_block`), the landing position the block with
+  `'destroy'` (followed by `remove_entity` of the falling block ~150 ms later). A block placed in mid-air (`/setblock`,
+  a placement) first comes as `update_block`, then starts falling ~100 ms later. `entity_unique_id` is the falling
+  block's unique id written as an unsigned varint64 (bedrock-protocol reads it as zigzag64: -4294967288 arrives as
+  9223372034707292164). Before POLISH-LIB the client ignored these: a fallen block stayed in the air and the landed one
+  was invisible — the server suffocated the bot in a block it showed as air.
+- **mineflayer-bedrock:** `update_block_synced` is applied like `update_block` (layer, runtime id → state id, the
+  liquid-layer rule, block entities), with `blockUpdate` events: pathfinder re-plans, a dig of a block that fell away
+  completes (as on Java, where the block turns into air).
+- **Tests:** `test/unit/polish_lib.test.js` › "falling blocks: update_block_synced (POLISH-LIB)",
+  `test/external/polishLib.test.js` › "falling blocks".
 
 #### Commands  {#commands}
 - **Affects:** `bot.chat('/…')`.
@@ -1243,14 +1262,52 @@ protocol forces underneath and the few visible consequences.
   `heldItemChanged`) fires when type, count, metadata or NBT change.
 - **Tests:** `test/unit/inventory.test.js` › "inventory_content of the inventory / armor / off-hand / ui windows → …".
 
-#### No client-initiated window resync  {#resync}
+#### No window resync request like Java's  {#resync}
 - **Affects:** `bot._syncWindow` (internal)
 - **Java (1.17.1+):** an impossible click makes the server resend the window.
-- **Bedrock:** no such request exists, and BDS does not resend anything after a rejected item stack request (verified
-  live by the wave-3 review: only the error response arrives).
+- **Bedrock:** BDS does not resend anything after a rejected item stack request (verified live by the wave-3 review
+  and again by POLISH-LIB: only the error response arrives), and every request is answered.
 - **mineflayer-bedrock:** `_syncWindow` resolves at once; the model rolls the rejected prediction back itself (see
-  [overlapping requests](differences/W3FIXB.md#overlapping-requests)).
+  [overlapping requests](differences/W3FIXB.md#overlapping-requests)). A slot found out of date is healed by an
+  [inventory resync](#inventory-resync).
 - **Tests:** `test/unit/inventory.test.js` › "_setSlot emits setSlot:<window id> and heldItemChanged; _syncWindow …".
+
+#### Inventory resync (inventory_mismatch)  {#inventory-resync}
+- **Affects:** `bot.inventory` after a desync, `clickWindow` (and everything built on it), Bedrock extra
+  `bot.bedrock.resyncInventory()`
+- **Java:** the server resends a window whenever the client's view is stale (state ids).
+- **Bedrock (measured on BDS 1.26.51.1):** a client `inventory_transaction { transaction_type: 'inventory_mismatch' }`
+  makes BDS resend the player's whole inventory — `inventory_content` of the inventory, armor, ui (cursor) and
+  off-hand windows, then `player_hotbar` — within a tick, with no other effect. Nothing else does: not (re)opening the
+  inventory screen, not a rejected request (status 49 for a slot whose stack id the server does not have, and the
+  slot stays rejected for every later request), not `/clear <player> <item> -1 0`.
+- **mineflayer-bedrock:** server packets always win (`inventory_content`, `inventory_slot`, server transactions are
+  applied as they come). When the model finds a player slot out of date it asks for the server's copy (at most once
+  per second when automatic): a request rejected with status 49 that no server packet explains (not raced, not
+  planned on another request that was rejected) — when the resent copy differs from what the request was planned on,
+  a planned request (`clickWindow`, `returnItems`, craft) is planned again once on it, else the rejection stands (a
+  request that cannot be planned again rejects at once, the resync runs meanwhile); a server `inventory_transaction`
+  (pickup, `/give`)
+  whose `old_item` is neither the local item nor the new one, for a slot no request is changing; a response that
+  counts items in a slot the model holds nothing in. `bot.bedrock.resyncInventory()` → `Promise<boolean>` asks
+  explicitly (true once applied, false without an answer within 2 s); diagnostics in
+  `bot._bedrock.inventoryModel.resyncs`. A resend that arrives while requests are in flight and repeats exactly what
+  they were planned on (same type, count, stack id) does not replace their predictions: the server applies them to
+  that state, so their responses complete the predicted items (before, a swap answered after such a resend showed the
+  old item with the new count).
+- **Pickup desync investigation (POLISH-LIB):** an agent run once reported 13 coal ores dug with no change of the coal
+  count. It did not reproduce live (BDS 1.26.51.1, `bot.inventory` compared with the server's count from
+  `clear <bot> coal -1 0` after each round): plain `dig` of 16 adjacent ores × 3 rounds, the same with the coal stack
+  moved back and forth by overlapping `moveSlotItem`s (requests in flight on the very slot the pickups merge into,
+  ~290 item stack responses per round), with the pickaxe equipped back and forth, pickups merging into hotbar and main
+  inventory stacks, a full inventory (60 coal + 34 full stacks: 4 picked up, the rest left on the ground, picked up
+  once slots were freed), pickups with a chest open (deposits in between), and mineflayer-collectblock collecting 52
+  ores × 2 — every count matched. Pickups arrive as `take_item_entity` + a server `inventory_transaction` (normal:
+  the container slot's old and new item, then a `world_interaction` action), never as `inventory_slot`. The most likely
+  cause of the agent's observation is drops that fell into water / lava or out of reach, or a full inventory; the
+  resync above heals a real desync should one ever happen.
+- **Tests:** `test/unit/polish_lib.test.js` › "inventory resync: inventory_mismatch (POLISH-LIB)",
+  `test/external/polishLib.test.js` › "inventory resync".
 
 #### Held item selection  {#held-item}
 - **Affects:** `bot.quickBarSlot`, `bot.setQuickBarSlot`, `heldItemChanged`
@@ -2194,7 +2251,16 @@ below (`patches/mineflayer-*.patch`); each entry says what the patch changes and
 - **Bedrock:** enchantments are `ench` NBT with numeric ids; Bedrock effect factors.
 - **mineflayer-bedrock (patch):** `item.enchants` + `bot._bedrock.digging.blockDigTime` (else prismarine-block) — the
   estimate equals `bot.digTime` with that tool in hand (asserted live), so Efficiency picks the enchanted tool.
-- **Tests:** `test/external/ecosystemTool.test.js`, unit `test/unit/ecosystem.test.js`.
+- **Upstream bug fixed (POLISH-LIB, not Bedrock-specific):** `equipForBlock(block, { requireHarvest, getFromChest })`
+  with no harvesting tool in the inventory called `retrieveTools()`, which returns without an error when there is no
+  chest (or no chest had a tool), and then called itself again — for ever. Without chests that is an endless chain of
+  microtasks: the event loop froze and the process died out of memory within ~25 s (found live with
+  mineflayer-collectblock's `collect()` of coal ores without a pickaxe; its options are `{ requireHarvest: true,
+  getFromChest: true, maxTools: 2 }`). The patch searches the chests only when there are some, and one round of them;
+  otherwise (or still without a tool) the call rejects with `NoItem`, as without `getFromChest`.
+- **Tests:** `test/external/ecosystemTool.test.js`, unit `test/unit/ecosystem.test.js`, `test/unit/polish_lib.test.js`
+  › "mineflayer-tool patch: no harvest tool, no chest (POLISH-LIB)", `test/external/polishLib.test.js` ›
+  "collectblock without a pickaxe".
 
 #### mineflayer-collectblock 1.6.0 patch  {#collectblock}
 - **Affects:** `bot.collectBlock.collect(target, [options], cb)` (callback form), the drops it picks up
@@ -2240,7 +2306,20 @@ below (`patches/mineflayer-*.patch`); each entry says what the patch changes and
   GPL-3.0 dependency `@nxg-org/mineflayer-util-plugin` is used unmodified (it needs the Java version comparisons below,
   `bot.version.split('.')`, `clickWindow`, `inventory.selectedItem`, `firstEmptyInventorySlot`). Hunger only drops on
   difficulty easy or harder (docs/differences/U8.md).
-- **Tests:** `test/external/ecosystemAutoEat.test.js`, unit `test/unit/ecosystem.test.js`.
+- **Upstream bugs fixed (POLISH-LIB, not Bedrock-specific):** (1) `eat()` sets its eating flag before equipping the
+  food and only cleared it on the paths after the meal started: an equip that failed (`customEquip` → false, e.g. a
+  window open or a hand swap at the same moment) left `isEating` true for good — every later `eat()` threw
+  `Already eating!` and the automatic mode never ate again (seen in a chained agent run: food 5 with 5 cooked meals
+  carried). Now any failure before the meal starts (no food, the equip, activating the item) clears the flag; such a
+  failure still emits nothing (no meal started), as upstream. (2) With `strictErrors` (the default) a failed meal
+  (timeout, the item switched away, `cancelEat()`) threw before emitting `eatFail`, so no failure event was ever
+  emitted with the default options; now `eatFail` comes first (then `eatFinish`, then the rejection), as with
+  `strictErrors: false`. `eatFail` is emitted once per failure: code that emitted it itself with the error `eat()`
+  threw (a workaround for the missing event, like the agent's `guardAutoEat`) does not report a failure twice. The
+  automatic mode tries again 2 s after a meal that could not start (a failing equip would otherwise be repeated on
+  every tick), at once after a meal that failed, as upstream; `eat()` called directly is never held back.
+- **Tests:** `test/external/ecosystemAutoEat.test.js`, unit `test/unit/ecosystem.test.js`, `test/unit/polish_lib.test.js`
+  › "mineflayer-auto-eat patch: failures (POLISH-LIB)", `test/external/polishLib.test.js` › "auto-eat".
 
 #### mineflayer-pvp 1.3.2 patch, shield and timing  {#pvp}
 - **Affects:** `bot.pvp` (creeper shield block, shield use, attack timing, `followRange`)

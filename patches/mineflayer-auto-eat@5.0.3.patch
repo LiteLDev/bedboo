@@ -1,8 +1,38 @@
 diff --git a/dist/new.js b/dist/new.js
-index f256b9a440bd95414b26c7595c52d711ffebde02..a0687cf0919d614a54ac4638e25da3129d42264e 100644
+index f256b9a440bd95414b26c7595c52d711ffebde02..1a8eedf2b1b10d7a14ca9fc39c54350806f9d7d7 100644
 --- a/dist/new.js
 +++ b/dist/new.js
-@@ -109,28 +109,41 @@ export class EatUtil extends EventEmitter {
+@@ -15,6 +15,10 @@ export class EatUtil extends EventEmitter {
+     _eating = false;
+     _enabled = false;
+     _rejectionBinding;
++    // bedboo (mineflayer-bedrock) patch, POLISH-LIB: when the automatic mode may try again after a meal that could not
++    // start (see eat()), and the failures 'eatFail' was emitted for (see emit())
++    _retryAt = 0;
++    _failsEmitted = new WeakSet();
+     get foods() {
+         return this.bot.registry.foods;
+     }
+@@ -38,6 +42,18 @@ export class EatUtil extends EventEmitter {
+     setOpts(opts) {
+         Object.assign(this.opts, opts);
+     }
++    /**
++     * bedboo patch, POLISH-LIB: one 'eatFail' per failure. eat() now emits it under strictErrors as well; code that
++     * worked around its absence by emitting it itself with the error eat() threw does not report that failure twice.
++     */
++    emit(event, ...args) {
++        if (event === 'eatFail' && args[0] !== null && typeof args[0] === 'object') {
++            if (this._failsEmitted.has(args[0]))
++                return false;
++            this._failsEmitted.add(args[0]);
++        }
++        return super.emit(event, ...args);
++    }
+     cancelEat() {
+         if (this._rejectionBinding == null)
+             return;
+@@ -109,28 +125,41 @@ export class EatUtil extends EventEmitter {
       */
      buildEatingListener(relevantItem, timeout) {
          return new Promise((res, rej) => {
@@ -50,3 +80,89 @@ index f256b9a440bd95414b26c7595c52d711ffebde02..a0687cf0919d614a54ac4638e25da312
                  rej(new Error(`Eating timed out with a time of ${timeout} milliseconds!`));
              }, timeout);
          });
+@@ -144,38 +173,54 @@ export class EatUtil extends EventEmitter {
+         if (this._eating)
+             throw new Error('Already eating!');
+         this._eating = true;
+-        // Sanitize options; if not valid, throw error.
+-        if (!this.sanitizeOpts(opts)) {
+-            this._eating = false;
+-            throw new Error("No food specified and couldn't find a choice in inventory!");
++        // bedboo (mineflayer-bedrock) patch, POLISH-LIB: a failure before the meal starts (no food, a failed equip, an
++        // error while equipping / activating the item) clears the eating flag again — upstream only cleared it for "no
++        // food", so a failed equip left the plugin "eating" for good (eat() threw 'Already eating!' forever, the
++        // automatic mode never ate again)
++        let currentItem, switchedItems, wantedHand, sanitized = false;
++        try {
++            // Sanitize options; if not valid, throw error.
++            if (!this.sanitizeOpts(opts)) {
++                throw new Error("No food specified and couldn't find a choice in inventory!");
++            }
++            sanitized = true;
++            // get current item in hand + wanted hand
++            currentItem = this.bot.util.inv.getHandWithItem(opts.offhand);
++            switchedItems = currentItem != opts.food;
++            wantedHand = this.bot.util.inv.getHand(opts.offhand);
++            // if not already holding item, equip item
++            if (switchedItems) {
++                const equipped = await this.bot.util.inv.customEquip(opts.food, wantedHand);
++                // if fail to equip, throw error.
++                if (!equipped)
++                    throw new Error(`Failed to equip: ${opts.food.name}!\nItem: ${opts.food}`);
++            }
++            // ! begin eating item
++            // sanitize by deactivating beforehand
++            this.bot.deactivateItem();
++            // trigger use state based on hand
++            this.bot.activateItem(opts.offhand);
+         }
+-        // get current item in hand + wanted hand
+-        const currentItem = this.bot.util.inv.getHandWithItem(opts.offhand);
+-        const switchedItems = currentItem != opts.food;
+-        const wantedHand = this.bot.util.inv.getHand(opts.offhand);
+-        // if not already holding item, equip item
+-        if (switchedItems) {
+-            const equipped = await this.bot.util.inv.customEquip(opts.food, wantedHand);
+-            // if fail to equip, throw error.
+-            if (!equipped)
+-                throw new Error(`Failed to equip: ${opts.food.name}!\nItem: ${opts.food}`);
++        catch (error) {
++            this._eating = false;
++            // the automatic mode tries again 2 s later, not on the next tick (a failing equip ~20 times a second)
++            if (sanitized)
++                this._retryAt = Date.now() + 2000;
++            throw error;
+         }
+-        // ! begin eating item
+-        // sanitize by deactivating beforehand
+-        this.bot.deactivateItem();
+-        // trigger use state based on hand
+-        this.bot.activateItem(opts.offhand);
+         this.emit('eatStart', opts);
+         // Wait for eating to finish, handle errors gracefully if there are, and perform cleanup.
+         try {
+             await this.buildEatingListener(opts.food, this.opts.eatingTimeout);
+         }
+         catch (error) {
+-            if (this.opts.strictErrors)
+-                throw error; // expose error to outer environment
+-            else
++            // bedboo patch, POLISH-LIB: 'eatFail' is emitted with strictErrors too (upstream threw before emitting it,
++            // so with the default options no failure event was ever emitted), then the error is thrown as before
++            if (!this.opts.strictErrors)
+                 console.error(error);
+             this.emit('eatFail', error);
++            if (this.opts.strictErrors)
++                throw error; // expose error to outer environment
+         }
+         finally {
+             if (opts.equipOldItem && switchedItems && currentItem)
+@@ -186,6 +231,8 @@ export class EatUtil extends EventEmitter {
+         }
+     }
+     statusCheck = async () => {
++        if (this._retryAt > Date.now())
++            return; // bedboo patch, POLISH-LIB: see eat()
+         if ((this.bot.food < this.opts.minHunger || this.bot.health < this.opts.minHealth) &&
+             !this._eating) {
+             try {
