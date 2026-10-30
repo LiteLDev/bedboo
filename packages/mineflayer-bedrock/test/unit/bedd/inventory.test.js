@@ -8,6 +8,7 @@ const assert = require('assert')
 const { createFakeBot, replayJoin } = require('../helpers/fake')
 const { serveInventory, inventoryContent, tick } = require('../helpers/inventory_server')
 const inventory = require('../../../lib/bedd/inventory')
+const { createRouteRegistry, ensureDispatch, markDispatch } = require('../../../lib/bedd/routes')
 
 let deserializer
 function decode (buf) {
@@ -242,7 +243,7 @@ describe('bedd inventory: item_stack_request through BeDD\'s stack op (BEDD-7)',
     assert.deepStrictEqual(outcomes, ['timeout', 'late-ok'])
   })
 
-  it('route registry: created idempotently, an existing route is wrapped, an existing registry is reused', async () => {
+  it('route registry: the shared registry (lib/bedd/routes.js); an existing route is wrapped, a dispatching one kept', async () => {
     const seen = []
     const { client, fake } = await beddBot({ route: (name, params) => seen.push(name) })
     assert.ok(client.bedd.routes.has('item_stack_request'))
@@ -250,14 +251,15 @@ describe('bedd inventory: item_stack_request through BeDD\'s stack op (BEDD-7)',
     client.bedd.route('mob_equipment', {})
     assert.deepStrictEqual(seen, ['mob_equipment'], 'other names still reach the previous route')
     const route = client.bedd.route
-    inventory.ensureRoutes(client.bedd)
+    ensureDispatch(client.bedd)
     assert.strictEqual(client.bedd.route, route)
     // a router (BEDD-2) owning the registry and its route: only registers
-    const routes = { map: new Map(), register (n, f) { this.map.set(n, f) } }
-    const own = () => {}
+    const routes = createRouteRegistry()
+    const own = markDispatch(() => {})
     const bedd = { routes, route: own }
-    assert.strictEqual(inventory.ensureRoutes(bedd), routes)
+    assert.strictEqual(ensureDispatch(bedd), routes)
     assert.strictEqual(bedd.route, own)
+    assert.throws(() => ensureDispatch({ routes: { map: new Map() } }), TypeError, 'a foreign registry shape is refused')
     assert.strictEqual(stackCalls(fake).length, 0)
   })
 

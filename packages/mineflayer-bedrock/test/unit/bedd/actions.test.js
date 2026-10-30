@@ -8,11 +8,20 @@ const { Vec3 } = require('vec3')
 const { createFakeBot, replayJoin } = require('../helpers/fake')
 const { inventoryContent } = require('../helpers/inventory_server')
 const routerActions = require('../../../lib/bedd/router_actions')
+const { createRouteRegistry, markDispatch } = require('../../../lib/bedd/routes')
 const { toBedrockYaw, toBedrockPitch } = require('../../../lib/bedrock/conversions')
 
 const G = -60 // flat world ground (feet) level
 const UP = new Vec3(0, 1, 0)
 const settle = () => new Promise(resolve => setImmediate(resolve))
+/** poll `fn` until it is truthy (real time: bedd-mode lookAt waits up to 1 s for an echo, lib/plugins/physics.js) */
+async function waitFor (fn, ms = 3000) {
+  const end = Date.now() + ms
+  while (!fn()) {
+    if (Date.now() > end) throw new Error(`timed out waiting for ${fn}`)
+    await new Promise(resolve => setTimeout(resolve, 10))
+  }
+}
 
 /** a client.bedd stub: the rpc records every call and answers ok */
 function beddStub (caps = { look: 'present', button: 'present' }) {
@@ -77,37 +86,35 @@ const near = (a, b, eps = 1e-6) => Math.abs((((a - b) % 360) + 540) % 360 - 180)
 describe('bedd action translation (BEDD-3): lib/bedd/router_actions.js', function () {
   this.timeout(30000)
 
-  it('registry: created idempotently, installs a dispatching route, chains an earlier handler of the same name', async () => {
-    const client = { bedd: { rpc: { call: async () => ({}) }, caps: {} } }
-    const bot = { _bedrock: { mode: 'bedd' }, entities: {} }
-    const seen = []
-    const routes = routerActions.createRegistry()
-    routes.register('player_auth_input', (params, name) => seen.push([name, params.tick]))
-    client.bedd.routes = routes
-    routerActions.attach(bot, client)
-    assert.strictEqual(client.bedd.routes, routes, 'kept the existing registry')
-    assert.strictEqual(typeof client.bedd.route, 'function')
-    client.bedd.route('player_auth_input', { tick: 7n, block_action: [] })
-    assert.deepStrictEqual(seen, [['player_auth_input', 7n]], 'the movement handler still gets the packet')
-    assert.doesNotThrow(() => client.bedd.route('no_such_packet', {}), 'unknown names are dropped')
-
-    // a handler registered after attach() (the router attached later) is chained on the next turn
+  it('registry: registers block_action and inventory_transaction in the shared registry (lib/bedd/routes.js), once', async () => {
     const calls = []
-    client.bedd.rpc.call = async (op, args) => calls.push([op, args])
-    client.bedd.caps = { button: 'present' }
-    routes.register('player_auth_input', (params) => seen.push(['late', params.tick]))
+    const client = { bedd: { rpc: { call: async (op, args) => { calls.push([op, args]); return { ok: true } } }, caps: { button: 'present' } } }
+    const bot = { _bedrock: { mode: 'bedd' }, entities: {} }
+    const routes = createRouteRegistry()
+    const seen = []
+    routes.register('player_auth_input', (params, ctx) => seen.push([ctx.name, params.tick]))
+    client.bedd.routes = routes
+    const actions = routerActions.attach(bot, client)
+    assert.strictEqual(routerActions.attach(bot, client), actions, 'idempotent')
     await settle()
+    assert.strictEqual(client.bedd.routes, routes, 'kept the existing registry')
+    assert.strictEqual(routes.get('block_action').length, 1)
+    assert.strictEqual(routes.get('inventory_transaction').length, 1)
+    // without the router, ensureDispatch() installed a route that dispatches through the registry
     client.bedd.route('player_auth_input', { tick: 8n, block_action: [{ action: 'abort_break', position: { x: 0, y: 0, z: 0 }, face: 1 }] })
-    await settle()
-    assert.deepStrictEqual(seen.at(-1), ['late', 8n])
+    await actions.idle()
+    assert.deepStrictEqual(seen, [['player_auth_input', 8n]], 'the other player_auth_input handlers still get the packet')
     assert.deepStrictEqual(calls, [['button', { button: 'attack', action: 'up' }]])
+    assert.doesNotThrow(() => client.bedd.route('no_such_packet', {}), 'unknown names are dropped')
+    // a transaction type this module does not translate is declined (the router reports it unsupported)
+    assert.strictEqual(routes.get('inventory_transaction')[0]({ transaction: { transaction_type: 'normal', transaction_data: {} } }, { name: 'inventory_transaction' }), false)
 
-    // an existing route is left alone (the router dispatches through the registry itself)
-    const own = () => 'router'
+    // a route that dispatches already (the router's) is left alone
+    const own = markDispatch(() => 'router')
     const other = { bedd: { rpc: { call: async () => ({}) }, caps: {}, route: own } }
     routerActions.attach(bot, other)
     assert.strictEqual(other.bedd.route, own)
-    assert.ok(other.bedd.routes.map.has('inventory_transaction'))
+    assert.ok(other.bedd.routes.has('inventory_transaction'))
     assert.strictEqual(routerActions.attach(bot, {}), null, 'no client.bedd: nothing to do')
   })
 
@@ -170,6 +177,8 @@ describe('bedd action translation (BEDD-3): lib/bedd/router_actions.js', functio
     const placed = bot.placeBlock(bot.blockAt(ref), UP).then(() => { settled = true })
     await settle()
     tick(1)
+    // no echo converges in this test (no follower): the look gives up after 1 s, then the click is sent
+    await waitFor(() => routed.includes('inventory_transaction'))
     await idle()
     assert.deepStrictEqual(bedd.calls.map(([op]) => op), ['look', 'button'])
     const want = anglesTo(bot, new Vec3(-0.5, G - 0.02, 0.5)) // the clicked point, just inside the face

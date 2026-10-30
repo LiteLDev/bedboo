@@ -4,6 +4,7 @@ const { Vec3 } = require('vec3')
 const { toBedrockYaw, toBedrockPitch, FACE_VECTORS } = require('../bedrock/conversions')
 const { EYE_HEIGHT } = require('../bedrock/constants')
 const { isBedd } = require('../bedrock/transactions')
+const { ensureDispatch } = require('./routes')
 
 /**
  * Turns the action packets bedboo would have sent into intents for the real client (transport 'bedd'): the client
@@ -26,12 +27,12 @@ const { isBedd } = require('../bedrock/transactions')
  * pick = middle). Without `look` the click goes where the client already looks (bot.lookAt came first). The
  * transaction's hand is not translated: the client uses its main hand (it has no off-hand use button).
  *
- * Composition with the core router (BEDD-2): handlers live in `client.bedd.routes` (a Map plus register(name, fn)),
- * created here when missing; a handler is called `fn(params, name)`. When no `client.bedd.route` exists, one is
- * installed that dispatches through the registry and drops unknown names. A handler registered under the same name
- * (the router's player_auth_input movement handler) is chained, before or after attach(): this module takes the action
- * part and passes the whole packet on. Ops of this module run one after another in the order the packets were routed
- * (a look always precedes its click); the router's own look for the same input carries (nearly) the same rotation,
+ * Composition with the core router (BEDD-2): two handlers in the shared route registry (./routes.js) —
+ * 'block_action' (the router dispatches the block_action part of every player_auth_input under that name, after its
+ * own movement/look translation) and 'inventory_transaction' (declines, returning false, the transaction types it does
+ * not translate, so the router reports them unsupported). Without the router, ensureDispatch() makes `bedd.route`
+ * dispatch through the registry. Ops of this module run one after another in the order the packets were routed (a
+ * look always precedes its click); the router's own look for the same input carries (nearly) the same rotation,
  * since bedboo looked at the target before it acted.
  */
 
@@ -44,24 +45,6 @@ const HOLD_ITEMS = new Set(['bow', 'crossbow', 'trident', 'shield', 'spyglass', 
 const FULL_CUBE = [[0, 0, 0, 1, 1, 1]]
 /** how far inside the clicked face a click aims (the face plane itself may graze an edge) */
 const FACE_INSET = 0.02
-
-/** `{ map, register(name, fn), get(name) }` — the shared route registry shape */
-function createRegistry () {
-  const map = new Map()
-  return {
-    map,
-    register (name, fn) {
-      map.set(name, fn)
-      return fn
-    },
-    get: (name) => map.get(name)
-  }
-}
-
-function lookupRoute (routes, name) {
-  if (typeof routes.get === 'function') return routes.get(name)
-  return routes.map?.get?.(name)
-}
 
 function num (v) {
   return Number(v ?? 0)
@@ -109,14 +92,7 @@ function faceAimPoint (position, face, shapes) {
 function attach (bot, client) {
   const bedd = client?.bedd
   if (!bedd) return null
-  const routes = (bedd.routes ??= createRegistry())
-  if (typeof bedd.route !== 'function') {
-    bedd.route = function route (name, params) {
-      const fn = lookupRoute(routes, name)
-      if (typeof fn === 'function') return fn(params, name)
-      // unknown names are dropped
-    }
-  }
+  if (bedd.routerActions) return bedd.routerActions
 
   const present = (op) => (bedd.caps ?? {})[op] === 'present'
   const call = (op, args) => bedd.rpc.call(op, args)
@@ -262,39 +238,18 @@ function attach (bot, client) {
     return false
   }
 
-  const handlers = {
-    // the action part is ours, the movement / look part goes on to the router
-    player_auth_input: (params) => {
-      if (params?.block_action?.length) onBlockActions(params.block_action)
-      return false
-    },
-    inventory_transaction: (params) => onTransaction(params)
-  }
-  const ours = new Set()
-
-  /** register where the registry does not hold our handler (yet, or any more): the handler found there is chained */
-  function install () {
-    for (const [name, handler] of Object.entries(handlers)) {
-      const previous = lookupRoute(routes, name)
-      if (ours.has(previous)) continue
-      const fn = function routeAction (params, routedName = name) {
-        const handled = isBedd(bot) ? handler(params) : false
-        if (typeof previous === 'function' && handled !== true) return previous(params, routedName)
-      }
-      ours.add(fn)
-      routes.register(name, fn)
-    }
-  }
-  install()
-  // the core router may register its handlers after this module (attach order): chain onto them as well
-  setImmediate(install)
-  bot.once?.('login', install)
+  const routes = ensureDispatch(bedd, { warn })
+  routes.register('block_action', (actions) => {
+    if (isBedd(bot)) onBlockActions(actions)
+  })
+  // true: translated; false: declined (not ours), the router takes the unsupported path
+  routes.register('inventory_transaction', (params) => isBedd(bot) && onTransaction(params))
   // the client finished a use itself (eaten, drunk): its button is up again
   client.on?.('completed_using_item', () => {
     if (useHeld && isBedd(bot)) releaseUse()
   })
 
-  return {
+  bedd.routerActions = {
     /** translate one packet directly (tests / other routers); true when it became intents */
     translate (name, params) {
       if (name === 'player_auth_input') {
@@ -307,6 +262,7 @@ function attach (bot, client) {
     /** settles once every op queued so far was answered */
     idle: () => chain
   }
+  return bedd.routerActions
 }
 
-module.exports = { attach, createRegistry, lookAngles, faceAimPoint }
+module.exports = { attach, lookAngles, faceAimPoint }

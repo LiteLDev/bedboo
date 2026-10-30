@@ -19,19 +19,18 @@
  * Input ops (input, look, slot, open_inventory and the key fallbacks) only go out while the client's mouse is grabbed and
  * no screen is showing, when the `world` op is present (polled every 250 ms). ESC and chat are never gated.
  *
- * Other bedd modules plug in without editing this file through the route registry (created by whoever attaches
- * first): `client.bedd.routes.register(name, handler)` → unregister function. A registered handler is called as
- * `handler(params, ctx)` and wins over the built-in translation of that name, except for player_auth_input, whose
- * handlers run after the built-in movement/look translation. Pseudo-names for parts of player_auth_input:
- * 'block_action' (params = the block_action array) and 'item_stack_request' (params = { requests: [request] },
- * ctx.embedded = true). The registry has no other dependency, so BB3 (router_actions.js) and BB7 (inventory.js) can
- * create it before the router exists.
+ * Other bedd modules plug in without editing this file through the route registry of ./routes.js (created by
+ * whoever attaches first): `client.bedd.routes.register(name, handler)` → unregister function. A registered handler
+ * is called as `handler(params, ctx)` and wins over the built-in translation of that name unless every handler
+ * returns `false`; player_auth_input handlers run after the built-in movement/look translation. Pseudo-names for
+ * parts of player_auth_input: 'block_action' (params = the block_action array, BEDD-3) and 'item_stack_request'
+ * (params = { requests: [request] }, ctx.embedded = true, BEDD-7).
  */
 const authority = require('./authority')
+const { createRouteRegistry, ensureRoutes, handlersFor, runHandlers: dispatchHandlers, inputParts, markDispatch } = require('./routes')
 const { VERSION } = require('../bedrock/constants')
 
 const MARK = Symbol.for('bedboo.bedd.router')
-const REGISTRY_MARK = Symbol.for('bedboo.bedd.routes')
 
 const INPUT_TTL_MS = 300
 const INPUT_RESEND_MS = 100
@@ -54,48 +53,6 @@ const MOVE_KEYS = [
   ['LSHIFT', (s) => s.sneak],
   ['LCTRL', (s) => s.sprint]
 ]
-
-/** The handler registry shared by every bedd module (see the header). */
-function createRouteRegistry () {
-  const handlers = new Map()
-  return {
-    [REGISTRY_MARK]: true,
-    handlers,
-    register (name, handler) {
-      if (typeof name !== 'string' || typeof handler !== 'function') throw new TypeError('routes.register(name, handler)')
-      let list = handlers.get(name)
-      if (!list) handlers.set(name, (list = []))
-      if (!list.includes(handler)) list.push(handler)
-      return () => {
-        const i = list.indexOf(handler)
-        if (i >= 0) list.splice(i, 1)
-      }
-    },
-    get (name) {
-      return [...(handlers.get(name) ?? [])] // a copy: a handler may unregister during dispatch
-    },
-    has (name) {
-      return (handlers.get(name)?.length ?? 0) > 0
-    }
-  }
-}
-
-/** `bedd.routes`, created if missing (idempotent). */
-function ensureRoutes (bedd) {
-  if (!bedd.routes) bedd.routes = createRouteRegistry()
-  return bedd.routes
-}
-
-/** Handlers registered for `name`, whatever registry shape another module created. */
-function handlersFor (routes, name) {
-  if (!routes) return []
-  let found
-  if (typeof routes.get === 'function') found = routes.get(name)
-  else if (routes.handlers instanceof Map) found = routes.handlers.get(name)
-  else found = routes[name]
-  if (typeof found === 'function') return [found]
-  return Array.isArray(found) ? found.filter(fn => typeof fn === 'function') : []
-}
 
 /** Signed difference a − b in degrees, in [-180, 180). */
 function angleDiff (a, b) {
@@ -499,12 +456,7 @@ function createRouter (opts = {}) {
   }
 
   function runHandlers (list, name, params, extra) {
-    let result
-    for (const handler of list) {
-      result = handler(params, ctxFor(name, extra))
-      if (result && typeof result.then === 'function') track(result)
-    }
-    return result
+    return dispatchHandlers(list, params, ctxFor(name, extra), track)
   }
 
   /** inside the player_auth_input tick nothing may throw: a failing handler only warns */
@@ -538,16 +490,10 @@ function createRouter (opts = {}) {
       sendSlot(slot)
     }
     // parts other modules translate; inside the tick nothing may throw, so a missing handler only reports
-    const blockActions = Array.isArray(params.block_action) ? params.block_action : []
-    if (blockActions.length) {
-      const list = handlersFor(routes, 'block_action')
-      if (list.length) runTickHandlers(list, 'block_action', blockActions, { packet: params, embedded: true })
-      else if (!handlersFor(routes, 'player_auth_input').length) noteUnsupported('block_action', 'player_auth_input block_action')
-    }
-    if (params.item_stack_request) {
-      const list = handlersFor(routes, 'item_stack_request')
-      if (list.length) runTickHandlers(list, 'item_stack_request', { requests: [params.item_stack_request] }, { packet: params, embedded: true })
-      else if (!handlersFor(routes, 'player_auth_input').length) noteUnsupported('item_stack_request', 'item_stack_request')
+    for (const [part, partParams] of inputParts(params)) {
+      const list = handlersFor(routes, part)
+      if (list.length) runTickHandlers(list, part, partParams, { packet: params, embedded: true })
+      else if (!handlersFor(routes, 'player_auth_input').length) noteUnsupported(part, part === 'block_action' ? 'player_auth_input block_action' : part)
     }
     const extra = handlersFor(routes, 'player_auth_input')
     if (extra.length) runTickHandlers(extra, 'player_auth_input', params)
@@ -569,8 +515,11 @@ function createRouter (opts = {}) {
     if (cls === authority.CLIENT_OWNED) return count(counters.dropped, name)
     const registered = handlersFor(routes, name)
     if (registered.length) {
-      count(counters.translated, name)
-      return runHandlers(registered, name, params)
+      const { handled, result } = runHandlers(registered, name, params)
+      if (handled) {
+        count(counters.translated, name)
+        return result
+      }
     }
     if (cls === authority.SHARED) {
       count(counters.shared, name)
@@ -655,7 +604,7 @@ function attach (bot, client = bot?._client) {
     version: client.options?.version ?? client.version ?? VERSION
   })
   bedd.router = router
-  bedd.route = router.route
+  bedd.route = markDispatch(router.route)
   router.start()
   if (bot && typeof bot.once === 'function') bot.once('end', router.stop)
   if (typeof client.once === 'function') client.once('close', router.stop)

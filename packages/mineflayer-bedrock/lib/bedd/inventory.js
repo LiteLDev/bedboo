@@ -21,20 +21,23 @@
  * - Map entries are cleared when the response arrives, or moved to a short late list on timeout (so a late answer
  *   is still reported as 'late-ok' / 'late-error').
  *
- * Registered as the `item_stack_request` route: `client.bedd.routes.register(name, handler)`, the registry created
- * here with lib/bedd/router.js's shape when the router has not; handlers are called as `handler(params, ctx)`.
+ * Registered as the `item_stack_request` route in the shared registry (./routes.js): the router dispatches a
+ * standalone item_stack_request and the one embedded in player_auth_input under that name; handlers are called as
+ * `handler(params, ctx)` with params = `{ requests }`.
  * All `stack` calls run one after another (the control pipe answers one request at a time, and a later request's
  * stack ids can name an earlier one, whose client id must be known first).
  */
 
 const { VERSION } = require('../bedrock/constants')
 const { StackRequestError } = require('../bedrock/stack_request')
+const { ensureDispatch, handlersFor } = require('./routes')
 
 const MAX_LATE = 64
+/** a held response (tapped before the `stack` reply named its client id) is dropped after this long, or past MAX_HELD */
+const HELD_MS = 10000
+const MAX_HELD = 256
 const MAX_HISTORY = 128
 const ATTACHED = Symbol.for('bedboo.bedd.inventory')
-const DISPATCH = Symbol.for('bedboo.bedd.routes.dispatch')
-const REGISTRY_MARK = Symbol.for('bedboo.bedd.routes') // same registry shape as lib/bedd/router.js (BEDD-2)
 
 let BeddUnsupportedError
 try {
@@ -81,63 +84,6 @@ function serialize (version, request) {
   return serializer.createPacketBuffer({ name: 'item_stack_request', params: { requests: [request] } })
 }
 
-/** a registry with the shape lib/bedd/router.js creates: `handlers` Map name → [fn], register / get / has */
-function createRouteRegistry () {
-  const handlers = new Map()
-  return {
-    [REGISTRY_MARK]: true,
-    handlers,
-    register (name, handler) {
-      if (typeof name !== 'string' || typeof handler !== 'function') throw new TypeError('routes.register(name, handler)')
-      let list = handlers.get(name)
-      if (!list) handlers.set(name, (list = []))
-      if (!list.includes(handler)) list.push(handler)
-      return () => {
-        const i = list.indexOf(handler)
-        if (i >= 0) list.splice(i, 1)
-      }
-    },
-    get (name) { return handlers.get(name) ?? [] },
-    has (name) { return (handlers.get(name)?.length ?? 0) > 0 }
-  }
-}
-
-/** handlers for `name` in whatever registry shape another module created */
-function handlersFor (routes, name) {
-  const found = typeof routes.get === 'function'
-    ? routes.get(name)
-    : (routes.handlers instanceof Map ? routes.handlers : routes.map)?.get?.(name)
-  if (typeof found === 'function') return [found]
-  return Array.isArray(found) ? found.filter(fn => typeof fn === 'function') : []
-}
-
-/**
- * The route registry shared with the router (BEDD-2): created when missing. When this module created it, any
- * `bedd.route` already there (the transport's default) is wrapped so registered names are dispatched first; a router
- * that attaches later replaces `bedd.route` with its own, which dispatches through the same registry.
- */
-function ensureRoutes (bedd) {
-  const created = !bedd.routes
-  if (created) bedd.routes = createRouteRegistry()
-  const routes = bedd.routes
-  if (bedd.route?.[DISPATCH]) return routes
-  const previous = typeof bedd.route === 'function' ? bedd.route : null
-  // a router that created the registry dispatches through it already
-  if (previous && !created) return routes
-  const route = function (name, params) {
-    const list = handlersFor(routes, name)
-    if (list.length) {
-      let result
-      for (const handler of list) result = handler(params, { name })
-      return result
-    }
-    return previous ? previous.call(this, name, params) : undefined
-  }
-  route[DISPATCH] = true
-  bedd.route = route
-  return routes
-}
-
 /** rejection reply of the rpc (resolved `{ ok:false }` or thrown) → whether it means "no stack op" */
 function isUnsupportedReply (reply) {
   if (!reply) return false
@@ -160,7 +106,7 @@ function attach (bot, client = bot._client) {
   const toBedboo = new Map() // client id → bedboo id, until the response
   const late = new Map() // client id → bedboo id of a request that timed out
   const history = new Map() // bedboo id → client id, recent (stack id references in later requests)
-  let held = [] // responses that arrived while a `stack` call was in flight, not matched yet
+  let held = [] // { response, at }: responses that arrived while a `stack` call was in flight, not matched yet
   let inflight = 0
   let chain = Promise.resolve()
   const stats = { sent: 0, ok: 0, unsupported: 0, failed: 0, held: 0, foreign: 0 }
@@ -189,7 +135,8 @@ function attach (bot, client = bot._client) {
       return bedbooId
     }
     if (inflight > 0) {
-      held.push(response)
+      held.push({ response, at: Date.now() })
+      if (held.length > MAX_HELD) held.shift()
       stats.held++
     } else {
       stats.foreign++
@@ -199,9 +146,12 @@ function attach (bot, client = bot._client) {
 
   function releaseHeld () {
     if (held.length === 0) return
-    const matched = held.filter(r => toBedboo.has(r.request_id) || late.has(r.request_id))
-    held = inflight > 0 ? held.filter(r => !matched.includes(r)) : []
-    for (const response of matched) mgr.receive({ responses: [response] })
+    const known = (h) => toBedboo.has(h.response.request_id) || late.has(h.response.request_id)
+    const matched = held.filter(known)
+    // still waiting for a reply: keep the unmatched ones (up to HELD_MS); otherwise they were someone else's
+    const oldest = Date.now() - HELD_MS
+    held = inflight > 0 ? held.filter(h => !known(h) && h.at >= oldest) : []
+    for (const { response } of matched) mgr.receive({ responses: [response] })
   }
 
   /** the request as the client must see it: references to earlier bedboo requests → their client ids */
@@ -273,8 +223,7 @@ function attach (bot, client = bot._client) {
     }
   }
 
-  function onRoute (a, b) {
-    const params = typeof a === 'string' ? b : a // (params, name) or (name, params)
+  function onRoute (params) {
     for (const request of params?.requests ?? []) {
       chain = chain.then(() => submit(request)).catch((err) => bot.emit('error', err))
     }
@@ -296,7 +245,7 @@ function attach (bot, client = bot._client) {
   client.on('end', reset)
 
   mgr.bedd = { responseId }
-  const routes = ensureRoutes(bedd)
+  const routes = ensureDispatch(bedd, { warn: (err) => client.emit('warning', err) })
   routes.register('item_stack_request', onRoute)
 
   const state = {
@@ -311,4 +260,4 @@ function attach (bot, client = bot._client) {
   return state
 }
 
-module.exports = { attach, ensureRoutes, createRouteRegistry, handlersFor }
+module.exports = { attach, handlersFor, HELD_MS }
