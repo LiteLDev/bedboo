@@ -137,6 +137,7 @@ Bedrock-only additions live under `bot.bedrock` — never as new top-level `bot`
 | `bot.bedrock.gameRules` | `{ [name: string]: boolean \| number }` | the server's game rules by Bedrock name (`doDayLightCycle`, `keepInventory`, `randomTickSpeed`, …), from `start_game` and `game_rules_changed` ([U9](differences/U9.md#game-rules)) |
 | `bot.bedrock.blockVariants(block)` | `(block: string \| number) => number[]` | the ids of the Bedrock blocks Java models as one block with a state — a burning furnace is `lit_furnace`: `bot.findBlock({ matching: bot.bedrock.blockVariants('furnace') })` also finds it ([U16a](differences/U16a.md#block-variants)) |
 | `bot.bedrock.resyncInventory()` | `() => Promise<boolean>` | asks the server for its copy of the player's inventory (inventory, armor, cursor, off-hand); resolves `true` once it was applied. The bot does this by itself when it finds a slot out of date ([U8](differences/U8.md#inventory-resync)) |
+| `bot.bedrock.bedd.observed` | `{ yaw: number, pitch: number, tick: number \| null } \| null` | transport `'bedd'` only (`bot.bedrock.bedd` is undefined otherwise): the rotation (Bedrock degrees) and tick of the last `player_auth_input` the real Minecraft client sent; `null` until the first one. `bot.entity` follows the same echo (BEDD-4) |
 
 ## Internals
 

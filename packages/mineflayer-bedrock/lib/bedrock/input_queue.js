@@ -1,4 +1,4 @@
-// owner: U4 (wave 2: clock + stationary sender) → U5 (wave 3: drain/tick, physics integration)
+// owner: U4 (wave 2: clock + stationary sender) → U5 (wave 3: drain/tick, physics integration); BEDD-4 (external tick clock)
 'use strict'
 const { TICK_MS } = require('./constants')
 
@@ -28,6 +28,12 @@ const { TICK_MS } = require('./constants')
  *   sending resumes only when every reason has been resumed. While suspended nothing is sent and the clock
  *   keeps running (no catch-up burst on resume).
  * - `markTeleportHandled()`      adds `handled_teleport` to the next packet (after a move_player teleport)
+ *
+ * External clock (BEDD-4, transport 'bedd' only): the real Minecraft client owns the server's tick, so
+ * `setExternalClock(true)` stops the 50 ms timer (start() then only marks the queue running) and the physics follower
+ * calls `pumpTo(tick)` once per echoed client tick: exactly one packet for that tick (never older than the last one
+ * sent), the clock re-anchored on it. The packet still goes through `_client.queue('player_auth_input')`, where the
+ * bedd router turns it into intents. Without setExternalClock nothing changes.
  *
  * Packet shape (bedrock-protocol 1.26.51, protocol 2193): `input_data` is an array of flag names; `delta`
  * is the velocity; `camera_orientation` the view direction; `interact_rotation` {x: pitch, z: yaw};
@@ -60,10 +66,15 @@ const { TICK_MS } = require('./constants')
  * @property {() => void} markTeleportHandled
  * @property {(fn: (tick: bigint) => MovementFields|null) => void} setProvider one call per sent tick, before the packet is built
  * @property {(fn: (packet: object, tick: bigint) => void) => () => void} onSent called after each packet was queued; returns an unsubscribe
- * @property {() => void} start start the 50 ms timer (idempotent)
+ * @property {() => void} start start the 50 ms timer (idempotent; with an external clock: only mark the queue running)
  * @property {() => void} stop
  * @property {() => boolean} isRunning
- * @property {(now?: number) => number} pump send the elapsed ticks now; returns the number of packets sent
+ * @property {(now?: number) => number} pump send the elapsed ticks now; returns the number of packets sent (none with an
+ *   external clock)
+ * @property {(on: boolean) => void} setExternalClock BEDD-4: true stops the 50 ms timer (pumpTo drives the queue)
+ * @property {() => boolean} isExternalClock
+ * @property {(tick: bigint|number, at?: number) => number} pumpTo BEDD-4: anchor on `tick` and send exactly one packet
+ *   for it (or for lastTick + 1 when `tick` is not newer); 0 while suspended or not running
  * @property {bigint|null} lastTick last tick sent (getter)
  */
 
@@ -104,6 +115,8 @@ function createInputQueue (bot, opts = {}) {
   let anchorTime = now()
   let lastTick = null
   let timer = null
+  let running = false // start() was called (and stop() was not): with an external clock, no timer exists
+  let externalClock = false
   let provider = null
   const sentListeners = new Set()
   const suspendReasons = new Set()
@@ -162,6 +175,7 @@ function createInputQueue (bot, opts = {}) {
   }
 
   function pump (at = now()) {
+    if (externalClock) return 0 // BEDD-4: only pumpTo sends
     const target = currentTick(at)
     if (suspendReasons.size > 0) {
       // keep the clock moving: no catch-up burst after resume
@@ -179,6 +193,39 @@ function createInputQueue (bot, opts = {}) {
       sent++
     }
     return sent
+  }
+
+  function startTimer () {
+    if (timer || externalClock) return
+    timer = timers.setInterval(() => {
+      try {
+        pump()
+      } catch (err) {
+        bot.emit('error', err)
+      }
+    }, TICK_MS)
+    timer?.unref?.()
+  }
+
+  function stopTimer () {
+    if (timer) timers.clearInterval(timer)
+    timer = null
+  }
+
+  /** external clock (BEDD-4): one packet for the client's `tick`, anchored on it */
+  function pumpTo (tick, at = now()) {
+    const clientTick = BigInt(tick)
+    anchorTick = clientTick
+    anchorTime = at
+    if (suspendReasons.size > 0) {
+      // keep the clock moving, like pump()
+      if (lastTick === null || clientTick > lastTick) lastTick = clientTick
+      return 0
+    }
+    if (!running || !bot._client) return 0
+    // tick numbers only grow (a client tick that is not newer goes out as the next one)
+    sendTick(lastTick !== null && clientTick <= lastTick ? lastTick + 1n : clientTick)
+    return 1
   }
 
   return {
@@ -222,22 +269,22 @@ function createInputQueue (bot, opts = {}) {
       return () => sentListeners.delete(fn)
     },
     pump,
+    pumpTo,
     start () {
-      if (timer) return
-      timer = timers.setInterval(() => {
-        try {
-          pump()
-        } catch (err) {
-          bot.emit('error', err)
-        }
-      }, TICK_MS)
-      timer?.unref?.()
+      running = true
+      startTimer()
     },
     stop () {
-      if (timer) timers.clearInterval(timer)
-      timer = null
+      running = false
+      stopTimer()
     },
-    isRunning () { return timer !== null },
+    isRunning () { return timer !== null || (externalClock && running) },
+    setExternalClock (on) {
+      externalClock = !!on
+      if (externalClock) stopTimer()
+      else if (running) startTimer()
+    },
+    isExternalClock () { return externalClock },
     /** pending one-shot flags / held flags (tests, U5) */
     pendingFlags () { return [...oneShotFlags] },
     heldFlags () { return [...heldFlags] }

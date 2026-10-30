@@ -1,4 +1,4 @@
-// owner: U4 (wave 2, stationary stub with the full surface) → U5 (wave 3, Bedrock engine)
+// owner: U4 (wave 2, stationary stub with the full surface) → U5 (wave 3, Bedrock engine); BEDD-4 (bedd follower branch)
 // Upstream: mineflayer 4.39.0 lib/plugins/physics.js (MIT, Copyright (c) 2013 Andrew Kelley) — control states,
 //   look/lookAt (sensitivity rounding), waitForTicks, elytraFly checks and the physicTick deprecation warning are
 //   kept verbatim.
@@ -29,6 +29,13 @@
 //   onCorrection(fn) / stats() (server corrections, tests and diagnostics),
 //   controlsPending() / controlsSent() → Promise / afterControlsSent(fn) (W3-FIX-A: a sneak / sprint change reaches
 //   the server only with the next player_auth_input; clicks that depend on it wait for that packet).
+// Transport 'bedd' (BEDD-4, only while bot._bedrock.mode === 'bedd'): a real Minecraft client moves the player. The
+//   provider skips the engine step (it still builds the packet: the bedd router turns its controls and rotation into
+//   intents); followEcho(packet) (hook below, wired by lib/bedd/follower.js to the client's echoed player_auth_input)
+//   copies the echo into bot.entity (feet = eye − 1.62, velocity = delta, yaw/pitch, onGround = vertical_collision &&
+//   delta.y <= 0), emits 'move' / 'physicsTick' and pumps the next input tick (input.pumpTo). look/lookAt keep the
+//   desired rotation for the packet and resolve once an echo is within 0.5° of it (or after BEDD_LOOK_TIMEOUT_MS).
+//   Server corrections / knockback are not re-simulated (the client does it; the next echo carries the result).
 // Flight state: bot.abilities (abilities.js, the only parser of update_abilities) is the server's view; this plugin
 //   follows its 'abilities' event and reads flyingSpeed / mayFly from it.
 'use strict'
@@ -69,6 +76,10 @@ const GLIDE_START_FLAGS = ['jump_down', 'jumping', 'want_up', 'jump_current_raw'
 const GLIDE_CONFIRM_TICKS = 20
 /** a flight request the server has not answered (update_abilities) after this many ticks is dropped */
 const FLIGHT_CONFIRM_TICKS = 20
+/** bedd: an echoed rotation within this many degrees of the desired one resolves look/lookAt (BeDD `look` op) */
+const BEDD_LOOK_TOLERANCE = 0.5
+/** bedd: look/lookAt resolve after this long without a converging echo (the client may be paused or in a menu) */
+const BEDD_LOOK_TIMEOUT_MS = 1000
 
 module.exports = inject
 
@@ -124,6 +135,11 @@ function inject (bot, { physicsEnabled }) {
   let rocketStarted = false // 'usedFirework' since the last tick (a rocket may set the very value the countdown had)
   let clickAirUse = false // a click_air was queued since the bot last stopped using an item (server item use)
   const listenerErrors = [] // errors thrown by physicsTick listeners, reported once the input is sent
+  // transport 'bedd' (BEDD-4): the real client moves the player, bot.entity follows its echoed inputs
+  const beddMode = () => bot._bedrock?.mode === 'bedd'
+  let desiredLook = null // bedd: { yaw, pitch } (radians) sent in the packets until an echo converges on it
+  let beddLookTimer = null
+  let lastEcho = null // bedd: { yaw, pitch } (Bedrock degrees) and delta.y of the last echoed input
 
   /** the sneak the server gets: the control, or a raised shield (holdSneak) */
   const sneakOn = () => controlState.sneak || heldSneak
@@ -456,7 +472,10 @@ function inject (bot, { physicsEnabled }) {
     // state): neither do we (see move_player below)
     input.skip = skipNext
     skipNext = false
-    const active = bot.physicsEnabled && columnLoaded(entity.position) && !isDead() && !riding()
+    // bedd: no engine step and no physicsTick here (followEcho does both from the client's own tick)
+    const bedd = beddMode()
+    if (bedd) bot.jumpQueued = false // the jump goes out in this packet's controls
+    const active = !bedd && bot.physicsEnabled && columnLoaded(entity.position) && !isDead() && !riding()
     const state = stateFromBot(input)
     let simulated = false
     if (active && !input.skip) {
@@ -467,7 +486,7 @@ function inject (bot, { physicsEnabled }) {
       } catch (err) {
         bot.emit('error', err)
       }
-    } else if (input.knockback && !isDead() && !input.skip) {
+    } else if (input.knockback && !bedd && !isDead() && !input.skip) {
       entity.velocity = input.knockback.clone()
     }
     if (!simulated) restoreFromBot(state)
@@ -509,8 +528,10 @@ function inject (bot, { physicsEnabled }) {
   function movementFields (input, state, simulated) {
     const entity = bot.entity
     built = { position: entity.position.clone(), yaw: entity.yaw, pitch: entity.pitch }
-    const yaw = Math.fround(conv.toNotchianYaw(entity.yaw))
-    const pitch = Math.fround(conv.toNotchianPitch(entity.pitch))
+    // bedd: the rotation bot.look asked for (the router turns it into a `look` intent), not the echoed one
+    const look = desiredLook && beddMode() ? desiredLook : entity
+    const yaw = Math.fround(conv.toNotchianYaw(look.yaw))
+    const pitch = Math.fround(conv.toNotchianPitch(look.pitch))
     const vel = entity.velocity
     const rideInput = riding() ? { x: vehicleInput.left, z: vehicleInput.forward } : null
     const cur = {
@@ -533,7 +554,7 @@ function inject (bot, { physicsEnabled }) {
       pitch,
       head_yaw: yaw,
       interact_rotation: { x: pitch, z: yaw },
-      camera_orientation: conv.viewDirection(entity.yaw, entity.pitch),
+      camera_orientation: conv.viewDirection(look.yaw, look.pitch),
       delta: { x: vel.x, y: vel.y, z: vel.z },
       move_vector: { x: mv.x, z: mv.z },
       raw_move_vector: { x: raw.x, z: raw.z },
@@ -550,7 +571,7 @@ function inject (bot, { physicsEnabled }) {
       sentControlGen = builtControlGen
       sentControls = builtControls
     }
-    if (entity) {
+    if (entity && !beddMode()) { // bedd: followEcho emits 'move' and resolves look from the client's echo
       // what the packet carried (a physicsTick listener may have turned the bot after the fields were built: that
       // rotation goes out with the next input, and its look() resolves then — upstream resolves once the sent
       // rotation matches the entity's)
@@ -564,6 +585,10 @@ function inject (bot, { physicsEnabled }) {
       if (!lookingTask.done && yaw === entity.yaw && pitch === entity.pitch) lookingTask.finish()
     }
     runControlWaiters()
+    flushListenerErrors()
+  }
+
+  function flushListenerErrors () {
     for (const err of listenerErrors.splice(0)) {
       try {
         bot.emit('error', err)
@@ -628,6 +653,89 @@ function inject (bot, { physicsEnabled }) {
   if (bot._bedrock?.input) {
     bot._bedrock.input.setProvider(provider)
     bot._bedrock.input.onSent(onSent)
+  }
+
+  // ---- transport 'bedd': follow the real client (BEDD-4) ------------------------------------------------
+  /** input_data as a set of flag names (bedrock-protocol gives an array of names; tolerate a { name: bool } map) */
+  function flagSet (inputData) {
+    if (Array.isArray(inputData)) return new Set(inputData)
+    if (inputData && typeof inputData === 'object') return new Set(Object.keys(inputData).filter((k) => inputData[k]))
+    return new Set()
+  }
+
+  /** the echoed rotation (Bedrock degrees) is within BEDD_LOOK_TOLERANCE of the desired one */
+  function lookConverged (yawDeg, pitchDeg) {
+    if (!desiredLook || !Number.isFinite(yawDeg) || !Number.isFinite(pitchDeg)) return false
+    const dYaw = ((conv.toNotchianYaw(desiredLook.yaw) - yawDeg) % 360 + 540) % 360 - 180
+    // the client clamps its pitch to ±90°
+    const dPitch = Math.max(-90, Math.min(90, conv.toNotchianPitch(desiredLook.pitch))) - pitchDeg
+    return Math.abs(dYaw) < BEDD_LOOK_TOLERANCE && Math.abs(dPitch) < BEDD_LOOK_TOLERANCE
+  }
+
+  /** the bedd look is over (converged or timed out): later packets carry the echoed rotation again */
+  function finishBeddLook () {
+    if (beddLookTimer) clearTimeout(beddLookTimer)
+    beddLookTimer = null
+    desiredLook = null
+    if (!lookingTask.done) lookingTask.finish()
+  }
+
+  /**
+   * One echoed player_auth_input of the real client = one tick of the bot: bot.entity takes the client's state,
+   * 'move' (when it changed) and 'physicsTick' fire, and bedboo's input for the next tick is built and queued (the
+   * router diffs it into intents). Returns false outside bedd mode (no-op).
+   */
+  function followEcho (packet) {
+    if (!beddMode() || !packet) return false
+    const entity = bot.entity
+    if (!entity) return false
+    if (packet.position) entity.position.update(conv.feetFromWire(packet.position))
+    if (packet.delta) entity.velocity.set(packet.delta.x, packet.delta.y, packet.delta.z)
+    const yawDeg = Number(packet.yaw)
+    const pitchDeg = Number(packet.pitch)
+    if (Number.isFinite(yawDeg)) entity.yaw = conv.fromNotchianYaw(yawDeg)
+    if (Number.isFinite(pitchDeg)) entity.pitch = conv.fromNotchianPitch(pitchDeg)
+    const flags = flagSet(packet.input_data)
+    const vertical = flags.has('vertical_collision')
+    const deltaY = Number(packet.delta?.y ?? 0)
+    // a vertical collision while the previous echo still rose is the head hitting a ceiling, not a landing
+    entity.onGround = vertical && deltaY <= 0 && !(lastEcho?.deltaY > 0)
+    entity.isCollidedVertically = vertical
+    entity.isCollidedHorizontally = flags.has('horizontal_collision')
+    lastEcho = { yaw: yawDeg, pitch: pitchDeg, deltaY }
+
+    const position = entity.position.clone()
+    const changed = !lastSent || !lastSent.position.equals(position) || lastSent.yaw !== entity.yaw || lastSent.pitch !== entity.pitch
+    const oldPos = lastSent ? lastSent.position : position.clone()
+    lastSent = { position, yaw: entity.yaw, pitch: entity.pitch }
+    if (changed) bot.emit('move', oldPos)
+    if (desiredLook && lookConverged(yawDeg, pitchDeg)) finishBeddLook()
+
+    if (!isDead()) {
+      emitTickEvent('physicsTick')
+      emitTickEvent('physicTick') // Deprecated, only exists to support old plugins. May be removed in the future
+    }
+    const input = bot._bedrock.input
+    if (input?.pumpTo) {
+      const echoed = packet.tick !== undefined && packet.tick !== null ? BigInt(packet.tick) : (input.lastTick ?? input.currentTick())
+      input.pumpTo(echoed + 1n)
+    }
+    flushListenerErrors()
+    return true
+  }
+
+  /** bot.look in bedd mode: the desired rotation goes out with every input until an echo converges on it */
+  async function beddLook (yaw, pitch, force) {
+    if (beddLookTimer) clearTimeout(beddLookTimer)
+    beddLookTimer = null
+    desiredLook = { yaw, pitch }
+    bot.entity.yaw = yaw // like upstream, until the next echo
+    bot.entity.pitch = pitch
+    if (lastEcho && lookConverged(lastEcho.yaw, lastEcho.pitch)) return finishBeddLook()
+    if (force) lookingTask.finish() // desiredLook stays until an echo converges (or the timeout)
+    beddLookTimer = setTimeout(finishBeddLook, BEDD_LOOK_TIMEOUT_MS)
+    beddLookTimer.unref?.()
+    await lookingTask.promise
   }
 
   // ---- server-forced moves --------------------------------------------------------------------------
@@ -864,6 +972,7 @@ function inject (bot, { physicsEnabled }) {
     bot._bedrock.physics.controlsPending = controlsPending
     bot._bedrock.physics.controlsSent = controlsSent
     bot._bedrock.physics.afterControlsSent = afterControlsSent
+    bot._bedrock.physics.followEcho = followEcho // BEDD-4: lib/bedd/follower.js
   }
   if (!bot.moveVehicle || isStub(bot.moveVehicle)) bot.moveVehicle = moveVehicle
   bot.on('mount', updateVehicleInput)
@@ -996,7 +1105,7 @@ function inject (bot, { physicsEnabled }) {
     pendingKnockback = null
     const last = bot._bedrock?.input?.lastTick
     const at = serverTick === undefined || serverTick === null ? 0n : BigInt(serverTick)
-    const inFlight = at > 0n && last !== null && last !== undefined && last - at <= BigInt(rewindSize())
+    const inFlight = !beddMode() && at > 0n && last !== null && last !== undefined && last - at <= BigInt(rewindSize())
       ? history.filter((h) => h.tick > at)
       : []
     // the firework boost left at the server's tick (the in-flight inputs are replayed from there)
@@ -1048,7 +1157,7 @@ function inject (bot, { physicsEnabled }) {
     const tick = packet.tick === undefined ? null : BigInt(packet.tick)
     const index = tick === null ? -1 : history.findIndex((h) => h.tick === tick)
     const predicted = index >= 0 ? history[index].state.pos.clone() : null
-    if (index >= 0 && index < history.length - 1) {
+    if (index >= 0 && index < history.length - 1 && !beddMode()) { // bedd: the client replays, the echo follows
       replayFrom(index, corrected)
     } else {
       entity.position.update(corrected.pos)
@@ -1080,6 +1189,7 @@ function inject (bot, { physicsEnabled }) {
 
   /** re-simulate the recorded inputs of history[from..] from the state after history[from − 1], then apply it */
   function resimulate (from) {
+    if (beddMode()) return // the real client simulates; its next echo carries the result
     const base = history[from - 1]
     const state = stateFromBot(base.input)
     restore(state, base.state)
@@ -1111,6 +1221,7 @@ function inject (bot, { physicsEnabled }) {
     if (!isSelf(packet.runtime_entity_id)) return
     const v = packet.velocity
     if (!v) return
+    if (beddMode()) return // the real client applies it; the echoed delta carries it
     const motion = new Vec3(v.x, v.y, v.z)
     const target = packet.tick !== undefined && packet.tick !== null && BigInt(packet.tick) > 0n ? BigInt(packet.tick) + 1n : null
     const index = target === null ? -1 : history.findIndex((h) => h.tick === target)
@@ -1173,6 +1284,7 @@ function inject (bot, { physicsEnabled }) {
       lookingTask.finish() // finish the previous one
     }
     lookingTask = createTask()
+    if (beddMode()) return beddLook(yaw, pitch, force)
 
     // this is done to bypass certain anticheat checks that detect the player's sensitivity
     // by calculating the gcd of how much they move the mouse each tick
@@ -1264,6 +1376,7 @@ function inject (bot, { physicsEnabled }) {
 
   bot.on('end', () => {
     if (flyTarget) cancelFlyTo(new Error('bot ended'))
+    if (desiredLook || beddLookTimer) finishBeddLook()
     // nothing will be sent any more: waiting clicks are dropped (controlsSent() rejects)
     const waiters = controlWaiters
     controlWaiters = []
