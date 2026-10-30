@@ -15,3 +15,77 @@ export interface BedrockExtras {
   // (docs/differences/U8.md#inventory-resync)
   resyncInventory: () => Promise<boolean>
 }
+
+// BEDD-1 (transport 'bedd'): `createBot({ transport: 'bedd', bedd })` and the bot's `_client.bedd`
+// (lib/bedd/index.js). Other bedd units add their members in their own declarations.
+export interface BeddOptions {
+  /** control pipe path (default `\\.\pipe\BeDD`, or $BEDBOO_BEDD_PIPE) */
+  pipe?: string
+  /** tap pipe path (default `<pipe>-tap`) */
+  tapPipe?: string
+  /** stream factory for both pipes (default `net.connect`); tests pass a unix socket */
+  connect?: (path: string) => import('stream').Duplex
+  /** control request timeout in ms (default 5000; ops with a `timeoutMs` argument get that + 2000) */
+  timeoutMs?: number
+  /** optional lib/bedd modules to attach (default: authority, router, router_actions, follower, surface, inventory) */
+  modules?: string[]
+}
+
+export type BeddCap = 'present' | 'disabled' | 'absent'
+export interface BeddCaps { [op: string]: BeddCap }
+
+export interface BeddRpc {
+  /** `{ id, op, ...args }` → the reply (`ok: true`); rejects with an Error carrying `code` (BeDD's or ERR_BEDD_RPC*), `op`, `reply` */
+  call (op: string, args?: object, opts?: { timeoutMs?: number }): Promise<{ ok: true, id: number, [key: string]: any }>
+  /** call `op` with no arguments: ok → present, code 'disabled' → disabled, unknown op → absent */
+  probe (op: string, opts?: { timeoutMs?: number }): Promise<BeddCap>
+  supports (op: string): boolean
+}
+
+export interface BeddLink {
+  state: 'unknown' | 'up' | 'down'
+  type?: 'remote' | 'local'
+  address?: string
+  reason?: string
+}
+
+export interface BeddCapabilities {
+  ownsLogin: true
+  ownsLoadingScreen: true
+  ownsChunkRequests: true
+  ownsMovement: true
+}
+
+/** `_client.on('serverbound', packet)`: a packet the real client sent (tap echo) */
+export interface BeddServerboundPacket {
+  name: string
+  params: any
+  reserialized: boolean
+  replay: boolean
+  local: boolean
+  seq: bigint
+  tUs: bigint
+  flags: number
+}
+
+/** `bot._client.bedd` when `transport: 'bedd'` */
+export interface BeddClientApi {
+  pipe: string
+  tapPipe: string
+  rpc: BeddRpc
+  caps: BeddCaps
+  supports (op: string): boolean
+  /** resolves with the caps once the control pipe was negotiated (never rejects) */
+  ready: Promise<BeddCaps>
+  link: BeddLink
+  hello: { m: 'HELLO', tap: number, mod: string, game: string, protocol: number, pid: number, link: BeddLink, journal: { frames: number, bytes: number, complete: boolean } } | null
+  journal: { frames: number, bytes: number, complete: boolean } | null
+  replayed: { complete: boolean } | null
+  control: { protocol: number, pid: number } | null
+  capabilities: BeddCapabilities
+  /** what the bot would have sent; the default drops and counts (`dropped`), the router module replaces it */
+  route (name: string, params: any): any
+  dropped: { [name: string]: number }
+  modules: { [name: string]: any }
+  attach (bot: import('../index').Bot): void
+}

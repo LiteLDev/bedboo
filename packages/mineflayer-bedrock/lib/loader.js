@@ -1,4 +1,4 @@
-// owner: U4 (core runtime)
+// owner: U4 (core runtime); BEDD-1: bot._bedrock.mode + client.bedd.attach
 // Adapted from mineflayer 4.39.0 lib/loader.js (MIT, Copyright (c) 2013 Andrew Kelley,
 // https://github.com/PrismarineJS/mineflayer). Same createBot options, plugin selection and
 // `inject_allowed` sequencing; the client is bedrock-protocol instead of minecraft-protocol.
@@ -119,7 +119,9 @@ function createBedrockState (bot, options) {
     /** runtime/unique entity ids, item network ids (lib/bedrock/ids.js) */
     ids: createIds(),
     /** the raw start_game packet params once received (U4), else null */
-    startGame: null
+    startGame: null,
+    /** BEDD-1: 'bedd' when the client is a Be.D.D.-hosted real client (client.bedd), else the transport name */
+    mode: bot._client?.bedd ? 'bedd' : (options.transport ?? 'raknet')
   }
 }
 
@@ -198,6 +200,7 @@ function createBot (options = {}) {
     bot._bedrock.ids.setSelf(packet)
   })
   bot._bedrock = createBedrockState(bot, options)
+  bot._client.bedd?.attach(bot)
 
   let ended = false
   // mineflayer emits 'end' asynchronously: client.end() only ends the socket, 'end' follows on its close. bedrock-protocol
