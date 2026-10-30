@@ -4,7 +4,7 @@ import { Vec3 } from 'vec3'
 import {
   createBot, Bot, BotOptions, Chest, Furnace, EnchantmentTable, Villager, Anvil,
   Location, Painting, ScoreBoard, BossBar, Particle, testedVersions, latestSupportedVersion,
-  oldestSupportedVersion, supportFeature, BedrockExtras, BeddClientApi, BeddCaps, BeddCap
+  oldestSupportedVersion, supportFeature, BedrockExtras, BeddClientApi, BeddCaps, BeddCap, BeddExtras, BeddObserved, BeddUnsupportedError
 } from '../..'
 
 const options: BotOptions = {
@@ -52,6 +52,10 @@ bot.bedrock.resyncInventory().then((synced: boolean) => console.log(synced))
 if (bot.bedrock.bedd) console.log(bot.bedrock.bedd.supports('dig'), bot.bedrock.bedd.caps.stack === 'present')
 const observedYaw: number | undefined = bot.bedrock.bedd?.observed?.yaw // BEDD-4
 console.log(observedYaw)
+const beddExtras: BeddExtras | undefined = bot.bedrock.bedd
+const observed: BeddObserved | null | undefined = beddExtras?.observed
+console.log(observed?.tick, beddExtras?.caps.input)
+bot.dig(bot.blockAt(new Vec3(0, 0, 0))!).catch((err: BeddUnsupportedError) => console.log(err.code === 'ERR_BEDD_UNSUPPORTED', err.missing))
 
 const loc = new Location(new Vec3(1, 2, 3))
 const painting = new Painting(1, new Vec3(0, 0, 0), 'kebab', new Vec3(0, 0, 1))

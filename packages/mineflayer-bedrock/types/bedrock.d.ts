@@ -19,11 +19,12 @@ export interface BedrockExtras {
   bedd?: BeddExtras
 }
 
-// `bot.bedrock.bedd` (BEDD-5 caps/supports, BEDD-4 observed): one interface for every bedd unit
-export type BeddCapability = 'present' | 'disabled' | 'absent'
+// `bot.bedrock.bedd`, one interface for every bedd unit: BEDD-5 caps/supports (lib/bedd/surface.js), BEDD-4 observed
+// (lib/bedd/follower.js)
 export interface BeddExtras {
-  // the BeDD control ops by name (`look`, `input`, `button`, `stack`, …) and whether this instance offers them
-  readonly caps: { [op: string]: BeddCapability }
+  // the BeDD control ops by name (`look`, `input`, `button`, `stack`, …) and whether this instance offers them (a live
+  // view of `bot._client.bedd.caps`)
+  readonly caps: BeddCaps
   // whether a bot API (`'dig'`, `'craft'`, `'creative.setInventorySlot'`) or a BeDD op works with these caps
   supports: (name: string) => boolean
   // BEDD-4: the last player_auth_input the real client echoed; null until the client's first echo

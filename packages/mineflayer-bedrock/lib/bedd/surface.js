@@ -219,6 +219,7 @@ function exposeNamespace (bot, client) {
   const ns = bot.bedrock.bedd ?? (bot.bedrock.bedd = {})
   Object.defineProperty(ns, 'caps', { get: () => client.bedd?.caps ?? {}, enumerable: true, configurable: true })
   ns.supports = (name) => supports(client.bedd?.caps ?? {}, name)
+  if (!('observed' in ns)) ns.observed = null // BeddExtras: lib/bedd/follower.js keeps it up to date
   return ns
 }
 
