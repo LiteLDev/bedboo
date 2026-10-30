@@ -1,4 +1,4 @@
-// owner: U11 (placing & placement-based parity)
+// owner: U11 (placing & placement-based parity); BEDD-3: bedd-mode gates
 'use strict'
 const { Vec3 } = require('vec3')
 const { RaycastIterator } = require('prismarine-world').iterators
@@ -23,6 +23,12 @@ const { viewDirection } = require('./conversions')
  * - Using a block (opening a chest, toggling a door, …) wins over placing unless the player sneaks: the server must
  *   have processed a sneaking input before the click (set_entity_data `sneaking` acknowledges it; while flying the
  *   raw sneak keys of the input are enough).
+ *
+ * bedd mode (`bot._bedrock.mode === 'bedd'`, BEDD-3): the click is the bare item_use transaction (the real client
+ * owns start/stop_item_use_on and sends them around its own click); the router turns it into `look` at the clicked
+ * point, waits for the look to converge, then `button use click`. Sneaking for interactive blocks still goes through
+ * the controls (generic_place.js sneakForClick → player_auth_input → `input`), and the answer matching on update_block
+ * is unchanged.
  */
 
 /** ms between start_item_use_on and stop_item_use_on (vanilla client) */
@@ -398,6 +404,7 @@ function createPlacer (bot) {
    */
   function click ({ position, face, cursor, hand = 'main_hand', hotbarSlot, heldItem, lifecycle = true }) {
     flushStop()
+    if (tx.isBedd(bot)) lifecycle = false // client-owned start/stop_item_use_on
     const { start, transaction, stop } = tx.buildUseItemOn(bot, { position, face, cursor, hand, hotbarSlot })
     if (heldItem) transaction.transaction.transaction_data.held_item = heldItem
     if (lifecycle) send('player_action', start)
