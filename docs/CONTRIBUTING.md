@@ -414,6 +414,13 @@ Additions/precisions to the tables above; all live on `main` since PR #5.
 - Input intents (`input`, `look`, `slot`, open_inventory, key fallbacks) are gated on `world.mouseGrabbed &&
   !world.showingMenu` when the `world` op is present (polled every 250 ms); ESC and chat are not gated.
 
+### bedd inventory routing (BEDD-7)
+
+| Contract | Where | Owner | Shape |
+|---|---|---|---|
+| `item_stack_request` route | `lib/bedd/inventory.js` `attach(bot, client)` | BEDD-7 | `client.bedd.routes.register('item_stack_request', fn)` (registry `{ map, register(name, fn) }` created when missing; `client.bedd.route` dispatches through it). With `caps.stack === 'present'` each request becomes `rpc.call('stack', { buf })` (base64 serialized item_stack_request, one request) → `{ ok, via, requestIds, map: { '<bedbooId>': clientId } }`; otherwise the request rejects with a BeddUnsupportedError (`ERR_BEDD_UNSUPPORTED`). |
+| Response correlation | `stackRequests.bedd = { responseId(response) }`, `stackRequests.abort(requestId, err)` | BEDD-7 (hook in U8's `stack_request.js`) | `responseId` maps the client's request id of an item_stack_response to bedboo's (undefined: not a bedboo request). `null` outside bedd mode, so raknet/nethernet are unchanged. `viaInput` is ignored in bedd mode. Stack ids naming an earlier bedboo request are rewritten to its client id; a self reference keeps bedboo's id (BeDD substitutes the id it assigns). |
+
 ## Ownership
 
 One owner per file and per patch **per wave**. A file not listed belongs to the unit that creates it. When a
