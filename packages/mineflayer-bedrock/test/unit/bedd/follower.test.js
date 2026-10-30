@@ -275,6 +275,24 @@ describe('bedd physics follower (BEDD-4)', function () {
       assert.deepStrictEqual(errors, [])
     })
 
+    it('the echoed start_flying / stop_flying settle the flight (no update_abilities needed)', async () => {
+      const { bot, client, echo, errors } = await beddBot()
+      rejectRequestAbility(client)
+      const [base] = echoRecords()
+      echo(base)
+      bot.creative.startFlying()
+      for (let i = 1; i <= 4; i++) echo({ ...base, tick: base.tick + BigInt(i) })
+      echo({ ...base, tick: base.tick + 5n, input_data: ['jump_down', 'start_flying'] })
+      for (let i = 6; i <= 40; i++) echo({ ...base, tick: base.tick + BigInt(i) })
+      assert.strictEqual(bot._bedrock.physics.isFlying(), true, 'no fallback once the client flies')
+      echo({ ...base, tick: base.tick + 41n, input_data: ['stop_flying'] }) // e.g. the client landed
+      assert.strictEqual(bot._bedrock.physics.isFlying(), false)
+      echo({ ...base, tick: base.tick + 42n, input_data: ['start_flying'] }) // the user double-tapped on the client
+      assert.strictEqual(bot._bedrock.physics.isFlying(), true)
+      assert.deepStrictEqual(client.sent('request_ability'), [])
+      assert.deepStrictEqual(errors, [])
+    })
+
     it('without an update_abilities answer the bot falls back to not flying', async () => {
       const { bot, client, echo, errors } = await beddBot()
       rejectRequestAbility(client)

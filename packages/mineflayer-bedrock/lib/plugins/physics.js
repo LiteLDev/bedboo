@@ -721,6 +721,12 @@ function inject (bot, { physicsEnabled }) {
     entity.onGround = vertical && deltaY <= 0 && !(lastEcho?.deltaY > 0)
     entity.isCollidedVertically = vertical
     entity.isCollidedHorizontally = flags.has('horizontal_collision')
+    // the client's own flight toggles (a double-tapped jump, ours or the user's; landing) settle the bot's flight state:
+    // a singleplayer host gets no update_abilities answer to its request_ability
+    if (flags.has('start_flying') || flags.has('stop_flying')) {
+      flightRequestTick = null
+      setFlying(flags.has('start_flying'), { request: false })
+    }
     lastEcho = { yaw: yawDeg, pitch: pitchDeg, deltaY }
 
     const position = entity.position.clone()

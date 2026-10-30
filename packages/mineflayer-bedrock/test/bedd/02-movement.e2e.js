@@ -125,14 +125,17 @@ describe('bedd: movement and looking (real client)', function () {
       try {
         const ground = bot.entity.position.y
         bot.creative.startFlying()
-        // the client asks the server itself (request_ability); its update_abilities answer is the server's verdict
-        await until(() => bot.abilities.flying === true, { what: 'the server to report flying', timeout: 5000 })
-        await sleep(1500)
+        // the client toggles its flight (start_flying in its echoed input) and asks the server itself (request_ability);
+        // a BDS answers with update_abilities (a singleplayer host gets none)
+        await until(() => bot._bedrock.physics.isFlying(), { what: 'the client to start flying', timeout: 5000 })
+        if (s.console) await until(() => bot.abilities.flying === true, { what: 'the server to report flying', timeout: 5000 })
+        await sleep(1500) // past the confirmation timeout: the bot still flies
         assert.ok(bot.entity.position.y > ground + 0.2, `still aloft: y ${bot.entity.position.y} vs ground ${ground}`)
         assert.ok(!bot.entity.onGround, 'not on the ground while flying')
         assert.strictEqual(bot._bedrock.physics.isFlying(), true)
         bot.creative.stopFlying()
-        await until(() => bot.abilities.flying === false, { what: 'the server to report the flight stopped', timeout: 5000 })
+        await until(() => !bot._bedrock.physics.isFlying(), { what: 'the client to stop flying', timeout: 5000 })
+        if (s.console) await until(() => bot.abilities.flying === false, { what: 'the server to report the flight stopped', timeout: 5000 })
         await until(() => bot.entity.onGround, { what: 'the client to land', timeout: 10000 })
         // the bot still drives the client afterwards
         const start = bot.entity.position.clone()
