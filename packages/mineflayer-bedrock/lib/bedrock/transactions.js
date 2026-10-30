@@ -1,4 +1,4 @@
-// owner: U4 (core runtime)
+// owner: U4 (core runtime); BEDD-3: bedd-mode gates
 'use strict'
 const { Vec3 } = require('vec3')
 const { EMPTY_NETWORK_ITEM } = require('./item')
@@ -36,10 +36,16 @@ const { feetToWire, FACE_VECTORS } = require('./conversions')
  * lib/bedrock_plugins/interact.js, MIT — reference only): placement = start_item_use_on → item_use click_block
  * (hand, client_prediction 'success') → stop_item_use_on ~150 ms later; click_air uses trigger 'unknown',
  * face 255 and prediction 'failure'.
+ *
+ * bedd mode (`bot._bedrock.mode === 'bedd'`, BEDD-3): the real client owns player_action start/stop_item_use_on and
+ * interact mouse_over_entity, so `useItemOn` sends only the transaction (the router turns it into look + use click) and
+ * `mouseOver` sends nothing.
  */
 
 const DEFAULT_STOP_DELAY_MS = 150
 const ZERO = Object.freeze({ x: 0, y: 0, z: 0 })
+
+const isBedd = (bot) => bot._bedrock?.mode === 'bedd'
 
 const blockPos = (p) => ({ x: Math.floor(p.x), y: Math.floor(p.y), z: Math.floor(p.z) })
 
@@ -194,7 +200,9 @@ function useItemOn (bot, opts) {
 }
 
 async function sendUseItemOn (bot, opts) {
-  const { lifecycle = true, stopDelay = DEFAULT_STOP_DELAY_MS } = opts
+  const { stopDelay = DEFAULT_STOP_DELAY_MS } = opts
+  // bedd: the client sends start/stop_item_use_on itself around its own click
+  const lifecycle = (opts.lifecycle ?? true) && !isBedd(bot)
   const { start, transaction, stop } = buildUseItemOn(bot, opts)
   if (lifecycle) bot._client.queue('player_action', start)
   bot._client.queue('inventory_transaction', transaction)
@@ -218,6 +226,7 @@ async function useOnEntity (bot, entity, opts) {
 }
 
 function mouseOver (bot, entity, position) {
+  if (isBedd(bot)) return // client-owned: the client hovers what it looks at
   bot._client.queue('interact', buildMouseOver(bot, entity, position))
 }
 
@@ -265,6 +274,7 @@ function createHeldItemProvider (bot) {
 }
 
 module.exports = {
+  isBedd,
   pendingControls,
   useItemOn,
   useItem,

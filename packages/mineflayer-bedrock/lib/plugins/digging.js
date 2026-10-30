@@ -1,4 +1,4 @@
-// owner: U10 (digging)
+// owner: U10 (digging); BEDD-3: bedd-mode gates
 // Adapted from mineflayer 4.39.0 lib/plugins/digging.js (MIT, Copyright (c) 2013 Andrew Kelley): dig() argument checks,
 //   digFace vector / 'raycast' face selection, the look, the swing interval, stopDigging (+ the Java cancellation-face
 //   oddity), the death handler, canDigBlock, digTime's inputs and _getBlockAtEyeLevel are kept; Java's block_dig packets
@@ -29,13 +29,17 @@
 // - digTime: lib/bedrock/dig_speed.js (Bedrock Haste / Conduit Power / Mining Fatigue factors); the speed BDS
 //   reports for the break (level_event block_start_break / block_break_speed data) replaces the estimate when they
 //   disagree. bot._bedrock.digging = { active(), last, history } keeps per-dig diagnostics (tests).
+// - bedd mode (bot._bedrock.mode === 'bedd', BEDD-3): the real client times the break. start_break / abort_break still
+//   ride the input (the router turns them into `look` + `button attack down releaseOn:blockChange` / `attack up`), but
+//   no predict_break goes out (neither the timed one nor the instant one), the legacy finishLegacy transaction is never
+//   sent, and the dig completes on the update_block turning the block into air — or aborts after digTime + 40 ticks.
 'use strict'
 const { performance } = require('perf_hooks')
 const { Vec3 } = require('vec3')
 const BlockFaces = require('prismarine-world').iterators.BlockFace
 const { createTask } = require('mineflayer/lib/promise_utils')
 const digSpeed = require('../bedrock/dig_speed')
-const { buildUseItemOn } = require('../bedrock/transactions')
+const { buildUseItemOn, isBedd: modeIsBedd } = require('../bedrock/transactions')
 
 module.exports = inject
 
@@ -55,6 +59,7 @@ const REPORT_GRACE_INPUTS = 3
 const RESTORE_WINDOW_INPUTS = 4
 /** a completed dig settles once its abort_break went out, or after this long (input suspended) */
 const RELEASE_TIMEOUT_MS = 250
+const TICK_MS = 50
 
 function inject (bot) {
   let swingInterval = null
@@ -70,6 +75,8 @@ function inject (bot) {
 
   const input = () => bot._bedrock.input
   const airType = () => bot.registry.blocksByName.air.id
+
+  const isBedd = () => modeIsBedd(bot)
 
   function serverAuthoritative () {
     return bot._bedrock?.startGame?.server_authoritative_block_breaking !== false
@@ -269,6 +276,7 @@ function inject (bot) {
 
     const task = createTask()
     const creative = bot.game?.gameMode === 'creative'
+    const bedd = isBedd()
     // the speed as of now (after the look): it decides the instant break and drives the per-tick progress
     const delta = currentDelta(block)
     const state = {
@@ -276,7 +284,8 @@ function inject (bot) {
       position,
       face,
       creative,
-      legacy: !serverAuthoritative(),
+      bedd,
+      legacy: !bedd && !serverAuthoritative(),
       digTime: waitTime,
       ticks: creative ? 0 : digSpeed.ticksFor(delta),
       delta,
@@ -298,7 +307,12 @@ function inject (bot) {
     bot.targetDigBlock = block
 
     queueAction('start_break', position, face)
-    if (state.legacy) {
+    if (bedd) {
+      // the client breaks the block (it holds attack until the block changes): wait for the server's update_block
+      const timeout = waitTime + CONFIRM_TIMEOUT_TICKS * TICK_MS
+      state.timer = setTimeout(() => state.abort?.(new Error(`Digging aborted: the server did not break ${block.name} at ${position}`)), timeout)
+      state.timer.unref?.()
+    } else if (state.legacy) {
       // client-authoritative breaking: finish after digTime, predicting the block locally like upstream
       state.timer = setTimeout(() => finishLegacy(state), waitTime)
     } else if (creative || delta >= 1) {
@@ -433,6 +447,7 @@ function inject (bot) {
       queueAction('crack_break', state.position, state.face)
       return
     }
+    if (state.bedd) return // the client times the break; the timer in dig() gives up
     state.progress += state.serverSpeed ?? state.delta
     if (!state.predicted) {
       // fallback when BDS does not report its progress (never, or not for 2 s): by our own count BDS destroys the
@@ -461,7 +476,7 @@ function inject (bot) {
    */
   function onLevelEvent (packet) {
     const state = current
-    if (!state || state.done || state.legacy || state.index < 0) return
+    if (!state || state.done || state.legacy || state.bedd || state.index < 0) return
     if (packet.event !== 'block_start_break' && packet.event !== 'block_break_speed') return
     if (!packet.position || !samePosition(packet.position, state.position)) return
     const data = Number(packet.data)
