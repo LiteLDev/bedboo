@@ -232,6 +232,25 @@ function warnIgnoredOptions (bot, client, state) {
 }
 
 /**
+ * The real client's name, learnt from its player_list entry (on a server that comes after start_game, where the bot
+ * took the createBot / fallback name): bot.username, the own entity and the own bot.players entry follow it. Runs
+ * before the plugins see that player_list packet.
+ */
+function renameSelf (bot, username) {
+  const old = bot.username
+  if (!username || old === username) return
+  bot.username = username
+  if (bot.entity) bot.entity.username = username
+  const player = bot.player
+  if (!player) return
+  if (bot.players?.[old] === player) delete bot.players[old]
+  player.username = username
+  if (bot.players) bot.players[username] = player
+  if (player.uuid !== undefined && bot.uuidToUsername) bot.uuidToUsername[player.uuid] = username
+  if (player.displayName?.extra?.[0]) player.displayName.extra[0].text = username
+}
+
+/**
  * Apply the bedd surface to `bot` (call with the bedd client, `client.bedd` set). Safe before the plugins are
  * injected (the members are wrapped once they are) and safe to call again.
  * @param {import('events').EventEmitter & { bedd?: object }} bot
@@ -245,6 +264,7 @@ function attach (bot, client = bot._client) {
   if (!state.attached) {
     state.attached = true
     warnIgnoredOptions(bot, client, state)
+    client.on?.('bedd_self', ({ username }) => renameSelf(bot, username))
     // plugins inject on 'inject_allowed' (mineflayer's plugin loader listens first): wrap what they define
     bot.once('inject_allowed', () => applyCapabilities(bot, client, state))
   }

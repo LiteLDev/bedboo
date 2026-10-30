@@ -236,9 +236,12 @@ function createBeddClient (options = {}, { createApi } = {}) {
 
   function setSelf ({ username, uuid, xuid }) {
     if (!username) return
+    const previous = client.username
     client.username = username
     client.options.username = username
     client.profile = { name: username, uuid, xuid: xuid || 0 }
+    // on a server the local player's player_list entry comes after start_game: the bot took a fallback name there
+    if (previous !== username) safeEmit('bedd_self', { username, uuid, xuid })
   }
 
   return client
