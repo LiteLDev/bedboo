@@ -54,7 +54,8 @@ Windows only (BeDD's pipes are Windows named pipes); Node 24 or later.
    ```
 
    `loopbackOnly` (BeDD's own key) keeps the client on servers of the same PC, which is what the Docker BDS of
-   `corepack pnpm bds up` is (127.0.0.1).
+   `corepack pnpm bds up --transport nethernet` is (127.0.0.1). The client joins BDS 1.26.51 over NetherNet, so start
+   the server with `--transport nethernet`.
 3. Start the game and get the player into a world (a server, a LAN world or singleplayer): bedboo attaches to a client
    that is already playing, it does not log in.
 4. `createBot({ transport: 'bedd', bedd: { pipe: '\\\\.\\pipe\\BeDD-1.26.51.01-hi20' } })`. `spawn` fires once the join

@@ -12,7 +12,7 @@
 // - a BDS world: the Docker BDS of `corepack pnpm bds up` (127.0.0.1, so BeDD's loopbackOnly is fine). Set
 //   BDS_CONTAINER so the suites can set things up and check effects on the BDS console; when docker only runs in WSL,
 //   also set BEDBOO_BEDD_DOCKER (e.g. `wsl -d Debian -e docker`). With BEDBOO_BEDD_START_BDS=1 (and docker on PATH)
-//   this script starts that server itself (`bedboo-bedd-e2e`, survival, flat; kept running) and prints the port the
+//   this script starts that server itself (`bedboo-bedd-e2e`, survival, flat, NetherNet — the client does not join a RakNet BDS; kept running) and prints the port the
 //   client has to join.
 // - a singleplayer / LAN-host world: no console; setup runs as the player (`send`), checks use the tapped state.
 const { spawn } = require('child_process')
@@ -33,7 +33,7 @@ async function maybeStartBds () {
     srv = await bds.attachServer(name)
     console.log(`[test:e2e:bedd] reusing ${srv.container} on ${srv.host}:${srv.port}`)
   } catch {
-    srv = await bds.startServer({ name, persistent: true, useExternal: false, world: 'flat', gamemode: 'survival' })
+    srv = await bds.startServer({ name, persistent: true, useExternal: false, world: 'flat', gamemode: 'survival', transport: 'nethernet' })
     console.log(`[test:e2e:bedd] started ${srv.container} on ${srv.host}:${srv.port} (remove it with \`corepack pnpm bds down ${name}\`)`)
   }
   process.env.BDS_HOST = srv.host

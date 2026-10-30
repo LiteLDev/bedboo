@@ -458,9 +458,11 @@ runs `test/bedd/*.e2e.js` against a **real Minecraft Bedrock client** hosted by 
    `gameHooks`, `allowSend`, `allowStack` and `pipeInstances` set (see [bedd.md](bedd.md#setup)).
 2. Get the player into a throwaway world — the suites fill a 13×13 arena around the player, switch it to survival and
    change its inventory:
-   - **BDS**: `corepack pnpm bds up --name bedd-e2e --gamemode survival` (flat world, cheats on, everyone operator),
-     then join `127.0.0.1:<port>` from the client (Play → Servers → Add server). `BEDBOO_BEDD_START_BDS=1` makes the
-     runner start (or reuse) that server and print the port.
+   - **BDS**: `corepack pnpm bds up --name bedd-e2e --gamemode survival --transport nethernet` (flat world, cheats
+     on, everyone operator), then join `127.0.0.1:<port>` from the client (Play → Servers → Add server).
+     `--transport nethernet` matters: the 1.26.51 client did not join a `transport=raknet` BDS. `BEDBOO_BEDD_START_BDS=1`
+     makes the runner start (or reuse) that server and print the port. Where docker only runs inside WSL, run `bds up`
+     from a WSL checkout of bedboo (Windows `pnpm bds` needs docker on the Windows PATH).
    - **Singleplayer / LAN host**: a new flat world with cheats on. There is no console: setup commands run as the
      player through `send` and every check uses the tapped state.
 3. Run:
