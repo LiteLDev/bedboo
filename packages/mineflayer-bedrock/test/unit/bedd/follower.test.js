@@ -222,7 +222,7 @@ describe('bedd physics follower (BEDD-4)', function () {
   describe('raknet mode (no-op)', () => {
     it('attach does nothing, echoes are ignored and the timer clock is unchanged', async () => {
       const { bot, client } = await createFakeBot()
-      assert.strictEqual(bot._bedrock.mode, undefined)
+      assert.strictEqual(bot._bedrock.mode, 'raknet') // lib/loader.js (BEDD-1): the transport name without client.bedd
       assert.strictEqual(follower.attach(bot, client), null)
       assert.strictEqual(bot.bedrock.bedd, undefined)
       await replayJoin(bot, client)

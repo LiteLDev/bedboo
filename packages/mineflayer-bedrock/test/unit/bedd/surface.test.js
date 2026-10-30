@@ -260,7 +260,8 @@ describe('bedd: lifecycle, capability surface and BeddUnsupportedError (BEDD-5)'
     it('ignored options warn once each; attach is idempotent; bot.bedrock.bedd keeps members other units added', async () => {
       const client = fakeClient()
       Object.assign(client.options, { host: '1.2.3.4', port: 19133, viewDistance: 'far', auth: 'microsoft' })
-      client.bedd = beddStub(client, present(...ALL))
+      // attached by hand below (after bot._warn is recorded), not by lib/loader.js inside createBot
+      client.bedd = { ...beddStub(client, present(...ALL)), attach () {} }
       const bot = mineflayerBedrock.createBot({ client, username: client.username, logErrors: false, hideErrors: true })
       const warnings = []
       bot._warn = (...m) => warnings.push(m.join(' '))
