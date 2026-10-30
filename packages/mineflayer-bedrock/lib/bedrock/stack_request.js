@@ -41,6 +41,11 @@
  *   promise settles; an answer to a request that already timed out is reported once more as 'late-ok' /
  *   'late-error' — the promise stays rejected), `pending` (Map requestId → entry), `normalizeAction(action)`.
  *   opts: `{ customNames = [], cause = -1, timeout, meta, requestId, viaInput }`.
+ * - bedd mode (BEDD-7, lib/bedd/inventory.js): `bedd` is null unless that module sets `{ responseId(response) }`,
+ *   which maps the request id of an item_stack_response (the real client's) to bedboo's, or to undefined for a
+ *   response to a request bedboo did not send. `abort(requestId, err)` rejects a pending request with `err` (rolled
+ *   back like an error status). `receive(packet)` handles an item_stack_response packet as if it had arrived (a
+ *   response held until its client id was known). `viaInput` is ignored while `bedd` is set.
  *
  * @typedef {object} StackRequestManager
  * @property {(actions: object[] | ((requestId: number) => object[]), opts?: object) => { request: object, response: Promise<object> }} create
@@ -137,6 +142,7 @@ function createStackRequestManager (bot, { timeout: defaultTimeout = DEFAULT_TIM
   // requests that timed out, kept briefly: a late answer is reported as 'late-ok' / 'late-error'
   const expired = new Map()
   const MAX_EXPIRED = 64
+  let bedd = null // BEDD-7 hook, see the module comment
 
   function notify (event) {
     for (const fn of [...observers]) {
@@ -198,7 +204,7 @@ function createStackRequestManager (bot, { timeout: defaultTimeout = DEFAULT_TIM
   }
 
   function write (request, { viaInput = false } = {}) {
-    if (viaInput) bot._bedrock.input.queueItemStackRequest(request)
+    if (viaInput && !bedd) bot._bedrock.input.queueItemStackRequest(request)
     else bot._client.queue('item_stack_request', { requests: [request] })
   }
 
@@ -208,31 +214,51 @@ function createStackRequestManager (bot, { timeout: defaultTimeout = DEFAULT_TIM
     return response
   }
 
-  bot._client.on('item_stack_response', (packet) => {
-    for (const response of packet.responses ?? []) {
+  function onResponse (packet) {
+    for (let response of packet.responses ?? []) {
       const ok = response.status === 'ok' || response.status === 0
-      const entry = pending.get(response.request_id)
+      let requestId = response.request_id
+      if (bedd) {
+        requestId = bedd.responseId(response)
+        if (requestId === undefined) continue
+        if (requestId !== response.request_id) response = { ...response, request_id: requestId }
+      }
+      const entry = pending.get(requestId)
       if (entry) {
         settle(entry, response, ok ? 'ok' : 'error')
         continue
       }
-      const late = expired.get(response.request_id)
+      const late = expired.get(requestId)
       if (late) {
-        expired.delete(response.request_id)
+        expired.delete(requestId)
         notify({ request: late.request, response, outcome: ok ? 'late-ok' : 'late-error', meta: late.meta })
       }
     }
-  })
+  }
+  bot._client.on('item_stack_response', onResponse)
   const closeAll = () => {
     for (const entry of [...pending.values()]) settle(entry, null, 'closed')
   }
   bot._client.on('close', closeAll)
   bot._client.on('end', closeAll)
 
+  /** reject a pending request with `err` (BEDD-7: e.g. a BeddUnsupportedError); false when it is not pending */
+  function abort (requestId, err) {
+    const entry = pending.get(requestId)
+    if (!entry) return false
+    pending.delete(requestId)
+    clearTimeout(entry.timer)
+    notify({ request: entry.request, response: null, outcome: 'error', meta: entry.meta })
+    entry.reject(err)
+    return true
+  }
+
   return {
     create,
     send,
     write,
+    abort,
+    receive: onResponse,
     nextRequestId,
     normalizeAction,
     observe (fn) {
@@ -240,6 +266,8 @@ function createStackRequestManager (bot, { timeout: defaultTimeout = DEFAULT_TIM
       return () => observers.delete(fn)
     },
     get pending () { return pending },
+    get bedd () { return bedd },
+    set bedd (hook) { bedd = hook ?? null },
     LEGACY_ACTION_IDS
   }
 }
