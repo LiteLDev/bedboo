@@ -77,7 +77,7 @@ describe("transport 'bedd' (BEDD-1)", function () {
       assert.ok(serverbound.every(p => !['login', 'request_network_settings', 'client_to_server_handshake'].includes(p.name)))
       assert.strictEqual(typeof serverbound[0].reserialized, 'boolean')
 
-      // chunks: the real client requested the sub-chunks, bedboo's own subchunk_request went to route (dropped)
+      // chunks: the real client requested the sub-chunks; their answers fill the columns
       const feet = bot.entity.position.floored()
       const below = bot.blockAt(feet.offset(0, -1, 0))
       assert.ok(below, 'block below the spawn is loaded')
@@ -89,9 +89,10 @@ describe("transport 'bedd' (BEDD-1)", function () {
       await until(() => bot.inventory.items().length > 0, { what: 'inventory items' })
       assert.ok(bot.inventory.items().some(i => i.name === 'oak_planks'), bot.inventory.items().map(i => i.name).join())
 
-      // the bot's own sends never reach a pipe: the default route drops + counts them
+      // the bot's own sends never reach a pipe: the default route drops + counts them (and the client owns the
+      // sub-chunk requests: blocks.js does not even ask)
       const dropped = bot._client.bedd.dropped
-      assert.ok(dropped.subchunk_request > 0, JSON.stringify(dropped))
+      assert.strictEqual(dropped.subchunk_request, undefined, 'no subchunk_request in bedd mode')
       assert.strictEqual(dropped.set_local_player_as_initialized, undefined, 'the transport never writes the spawn ack')
       assert.ok(!fake.calls.some(c => Object.keys(c.args).length > 0), 'no action op reached the control pipe')
 

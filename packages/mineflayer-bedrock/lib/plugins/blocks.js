@@ -89,6 +89,11 @@ function inject (bot) {
     bot._client.queue('subchunk_request', { dimension: dimId, requests, origin: { x: column.x, y: 0, z: column.z } })
   }
 
+  // transport 'bedd' (BEDD-1): the real client requests its own sub-chunks (subchunk_request is client-owned and
+  // dropped), up to each column's highest_subchunk_count and relative to one origin per request: a column is set as
+  // soon as its level_chunk arrives, and every subchunk entry is decoded into the column it names
+  const clientOwnsChunks = () => bot._bedrock?.mode === 'bedd' || bot._client.bedd?.capabilities?.ownsChunkRequests === true
+
   bot._client.on('level_chunk', (packet) => {
     const dimId = packet.dimension ?? dimensionId(dimension)
     if (dimensionName(dimId) !== dimension) return // a column of the dimension we just left
@@ -98,6 +103,12 @@ function inject (bot) {
       if (requestMode || packet.sub_chunk_count < 0) {
         // sub-chunk request mode: the payload holds the biomes (+ border blocks + block entities) only
         column.networkDecodeNoCache(packet.payload, packet.sub_chunk_count < 0 ? packet.sub_chunk_count : 0)
+        if (clientOwnsChunks()) {
+          // keep sections the client's subchunk answers already filled (they may race this level_chunk)
+          const known = bot.world.getColumn(packet.x, packet.z)
+          if (!known) bot.world.setColumn(packet.x, packet.z, column)
+          return
+        }
         requestSubChunks(column, dimId)
       } else {
         column.networkDecodeNoCache(packet.payload, packet.sub_chunk_count)
@@ -118,7 +129,11 @@ function inject (bot) {
       const z = packet.origin.z + entry.dz
       const key = `${x},${z}`
       const pending = pendingColumns.get(key)
-      const column = pending?.column ?? bot.world.getColumn(x, z)
+      let column = pending?.column ?? bot.world.getColumn(x, z)
+      if (!column && clientOwnsChunks() && (entry.result === 'success' || entry.result === 'success_all_air')) {
+        column = newColumn(x, z)
+        bot.world.setColumn(x, z, column)
+      }
       const refresh = liquidRefreshes.get(`${x},${y},${z}`)
       if (!column) continue
       if (refresh && !pending) {
@@ -127,7 +142,8 @@ function inject (bot) {
       }
       // a column still loading takes the answer as the whole sub-chunk (below)
       if (refresh) onLiquidRefreshAnswer(refresh, null, y, entry)
-      if (entry.result === 'success' && entry.payload) {
+      if (entry.result === 'success' && entry.payload && !(entry.payload.length === 0 && clientOwnsChunks())) {
+        // (bedd: an empty payload is a blob-cache answer the client resolves itself; BeDD turns the cache off)
         try {
           // async signature, synchronous body: the section is set when the call returns
           column.networkDecodeSubChunkNoCache(y, entry.payload).catch(err => bot.emit('error', err))
@@ -365,6 +381,7 @@ function inject (bot) {
   }
   /** ask for the sub-chunk of `points` (blocks of one sub-chunk) */
   function refreshLiquidLayer (...all) {
+    if (clientOwnsChunks()) return // bedd: bedboo cannot ask for sub-chunks (the client's own answers still apply)
     const points = all.filter(mayAskLiquid)
     if (points.length === 0) return
     const [point] = points
