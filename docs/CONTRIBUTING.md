@@ -391,35 +391,34 @@ Additions/precisions to the tables above; all live on `main` since PR #5.
   the 32767 search height. A throwing `physicsTick` listener no longer stops ticking. `creative.startFlying` no longer
   touches gravity. Plain fireworks/banners/firework stars resolve to the creative default variant.
 
-### bedd mode: authority table and route registry (BEDD-2)
+### bedd mode (`transport: 'bedd'`, BEDD-1…BEDD-7)
 
-- **Authority table** (`lib/bedd/authority.js`, `classify(name, params)`; identical to Be.D.D.'s CONTRIBUTING.md, change
-  both together). In `transport: 'bedd'` the real client sends every serverbound packet; `client.bedd.route(name,
-  params)` receives what bedboo would have sent:
-
-  | Class | Packets | Handling |
-  |---|---|---|
-  | clientOwned | login, client_to_server_handshake, request_network_settings, resource_pack_client_response, client_cache_status, client_cache_blob_status, request_chunk_radius, subchunk_request, serverbound_loading_screen, set_local_player_as_initialized, network_stack_latency, tick_sync, player_skin, emote_list, respawn, player_action (dimension_change_ack / start_item_use_on / stop_item_use_on / respawn), animate, interact mouse_over_entity | dropped, counted |
-  | translated | player_auth_input (move + flags → `input`, yaw/pitch → `look`, block_action → BB3), mob_equipment (`slot`), inventory_transaction (item_use click_block/click_air, item_release, item_use_on_entity → BB3), interact open_inventory (`action inventory`), container_close (key ESC), item_stack_request (`stack`, BB7) | intents |
-  | shared | text, command_request | `send` (bedrock-protocol bytes); fallback T / SLASH, `text`, ENTER |
-  | unsupported | book_edit, block_pick_request, crafting_event, set_default_game_type, everything else | throws BeddUnsupportedError (`ERR_BEDD_UNSUPPORTED`), `bot` emits `'bedd_unsupported_packet'` once per name |
-
-- **Route registry**: `client.bedd.routes.register(name, handler)` (returns an unregister function); whoever attaches
-  first creates it with `require('./router').ensureRoutes(client.bedd)` or an equivalent `{ register, get }` object.
-  `handler(params, ctx)` (`ctx`: `name, bot, client, call(op, args), present(op), key(name, action), inputAllowed(),
-  world()`) wins over the router's built-in translation of `name`, and a translated name without a handler takes the
-  unsupported path. player_auth_input handlers run after the built-in movement/look translation; its parts are
-  dispatched as `'block_action'` (params = the block_action array) and `'item_stack_request'` (params =
-  `{ requests: [request] }`, `ctx.embedded`), which only report (never throw) when unhandled.
-- Input intents (`input`, `look`, `slot`, open_inventory, key fallbacks) are gated on `world.mouseGrabbed &&
-  !world.showingMenu` when the `world` op is present (polled every 250 ms); ESC and chat are not gated.
-
-### bedd inventory routing (BEDD-7)
+User docs: [bedd.md](bedd.md). Every bedd module lives in `lib/bedd/` and is loaded by `client.bedd.attach(bot)`
+(the one loader line in `lib/loader.js`) through a guarded require, in manifest order, once the plugins are injected
+(`inject_allowed`): `authority, router, router_actions, follower, surface, inventory`. Each exports
+`attach(bot, client)` and must be idempotent. Outside bedd mode none of them is loaded, and every gate they add to a
+shared file checks `bot._bedrock.mode === 'bedd'` (or `client.bedd`), so raknet/nethernet are unchanged.
 
 | Contract | Where | Owner | Shape |
 |---|---|---|---|
-| `item_stack_request` route | `lib/bedd/inventory.js` `attach(bot, client)` | BEDD-7 | `client.bedd.routes.register('item_stack_request', fn)` (registry `{ map, register(name, fn) }` created when missing; `client.bedd.route` dispatches through it). With `caps.stack === 'present'` each request becomes `rpc.call('stack', { buf })` (base64 serialized item_stack_request, one request) → `{ ok, via, requestIds, map: { '<bedbooId>': clientId } }`; otherwise the request rejects with a BeddUnsupportedError (`ERR_BEDD_UNSUPPORTED`). |
-| Response correlation | `stackRequests.bedd = { responseId(response) }`, `stackRequests.abort(requestId, err)` | BEDD-7 (hook in U8's `stack_request.js`) | `responseId` maps the client's request id of an item_stack_response to bedboo's (undefined: not a bedboo request). `null` outside bedd mode, so raknet/nethernet are unchanged. `viaInput` is ignored in bedd mode. Stack ids naming an earlier bedboo request are rewritten to its client id; a self reference keeps bedboo's id (BeDD substitutes the id it assigns). |
+| Transport | `lib/bedd/{index,client,rpc,tap}.js`, `lib/client.js`, `lib/loader.js` | BEDD-1 | `createBot({ transport: 'bedd', bedd: { pipe, tapPipe?, connect?, timeoutMs?, modules? } })`; `client.bedd = { rpc: { call, probe, supports }, caps, supports(op), ready, link, hello, journal, replayed, capabilities, route(name, params), dropped, modules, routes?, router?, attach(bot) }`; `bot._bedrock.mode === 'bedd'`. The default `route` drops and counts. Client events: fakeClient's, plus `'serverbound'` `{ name, params, reserialized, replay, local, seq, tUs }`, `'bedd_marker'`, `'warning'`. Test double: `test/unit/helpers/fake_bedd.js`. |
+| Route registry | `lib/bedd/routes.js` | BEDD-2 | `ensureRoutes(client.bedd)` → `{ register(name, handler) → unregister, get(name) → handler[], has(name) }`, created by whoever attaches first. `handler(params, ctx)` (`ctx.name` always; from the router also `bot, client, call(op, args), present(op), key(name, action), inputAllowed(), world()`). A handler that returns exactly `false` declines; when every handler declines, the router's built-in translation or the unsupported path runs. player_auth_input: the router's movement/look translation first, then the parts as pseudo-names `'block_action'` (params = the block_action array) and `'item_stack_request'` (params = `{ requests: [request] }`, `ctx.embedded`; inside the tick a missing or throwing handler only reports), then the `'player_auth_input'` handlers. `ensureDispatch(bedd)` gives the same dispatch without the router (tests, a custom `modules` list). |
+| Router | `lib/bedd/router.js`, `lib/bedd/authority.js` | BEDD-2 | `client.bedd.route` = the dispatcher (authority table below). Input intents (`input`, `look`, `slot`, open_inventory, key fallbacks) are gated on `world.mouseGrabbed && !world.showingMenu` when the `world` op is present (polled every 250 ms); ESC and chat are not gated. `look` calls use `timeoutMs: 250` so the 100 ms `input` keep-alive is not starved. |
+| Actions | `lib/bedd/router_actions.js`; gates in `digging.js`, `placement.js`, `transactions.js` | BEDD-3 | Registers `'block_action'` (start_break → `look` + `button attack down releaseOn:blockChange`; abort/stop_break → `attack up`) and `'inventory_transaction'` (click_block → `look` + `use click`; click_air → `use down` for held-use items, else `use click`; item_release → `use up`; item_use_on_entity → `look` + `attack`/`use click`; other types declined). `mouse` replaces `button` when that op is absent. |
+| Follower | `lib/bedd/follower.js`; `input_queue.js` (`setExternalClock`, `pumpTo`), `physics.js` (`followEcho`) | BEDD-4 | `bot.entity` from the echoed player_auth_input (feet = eye − 1.62); one `physicsTick`/`move` per echo; the input queue is pumped by the echo (`tick + 1`), not by a timer; look/lookAt resolve when the echo is within 0.5° (or after 1 s). `bot.bedrock.bedd.observed = { yaw, pitch, tick }`. |
+| Surface | `lib/bedd/surface.js`, `lib/bedd/errors.js`; gates in `lifecycle.js`, `stack_request.js`, `resource_pack.js` | BEDD-5 | `bot.bedrock.bedd` (`BeddExtras`: `caps`, `supports(name)`, `observed`). `API` table: each bot API → the ops it needs (CNF) or `'v2'`; guarded members throw/reject `BeddUnsupportedError` (`code 'ERR_BEDD_UNSUPPORTED'`, `bedd: true`, `feature`, `missing[]`) before sending anything, and keep upstream arity and sync/async. No loading-screen, dimension or respawn acks; `bot.end`/`quit` only detach. `stack_request.create`/`send` refuse only while `caps.stack !== 'present'`. |
+| Inventory | `lib/bedd/inventory.js`; hooks in `stack_request.js` | BEDD-7 | Registers `'item_stack_request'`. With `caps.stack === 'present'` each request becomes `rpc.call('stack', { buf })` (base64 item_stack_request packet, one request; calls serialized) → `{ ok, via, requestIds, map: { '<bedbooId>': clientId } }`. `stackRequests.bedd = { responseId(response) }` maps the client's id (BeDD counts down from -0x40000001) back to bedboo's; a response tapped before the reply is held until the reply names its id (at most 10 s); responses to the user's own clicks never settle a bot request. Stack ids naming an earlier bedboo request are rewritten to its client id; a self reference keeps bedboo's id (BeDD renames it). `stackRequests.abort(id, err)` / `receive(packet)`; `viaInput` is ignored in bedd mode. `disabled` / unknown op → `BeddUnsupportedError`; other failures → `StackRequestError` (outcome `error`). |
+| Real-client e2e | `scripts/run-e2e-bedd.js`, `test/bedd/*.e2e.js`, `.mocharc.bedd.json` | BEDD-6 | Opt-in (Windows + `BEDBOO_BEDD_PIPE`), pending elsewhere; [testing.md](testing.md#real-client-e2e-bedd). |
+
+**Authority table** (`lib/bedd/authority.js`, `classify(name, params)`; identical to Be.D.D.'s CONTRIBUTING.md,
+change both together). `client.bedd.route(name, params)` receives what bedboo would have sent:
+
+| Class | Packets | Handling |
+|---|---|---|
+| clientOwned | login, client_to_server_handshake, request_network_settings, resource_pack_client_response, client_cache_status, client_cache_blob_status, request_chunk_radius, subchunk_request, serverbound_loading_screen, set_local_player_as_initialized, network_stack_latency, tick_sync, player_skin, emote_list, respawn, player_action (dimension_change_ack / start_item_use_on / stop_item_use_on / respawn), animate, interact mouse_over_entity | dropped, counted |
+| translated | player_auth_input (move + flags → `input`, yaw/pitch → `look`, block_action → BEDD-3), mob_equipment (`slot`), inventory_transaction (item_use click_block/click_air, item_release, item_use_on_entity → BEDD-3), interact open_inventory (`action inventory`), container_close (key ESC), item_stack_request (`stack`, BEDD-7) | intents |
+| shared | text, command_request | `send` (bedrock-protocol bytes); fallback T / SLASH, `text`, ENTER |
+| unsupported | book_edit, block_pick_request, crafting_event, set_default_game_type, everything else | throws BeddUnsupportedError (`ERR_BEDD_UNSUPPORTED`), `bot` emits `'bedd_unsupported_packet'` once per name |
 
 ## Ownership
 

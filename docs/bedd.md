@@ -137,6 +137,11 @@ or rejects with `ERR_BEDD_UNSUPPORTED` (or uses the stated fallback). "e2e" is t
 | `bot.end`, `quit` | detach only; the client stays in its world | — | (after the run) |
 | `auth`, `username`, `host`, `port`, `viewDistance` options | ignored with a warning (the client owns them) | — | — |
 
+Notes: `activateItem(true)` (off-hand) uses the main hand, the client has no off-hand use button; `activateItem` of an
+item that is not used by holding (throwables, a fishing rod) is one click; `bot.respawn()` is a no-op with a warning
+(the user clicks Respawn, so `respawn: true` never throws from the health listener); `bot.craft` keeps upstream's
+`new Error(err)` wrapping, so check `err.message` there when the surface did not refuse it first.
+
 Degraded: pathfinder sees 1-2 ticks of lag (prediction is overwritten by the echo); the client's own raycast decides
 what a click hits, so an action can land on an adjacent block or entity (bedboo sees it on `update_block` / entity
 events); flight via a double-tap jump; input pauses while a screen is open; a late attach depends on the journal
@@ -161,21 +166,29 @@ LAN world. Those packets never hit the network, so BeDD re-serializes them (`Pac
 
 ## Options and the `bot.bedrock.bedd` surface
 
-`createBot({ transport: 'bedd', bedd: { pipe, tapPipe?, connect? } })`:
+`createBot({ transport: 'bedd', bedd: { pipe, tapPipe?, connect?, timeoutMs?, modules? } })`:
 
 | option | |
 |---|---|
-| `bedd.pipe` | the control pipe, `\\.\pipe\<pipeName>` |
+| `bedd.pipe` | the control pipe, `\\.\pipe\<pipeName>` (default `$BEDBOO_BEDD_PIPE`, else `\\.\pipe\BeDD`) |
 | `bedd.tapPipe` | the tap pipe (default `<pipe>-tap`) |
 | `bedd.connect` | `(path) => Duplex`, to connect over something else (the unit tests use a unix socket) |
+| `bedd.timeoutMs` | control request timeout (default 5000 ms; an op's own `timeoutMs` gets 2 s more) |
+| `bedd.modules` | the `lib/bedd` modules to attach (default, in this order: `authority`, `router`, `router_actions`, `follower`, `surface`, `inventory`) |
 
 - `bot._bedrock.mode === 'bedd'`.
 - `bot.bedrock.bedd.caps`: `{ [op]: 'present' | 'disabled' | 'absent' }` for `tap`, `world`, `look`, `input`, `slot`,
-  `button`, `action`, `send`, `stack`.
-- `bot.bedrock.bedd.supports(name)`: whether a mineflayer API works with these caps.
-- `bot.bedrock.bedd.observed`: `{ yaw, pitch, tick }` of the last echoed `player_auth_input`.
-- Client events besides the usual ones: `'serverbound'` `{ name, params, reserialized }` (what the client sent) and
-  `'warning'` (a packet that did not decode; the stream goes on).
+  `button`, `action`, `send`, `stack` (and the protocol-1 ops `key`, `text`, `mouse`, `raw`, … once `ping` answers).
+  Without a control pipe every op is `absent` and the bot only observes.
+- `bot.bedrock.bedd.supports(name)`: whether a mineflayer API (`'dig'`, `'craft'`, `'creative.setInventorySlot'`) or
+  a BeDD op works with these caps.
+- `bot.bedrock.bedd.observed`: `{ yaw, pitch, tick }` of the last echoed `player_auth_input`, `null` before the first.
+- Errors: `BeddUnsupportedError` (`code: 'ERR_BEDD_UNSUPPORTED'`, `bedd: true`, `feature`, `missing`); an unsupported
+  packet also emits `'bedd_unsupported_packet'` `{ name, feature }` on `bot`, once per name.
+- Client events besides the usual ones: `'serverbound'` `{ name, params, reserialized }` (what the client sent),
+  `'bedd_marker'` (tap markers) and `'warning'` (a packet that did not decode; the stream goes on).
+- Extending the router (a new intent for a packet): register a handler in the shared route registry, see
+  [CONTRIBUTING.md](CONTRIBUTING.md#bedd-mode-transport-bedd-bedd-1bedd-7).
 
 ## Testing
 
