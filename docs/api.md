@@ -137,6 +137,7 @@ Bedrock-only additions live under `bot.bedrock` — never as new top-level `bot`
 | `bot.bedrock.gameRules` | `{ [name: string]: boolean \| number }` | the server's game rules by Bedrock name (`doDayLightCycle`, `keepInventory`, `randomTickSpeed`, …), from `start_game` and `game_rules_changed` ([U9](differences/U9.md#game-rules)) |
 | `bot.bedrock.blockVariants(block)` | `(block: string \| number) => number[]` | the ids of the Bedrock blocks Java models as one block with a state — a burning furnace is `lit_furnace`: `bot.findBlock({ matching: bot.bedrock.blockVariants('furnace') })` also finds it ([U16a](differences/U16a.md#block-variants)) |
 | `bot.bedrock.resyncInventory()` | `() => Promise<boolean>` | asks the server for its copy of the player's inventory (inventory, armor, cursor, off-hand); resolves `true` once it was applied. The bot does this by itself when it finds a slot out of date ([U8](differences/U8.md#inventory-resync)) |
+| `bot.bedrock.bedd` | `{ caps, supports(name) } \| undefined` | only with `transport: 'bedd'` (a real client hosted by Be.D.D.): `caps` maps each BeDD op to `'present'`, `'disabled'` or `'absent'`; `supports(name)` tells whether a bot API (`'dig'`, `'craft'`, …) works with them. An item stack or screen-level API (`clickWindow`, `craft`, `equip` from outside the hotbar, `creative`, `writeBook`, `updateSign`, …) whose op is missing throws / rejects a `BeddUnsupportedError` (`code: 'ERR_BEDD_UNSUPPORTED'`, `feature`, `missing`) (`lib/bedd/surface.js`) |
 
 ## Internals
 

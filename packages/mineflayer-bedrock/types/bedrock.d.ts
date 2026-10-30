@@ -14,6 +14,26 @@ export interface BedrockExtras {
   // off-hand); resolves true once it was applied, false when no answer came within 2 s
   // (docs/differences/U8.md#inventory-resync)
   resyncInventory: () => Promise<boolean>
+  // BEDD-5: only with `transport: 'bedd'` (a real client hosted by Be.D.D.): the BeDD ops this instance offers and
+  // whether a bot API works with them (lib/bedd/surface.js, docs/bedd.md)
+  bedd?: BeddExtras
+}
+
+// BEDD-5: `bot.bedrock.bedd` (an interface so other bedd units add their members by declaration merging)
+export type BeddCapability = 'present' | 'disabled' | 'absent'
+export interface BeddExtras {
+  // the BeDD control ops by name (`look`, `input`, `button`, `stack`, …) and whether this instance offers them
+  readonly caps: { [op: string]: BeddCapability }
+  // whether a bot API (`'dig'`, `'craft'`, `'creative.setInventorySlot'`) or a BeDD op works with these caps
+  supports: (name: string) => boolean
+}
+
+// BEDD-5: thrown / rejected by an API the real client owns when no BeDD op does it (lib/bedd/errors.js)
+export interface BeddUnsupportedError extends Error {
+  code: 'ERR_BEDD_UNSUPPORTED'
+  bedd: true
+  feature: string
+  missing: string[]
 }
 
 // BEDD-1 (transport 'bedd'): `createBot({ transport: 'bedd', bedd })` and the bot's `_client.bedd`
