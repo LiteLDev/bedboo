@@ -125,18 +125,24 @@ describe('bedd: movement and looking (real client)', function () {
       try {
         const ground = bot.entity.position.y
         bot.creative.startFlying()
-        // the client toggles its flight (start_flying in its echoed input) and asks the server itself (request_ability);
-        // a BDS answers with update_abilities (a singleplayer host gets none)
+        // the client toggles its flight: start_flying in its echoed input. The 1.26.51 client sends no request_ability
+        // and the server answers no update_abilities (BDS keeps the player aloft): the echo is the flight state,
+        // bot.abilities included
         await until(() => bot._bedrock.physics.isFlying(), { what: 'the client to start flying', timeout: 5000 })
-        if (s.console) await until(() => bot.abilities.flying === true, { what: 'the server to report flying', timeout: 5000 })
+        await until(() => bot.abilities.flying === true, { what: 'bot.abilities to report flying', timeout: 5000 })
         await sleep(1500) // past the confirmation timeout: the bot still flies
         assert.ok(bot.entity.position.y > ground + 0.2, `still aloft: y ${bot.entity.position.y} vs ground ${ground}`)
         assert.ok(!bot.entity.onGround, 'not on the ground while flying')
         assert.strictEqual(bot._bedrock.physics.isFlying(), true)
+        assert.strictEqual(bot.abilities.flying, true)
+        const aloft = await serverPosition(s) // BDS: the server accepted the flight (it holds the player up there)
+        if (aloft) assert.ok(aloft.pos.y > ground + 0.2, `BDS has the player aloft: y ${aloft.pos.y} vs ground ${ground}`)
         bot.creative.stopFlying()
         await until(() => !bot._bedrock.physics.isFlying(), { what: 'the client to stop flying', timeout: 5000 })
-        if (s.console) await until(() => bot.abilities.flying === false, { what: 'the server to report the flight stopped', timeout: 5000 })
+        await until(() => bot.abilities.flying === false, { what: 'bot.abilities to report the flight stopped', timeout: 5000 })
         await until(() => bot.entity.onGround, { what: 'the client to land', timeout: 10000 })
+        const landed = await serverPosition(s)
+        if (landed) assert.ok(Math.abs(landed.pos.y - ground) < 0.2, `BDS has the player back on the ground: y ${landed.pos.y} vs ${ground}`)
         // the bot still drives the client afterwards
         const start = bot.entity.position.clone()
         bot.setControlState('forward', true)

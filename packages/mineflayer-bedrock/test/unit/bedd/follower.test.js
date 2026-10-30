@@ -293,6 +293,50 @@ describe('bedd physics follower (BEDD-4)', function () {
       assert.deepStrictEqual(errors, [])
     })
 
+    it("the echoed start_flying / stop_flying are the server's flight state too (bot.abilities, 'abilities')", async () => {
+      // the 1.26.51 client sends no request_ability and BDS answers its toggles with no update_abilities (measured on
+      // a NetherNet BDS: the player stays aloft server-side, bot.abilities.flying stayed false)
+      const { bot, client, echo, errors } = await beddBot()
+      rejectRequestAbility(client)
+      bot.abilities = { ...bot.abilities, mayFly: true, flying: false }
+      const events = []
+      bot.on('abilities', (a) => events.push(a.flying))
+      const [base] = echoRecords()
+      echo(base)
+      bot.creative.startFlying()
+      for (let i = 1; i <= 4; i++) echo({ ...base, tick: base.tick + BigInt(i) })
+      assert.strictEqual(bot.abilities.flying, false, 'not before the client flies')
+      echo({ ...base, tick: base.tick + 5n, input_data: ['jump_down', 'start_flying'] })
+      assert.strictEqual(bot.abilities.flying, true)
+      assert.strictEqual(bot.entity.flying, true)
+      assert.strictEqual(bot.abilities.mayFly, true, 'the other abilities are kept')
+      for (let i = 6; i <= 40; i++) echo({ ...base, tick: base.tick + BigInt(i) })
+      assert.strictEqual(bot.abilities.flying, true, 'no fallback')
+      assert.strictEqual(bot._bedrock.physics.isFlying(), true)
+      echo({ ...base, tick: base.tick + 41n, input_data: ['stop_flying'] })
+      assert.strictEqual(bot.abilities.flying, false)
+      assert.strictEqual(bot._bedrock.physics.isFlying(), false)
+      assert.deepStrictEqual(events, [true, false])
+      // the user's own double tap on the client counts the same
+      echo({ ...base, tick: base.tick + 42n, input_data: ['start_flying'] })
+      assert.strictEqual(bot.abilities.flying, true)
+      assert.deepStrictEqual(client.sent('request_ability'), [])
+      assert.deepStrictEqual(errors, [])
+    })
+
+    it('an echoed start_flying without may_fly leaves bot.abilities alone', async () => {
+      const { bot, echo, errors } = await beddBot()
+      bot.abilities = { ...bot.abilities, mayFly: false, flying: false }
+      let events = 0
+      bot.on('abilities', () => events++)
+      const [base] = echoRecords()
+      echo(base)
+      echo({ ...base, tick: base.tick + 1n, input_data: ['start_flying'] })
+      assert.strictEqual(bot.abilities.flying, false)
+      assert.strictEqual(events, 0)
+      assert.deepStrictEqual(errors, [])
+    })
+
     it('without an update_abilities answer the bot falls back to not flying', async () => {
       const { bot, client, echo, errors } = await beddBot()
       rejectRequestAbility(client)

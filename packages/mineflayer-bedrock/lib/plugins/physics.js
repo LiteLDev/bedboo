@@ -76,7 +76,8 @@ const GLIDE_START_FLAGS = ['jump_down', 'jumping', 'want_up', 'jump_current_raw'
 const GLIDE_CONFIRM_TICKS = 20
 /** a flight request the server has not answered (update_abilities) after this many ticks is dropped */
 const FLIGHT_CONFIRM_TICKS = 20
-// bedd: the real client toggles creative flight on a double-tapped jump (and sends request_ability itself). Jump
+// bedd: the real client toggles creative flight on a double-tapped jump (start_flying / stop_flying in its
+// player_auth_input; the 1.26.51 client sends no request_ability and BDS answers it with no update_abilities). Jump
 // states of the toggle, one per tick: a release first (a held jump would hide the first press), press, release, press,
 // release — two presses 2 ticks apart, well inside the client's double-tap window
 const BEDD_FLIGHT_TAPS = [false, true, false, true, false]
@@ -466,8 +467,8 @@ function inject (bot, { physicsEnabled }) {
       const on = pendingFlightRequest
       pendingFlightRequest = null // first: a throwing queue must not repeat the request on every tick
       if (beddMode()) {
-        // the real client owns request_ability (the bedd router rejects it): it requests flight itself when its jump
-        // is double-tapped. The confirmation timeout runs from the last tap
+        // the real client owns its flight (the bedd router rejects request_ability): a double-tapped jump toggles it,
+        // and its echoed start_flying / stop_flying settle ours. The confirmation timeout runs from the last tap
         flightTaps = BEDD_FLIGHT_TAPS.slice()
         flightRequestTick = BigInt(tick) + BigInt(BEDD_FLIGHT_TAPS.length)
       } else {
@@ -691,6 +692,18 @@ function inject (bot, { physicsEnabled }) {
     return Math.abs(dYaw) < BEDD_LOOK_TOLERANCE && Math.abs(dPitch) < BEDD_LOOK_TOLERANCE
   }
 
+  /**
+   * bedd: the server's flight state after the client's echoed start_flying / stop_flying (no update_abilities follows
+   * them). A start needs may_fly, as on the server; 'abilities' fires like for an update_abilities that changed it.
+   */
+  function followEchoedFlight (on) {
+    const abilities = bot.abilities
+    if (!abilities || !!abilities.flying === on || (on && !abilities.mayFly)) return
+    bot.abilities = { ...abilities, flying: on }
+    if (bot.entity) bot.entity.flying = on
+    bot.emit('abilities', bot.abilities)
+  }
+
   /** the bedd look is over (converged or timed out): later packets carry the echoed rotation again */
   function finishBeddLook () {
     if (beddLookTimer) clearTimeout(beddLookTimer)
@@ -721,11 +734,15 @@ function inject (bot, { physicsEnabled }) {
     entity.onGround = vertical && deltaY <= 0 && !(lastEcho?.deltaY > 0)
     entity.isCollidedVertically = vertical
     entity.isCollidedHorizontally = flags.has('horizontal_collision')
-    // the client's own flight toggles (a double-tapped jump, ours or the user's; landing) settle the bot's flight state:
-    // a singleplayer host gets no update_abilities answer to its request_ability
+    // the client's own flight toggles (a double-tapped jump, ours or the user's; landing) settle the bot's flight state.
+    // They are the flight request itself: the 1.26.51 client sends no request_ability, and neither BDS nor a
+    // singleplayer host answers the toggle with update_abilities (BDS just keeps the player aloft; measured), so
+    // bot.abilities takes the flight from the echo too
     if (flags.has('start_flying') || flags.has('stop_flying')) {
+      const on = flags.has('start_flying')
       flightRequestTick = null
-      setFlying(flags.has('start_flying'), { request: false })
+      setFlying(on, { request: false })
+      followEchoedFlight(on)
     }
     lastEcho = { yaw: yawDeg, pitch: pitchDeg, deltaY }
 
