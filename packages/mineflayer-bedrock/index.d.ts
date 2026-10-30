@@ -16,15 +16,23 @@ import { ChatMessage } from 'prismarine-chat'
 import { world } from 'prismarine-world'
 import { Registry } from 'prismarine-registry'
 import { IndexedData } from 'minecraft-data'
-import { BedrockExtras } from './types/bedrock'
+import { BedrockExtras, BeddOptions } from './types/bedrock'
 
 export { BedrockExtras } from './types/bedrock'
+export { BeddOptions, BeddClientApi, BeddRpc, BeddCap, BeddCaps, BeddLink, BeddServerboundPacket, BeddCapabilities, BeddExtras, BeddObserved, BeddUnsupportedError } from './types/bedrock'
 
 export function createBot (options: { client: Client } & Partial<BotOptions>): Bot
 export function createBot (options: BotOptions): Bot
 
 // bedrock-protocol's ClientOptions.viewDistance is `number`; mineflayer's (below) also accepts names.
-export interface BotOptions extends Omit<ClientOptions, 'viewDistance'> {
+export interface BotOptions extends Omit<ClientOptions, 'viewDistance' | 'transport'> {
+  /**
+   * 'raknet' (default) or 'nethernet' connect to a server; BEDD-1: 'bedd' follows a real Minecraft client hosted by
+   * Be.D.D. (options under `bedd`)
+   */
+  transport?: 'raknet' | 'nethernet' | 'bedd'
+  /** BEDD-1: Be.D.D. pipes for `transport: 'bedd'` */
+  bedd?: BeddOptions
   /** mineflayer auth: 'offline' (default) or 'microsoft' (Xbox Live via prismarine-auth); 'mojang' does not exist on Bedrock */
   auth?: 'microsoft' | 'offline'
   logErrors?: boolean

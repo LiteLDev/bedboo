@@ -31,6 +31,7 @@ The repository and its pnpm workspace are called bedboo; the packages inside it 
   - [CLI](#cli)
 - [Server setup](#server-setup)
   - [RakNet or NetherNet?](#raknet-or-nethernet)
+  - [Driving a real client (Be.D.D.)](#driving-a-real-client-bedd)
 - [Ecosystem plugins](#ecosystem-plugins)
 - [Testing](#testing)
 - [Repository layout](#repository-layout)
@@ -182,6 +183,12 @@ bedrock-protocol has supported it for years and the test suite runs on it. Nethe
 `createBot({ transport: 'nethernet' })`, which joins over HTTP signalling on the server port (no LAN discovery needed)
 — see [docs/getting-started.md](docs/getting-started.md#nethernet).
 
+### Driving a real client (Be.D.D.)
+
+`createBot({ transport: 'bedd', bedd: { pipe } })` drives a real Minecraft Bedrock client hosted by
+[Be.D.D.](https://github.com/LiteLDev/BeDD) instead of connecting to BDS: the same script runs and you watch the local
+player do it, on a server or in singleplayer. Setup, coverage and security notes: [docs/bedd.md](docs/bedd.md).
+
 ## Ecosystem plugins
 
 Plugins written for mineflayer load with `bot.loadPlugin()` unchanged: mineflayer-pathfinder, mineflayer-pvp,
@@ -228,6 +235,7 @@ mineflayer-bedrock's API is mineflayer 4.39.0's: the same exports (`createBot(op
 | [docs/getting-started.md](docs/getting-started.md) | connect a bot to your own BDS, step by step |
 | [docs/differences.md](docs/differences.md) / [docs/differences/](docs/differences) | every Java ↔ Bedrock difference, in detail |
 | [docs/parity.md](docs/parity.md) | parity matrix: every mineflayer member, event and test, and the test that proves it |
+| [docs/bedd.md](docs/bedd.md) | `transport: 'bedd'`: driving a real client hosted by Be.D.D. |
 | [docs/testing.md](docs/testing.md) | the BDS Docker harness, e2e tests, BDS quirks |
 | [docs/README.md](docs/README.md) | index of all documents |
 

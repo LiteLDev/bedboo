@@ -4,7 +4,7 @@ import { Vec3 } from 'vec3'
 import {
   createBot, Bot, BotOptions, Chest, Furnace, EnchantmentTable, Villager, Anvil,
   Location, Painting, ScoreBoard, BossBar, Particle, testedVersions, latestSupportedVersion,
-  oldestSupportedVersion, supportFeature, BedrockExtras
+  oldestSupportedVersion, supportFeature, BedrockExtras, BeddClientApi, BeddCaps, BeddCap, BeddExtras, BeddObserved, BeddUnsupportedError
 } from '../..'
 
 const options: BotOptions = {
@@ -48,6 +48,14 @@ const extras: BedrockExtras = bot.bedrock
 const furnaceIds: number[] = bot.bedrock.blockVariants('furnace')
 console.log(bot.findBlock({ matching: furnaceIds }), bot.bedrock.gameRules.doDayLightCycle)
 bot.bedrock.resyncInventory().then((synced: boolean) => console.log(synced))
+// BEDD-5: bedd capability surface (only with transport 'bedd')
+if (bot.bedrock.bedd) console.log(bot.bedrock.bedd.supports('dig'), bot.bedrock.bedd.caps.stack === 'present')
+const observedYaw: number | undefined = bot.bedrock.bedd?.observed?.yaw // BEDD-4
+console.log(observedYaw)
+const beddExtras: BeddExtras | undefined = bot.bedrock.bedd
+const observed: BeddObserved | null | undefined = beddExtras?.observed
+console.log(observed?.tick, beddExtras?.caps.input)
+bot.dig(bot.blockAt(new Vec3(0, 0, 0))!).catch((err: BeddUnsupportedError) => console.log(err.code === 'ERR_BEDD_UNSUPPORTED', err.missing))
 
 const loc = new Location(new Vec3(1, 2, 3))
 const painting = new Painting(1, new Vec3(0, 0, 0), 'kebab', new Vec3(0, 0, 1))
@@ -65,3 +73,10 @@ createBot({
   nethernet: { signalling: 'http', serverKey: 'sha256:00', onServerKey: (fingerprint: string, url: string) => fingerprint.length > 0 && url.length > 0 }
 })
 createBot({ username: 'rak', transport: 'raknet', raknetBackend: 'raknet-native' })
+
+// BEDD-1: transport 'bedd' (a Be.D.D.-hosted real client) and its client.bedd surface
+const beddBot = createBot({ transport: 'bedd', bedd: { pipe: '\\\\.\\pipe\\BeDD', tapPipe: '\\\\.\\pipe\\BeDD-tap', timeoutMs: 3000, modules: ['router'] } })
+const beddApi = (beddBot._client as unknown as { bedd: BeddClientApi }).bedd
+beddApi.ready.then((caps: BeddCaps) => console.log(caps.look === 'present', beddApi.supports('input'), beddApi.link.state))
+beddApi.rpc.call('look', { yaw: 90, pitch: 0 }).then(reply => console.log(reply.ok))
+beddApi.rpc.probe('stack').then((cap: BeddCap) => console.log(cap))

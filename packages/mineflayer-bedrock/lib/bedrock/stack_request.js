@@ -1,5 +1,6 @@
 // owner: U8 (inventory, windows, creative & item use)
 'use strict'
+const { BeddUnsupportedError } = require('../bedd/errors')
 
 /**
  * Server-authoritative inventory: item_stack_request / item_stack_response manager, exposed as
@@ -36,11 +37,18 @@
  *   {@link StackRequestError} on an error status, a timeout (`opts.timeout`, default 5000 ms) or disconnect.
  *   The caller sends it (`write(request)`) right away.
  * - `send(actions, opts?) → Promise<ItemStackResponse>` = create + write.
+ * - BEDD-5: with `transport: 'bedd'` and no BeDD `stack` op, `create` throws (and `send` rejects with) a
+ *   BeddUnsupportedError (`code: 'ERR_BEDD_UNSUPPORTED'`, feature 'item_stack_request') before registering anything.
  * - `write(request, { viaInput })`, `nextRequestId()`, `observe(fn) → unsubscribe` (fn({ request, response,
  *   outcome: 'ok'|'error'|'timeout'|'closed', meta }) runs synchronously for every settled request, before its
  *   promise settles; an answer to a request that already timed out is reported once more as 'late-ok' /
  *   'late-error' — the promise stays rejected), `pending` (Map requestId → entry), `normalizeAction(action)`.
  *   opts: `{ customNames = [], cause = -1, timeout, meta, requestId, viaInput }`.
+ * - bedd mode (BEDD-7, lib/bedd/inventory.js): `bedd` is null unless that module sets `{ responseId(response) }`,
+ *   which maps the request id of an item_stack_response (the real client's) to bedboo's, or to undefined for a
+ *   response to a request bedboo did not send. `abort(requestId, err)` rejects a pending request with `err` (rolled
+ *   back like an error status). `receive(packet)` handles an item_stack_response packet as if it had arrived (a
+ *   response held until its client id was known). `viaInput` is ignored while `bedd` is set.
  *
  * @typedef {object} StackRequestManager
  * @property {(actions: object[] | ((requestId: number) => object[]), opts?: object) => { request: object, response: Promise<object> }} create
@@ -137,6 +145,7 @@ function createStackRequestManager (bot, { timeout: defaultTimeout = DEFAULT_TIM
   // requests that timed out, kept briefly: a late answer is reported as 'late-ok' / 'late-error'
   const expired = new Map()
   const MAX_EXPIRED = 64
+  let bedd = null // BEDD-7 hook, see the module comment
 
   function notify (event) {
     for (const fn of [...observers]) {
@@ -176,7 +185,19 @@ function createStackRequestManager (bot, { timeout: defaultTimeout = DEFAULT_TIM
     entry.reject(new StackRequestError(message, { status, outcome, request: entry.request, response }))
   }
 
+  // BEDD-5: with transport 'bedd' the real client owns item_stack_request; it can only go through BeDD's `stack` op
+  // (lib/bedd/inventory.js). Without that op every request is refused before it is registered or predicted (the public
+  // inventory APIs are refused earlier still, before any screen opens: lib/bedd/surface.js).
+  function beddUnsupported () {
+    const bedd = bot._client?.bedd
+    if (!bedd || (bot._bedrock?.mode !== undefined && bot._bedrock.mode !== 'bedd')) return null
+    if (bedd.caps?.stack === 'present') return null
+    return new BeddUnsupportedError('item_stack_request', { missing: ['stack'] })
+  }
+
   function create (actions, opts = {}) {
+    const unsupported = beddUnsupported()
+    if (unsupported) throw unsupported
     const requestId = opts.requestId ?? nextRequestId()
     if (pending.has(requestId)) throw new Error(`item stack request id ${requestId} is already pending`)
     const list = typeof actions === 'function' ? actions(requestId) : actions
@@ -198,41 +219,63 @@ function createStackRequestManager (bot, { timeout: defaultTimeout = DEFAULT_TIM
   }
 
   function write (request, { viaInput = false } = {}) {
-    if (viaInput) bot._bedrock.input.queueItemStackRequest(request)
+    if (viaInput && !bedd) bot._bedrock.input.queueItemStackRequest(request)
     else bot._client.queue('item_stack_request', { requests: [request] })
   }
 
   function send (actions, opts = {}) {
+    const unsupported = beddUnsupported()
+    if (unsupported) return Promise.reject(unsupported)
     const { request, response } = create(actions, opts)
     write(request, opts)
     return response
   }
 
-  bot._client.on('item_stack_response', (packet) => {
-    for (const response of packet.responses ?? []) {
+  function onResponse (packet) {
+    for (let response of packet.responses ?? []) {
       const ok = response.status === 'ok' || response.status === 0
-      const entry = pending.get(response.request_id)
+      let requestId = response.request_id
+      if (bedd) {
+        requestId = bedd.responseId(response)
+        if (requestId === undefined) continue
+        if (requestId !== response.request_id) response = { ...response, request_id: requestId }
+      }
+      const entry = pending.get(requestId)
       if (entry) {
         settle(entry, response, ok ? 'ok' : 'error')
         continue
       }
-      const late = expired.get(response.request_id)
+      const late = expired.get(requestId)
       if (late) {
-        expired.delete(response.request_id)
+        expired.delete(requestId)
         notify({ request: late.request, response, outcome: ok ? 'late-ok' : 'late-error', meta: late.meta })
       }
     }
-  })
+  }
+  bot._client.on('item_stack_response', onResponse)
   const closeAll = () => {
     for (const entry of [...pending.values()]) settle(entry, null, 'closed')
   }
   bot._client.on('close', closeAll)
   bot._client.on('end', closeAll)
 
+  /** reject a pending request with `err` (BEDD-7: e.g. a BeddUnsupportedError); false when it is not pending */
+  function abort (requestId, err) {
+    const entry = pending.get(requestId)
+    if (!entry) return false
+    pending.delete(requestId)
+    clearTimeout(entry.timer)
+    notify({ request: entry.request, response: null, outcome: 'error', meta: entry.meta })
+    entry.reject(err)
+    return true
+  }
+
   return {
     create,
     send,
     write,
+    abort,
+    receive: onResponse,
     nextRequestId,
     normalizeAction,
     observe (fn) {
@@ -240,6 +283,8 @@ function createStackRequestManager (bot, { timeout: defaultTimeout = DEFAULT_TIM
       return () => observers.delete(fn)
     },
     get pending () { return pending },
+    get bedd () { return bedd },
+    set bedd (hook) { bedd = hook ?? null },
     LEGACY_ACTION_IDS
   }
 }

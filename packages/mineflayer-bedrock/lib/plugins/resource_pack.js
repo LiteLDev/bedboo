@@ -16,6 +16,8 @@
 //     false), like a Java server kicking a client that declines its required pack.
 //   Event arguments: `url` = the pack's CDN url ('' when the server sends the pack itself), `hash` = the Bedrock
 //   pack id `<uuid>_<version>`, `uuid` = the pack uuid (docs/differences/U4.md#resource-packs).
+// BEDD-5: with `transport: 'bedd'` the real client answered the packs during its own login: nothing is held, and
+//   acceptResourcePack() / denyResourcePack() do nothing (one warning). 'resourcePack' still fires for an offer seen.
 'use strict'
 
 module.exports = inject
@@ -30,6 +32,21 @@ function inject (bot) {
   const client = bot._client
   let answered = false
   let offer = null // the resource_packs_info being answered
+
+  if (client.bedd) {
+    let warned = false
+    const ignored = () => {
+      if (warned) return
+      warned = true
+      bot._warn?.("acceptResourcePack()/denyResourcePack() do nothing with transport 'bedd': the real client answers the server's resource packs itself")
+    }
+    client.on('resource_packs_info', (packet) => {
+      for (const pack of packsOf(packet)) bot.emit('resourcePack', pack.cdn_url ?? '', `${pack.uuid}_${pack.version}`, pack.uuid)
+    })
+    bot.acceptResourcePack = () => ignored()
+    bot.denyResourcePack = () => ignored()
+    return
+  }
 
   // bedboo bedrock-protocol patch hook: hold the answer while someone listens to 'resourcePack'
   client.holdResourcePacks = (packet) => packsOf(packet).length > 0 && bot.listenerCount('resourcePack') > 0
