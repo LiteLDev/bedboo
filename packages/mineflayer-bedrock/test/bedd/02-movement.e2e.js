@@ -2,6 +2,7 @@
 'use strict'
 // Real-client e2e (docs/bedd.md): walking with setControlState and a pathfinder goal, lookAt, setQuickBarSlot.
 const assert = require('assert')
+const { withTimeout } = require('mineflayer/lib/promise_utils')
 const { gate, session, need, canRunCommands, run, target, until, sleep, nextServerbound, serverPosition, prepareArena, giveHotbar } = require('./common')
 
 const horizontal = (a, b) => Math.hypot(a.x - b.x, a.z - b.z)
@@ -81,7 +82,7 @@ describe('bedd: movement and looking (real client)', function () {
       goalPos = bot.entity.position.floored().offset(4, 0, 0)
     }
     try {
-      await withTimeout(bot.pathfinder.goto(new goals.GoalNear(goalPos.x, goalPos.y, goalPos.z, 1)), 45000, 'pathfinder goto')
+      await withTimeout(bot.pathfinder.goto(new goals.GoalNear(goalPos.x, goalPos.y, goalPos.z, 1)), 45000)
     } finally {
       bot.pathfinder.stop()
     }
@@ -95,8 +96,7 @@ describe('bedd: movement and looking (real client)', function () {
     const { bot } = s
     const canSetup = canRunCommands(s)
     if (canSetup) await giveHotbar(s, 3, 'diamond', 1)
-    const other = bot.quickBarSlot === 3 ? 5 : 3
-    if (other === 5) {
+    if (bot.quickBarSlot === 3) { // make the selection observable
       bot.setQuickBarSlot(5)
       await until(() => bot.quickBarSlot === 5, { what: 'quickBarSlot 5' })
     }
@@ -112,11 +112,3 @@ describe('bedd: movement and looking (real client)', function () {
     }
   })
 })
-
-function withTimeout (promise, ms, what) {
-  let timer
-  return Promise.race([
-    promise.finally(() => clearTimeout(timer)),
-    new Promise((resolve, reject) => { timer = setTimeout(() => reject(new Error(`${what}: no result within ${ms} ms`)), ms) })
-  ])
-}

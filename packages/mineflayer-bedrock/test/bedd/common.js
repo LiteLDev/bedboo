@@ -17,6 +17,7 @@
 //   Setup commands run as the player (`send` cap) and the effects are checked on the tapped state only.
 const assert = require('assert')
 const { Vec3 } = require('vec3')
+const { sleep } = require('mineflayer/lib/promise_utils')
 const { createConsole } = require('./console')
 
 const PIPE = process.env.BEDBOO_BEDD_PIPE
@@ -74,7 +75,9 @@ async function createSession () {
       bot.off('spawn', onSpawn)
       bot.off('error', onErr)
       bot.off('end', onEnd)
-      err ? reject(err) : resolve()
+      if (!err) return resolve()
+      try { bot.end('e2e attach failed') } catch {} // free the pipe instance
+      reject(err)
     }
     function onSpawn () { done() }
     bot.once('spawn', onSpawn)
@@ -146,10 +149,21 @@ function needCommands (test, s) {
  * @param {string} cmd with `@s` standing for the player
  */
 async function run (s, cmd) {
-  if (s.console) return s.console.commandOutput(cmd.replace(/@s\b/g, target(s.name)))
-  const out = await s.bot._bedrock.commands.request('/' + cmd, { timeout: 10000 })
-  return (out.output ?? []).map((o) => [o.message_id, ...(o.parameters ?? [])].join(' '))
+  let lines
+  if (s.console) {
+    lines = await s.console.commandOutput(cmd.replace(/@s\b/g, target(s.name)))
+  } else {
+    const out = await s.bot._bedrock.commands.request('/' + cmd, { timeout: 10000 })
+    lines = (out.output ?? []).map((o) => [o.message_id, ...(o.parameters ?? [])].join(' '))
+  }
+  // a command that could not run at all (a no-op such as filling air with air is not an error)
+  const bad = lines.find((l) => COMMAND_ERROR_RE.test(l))
+  if (bad) throw new Error(`setup command "${cmd}" failed: ${bad}`)
+  return lines
 }
+
+/** console messages / command_output message ids of commands that did not run (syntax, permission, no target) */
+const COMMAND_ERROR_RE = /^(Unknown command|Syntax error|No targets matched|You do not have permission|commands\.generic\.(unknown|syntax|noTargetMatch|permission))/i
 
 /** console target for a player name (quoted when it has spaces: Xbox gamertags may) */
 function target (name) {
@@ -166,8 +180,6 @@ async function until (fn, { timeout = 10000, interval = 50, what = 'condition' }
     await sleep(interval)
   }
 }
-
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 /** Resolve with the next echoed serverbound packet `name` matching `pred` (the client's own packets, BB1 'serverbound'). */
 function nextServerbound (s, name, pred = () => true, timeout = 5000) {
@@ -192,7 +204,12 @@ async function serverPosition (s) {
   const lines = await s.console.commandOutput(`querytarget ${target(s.name)}`)
   const start = lines.findIndex((l) => /^Target data: \[/.test(l))
   if (start < 0) return null
-  const data = JSON.parse('[' + lines.slice(start + 1).join('\n'))
+  let data
+  try {
+    data = JSON.parse('[' + lines.slice(start + 1).join('\n'))
+  } catch {
+    return null
+  }
   const p = data[0]?.position
   return p ? { pos: new Vec3(p.x, p.y - 1.62, p.z), yRot: data[0].yRot } : null
 }

@@ -36,11 +36,32 @@ async function maybeStartBds () {
     srv = await bds.startServer({ name, persistent: true, useExternal: false, world: 'flat', gamemode: 'survival' })
     console.log(`[test:e2e:bedd] started ${srv.container} on ${srv.host}:${srv.port} (remove it with \`corepack pnpm bds down ${name}\`)`)
   }
-  srv.detach()
   process.env.BDS_HOST = srv.host
   process.env.BDS_PORT = String(srv.port)
   process.env.BDS_CONTAINER = srv.container
-  console.log(`[test:e2e:bedd] the BeDD client must be in this world: join ${srv.host}:${srv.port}`)
+  try {
+    await waitForPlayer(srv)
+  } finally {
+    srv.detach()
+  }
+}
+
+/** wait until a player is online (`list`): the BeDD client has to join the server before the suites can attach */
+async function waitForPlayer (srv) {
+  const timeout = Number(process.env.BEDBOO_BEDD_JOIN_TIMEOUT || 300000)
+  const end = Date.now() + timeout
+  let nextHint = 0
+  for (;;) {
+    const lines = await srv.commandOutput('list', { timeout: 15000 })
+    const m = lines.map((l) => /There are (\d+)\/\d+ players online/.exec(l)).find(Boolean)
+    if (m && Number(m[1]) > 0) return
+    if (Date.now() > end) throw new Error(`no player joined ${srv.host}:${srv.port} within ${timeout} ms`)
+    if (Date.now() >= nextHint) {
+      console.log(`[test:e2e:bedd] waiting for the BeDD client to join ${srv.host}:${srv.port} (Play → Servers → Add server)`)
+      nextHint = Date.now() + 30000
+    }
+    await new Promise((resolve) => setTimeout(resolve, 2000))
+  }
 }
 
 function report () {

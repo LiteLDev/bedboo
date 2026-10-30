@@ -3,6 +3,7 @@
 // Real-client e2e (docs/bedd.md): attach, spawn and position, chat and commands, the unsupported-API error code.
 const assert = require('assert')
 const crypto = require('crypto')
+const { onceWithCleanup } = require('mineflayer/lib/promise_utils')
 const { gate, session, caps, need, needCommands, run, target, until, nextServerbound, serverPosition } = require('./common')
 
 describe('bedd: core (real client)', function () {
@@ -36,30 +37,24 @@ describe('bedd: core (real client)', function () {
     const { bot } = s
     const word = 'bedd' + crypto.randomBytes(3).toString('hex')
 
-    const seen = (text) => new Promise((resolve, reject) => {
-      const timer = setTimeout(() => { bot.off('messagestr', on); reject(new Error(`no message containing ${text}`)) }, 10000)
-      function on (msg) {
-        if (!String(msg).includes(text)) return
-        clearTimeout(timer)
-        bot.off('messagestr', on)
-        resolve(msg)
-      }
-      bot.on('messagestr', on)
-    })
+    // resolves with the first messagestr containing `text` (timeout: rejects with a message naming it)
+    const seen = (text) => onceWithCleanup(bot, 'messagestr', { timeout: 10000, checkCondition: (msg) => String(msg).includes(text) })
+      .catch((err) => { throw new Error(`no message containing ${text}: ${err.message}`) })
 
-    // plain chat: the server broadcasts it back to the sender (tapped text packet)
-    const chatSeen = seen(word + 'c')
-    const chatEcho = nextServerbound(s, 'text', (p) => String(p.message).includes(word + 'c'), 10000).catch(() => null)
-    bot.chat(word + 'c')
-    await chatSeen
-    assert.ok(await chatEcho, 'the client sent the text packet (serverbound echo)')
+    // plain chat: the client sends the text packet (echo), the server broadcasts it back (tapped text packet)
+    const [, chatEcho] = await Promise.all([
+      seen(word + 'c'),
+      nextServerbound(s, 'text', (p) => String(p.message).includes(word + 'c'), 10000),
+      Promise.resolve().then(() => bot.chat(word + 'c'))
+    ])
+    assert.ok(chatEcho, 'the client sent the text packet (serverbound echo)')
 
     // /say: command_request through `send`, uuid preserved → command_output correlated by bedboo's chat plugin
-    const saySeen = seen(word + 's')
-    const reqEcho = nextServerbound(s, 'command_request', (p) => String(p.command).includes(word + 's'), 10000)
-    bot.chat('/say ' + word + 's')
-    const req = await reqEcho
-    await saySeen
+    const [, req] = await Promise.all([
+      seen(word + 's'),
+      nextServerbound(s, 'command_request', (p) => String(p.command).includes(word + 's'), 10000),
+      Promise.resolve().then(() => bot.chat('/say ' + word + 's'))
+    ])
     assert.ok(req.origin?.uuid, 'command_request carries an origin uuid')
 
     // a command with an observable side effect, correlated by uuid (bot._bedrock.commands.request)

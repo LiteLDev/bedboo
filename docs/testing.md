@@ -466,7 +466,7 @@ runs `test/bedd/*.e2e.js` against a **real Minecraft Bedrock client** hosted by 
 3. Run:
 
    ```powershell
-   $env:BEDBOO_BEDD_PIPE = '\.\pipe\BeDD-1.26.51.01-hi20'
+   $env:BEDBOO_BEDD_PIPE = '\\.\pipe\BeDD-1.26.51.01-hi20'
    $env:BDS_CONTAINER = 'bedboo-bedd-e2e'                 # BDS world: console setup and server-side checks
    $env:BEDBOO_BEDD_DOCKER = 'wsl -d Debian -e docker'    # only when docker runs inside WSL, not on Windows
    corepack pnpm test:e2e:bedd
@@ -489,13 +489,13 @@ disabled:
 | `BEDBOO_BEDD_TAP_PIPE` | the tap pipe, when it is not `<pipe>-tap` |
 | `BDS_CONTAINER` | the BDS container the client plays on: console setup and server-side checks |
 | `BEDBOO_BEDD_DOCKER` | docker command prefix for that console, e.g. `wsl -d Debian -e docker` (default: `@bedboo/bds`'s docker) |
-| `BEDBOO_BEDD_START_BDS` | `1`: start or reuse `bedboo-bedd-e2e` (`BEDBOO_BEDD_BDS_NAME`) with the harness; needs docker on PATH |
+| `BEDBOO_BEDD_START_BDS` | `1`: start or reuse `bedboo-bedd-e2e` (`BEDBOO_BEDD_BDS_NAME`) with the harness; needs docker on PATH; waits for a player to join it (`BEDBOO_BEDD_JOIN_TIMEOUT`, 300000 ms) |
 | `BEDBOO_BEDD_WORLD` | `remote` / `local`: override the world mode taken from the tap's HELLO link type |
 | `BEDBOO_BEDD_SPAWN_TIMEOUT` | ms to wait for `spawn` after attaching (60000) |
 | `BEDBOO_BEDD_DEBUG` | `1`: log the caps and why a scenario skipped |
 
 Watch the game window while it runs (or take PrintWindow screenshots) to see the moves, digs and chat on the client.
-Manual smoke: `node packages/mineflayer-bedrock/examples/bedd_follow.js --pipe \.\pipe\BeDD-1.26.51.01-hi20`, then
+Manual smoke: `node packages/mineflayer-bedrock/examples/bedd_follow.js --pipe \\.\pipe\BeDD-1.26.51.01-hi20`, then
 walk a second player near the client.
 
 ## Fixtures
