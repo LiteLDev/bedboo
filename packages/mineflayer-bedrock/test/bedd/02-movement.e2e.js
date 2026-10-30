@@ -3,7 +3,7 @@
 // Real-client e2e (docs/bedd.md): walking with setControlState and a pathfinder goal, lookAt, setQuickBarSlot.
 const assert = require('assert')
 const { withTimeout } = require('mineflayer/lib/promise_utils')
-const { gate, session, need, canRunCommands, run, target, until, sleep, nextServerbound, serverPosition, prepareArena, giveHotbar } = require('./common')
+const { gate, session, need, needCommands, canRunCommands, run, target, until, sleep, nextServerbound, serverPosition, prepareArena, giveHotbar } = require('./common')
 
 const horizontal = (a, b) => Math.hypot(a.x - b.x, a.z - b.z)
 const wrapDeg = (d) => ((d % 360) + 540) % 360 - 180
@@ -109,6 +109,46 @@ describe('bedd: movement and looking (real client)', function () {
       const lines = await s.console.commandOutput(`testfor @a[name=${target(s.name)},hasitem={item=diamond,location=slot.weapon.mainhand}]`)
       assert.ok(lines.some((l) => /Found/.test(l)), `BDS mainhand: ${lines.join(' | ')}`)
       await run(s, 'clear @s diamond')
+    }
+  })
+
+  it('creative.startFlying / stopFlying toggle the client\'s flight (double-tapped jump)', async function () {
+    need(this, s, 'setControlState')
+    needCommands(this, s)
+    const { bot } = s
+    await run(s, 'gamemode creative @s')
+    try {
+      await until(() => bot.abilities?.mayFly, { what: 'creative abilities (may_fly)' })
+      const errors = []
+      const onError = (err) => errors.push(err)
+      bot.on('error', onError)
+      try {
+        const ground = bot.entity.position.y
+        bot.creative.startFlying()
+        // the client asks the server itself (request_ability); its update_abilities answer is the server's verdict
+        await until(() => bot.abilities.flying === true, { what: 'the server to report flying', timeout: 5000 })
+        await sleep(1500)
+        assert.ok(bot.entity.position.y > ground + 0.2, `still aloft: y ${bot.entity.position.y} vs ground ${ground}`)
+        assert.ok(!bot.entity.onGround, 'not on the ground while flying')
+        assert.strictEqual(bot._bedrock.physics.isFlying(), true)
+        bot.creative.stopFlying()
+        await until(() => bot.abilities.flying === false, { what: 'the server to report the flight stopped', timeout: 5000 })
+        await until(() => bot.entity.onGround, { what: 'the client to land', timeout: 10000 })
+        // the bot still drives the client afterwards
+        const start = bot.entity.position.clone()
+        bot.setControlState('forward', true)
+        try {
+          await until(() => horizontal(bot.entity.position, start) >= 2, { what: 'the client to walk after the flight', timeout: 10000 })
+        } finally {
+          bot.setControlState('forward', false)
+        }
+        assert.deepStrictEqual(errors.map(e => e.message), [])
+      } finally {
+        bot.removeListener('error', onError)
+      }
+    } finally {
+      bot.creative.stopFlying()
+      await run(s, 'gamemode survival @s').catch(() => {})
     }
   })
 })

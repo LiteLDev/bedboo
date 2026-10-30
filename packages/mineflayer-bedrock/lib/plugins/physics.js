@@ -76,6 +76,10 @@ const GLIDE_START_FLAGS = ['jump_down', 'jumping', 'want_up', 'jump_current_raw'
 const GLIDE_CONFIRM_TICKS = 20
 /** a flight request the server has not answered (update_abilities) after this many ticks is dropped */
 const FLIGHT_CONFIRM_TICKS = 20
+// bedd: the real client toggles creative flight on a double-tapped jump (and sends request_ability itself). Jump
+// states of the toggle, one per tick: a release first (a held jump would hide the first press), press, release, press,
+// release — two presses 2 ticks apart, well inside the client's double-tap window
+const BEDD_FLIGHT_TAPS = [false, true, false, true, false]
 /** bedd: an echoed rotation within this many degrees of the desired one resolves look/lookAt (BeDD `look` op) */
 const BEDD_LOOK_TOLERANCE = 0.5
 /** bedd: look/lookAt resolve after this long without a converging echo (the client may be paused or in a menu) */
@@ -117,6 +121,7 @@ function inject (bot, { physicsEnabled }) {
   let vehicleInput = { left: 0, forward: 0 }
   let pendingFlightRequest = null // request_ability flying value to send with the next input
   let flightRequestTick = null // tick of the input after the last request_ability, until update_abilities answers
+  let flightTaps = [] // bedd: jump states still to send for a double-tap flight toggle (BEDD_FLIGHT_TAPS)
   let abilitiesKnown = false // abilities.js reported the server's abilities at least once
   let skipNext = false // the next input is the first one after a teleport: not simulated (BDS does the same)
   const history = [] // [{ tick, input, state, simulated }] oldest first
@@ -267,6 +272,12 @@ function inject (bot, { physicsEnabled }) {
       bot.entity.yaw = plan.yaw
       control = plan.control
       rawControl = { ...plan.control }
+    }
+    if (flightTaps.length) {
+      // bedd flight toggle: the double-tapped jump overrides the jump control for these ticks
+      const jump = flightTaps.shift()
+      control = { ...control, jump }
+      rawControl = { ...rawControl, jump }
     }
     if (rawControl.jump && !prevInput?.rawControl?.jump) keyEdges.jumpPressed = keyEdges.tick
     if (!rawControl.forward && prevInput?.rawControl?.forward) keyEdges.forwardReleased = keyEdges.tick
@@ -452,9 +463,17 @@ function inject (bot, { physicsEnabled }) {
     const entity = bot.entity
     if (!entity) return null
     if (pendingFlightRequest !== null) {
-      bot._client.queue('request_ability', { ability: 'flying', value_type: 'bool', bool_value: pendingFlightRequest, float_val: 0 })
-      pendingFlightRequest = null
-      flightRequestTick = BigInt(tick)
+      const on = pendingFlightRequest
+      pendingFlightRequest = null // first: a throwing queue must not repeat the request on every tick
+      if (beddMode()) {
+        // the real client owns request_ability (the bedd router rejects it): it requests flight itself when its jump
+        // is double-tapped. The confirmation timeout runs from the last tap
+        flightTaps = BEDD_FLIGHT_TAPS.slice()
+        flightRequestTick = BigInt(tick) + BigInt(BEDD_FLIGHT_TAPS.length)
+      } else {
+        flightRequestTick = BigInt(tick)
+        bot._client.queue('request_ability', { ability: 'flying', value_type: 'bool', bool_value: on, float_val: 0 })
+      }
     } else if (flightRequestTick !== null && BigInt(tick) - flightRequestTick > FLIGHT_CONFIRM_TICKS) {
       // no update_abilities answered the request: the server keeps the previous flight state
       flightRequestTick = null

@@ -228,6 +228,65 @@ describe('bedd physics follower (BEDD-4)', function () {
     })
   })
 
+  describe('bedd flight (creative.startFlying / stopFlying)', () => {
+    /** the bedd router's verdict on request_ability (unsupported: the real client owns it) */
+    function rejectRequestAbility (client) {
+      const queue = client.queue
+      client.queue = (name, params) => {
+        if (name === 'request_ability') throw Object.assign(new Error('request_ability is not supported'), { code: 'ERR_BEDD_UNSUPPORTED' })
+        return queue(name, params)
+      }
+    }
+    const jumps = (packets) => packets.map(p => p.input_data.includes('jump_down'))
+
+    it('toggles flight with a double-tapped jump, never request_ability, and the inputs keep flowing', async () => {
+      const { bot, client, echo, inputs, errors } = await beddBot()
+      rejectRequestAbility(client)
+      const [base] = echoRecords()
+      echo(base)
+      const before = inputs().length
+      bot.creative.startFlying()
+      assert.strictEqual(bot._bedrock.physics.isFlying(), true)
+      for (let i = 1; i <= 8; i++) echo({ ...base, tick: base.tick + BigInt(i) })
+      const sent = inputs().slice(before)
+      assert.strictEqual(sent.length, 8, 'one input per echo')
+      assert.deepStrictEqual(jumps(sent).slice(0, 5), [false, true, false, true, false], 'release, press, release, press, release')
+      assert.deepStrictEqual(client.sent('request_ability'), [])
+      assert.deepStrictEqual(errors, [])
+
+      // and back off: another double tap
+      bot.creative.stopFlying()
+      for (let i = 9; i <= 14; i++) echo({ ...base, tick: base.tick + BigInt(i) })
+      assert.deepStrictEqual(jumps(inputs().slice(before + 8)).slice(0, 5), [false, true, false, true, false])
+      assert.strictEqual(inputs().length, before + 14)
+      assert.deepStrictEqual(errors, [])
+    })
+
+    it('a held jump control is released first and comes back after the taps', async () => {
+      const { bot, client, echo, inputs, errors } = await beddBot()
+      rejectRequestAbility(client)
+      const [base] = echoRecords()
+      echo(base)
+      bot.setControlState('jump', true)
+      const before = inputs().length
+      bot.creative.startFlying()
+      for (let i = 1; i <= 6; i++) echo({ ...base, tick: base.tick + BigInt(i) })
+      assert.deepStrictEqual(jumps(inputs().slice(before)), [false, true, false, true, false, true])
+      assert.deepStrictEqual(errors, [])
+    })
+
+    it('without an update_abilities answer the bot falls back to not flying', async () => {
+      const { bot, client, echo, errors } = await beddBot()
+      rejectRequestAbility(client)
+      const [base] = echoRecords()
+      echo(base)
+      bot.creative.startFlying()
+      for (let i = 1; i <= 40; i++) echo({ ...base, tick: base.tick + BigInt(i) })
+      assert.strictEqual(bot._bedrock.physics.isFlying(), false)
+      assert.deepStrictEqual(errors, [])
+    })
+  })
+
   describe('raknet mode (no-op)', () => {
     it('attach does nothing, echoes are ignored and the timer clock is unchanged', async () => {
       const { bot, client } = await createFakeBot()
