@@ -92,6 +92,9 @@ function createLifecycle (bot) {
   const input = () => bot._bedrock?.input
   const physics = () => bot._bedrock?.physics
   const selfRuntimeId = () => bot._bedrock?.ids?.selfRuntimeId() ?? 0n
+  // BEDD-5: with transport 'bedd' the real client sends the loading screen acks, the dimension change ack and the
+  // join's respawn reply itself (lib/bedd/surface.js); bedboo only follows the state
+  const clientOwnsLoadingScreen = () => !!bot._client?.bedd && bot._client.bedd.capabilities?.ownsLoadingScreen !== false
   let spawnBeforeStartGame = false
 
   const lifecycle = {
@@ -166,6 +169,7 @@ function createLifecycle (bot) {
 
     /** serverbound_loading_screen type 1 (start) then type 2 (end): BDS simulates the player only after them. */
     sendLoadingScreenAck (loadingScreenId) {
+      if (clientOwnsLoadingScreen()) return
       const base = loadingScreenId === undefined || loadingScreenId === null ? {} : { loading_screen_id: loadingScreenId }
       bot._client.queue('serverbound_loading_screen', { type: 1, ...base })
       bot._client.queue('serverbound_loading_screen', { type: 2, ...base })
@@ -190,6 +194,7 @@ function createLifecycle (bot) {
       // the End exit sends the spawn search height: the real position follows (respawn state 1)
       positionPending = position.y >= SPAWN_SEARCH_Y
       if (!positionPending) setPosition(position)
+      if (clientOwnsLoadingScreen()) return
       bot._client.queue('player_action', {
         runtime_entity_id: selfRuntimeId(),
         action: 'dimension_change_ack',
@@ -291,7 +296,7 @@ function createLifecycle (bot) {
     else setPosition(feet)
     // join: answer like the vanilla client (client_ready). After a death the respawn handshake is U9's
     // (bot.respawn: client state 2 first, then player_action respawn after this state 1).
-    if (lifecycle.state === 'loading') client.queue('respawn', { position: packet.position, state: 2, runtime_entity_id: selfRuntimeId() })
+    if (lifecycle.state === 'loading' && !clientOwnsLoadingScreen()) client.queue('respawn', { position: packet.position, state: 2, runtime_entity_id: selfRuntimeId() })
   })
 
   client.on('change_dimension', (packet) => {

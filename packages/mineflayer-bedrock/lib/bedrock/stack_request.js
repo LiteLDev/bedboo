@@ -1,5 +1,6 @@
 // owner: U8 (inventory, windows, creative & item use)
 'use strict'
+const { BeddUnsupportedError } = require('../bedd/errors')
 
 /**
  * Server-authoritative inventory: item_stack_request / item_stack_response manager, exposed as
@@ -36,6 +37,8 @@
  *   {@link StackRequestError} on an error status, a timeout (`opts.timeout`, default 5000 ms) or disconnect.
  *   The caller sends it (`write(request)`) right away.
  * - `send(actions, opts?) → Promise<ItemStackResponse>` = create + write.
+ * - BEDD-5: with `transport: 'bedd'` and no BeDD `stack` op, `create` throws (and `send` rejects with) a
+ *   BeddUnsupportedError (`code: 'ERR_BEDD_UNSUPPORTED'`, feature 'item_stack_request') before registering anything.
  * - `write(request, { viaInput })`, `nextRequestId()`, `observe(fn) → unsubscribe` (fn({ request, response,
  *   outcome: 'ok'|'error'|'timeout'|'closed', meta }) runs synchronously for every settled request, before its
  *   promise settles; an answer to a request that already timed out is reported once more as 'late-ok' /
@@ -176,7 +179,19 @@ function createStackRequestManager (bot, { timeout: defaultTimeout = DEFAULT_TIM
     entry.reject(new StackRequestError(message, { status, outcome, request: entry.request, response }))
   }
 
+  // BEDD-5: with transport 'bedd' the real client owns item_stack_request; it can only go through BeDD's `stack` op
+  // (lib/bedd/inventory.js). Without that op every request is refused before it is registered or predicted (the public
+  // inventory APIs are refused earlier still, before any screen opens: lib/bedd/surface.js).
+  function beddUnsupported () {
+    const bedd = bot._client?.bedd
+    if (!bedd || (bot._bedrock?.mode !== undefined && bot._bedrock.mode !== 'bedd')) return null
+    if (bedd.caps?.stack === 'present') return null
+    return new BeddUnsupportedError('item_stack_request', { missing: ['stack'] })
+  }
+
   function create (actions, opts = {}) {
+    const unsupported = beddUnsupported()
+    if (unsupported) throw unsupported
     const requestId = opts.requestId ?? nextRequestId()
     if (pending.has(requestId)) throw new Error(`item stack request id ${requestId} is already pending`)
     const list = typeof actions === 'function' ? actions(requestId) : actions
@@ -203,6 +218,8 @@ function createStackRequestManager (bot, { timeout: defaultTimeout = DEFAULT_TIM
   }
 
   function send (actions, opts = {}) {
+    const unsupported = beddUnsupported()
+    if (unsupported) return Promise.reject(unsupported)
     const { request, response } = create(actions, opts)
     write(request, opts)
     return response
