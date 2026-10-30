@@ -4,7 +4,7 @@
 const assert = require('assert')
 const crypto = require('crypto')
 const { onceWithCleanup } = require('mineflayer/lib/promise_utils')
-const { gate, session, caps, need, needCommands, run, target, until, nextServerbound, serverPosition } = require('./common')
+const { gate, session, caps, need, needCommands, commandChannel, run, target, until, nextServerbound, serverPosition } = require('./common')
 
 describe('bedd: core (real client)', function () {
   let s
@@ -92,6 +92,7 @@ describe('bedd: core (real client)', function () {
 
   it('setup commands reach the world (console or player commands)', async function () {
     needCommands(this, s)
+    if (commandChannel(s) === 'keys') this.skip() // typed into the chat: no output to read back
     const lines = await run(s, 'time query daytime')
     assert.ok(lines.length > 0, 'time query printed something')
   })

@@ -132,9 +132,21 @@ function need (test, s, api, ops = []) {
   }
 }
 
-/** Whether setup commands can run: on the BDS console (remote) or as the player through `send`. */
+/**
+ * How setup commands run: 'console' (BDS console), 'send' (command_request through BeDD's `send`, output correlated),
+ * 'keys' (no `send`: bot.chat types the command into the client's chat with the key/text fallback, no output), or null.
+ */
+function commandChannel (s) {
+  if (s.console) return 'console'
+  const c = caps(s)
+  if (c.send === 'present' && typeof s.bot._bedrock?.commands?.request === 'function') return 'send'
+  if (c.key === 'present' && c.text === 'present') return 'keys'
+  return null
+}
+
+/** Whether setup commands can run ({@link commandChannel}). */
 function canRunCommands (s) {
-  return Boolean(s.console) || (caps(s).send === 'present' && typeof s.bot._bedrock?.commands?.request === 'function')
+  return commandChannel(s) !== null
 }
 
 /** Skip the current test unless setup commands can run ({@link canRunCommands}). */
@@ -144,14 +156,20 @@ function needCommands (test, s) {
 
 /**
  * Run a setup command: on the BDS console when there is one (no leading '/', the player addressed by name), else as
- * the player (command_request through `send`). Resolves with the output lines.
+ * the player (command_request through `send`, or typed into the chat). Resolves with the output lines ([] when typed:
+ * callers check the effect on the tap).
  * @param {Session} s
  * @param {string} cmd with `@s` standing for the player
  */
 async function run (s, cmd) {
   let lines
-  if (s.console) {
+  const channel = commandChannel(s)
+  if (channel === 'console') {
     lines = await s.console.commandOutput(cmd.replace(/@s\b/g, target(s.name)))
+  } else if (channel === 'keys') {
+    s.bot.chat('/' + cmd)
+    await sleep(KEYS_COMMAND_MS)
+    return []
   } else {
     const out = await s.bot._bedrock.commands.request('/' + cmd, { timeout: 10000 })
     lines = (out.output ?? []).map((o) => [o.message_id, ...(o.parameters ?? [])].join(' '))
@@ -161,6 +179,9 @@ async function run (s, cmd) {
   if (bad) throw new Error(`setup command "${cmd}" failed: ${bad}`)
   return lines
 }
+
+/** time a command typed into the chat (T or SLASH, text, ENTER) takes before the next one can be typed */
+const KEYS_COMMAND_MS = 2500
 
 /** console messages / command_output message ids of commands that did not run (syntax, permission, no target) */
 const COMMAND_ERROR_RE = /^(Unknown command|Syntax error|No targets matched|You do not have permission|commands\.generic\.(unknown|syntax|noTargetMatch|permission))/i
@@ -269,6 +290,7 @@ module.exports = {
   endSession,
   caps,
   need,
+  commandChannel,
   canRunCommands,
   needCommands,
   run,
