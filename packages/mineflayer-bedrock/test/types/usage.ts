@@ -4,7 +4,7 @@ import { Vec3 } from 'vec3'
 import {
   createBot, Bot, BotOptions, Chest, Furnace, EnchantmentTable, Villager, Anvil,
   Location, Painting, ScoreBoard, BossBar, Particle, testedVersions, latestSupportedVersion,
-  oldestSupportedVersion, supportFeature, BedrockExtras
+  oldestSupportedVersion, supportFeature, BedrockExtras, BeddClientApi, BeddCaps, BeddCap
 } from '../..'
 
 const options: BotOptions = {
@@ -65,3 +65,10 @@ createBot({
   nethernet: { signalling: 'http', serverKey: 'sha256:00', onServerKey: (fingerprint: string, url: string) => fingerprint.length > 0 && url.length > 0 }
 })
 createBot({ username: 'rak', transport: 'raknet', raknetBackend: 'raknet-native' })
+
+// BEDD-1: transport 'bedd' (a Be.D.D.-hosted real client) and its client.bedd surface
+const beddBot = createBot({ transport: 'bedd', bedd: { pipe: '\\\\.\\pipe\\BeDD', tapPipe: '\\\\.\\pipe\\BeDD-tap', timeoutMs: 3000, modules: ['router'] } })
+const beddApi = (beddBot._client as unknown as { bedd: BeddClientApi }).bedd
+beddApi.ready.then((caps: BeddCaps) => console.log(caps.look === 'present', beddApi.supports('input'), beddApi.link.state))
+beddApi.rpc.call('look', { yaw: 90, pitch: 0 }).then(reply => console.log(reply.ok))
+beddApi.rpc.probe('stack').then((cap: BeddCap) => console.log(cap))

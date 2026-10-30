@@ -1,4 +1,4 @@
-// owner: U4 (core runtime) → U16b (wave 5: transport options); U17 minimal fix: offline SelfSignedId
+// owner: U4 (core runtime) → U16b (wave 5: transport options); U17 minimal fix: offline SelfSignedId; BEDD-1: transport 'bedd'
 'use strict'
 const crypto = require('crypto')
 const { VERSION } = require('./bedrock/constants')
@@ -29,6 +29,10 @@ const { VERSION } = require('./bedrock/constants')
  *   identity key), `onServerKey(fingerprint, url) → boolean` (approve an unpinned key), `networkId`,
  *   `webrtcBackend`, `signallingConnectTimeout`. Without `serverKey`/`onServerKey` an unpinned plain-HTTP key
  *   is accepted (the server is no more authenticated than over RakNet); pin it to reject anything else.
+ * - `transport: 'bedd'` (BEDD-1) — no connection of its own: a real Minecraft client hosted by Be.D.D. is in the
+ *   world, bedboo follows it through Be.D.D.'s tap pipe and acts through its control pipe (lib/bedd/). Options
+ *   under `bedd`: `pipe` (control pipe, default `\\.\pipe\BeDD` or $BEDBOO_BEDD_PIPE), `tapPipe` (default
+ *   `<pipe>-tap`), `connect(path) → Duplex` (default `net.connect`), `timeoutMs`, `modules`.
  *
  * Authentication follows mineflayer's options:
  * - `auth: 'offline'` (default) — no Xbox Live; `username` is the player name
@@ -54,11 +58,11 @@ const DEFAULTS = {
   conLog: null
 }
 
-const TRANSPORTS = ['raknet', 'nethernet']
+const TRANSPORTS = ['raknet', 'nethernet', 'bedd']
 const SIGNALLING = ['http', 'lan', 'services']
 
 /** mineflayer-only options that must not reach bedrock-protocol (they mean something else there or nothing). */
-const MINEFLAYER_ONLY = new Set(['client', 'plugins', 'auth', 'viewDistance', 'brand', 'respawn', 'chat', 'physicsEnabled', 'maxCatchupTicks'])
+const MINEFLAYER_ONLY = new Set(['client', 'plugins', 'auth', 'viewDistance', 'brand', 'respawn', 'chat', 'physicsEnabled', 'maxCatchupTicks', 'bedd'])
 
 /**
  * @param {string|undefined} auth mineflayer `auth` option
@@ -124,8 +128,9 @@ function createClient (options) {
   clientOptions.version = options.version || VERSION
   if (typeof clientOptions.port === 'string') clientOptions.port = parseInt(clientOptions.port, 10)
   if (!TRANSPORTS.includes(clientOptions.transport)) {
-    throw new Error(`unsupported transport '${clientOptions.transport}': use 'raknet' (default) or 'nethernet'`)
+    throw new Error(`unsupported transport '${clientOptions.transport}': use 'raknet' (default), 'nethernet' or 'bedd'`)
   }
+  if (clientOptions.transport === 'bedd') return require('./bedd').createBeddClient({ ...options, version: clientOptions.version })
   if (clientOptions.transport === 'nethernet') clientOptions.nethernet = nethernetOptions(clientOptions, options)
   if (clientOptions.offline && typeof clientOptions.username === 'string') {
     clientOptions.skinData = { SelfSignedId: offlineSelfSignedId(clientOptions.username), ...clientOptions.skinData }
