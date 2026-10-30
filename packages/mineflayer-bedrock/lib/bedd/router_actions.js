@@ -19,7 +19,8 @@ const { ensureDispatch } = require('./routes')
  *   - item_use click_block   → `look` at block_position + click_pos (waits for the reply), then `button use click`
  *   - item_use click_air     → items used by holding (food, potions, bow, crossbow, trident, shield, …): `button use
  *                              down`, held until item_release or the server's completed_using_item; any other item
- *                              (throwables, fishing rod, …): `button use click`
+ *                              (throwables, fishing rod, …): `button use click`. When a block is under the
+ *                              crosshair (it would take the use), `look` straight up first.
  *   - item_release           → `button use up`
  *   - item_use_on_entity     → `look` at the clicked point of the entity (its centre for attacks), then `button attack
  *                              click` / `button use click`
@@ -37,6 +38,8 @@ const { ensureDispatch } = require('./routes')
  */
 
 const ACTION_LOOK_TIMEOUT_MS = 1000
+/** blocks closer than this along the view ray would catch a click_air use (survival reach plus a margin) */
+const AIR_USE_REACH = 6
 const MOUSE_BUTTONS = { attack: 'left', use: 'right', pick: 'middle' }
 const BREAK_RELEASES = new Set(['abort_break', 'stop_break'])
 /** items used by holding the use button (besides food): draw, charge, raise, look through, toot, drink, brush */
@@ -122,6 +125,25 @@ function attach (bot, client) {
     }
   }
 
+  /**
+   * click_air means "use in the air", but the client uses its item on whatever block its crosshair is on (a chest
+   * would open instead of the apple being eaten): when the bot's view ray hits a block within reach, look straight up
+   * first (keeping the yaw).
+   */
+  async function aimAtAir () {
+    let target = null
+    try {
+      target = bot.blockAtCursor?.(AIR_USE_REACH)
+    } catch (_) {}
+    if (!target || !present('look')) return
+    const yaw = toBedrockYaw(bot.entity?.yaw ?? 0)
+    try {
+      await call('look', { yaw, pitch: -90, timeoutMs: ACTION_LOOK_TIMEOUT_MS })
+    } catch (err) {
+      warn(err)
+    }
+  }
+
   async function button (name, action, extra = {}) {
     if (present('button')) return call('button', { button: name, action, ...extra })
     return call('mouse', { action, button: MOUSE_BUTTONS[name] })
@@ -202,11 +224,17 @@ function attach (bot, client) {
         if (isHoldItem(data.held_item)) {
           if (!useHeld) {
             useHeld = true
-            enqueue(() => button('use', 'down'))
+            enqueue(async () => {
+              await aimAtAir()
+              await button('use', 'down')
+            })
           }
         } else {
           releaseUse()
-          enqueue(() => button('use', 'click'))
+          enqueue(async () => {
+            await aimAtAir()
+            await button('use', 'click')
+          })
         }
         return true
       }

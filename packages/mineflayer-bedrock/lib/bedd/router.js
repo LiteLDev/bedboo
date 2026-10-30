@@ -42,6 +42,8 @@ const RAW_GAIN = 1
 const RAW_MAX = 300
 const RAW_STEP_MS = 150 // the raw loop's step interval when the echo carries no tick
 const CHAT_OPEN_DELAY_MS = 150
+const CLOSE_SCREEN_WAIT_MS = 1000 // container_close: how long a just-opened screen may take to show
+const CLOSE_SCREEN_POLL_MS = 50
 
 /** movement key fallback: key name, wanted when */
 const MOVE_KEYS = [
@@ -427,9 +429,16 @@ function createRouter (opts = {}) {
     return chain(async () => {
       // ESC with nothing open would open the pause menu
       if (present('world')) {
-        // a fresh snapshot (not the in-flight poll, which may predate the screen)
-        const w = await call('world').catch(() => null)
-        if (w) world = w
+        // a fresh snapshot (not the in-flight poll, which may predate the screen). The client pushes a screen a few
+        // frames after its container_open, so a close right after the open may still see no menu: ask again briefly
+        // before deciding there is nothing to close.
+        let w = null
+        for (let tries = CLOSE_SCREEN_WAIT_MS / CLOSE_SCREEN_POLL_MS; ; tries--) {
+          w = await call('world').catch(() => null)
+          if (w) world = w
+          if (!w || w.showingMenu !== false || tries <= 0 || closed) break
+          await sleep(CLOSE_SCREEN_POLL_MS)
+        }
         if (w && w.showingMenu === false) return
       }
       await key('ESC')
