@@ -217,6 +217,15 @@ describe('bedd physics follower (BEDD-4)', function () {
       handle.detach()
       assert.strictEqual(client.listenerCount('serverbound'), listeners - 1)
     })
+
+    it('detaches when the client closes, without adding a bot end listener', async () => {
+      const { bot, client, handle } = await beddBot()
+      assert.ok(!bot.listeners('end').includes(handle.detach), 'no bot end listener')
+      const listeners = client.listenerCount('serverbound')
+      client.emit('close')
+      assert.strictEqual(client.listenerCount('serverbound'), listeners - 1)
+      assert.notStrictEqual(follower.attach(bot, client), handle, 'a new attach after the close')
+    })
   })
 
   describe('raknet mode (no-op)', () => {
