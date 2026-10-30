@@ -24,6 +24,11 @@ const mocha = path.join(pkgDir, 'node_modules', '.bin', process.platform === 'wi
 
 async function maybeStartBds () {
   if (process.env.BEDBOO_BEDD_START_BDS !== '1' || process.env.BDS_CONTAINER) return
+  if (require('child_process').spawnSync('docker', ['version'], { stdio: 'ignore', shell: process.platform === 'win32' }).status !== 0) {
+    throw new Error('BEDBOO_BEDD_START_BDS=1 needs docker on PATH. Where docker only runs inside WSL, start the server from a ' +
+      'WSL checkout (`corepack pnpm bds up --name bedd-e2e --gamemode survival --transport nethernet`) and set BDS_CONTAINER ' +
+      'and BEDBOO_BEDD_DOCKER instead (docs/testing.md#real-client-e2e-bedd)')
+  }
   const bds = require('@bedboo/bds')
   const name = process.env.BEDBOO_BEDD_BDS_NAME || 'bedd-e2e'
   let srv
@@ -57,7 +62,9 @@ async function waitForPlayer (srv) {
     if (m && Number(m[1]) > 0) return
     if (Date.now() > end) throw new Error(`no player joined ${srv.host}:${srv.port} within ${timeout} ms`)
     if (Date.now() >= nextHint) {
-      console.log(`[test:e2e:bedd] waiting for the BeDD client to join ${srv.host}:${srv.port} (Play → Servers → Add server)`)
+      console.log(`[test:e2e:bedd] waiting for the BeDD client to join ${srv.host}:${srv.port} (Play → Servers → Add server; ` +
+        'keep other Minecraft games closed: NetherNet joins go through the online signaling service, and a game started ' +
+        'later knocks the client out with "Multiplayer Connection Failed … NetherNet")')
       nextHint = Date.now() + 30000
     }
     await new Promise((resolve) => setTimeout(resolve, 2000))

@@ -462,7 +462,14 @@ runs `test/bedd/*.e2e.js` against a **real Minecraft Bedrock client** hosted by 
      on, everyone operator), then join `127.0.0.1:<port>` from the client (Play → Servers → Add server).
      `--transport nethernet` matters: the 1.26.51 client did not join a `transport=raknet` BDS. `BEDBOO_BEDD_START_BDS=1`
      makes the runner start (or reuse) that server and print the port. Where docker only runs inside WSL, run `bds up`
-     from a WSL checkout of bedboo (Windows `pnpm bds` needs docker on the Windows PATH).
+     from a WSL checkout of bedboo (Windows `pnpm bds` needs docker on the Windows PATH); with WSL's mirrored
+     networking the server is reachable on 127.0.0.1 from Windows.
+     **Joining needs Minecraft's online signaling service, even for 127.0.0.1**: NetherNet connections are set up
+     through it, and every game on the PC signs in with the same ID, so a game started later knocks the earlier one's
+     session out ("Multiplayer Connection Failed", "NetherNet", error detail `InitialConnection-13`). Keep every other
+     Minecraft game closed from the join until the run ends (BeDD harnesses: hold `e2e-signaling.lock` exclusive,
+     `$script:ExclusiveSignaling = $true`). The BDS side needs nothing special: a plain `bds up --transport nethernet`
+     server on its slot port is joined fine once no other game signs in.
    - **Singleplayer / LAN host**: a new flat world with cheats on. There is no console: setup commands run as the
      player through `send` and every check uses the tapped state.
 3. Run:
