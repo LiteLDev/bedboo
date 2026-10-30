@@ -13,6 +13,7 @@ Owner: U1 (wave 1). U0 seeded it with the transport spike results, which are kep
 - [BDS 1.26.51.1 quirks](#bds-126511-quirks-seen)
 - [Transport spike (U0)](#transport-spike-u0-2026-10-18--result-raknet-works)
 - [NetherNet (U16b)](#nethernet-u16b)
+- [Real-client e2e (bedd)](#real-client-e2e-bedd)
 - [Fixtures](#fixtures)
 - [Manual docker recipe](#manual-docker-recipe-no-harness)
 
@@ -444,6 +445,60 @@ opt-in:
   server-key pinning, quit) is tagged `nethernet` and kept out of the default run:
   `corepack pnpm test:e2e -- --grep nethernet` (or `BEDBOO_NETHERNET=1`). It needs a server the harness starts
   (skipped with `BDS_HOST`/`BDS_PORT`: an external server's transport is unknown).
+
+## Real-client e2e (bedd)
+
+`corepack pnpm test:e2e:bedd [-- mocha args]` (`scripts/run-e2e-bedd.js`, `packages/mineflayer-bedrock/.mocharc.bedd.json`)
+runs `test/bedd/*.e2e.js` against a **real Minecraft Bedrock client** hosted by Be.D.D. through
+`createBot({ transport: 'bedd' })` ([bedd.md](bedd.md)). It is opt-in: the suites only run on Windows with
+`BEDBOO_BEDD_PIPE` set, in a build that has the `bedd` transport; anywhere else every suite is reported pending
+(skipped), so the command is safe on Linux. The files are outside the unit glob (`test/unit/**`).
+
+1. Start a BeDD game (`Start-BeDDGame.ps1 -Instance <name>`) whose `mods\BeDD\config\config.json` has `tap`,
+   `gameHooks`, `allowSend`, `allowStack` and `pipeInstances` set (see [bedd.md](bedd.md#setup)).
+2. Get the player into a throwaway world — the suites fill a 13×13 arena around the player, switch it to survival and
+   change its inventory:
+   - **BDS**: `corepack pnpm bds up --name bedd-e2e --gamemode survival --transport nethernet` (flat world, cheats
+     on, everyone operator), then join `127.0.0.1:<port>` from the client (Play → Servers → Add server).
+     `--transport nethernet` matters: the 1.26.51 client did not join a `transport=raknet` BDS. `BEDBOO_BEDD_START_BDS=1`
+     makes the runner start (or reuse) that server and print the port. Where docker only runs inside WSL, run `bds up`
+     from a WSL checkout of bedboo (Windows `pnpm bds` needs docker on the Windows PATH).
+   - **Singleplayer / LAN host**: a new flat world with cheats on. There is no console: setup commands run as the
+     player through `send` and every check uses the tapped state.
+3. Run:
+
+   ```powershell
+   $env:BEDBOO_BEDD_PIPE = '\\.\pipe\BeDD-1.26.51.01-hi20'
+   $env:BDS_CONTAINER = 'bedboo-bedd-e2e'                 # BDS world: console setup and server-side checks
+   $env:BEDBOO_BEDD_DOCKER = 'wsl -d Debian -e docker'    # only when docker runs inside WSL, not on Windows
+   corepack pnpm test:e2e:bedd
+   ```
+
+One bot is attached for the whole run and detached at the end; the client stays in its world. The runner probes
+BeDD's ops (`bot.bedrock.bedd.caps` / `supports()`), and each scenario skips when the ops it needs are absent or
+disabled:
+
+| file | scenarios | caps | BDS-side check (console) |
+|---|---|---|---|
+| `01-core.e2e.js` | spawn and position · chat, `/say` and a command with `command_output` · unsupported API → `ERR_BEDD_UNSUPPORTED` · setup commands | `tap`, `send` | `querytarget` position; `tag <p> list` |
+| `02-movement.e2e.js` | lookAt · walk 5 blocks with `setControlState` · pathfinder goal · `setQuickBarSlot` | `look`, `input`, `slot` | `querytarget` position / yRot; `testfor … hasitem mainhand` |
+| `03-actions.e2e.js` | dig dirt in survival · place a block · open / close a chest · eat (golden apple) | `look`, `button` | `testforblock`; `clear <p> <item> 0 0` counts |
+| `04-inventory.e2e.js` | craft planks (2×2) · deposit into a chest | `stack` | `clear <p> oak_planks 0 0` counts |
+
+| variable | |
+|---|---|
+| `BEDBOO_BEDD_PIPE` | the client's control pipe (required) |
+| `BEDBOO_BEDD_TAP_PIPE` | the tap pipe, when it is not `<pipe>-tap` |
+| `BDS_CONTAINER` | the BDS container the client plays on: console setup and server-side checks |
+| `BEDBOO_BEDD_DOCKER` | docker command prefix for that console, e.g. `wsl -d Debian -e docker` (default: `@bedboo/bds`'s docker) |
+| `BEDBOO_BEDD_START_BDS` | `1`: start or reuse `bedboo-bedd-e2e` (`BEDBOO_BEDD_BDS_NAME`) with the harness; needs docker on PATH; waits for a player to join it (`BEDBOO_BEDD_JOIN_TIMEOUT`, 300000 ms) |
+| `BEDBOO_BEDD_WORLD` | `remote` / `local`: override the world mode taken from the tap's HELLO link type |
+| `BEDBOO_BEDD_SPAWN_TIMEOUT` | ms to wait for `spawn` after attaching (60000) |
+| `BEDBOO_BEDD_DEBUG` | `1`: log the caps and why a scenario skipped |
+
+Watch the game window while it runs (or take PrintWindow screenshots) to see the moves, digs and chat on the client.
+Manual smoke: `node packages/mineflayer-bedrock/examples/bedd_follow.js --pipe \\.\pipe\BeDD-1.26.51.01-hi20`, then
+walk a second player near the client.
 
 ## Fixtures
 

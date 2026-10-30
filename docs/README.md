@@ -8,6 +8,7 @@
 | [api.md](api.md) | API reference: mineflayer's API, `createBot` options, the Bedrock differences in short, `bot.bedrock.*` extras |
 | [upstream/api.md](upstream/api.md) | mineflayer 4.39.0's own API reference (pinned copy) — the API mineflayer-bedrock implements |
 | [differences.md](differences.md) | every Java ↔ Bedrock difference in detail (generated from [differences/](differences)) |
+| [bedd.md](bedd.md) | `transport: 'bedd'`: drive a real Bedrock client hosted by Be.D.D. (setup, coverage matrix, security) |
 | [parity.md](parity.md) | parity matrix: every mineflayer export, member, event and external test, with its status and asserting test |
 | [../packages/agent/README.md](../packages/agent/README.md) | `@bedboo/agent`: the scripted survival agent and its skill interface |
 
