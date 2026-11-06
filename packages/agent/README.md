@@ -242,7 +242,7 @@ and no reconnects:
 | N1M3 | U18's nether entry: second bucket, iron ingot (both carried by then), bucket-cast obsidian at a lava pool, frame, flint and steel, into the Nether | 45 min |
 | home | U18's nether skill: back through the bot's own portal | 14 min |
 | nether ores + home | `--nether-ores` instead of home: a gold piece carried and ≥ 8 food items (short of food: home through the portal first, food on the plains, back in), then the nether skill mines N2's quartz, nether gold and ancient debris (the gold piece worn; at least one of each, or the phase fails) and goes home | (6 + 4) + 14 min |
-| E1 | U18's End part — the stronghold portal room reached with cheats (locate + teleport, eyes of ender given; docs/differences/U18.md), the bot fills the frames, enters the End, the dragon is killed by `/kill` (cheat), the bot walks up from the arrival platform to the island top ([the walk up](#the-end-walk-up)), fights two endermen and leaves through the exit portal | 4 + 11 + 4 min (the fight's budget includes 3 min for the walk up, bounded at 150 s) |
+| E1 | U18's End part — the stronghold portal room reached with cheats (locate + teleport, eyes of ender given), the bot fills the frames, enters the End, the dragon is killed by `/kill` (cheat), the bot walks up from the arrival platform to the island top ([the walk up](#the-end-walk-up)), fights two endermen and leaves through the exit portal | 4 + 11 + 4 min (the fight's budget includes 3 min for the walk up, bounded at 150 s) |
 
 Between scenario steps the Agent sleeps through a night in its bed (and before every phase; without a bed and
 without armor it would wait in its house or a sealed hole), tosses junk when the inventory fills up, hunts when
@@ -376,7 +376,7 @@ full inventories into the End (the eyes' /give dropped the End's diamond boots a
 (≥ 12 free slots before every late phase) no run stalled.
 
 **Root cause fixed in the library (FINAL-ROUND).** The hang was in mineflayer-pathfinder itself. The patched pathfinder
-(`patches/mineflayer-pathfinder@2.4.5.patch`, [docs/differences/U15.md](../../docs/differences/U15.md#pathfinder)) now
+(`patches/mineflayer-pathfinder@2.4.5.patch`, [plugin patches](https://docs.levimc.org/bedboo/reference/differences/plugins#pathfinder)) now
 does the following:
 - It releases its equip lock on every outcome.
 - It retries a refused cell once, then plans around it.

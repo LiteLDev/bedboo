@@ -30,7 +30,7 @@ function ensurePathfinder (bot) {
 const baseMovements = new WeakMap()
 
 /**
- * Movements tuned for a survival agent on Bedrock (docs/ecosystem.md): doors opened, no long drops, our stations and
+ * Movements tuned for a survival agent on Bedrock (https://docs.levimc.org/bedboo/guide/plugins#pathfinder): doors opened, no long drops, our stations and
  * containers never dug, every filler block usable for towers / bridges.
  * @param {object} bot
  * @param {object} [overrides] Movements fields to set (a fresh instance is returned when given)

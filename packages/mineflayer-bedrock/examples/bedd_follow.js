@@ -1,5 +1,5 @@
 /*
- * Drive the real Minecraft client hosted by Be.D.D. (docs/bedd.md): the local client follows the nearest other player.
+ * Drive the real Minecraft client hosted by Be.D.D. (https://docs.levimc.org/bedboo/guide/bedd): the local client follows the nearest other player.
  *
  * Start the BeDD game with tap, gameHooks and allowSend on, join a world (a server, or a LAN world), then:
  *   node bedd_follow.js --pipe \\.\pipe\BeDD-1.26.51.01-hi20

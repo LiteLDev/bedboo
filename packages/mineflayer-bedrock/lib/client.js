@@ -5,7 +5,7 @@ const { VERSION } = require('./bedrock/constants')
 /**
  * bedrock-protocol client wrapper used by createBot when `options.client` is not given.
  *
- * Defaults (verified against BDS 1.26.51.1, see docs/testing.md):
+ * Defaults (verified against BDS 1.26.51.1, see https://docs.levimc.org/bedboo/reference/bds):
  * - `auth: 'offline'`            → bedrock-protocol `offline: true` (BDS runs with online-mode=false in tests)
  * - `transport: 'raknet'`        RakNet works on 1.26.51.1 with `transport=raknet` in server.properties
  * - `raknetBackend: 'raknet-native'` (patched to load its bundled prebuild); jsp-raknet is rejected by
