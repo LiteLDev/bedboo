@@ -1,13 +1,22 @@
 'use strict'
-// owner: U16b — the user docs stay in sync: every `bot.bedrock.*` extra typed in types/bedrock.d.ts is documented in
-// docs/api.md, and every relative link (and #anchor) of the user docs resolves.
+// The user docs stay in sync: every `bot.bedrock.*` extra typed in types/bedrock.d.ts is documented in the API
+// reference (English and Chinese), and every relative link (and #anchor) of the docs resolves.
 const { describe, it } = require('node:test')
 const assert = require('assert')
 const fs = require('fs')
 const path = require('path')
 
 const ROOT = path.join(__dirname, '../../../..')
-const USER_DOCS = ['README.md', 'docs/README.md', 'docs/api.md', 'docs/getting-started.md', 'docs/differences/U16-transport.md']
+const API_DOCS = ['docs/reference/api.md', 'docs/zh/reference/api.md']
+// README, CONTRIBUTING and every page of the docs site (not its installed kit, dependencies or build output)
+const USER_DOCS = ['README.md', 'CONTRIBUTING.md', ...markdownFiles('docs')]
+
+function markdownFiles (dir) {
+  return fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true }).flatMap((e) => {
+    if (e.isDirectory()) return ['node_modules', 'kit', 'dist', '.kit'].includes(e.name) ? [] : markdownFiles(path.join(dir, e.name))
+    return e.name.endsWith('.md') ? [path.join(dir, e.name)] : []
+  })
+}
 
 /** members of `interface BedrockExtras` (one `name: type` / `name?: type` per line) */
 function bedrockExtras () {
@@ -31,22 +40,29 @@ function anchors (text) {
   ])
 }
 
-/** relative markdown links outside code: [text](target) */
+/** relative markdown links outside code: [text](target); site routes (/guide/…) are left to the docs build's linkcheck */
 function links (text) {
   const prose = text.replace(/```[\s\S]*?```/g, '').replace(/`[^`\n]*`/g, '``')
-  return [...prose.matchAll(/\]\(([^)\s]+)\)/g)].map((m) => m[1]).filter((t) => !/^[a-z]+:/i.test(t))
+  return [...prose.matchAll(/\]\(([^)\s]+)\)/g)].map((m) => m[1]).filter((t) => !/^([a-z]+:|\/)/i.test(t))
 }
 
-describe('user docs (U16b)', () => {
-  it('docs/api.md documents every bot.bedrock extra of types/bedrock.d.ts', () => {
-    const api = fs.readFileSync(path.join(ROOT, 'docs/api.md'), 'utf8')
+describe('user docs', () => {
+  it('the API reference documents every bot.bedrock extra of types/bedrock.d.ts', () => {
     const extras = bedrockExtras()
     assert.ok(extras.length > 0)
-    for (const name of extras) assert.ok(api.includes(`bot.bedrock.${name}`), `docs/api.md lacks bot.bedrock.${name}`)
+    for (const doc of API_DOCS) {
+      const api = fs.readFileSync(path.join(ROOT, doc), 'utf8')
+      for (const name of extras) assert.ok(api.includes(`bot.bedrock.${name}`), `${doc} lacks bot.bedrock.${name}`)
+    }
   })
 
   it('every relative link of the user docs resolves (files and #anchors)', () => {
     const problems = []
+    const anchorsOf = new Map() // resolved .md path → its anchors
+    const hasAnchor = (file, anchor) => {
+      if (!anchorsOf.has(file)) anchorsOf.set(file, anchors(fs.readFileSync(file, 'utf8')))
+      return anchorsOf.get(file).has(anchor)
+    }
     for (const doc of USER_DOCS) {
       const file = path.join(ROOT, doc)
       const text = fs.readFileSync(file, 'utf8')
@@ -57,7 +73,7 @@ describe('user docs (U16b)', () => {
           problems.push(`${doc}: ${link} (no such file)`)
           continue
         }
-        if (anchor && resolved.endsWith('.md') && !anchors(fs.readFileSync(resolved, 'utf8')).has(anchor)) {
+        if (anchor && resolved.endsWith('.md') && !hasAnchor(resolved, anchor)) {
           problems.push(`${doc}: ${link} (no such anchor)`)
         }
       }

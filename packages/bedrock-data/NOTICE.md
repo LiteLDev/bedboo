@@ -31,7 +31,7 @@ package is LGPL-3.0-only like the rest of the repository.
 - `items[].blockStateId` (new field): the block state a block item places (Cloudburst `creative_items.json`,
   else the default state of the same-named block).
 - New datasets: effects, foods, attributes, enchantments, entities, particles, sounds, biomes (see
-  `docs/differences/U2.md#datasets`). Biomes are keyed by the vanilla numeric ids (pmmp `biome_id_map.json` +
+  `https://docs.levimc.org/bedboo/reference/differences/data#datasets`). Biomes are keyed by the vanilla numeric ids (pmmp `biome_id_map.json` +
   `tables.BIOME_IDS_ADDED`; the generator fails unless the ids sort exactly like BDS lists the biomes); entities
   that minecraft-data lists twice use the row named in `tables.ENTITY_DUPLICATES`.
 
