@@ -1,4 +1,4 @@
-// owner: U0 (skeleton); captures are regenerated with scripts/capture-fixtures.js
+// owner: U0 (skeleton)
 'use strict'
 /**
  * Packet fixtures recorded from a real BDS (see README.md in this directory).

@@ -1,6 +1,6 @@
 'use strict'
 // owner: FINAL-FIX-LIB (final-acceptance review fixes) — regression tests (no server) on a fake client with the
-// recorded BDS join (flat world). The live counterparts are in test/external/finalFix.test.js.
+// recorded BDS join (flat world).
 const assert = require('assert')
 const { Vec3 } = require('vec3')
 const { createFakeBot, replayJoin } = require('./helpers/fake')

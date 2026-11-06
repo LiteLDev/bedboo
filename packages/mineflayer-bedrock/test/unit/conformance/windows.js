@@ -12,7 +12,7 @@
  *
  * Against mineflayer-bedrock this works while the openers keep upstream's shape (opener →
  * bot.openBlock/openEntity → 'windowOpen'); when an implementation cannot be driven this way the class
- * is reported as `unverified` (covered by the parity fragment's asserting test instead). An opener that
+ * is reported as `unverified` (pending in the conformance test). An opener that
  * never settles leaves its listeners behind, so the remaining classes are probed on a fresh bot.
  */
 const { addedMembers, realSetTimeout } = require('./surface')
@@ -49,12 +49,13 @@ function createWindow (windows, spec) {
 
 /**
  * @param {object} bot injected bot
- * @param {{ require: Function, timeoutMs?: number, tradeListPacket?: string|null, freshBot?: () => Promise<object> }} opts
- *   `require` resolves prismarine-* the way this bot does (upstream: from mineflayer's dir);
+ * @param {{ require: Function, timeoutMs?: number, tradeList?: (window) => [string, object], freshBot?: () => Promise<object> }} opts
+ *   `require` resolves prismarine-* the way this bot does (upstream: from mineflayer's dir); `tradeList` builds the
+ *   packet a villager opener waits for;
  *   `freshBot` creates another injected bot, used after a probe left an opener pending.
  * @returns {Promise<Record<string, { status: 'ok'|'stub'|'unverified', members?: object, unit?: string, reason?: string }>>}
  */
-async function probeWindows (bot, { require: req, timeoutMs = 300, tradeListPacket = null, freshBot = null }) {
+async function probeWindows (bot, { require: req, timeoutMs = 300, tradeList = null, freshBot = null }) {
   const results = {}
   let current = bot
   let dirty = false
@@ -67,7 +68,7 @@ async function probeWindows (bot, { require: req, timeoutMs = 300, tradeListPack
       current = await freshBot()
       dirty = false
     }
-    const res = await probeOne(current, spec, { req, timeoutMs, tradeListPacket })
+    const res = await probeOne(current, spec, { req, timeoutMs, tradeList })
     dirty = !!res.dirty
     delete res.dirty
     results[spec.cls] = res
@@ -75,7 +76,7 @@ async function probeWindows (bot, { require: req, timeoutMs = 300, tradeListPack
   return results
 }
 
-async function probeOne (bot, spec, { req, timeoutMs, tradeListPacket }) {
+async function probeOne (bot, spec, { req, timeoutMs, tradeList }) {
   const opener = bot[spec.opener]
   if (typeof opener !== 'function') return { status: 'unverified', reason: `bot.${spec.opener} is missing` }
   if (opener.notImplemented === true) return { status: 'stub', unit: opener.unit }
@@ -115,9 +116,9 @@ async function probeOne (bot, spec, { req, timeoutMs, tradeListPacket }) {
     await new Promise(resolve => setImmediate(resolve))
     bot.currentWindow = window
     bot.emit('windowOpen', window)
-    if (spec.entity && tradeListPacket) {
+    if (spec.entity && tradeList) {
       await new Promise(resolve => setImmediate(resolve))
-      bot._client.emit(tradeListPacket, { windowId: window.id, trades: [] })
+      bot._client.emit(...tradeList(window))
     }
     const res = await withTimeout(pending, timeoutMs)
     if (res.timeout) return { status: 'unverified', dirty: true, reason: `bot.${spec.opener}() did not resolve within ${timeoutMs} ms of 'windowOpen'` }

@@ -1,6 +1,6 @@
 'use strict'
 // owner: U16 (wave 5, U16a parity hardening) — regression tests for the wave-4 review findings (no server), on a fake
-// client with the recorded BDS join (flat world). The live counterparts are in test/external/hardening.test.js.
+// client with the recorded BDS join (flat world).
 const assert = require('assert')
 const { Vec3 } = require('vec3')
 const { createFakeBot, replayJoin } = require('./helpers/fake')

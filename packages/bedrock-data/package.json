@@ -15,8 +15,7 @@
   "scripts": {
     "test": "mocha",
     "generate": "node scripts/fetch-sources.js && node scripts/generate.js",
-    "generate:check": "node scripts/fetch-sources.js && node scripts/generate.js --check",
-    "probe": "node scripts/probe-bds.js"
+    "generate:check": "node scripts/fetch-sources.js && node scripts/generate.js --check"
   },
   "dependencies": {
     "minecraft-data": "3.117.0"

@@ -8,32 +8,14 @@
  *                        kind / value type, extra top-level member, missing export, d.ts gap, …);
  * - severity 'pending' → fails only in strict mode (./config.js): notImplemented stubs, members only
  *                        observable after join that the join replay did not produce, window members of
- *                        openers that cannot be probed, events without an asserting test.
+ *                        openers that cannot be probed.
  */
-const path = require('path')
 const { WINDOW_SPECS } = require('./windows')
-const { PLACEHOLDER_RE } = require(path.join(__dirname, '../../../../../scripts/parity/lib/items'))
 
 /** Values whose class legitimately differs (Java vs Bedrock protocol client). */
 const CTOR_EXEMPT = new Set(['bot._client'])
-
-/** Parity row (assembled matrix) for an item, or null. */
-function rowOf (parity, kind, name) {
-  return (parity && parity.byKey.get(`${kind}|${name}`)) || null
-}
-function firstOwner (row) {
-  return row && row.owners.length ? row.owners[0] : null
-}
-/** n.a. rows document an inherent difference: the member may legitimately never be observed. */
-function isNotApplicable (row) {
-  return !!row && row.status === 'n.a.'
-}
-/** A row that proves the item: done/adapted with an asserting test, or n.a. */
-function isAsserted (row) {
-  if (!row) return false
-  if (row.status === 'n.a.') return true
-  return (row.status === 'done' || row.status === 'adapted') && !!row.test && !PLACEHOLDER_RE.test(row.test)
-}
+/** Members Bedrock never produces (docs/differences/U4.md#max-players). */
+const NOT_APPLICABLE = new Set(['bot.game.maxPlayers'])
 
 function describeKind (k) {
   return k === 'promise' ? 'returns a promise' : 'is synchronous'
@@ -90,11 +72,10 @@ function isEmpty (d) {
 /**
  * @param {object} ref buildReference()
  * @param {{ inject: object, exports: object, windows: object, post: object|null, dts: object|null }} bed
- * @param {{ parity: { byKey: Map }|null }} [opts]
  */
-function compare (ref, bed, { parity = null } = {}) {
+function compare (ref, bed) {
   const findings = []
-  const push = (area, item, kind, f, defaultUnit = null) => findings.push({ area, item, kind, severity: f.severity, unit: f.unit ?? defaultUnit, message: f.message })
+  const push = (area, item, kind, f) => findings.push({ area, item, kind, severity: f.severity, unit: f.unit ?? null, message: f.message })
 
   // ---- exports ----------------------------------------------------------------------------------
   for (const e of Object.values(ref.exports)) {
@@ -110,12 +91,11 @@ function compare (ref, bed, { parity = null } = {}) {
   // ---- bot members --------------------------------------------------------------------------------
   const post = bed.post && !bed.post.failed ? bed.post : null
   for (const m of Object.values(ref.members)) {
-    const row = rowOf(parity, m.kind, m.path)
     if (m.phase === 'inject') {
       const area = m.kind === 'method' ? 'methods' : 'properties'
       const ours = bed.inject[m.path]
       if (!ours) push(area, m.path, m.kind, { severity: 'fail', message: 'missing (mineflayer defines it when the plugins are injected)' })
-      else for (const f of checkMember(m, ours)) push(area, m.path, m.kind, f, firstOwner(row))
+      else for (const f of checkMember(m, ours)) push(area, m.path, m.kind, f)
       continue
     }
     // Created on login/packets upstream: judge the value after the join replay; an inject-time value
@@ -125,12 +105,12 @@ function compare (ref, bed, { parity = null } = {}) {
     const ours = [after, before].find(d => d && !isEmpty(d)) ?? after ?? before
     const upstreamEmpty = m.type === null || m.type === 'null'
     if (ours && (!isEmpty(ours) || upstreamEmpty)) {
-      for (const f of checkMember(m, ours)) push('join', m.path, m.kind, f, firstOwner(row))
-    } else if (!isNotApplicable(row)) {
+      for (const f of checkMember(m, ours)) push('join', m.path, m.kind, f)
+    } else if (!NOT_APPLICABLE.has(m.path)) {
       const why = post
         ? `${ours ? `still ${ours.type}` : 'not defined'} after the join replay (${post.replayed} packets of test/fixtures join_flat${post.spawned ? ', spawn emitted' : ', no spawn'})`
         : `not checked: the join replay failed (${bed.post && bed.post.failed ? bed.post.failed.message : 'not run'})`
-      push('join', m.path, m.kind, { severity: 'pending', message: why }, firstOwner(row))
+      push('join', m.path, m.kind, { severity: 'pending', message: why })
     }
   }
 
@@ -158,32 +138,18 @@ function compare (ref, bed, { parity = null } = {}) {
   for (const cls of classes) {
     const probe = cls === 'Window' ? probes.Chest : probes[cls]
     const opener = cls === 'Window' ? 'bot.openBlock/openContainer' : `bot.${WINDOW_SPECS.find(s => s.cls === cls).opener}`
-    for (const w of Object.values(ref.windows).filter(w => w.cls === cls && w.kind !== 'event')) {
-      const row = rowOf(parity, w.kind, w.name)
+    for (const w of Object.values(ref.windows).filter(w => w.cls === cls)) {
       if (!probe || probe.status === 'stub') {
-        push('windows', w.name, w.kind, { severity: 'pending', message: `${opener} is a notImplemented stub` }, probe ? probe.unit : firstOwner(row))
+        push('windows', w.name, w.kind, { severity: 'pending', message: `${opener} is a notImplemented stub`, unit: probe?.unit })
         continue
       }
       if (probe.status === 'unverified') {
-        if (!isAsserted(row)) push('windows', w.name, w.kind, { severity: 'pending', message: `cannot be probed without a server (${probe.reason}); needs an asserting test in its parity row` }, firstOwner(row))
+        push('windows', w.name, w.kind, { severity: 'pending', message: `cannot be probed without a server (${probe.reason})` })
         continue
       }
       const ours = probe.members[w.member]
-      if (!ours) { push('windows', w.name, w.kind, { severity: 'fail', message: `not added to the window returned by ${opener}` }, firstOwner(row)); continue }
-      for (const f of checkMember(w, ours)) push('windows', w.name, w.kind, f, firstOwner(row))
-    }
-  }
-
-  // ---- events (bot + window): need a parity row with an asserting test -----------------------------
-  const events = [
-    ...Object.values(ref.events).map(e => ({ name: e.name, display: e.name })),
-    ...Object.values(ref.windows).filter(w => w.kind === 'event').map(w => ({ name: w.name, display: w.name }))
-  ]
-  if (parity) {
-    for (const e of events) {
-      const row = rowOf(parity, 'event', e.name)
-      if (!row) push('events', e.display, 'event', { severity: 'fail', message: 'no parity row (docs/parity/*.md) lists this event' })
-      else if (!isAsserted(row)) push('events', e.display, 'event', { severity: 'pending', message: `no asserting test yet (parity status ${row.status})` }, firstOwner(row))
+      if (!ours) { push('windows', w.name, w.kind, { severity: 'fail', message: `not added to the window returned by ${opener}` }); continue }
+      for (const f of checkMember(w, ours)) push('windows', w.name, w.kind, f)
     }
   }
 
@@ -224,4 +190,4 @@ function compareDts (ref, ours) {
   return out
 }
 
-module.exports = { compare, compareDts, checkMethod, checkProperty, isAsserted }
+module.exports = { compare, compareDts, checkMethod, checkProperty }

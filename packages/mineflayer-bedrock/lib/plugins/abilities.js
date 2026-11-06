@@ -1,6 +1,6 @@
 // owner: U9 (player state, world extras & dimensions)
 // Adapted from mineflayer master lib/plugins/abilities.js (MIT, Copyright (c) 2013 Andrew Kelley; not in 4.39.0;
-//   pinned copy in docs/upstream/abilities.master.js, master SHA 7b4bb8d2b56be9cdb832474af873acd37e609746)
+//   pinned copy in test/fixtures/upstream/abilities.master.js, master SHA 7b4bb8d2b56be9cdb832474af873acd37e609746)
 // Surface: bot.abilities { invulnerable, flying, mayFly, instantBuild, flyingSpeed, walkingSpeed }
 //   (also mirrors bot.entity.flying / bot.entity.flyingSpeed for physics, like master)
 // Events: 'abilities' (abilities)

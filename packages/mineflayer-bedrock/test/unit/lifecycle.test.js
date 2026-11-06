@@ -1,11 +1,8 @@
 'use strict'
 // owner: U4 (core runtime) — join / dimension / respawn lifecycle (lib/bedrock/lifecycle.js), the only 'spawn'
-// emitter, and the e2e harness stepping back once the lifecycle handles the join (helpers/base.js)
+// emitter
 const assert = require('assert')
 const { createFakeBot, replayJoin } = require('./helpers/fake')
-const { createContext } = require('../external/common/helpers/base')
-
-const fakeServer = { command: async () => new Date(), commandOutput: async () => [] }
 
 describe('lifecycle (join, dimension change, respawn hooks)', function () {
   this.timeout(30000)
@@ -162,57 +159,5 @@ describe('lifecycle (join, dimension change, respawn hooks)', function () {
     bot.on('forcedMove', () => seen.push(['forcedMove', bot.game.dimension, Object.keys(bot.world.async.columns).length, bot._getDimensionName()]))
     client.receive('change_dimension', { dimension: 2, position: { x: 0.5, y: 64, z: 0.5 }, respawn: false, loading_screen_id: 7 })
     assert.deepStrictEqual(seen, [['game', 'the_end'], ['forcedMove', 'the_end', 0, 'minecraft:the_end']])
-  })
-})
-
-describe('e2e harness steps back once plugins handle join / respawn (helpers/base.js)', function () {
-  this.timeout(30000)
-
-  const deathAndRespawn = (client) => {
-    client.receive('entity_event', { runtime_entity_id: 91n, event_id: 'death_animation', data: 0 })
-    client.receive('respawn', { position: { x: 0.5, y: -58.38, z: 0.5 }, state: 0, runtime_entity_id: 0n })
-  }
-
-  it('mineflayer-bedrock lifecycle: the harness sends no join packets of its own', async () => {
-    const { bot, client } = await createFakeBot()
-    const ctx = createContext(bot, fakeServer, { autoRespawn: true })
-    assert.strictEqual(ctx.raw.join, false)
-    await replayJoin(bot, client)
-    assert.strictEqual(client.sent('respawn').length, 1, 'only the lifecycle answers respawn state 1')
-    assert.strictEqual(client.sent('serverbound_loading_screen').length, 2, 'only the lifecycle sends the loading screen')
-    await ctx.waitForSpawn()
-    assert.strictEqual(ctx.state.spawned, true)
-  })
-
-  it('bot.respawn not implemented (health plugin disabled): the raw respawn handshake answers a death, not the join respawn packets', async () => {
-    const { bot, client } = await createFakeBot({ plugins: { health: false } })
-    const ctx = createContext(bot, fakeServer, { autoRespawn: true })
-    await replayJoin(bot, client)
-    assert.strictEqual(ctx.raw.respawn, true)
-    client.clearSent()
-    deathAndRespawn(client)
-    assert.deepStrictEqual(client.sent('respawn').map(p => p.state), [2])
-    client.receive('respawn', { position: { x: 0.5, y: 32767, z: 0.5 }, state: 0, runtime_entity_id: 0n })
-    client.receive('respawn', { position: { x: 0.5, y: -58.38, z: 0.5 }, state: 1, runtime_entity_id: 0n })
-    assert.deepStrictEqual(client.sent('player_action').map(p => p.action), ['respawn'])
-    assert.strictEqual(client.sent('respawn').length, 1)
-  })
-
-  it('a plugin defining bot.respawn (decided at packet time, after inject_allowed): no raw respawn handshake', async () => {
-    const myRespawn = (bot) => { bot.respawn = () => {} }
-    const { createInputQueue } = require('../../lib/bedrock/input_queue')
-    const mineflayerBedrock = require('../..')
-    const { fakeClient } = require('./helpers/fake')
-    const client = fakeClient()
-    const bot = mineflayerBedrock.createBot({ client, username: client.username, logErrors: false, hideErrors: true, plugins: { myRespawn } })
-    bot._bedrock.input = createInputQueue(bot, { now: () => 0, timers: { setInterval: () => ({}), clearInterval () {} } })
-    const ctx = createContext(bot, fakeServer, { autoRespawn: true }) // synchronously, like createTestBot's onCreate
-    assert.strictEqual(ctx.raw.respawn, true, 'plugins are not injected yet')
-    await new Promise(resolve => bot.once('inject_allowed', () => setImmediate(resolve)))
-    assert.strictEqual(ctx.raw.respawn, false, 'bot.respawn is implemented now')
-    await replayJoin(bot, client)
-    client.clearSent()
-    deathAndRespawn(client)
-    assert.strictEqual(client.sent('respawn').length, 0)
   })
 })

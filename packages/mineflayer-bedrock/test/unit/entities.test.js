@@ -1,7 +1,7 @@
 'use strict'
 // owner: U7 (entities & players) — every other entity and player (lib/plugins/entities.js, lib/bedrock/paintings.js,
 // the prismarine-entity patch), on a fake client fed with the recorded BDS join (test/fixtures join_flat) and
-// synthesized Bedrock packets. The upstream internalTest analogs keep their names (docs/parity/U3-internal-tests.md).
+// synthesized Bedrock packets. The upstream internalTest analogs keep their names.
 const assert = require('assert')
 const { Vec3 } = require('vec3')
 const { createFakeBot, fakeClient, replayJoin, afterSpawnRecords } = require('./helpers/fake')

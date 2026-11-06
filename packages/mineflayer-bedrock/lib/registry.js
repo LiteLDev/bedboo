@@ -33,7 +33,7 @@ function installDataOverlay () {
 }
 
 /**
- * mineflayer API: "`require('minecraft-data')(bot.version)` gives you access to it" (docs/upstream/api.md). bot.version
+ * mineflayer API: "`require('minecraft-data')(bot.version)` gives you access to it" (mineflayer docs/api.md). bot.version
  * is the bare Bedrock version '1.26.51', which minecraft-data resolves as a Java version (none exists: there is no Java
  * 1.26.51) and answers `null` — breaking upstream code that relies on it, e.g. prismarine-physics' `PlayerState`
  * (built by mineflayer-pathfinder), mineflayer-pvp. Alias it to the `bedrock_1.26.51` data (U5; type 'bedrock').

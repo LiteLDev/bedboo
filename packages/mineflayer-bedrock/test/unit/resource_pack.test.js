@@ -1,7 +1,6 @@
 'use strict'
 // owner: U4 (core runtime) — resource_pack.js + the bedrock-protocol patch that holds the resource pack answer
-// (patches/bedrock-protocol@3.60.1.patch). The live accept/deny round trip against BDS is
-// test/external/resourcePack.test.js.
+// (patches/bedrock-protocol@3.60.1.patch).
 const assert = require('assert')
 const { createFakeBot } = require('./helpers/fake')
 

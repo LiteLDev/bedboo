@@ -3,7 +3,7 @@
 
 /**
  * Hand-maintained tables used by generate.js. Each one is verified: effect and enchantment ids against a
- * live BDS 1.26.51.1 (probe-bds.js → probe/1.26.51.json; generate.js fails on a mismatch), attribute names
+ * live BDS 1.26.51.1 (probe/1.26.51.json; generate.js fails on a mismatch), attribute names
  * against the update_attributes packets BDS sends (U0 fixture), entity names against Cloudburst
  * entity_identifiers.dat.
  */
@@ -167,8 +167,7 @@ const ENTITY_SIZES = {
  * Vanilla numeric biome ids missing from pmmp/BedrockData's biome_id_map.json (1.26.30): biomes added in
  * 1.26.50. BDS 1.26.51.1 lists the vanilla biomes in `biome_definition_list` in id order (every entry has
  * `biome_id` 65535, i.e. "use the vanilla id"); dappled_forest is the last entry, right after sulfur_caves
- * (194). generate.js checks the whole order against the probe (probe-bds.js `biomeOrder`), and live-check.js
- * `--biomes` reads the id from the chunk biome palette at the biome BDS locates.
+ * (194). generate.js checks the whole order against the probe (`biomeOrder`).
  */
 const BIOME_IDS_ADDED = {
   dappled_forest: 195

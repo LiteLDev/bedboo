@@ -12,8 +12,7 @@ the public mineflayer API and the ecosystem plugins (mineflayer-pathfinder, -col
 - [The obtain planner](#the-obtain-planner)
 - [Safety behaviours](#safety-behaviours)
 - [Blueprints](#blueprints)
-- [Overworld milestones (e2e)](#overworld-milestones-e2e)
-- [Seed scouting](#seed-scouting)
+- [Overworld milestones](#overworld-milestones)
 - [Data and attribution](#data-and-attribution)
 
 ## Quick start
@@ -29,8 +28,7 @@ agent.writeReport('report.json')                                 // tasks, timin
 await agent.stop()
 ```
 
-A local server: `corepack pnpm bds up --name me --world default --seed 1234 --gamemode survival --difficulty easy
---profile none` (prints the port). The agent joins as an ordinary offline player: no operator rights, no commands.
+The agent joins as an ordinary offline player: no operator rights, no commands.
 
 ## Architecture
 
@@ -47,8 +45,7 @@ src/safety.js      background behaviours: fight / flee, lava, drowning, eating
 src/blueprint.js   blueprint data + compiler (build order, materials) + verifier
 src/world.js, src/inventory.js   block / inventory queries
 src/data/          furnace recipes (vendored), fuels, drop yields, mob drops, natural blocks + their biomes
-scenarios/overworld/   milestones M1–M5, the e2e harness, full-run.js, seed.json
-scripts/           scout-seed.js (cheats allowed only there), gen-smelting.js
+scripts/           gen-smelting.js
 ```
 
 `Agent.create(opts)` options: `host`, `port`, `username` (default `Agent`), `bot` (use an existing spawned bot),
@@ -182,16 +179,9 @@ Placement and repair (FINAL-ROUND):
 
   Only then does the skill fail, and its error lists the cells that are still wrong.
 
-## Overworld milestones (e2e)
+## Overworld milestones
 
-```sh
-export BEDBOO_MAX_SERVERS=10 BEDBOO_WORKER_SLOTS=2
-corepack pnpm --filter @bedboo/agent test:e2e -- --grep M1            # one run of M1
-AGENT_RUNS=5 corepack pnpm --filter @bedboo/agent test:e2e -- --grep M3 # the gate: ≥ 4 of 5
-AGENT_FULL_RUN=1 corepack pnpm --filter @bedboo/agent test:e2e -- --grep "full run"
-node packages/agent/scenarios/overworld/full-run.js --log             # the same chained run as a script
-node packages/agent/scenarios/overworld/final-chain.js --log          # M1→M5 → Nether → End, one world (below)
-```
+Results of the milestone runs against BDS 1.26.51.1.
 
 | | from | steps | verified |
 |---|---|---|---|
@@ -222,7 +212,7 @@ Earlier rounds on the way there: M4 4/5 (one run failed after a death at night),
 the lake, its drops lost in the water → a spot whose digs give nothing is left; redstone dug in a shaft without a
 'mine' event → ores dug by shafts and the pathfinder are counted).
 
-World: the scouted seed in `scenarios/overworld/seed.json` (default generator), survival, difficulty
+World: seed 1234 (default generator), survival, difficulty
 `AGENT_DIFFICULTY` (default `easy`), vanilla gamerules (mobs spawn, day and night pass). Each milestone runs on a
 fresh server started from the snapshot `u17-s<seed>-m<k-1>` — the end state of a successful run of the previous
 milestone, the player included (BDS saves an offline player's inventory and position under its SelfSignedId, which
@@ -235,8 +225,7 @@ Env: `AGENT_RUNS` (runs per milestone), `AGENT_DIFFICULTY`, `AGENT_REPORT_DIR` (
 
 ### The final chain
 
-`scenarios/overworld/final-chain.js` (`corepack pnpm --filter @bedboo/agent final-chain`, or
-`AGENT_FINAL_CHAIN=1 … test:e2e -- --grep "final chain"`) runs everything in one world (seed 1234, easy) with one bot
+The final chain ran everything in one world (seed 1234, easy) with one bot
 and no reconnects:
 
 | phase | what the bot does | budget |
@@ -271,7 +260,7 @@ ran at a time, and all phase times are in seconds. The code was the merged final
 |---|---|---|
 | default `final-chain` | ≥ 4/5 | **4/5**: 46.1, 35.7, 40.3, 37.1 min; X2 failed |
 | `final-chain --nether-ores` | ≥ 2/3 | **3/3**: 36.7, 44.0, 46.8 min |
-| M1 – M5 gates, 5 runs each | ≥ 4/5 each | **M1–M4 5/5, M5 4/5** ([the gate](#overworld-milestones-e2e)) |
+| M1 – M5 gates, 5 runs each | ≥ 4/5 each | **M1–M4 5/5, M5 4/5** ([the gate](#overworld-milestones)) |
 | E1A, the End phases, 10 runs | ≥ 9/10 | **10/10** ([the walk up](#the-end-walk-up)) |
 
 Default chain:
@@ -535,19 +524,6 @@ zombie while hunting sheep at the camp, which cost the bed's wool, and shot by a
 no bed. The Agent recovered from both.
 
 
-## Seed scouting
-
-```sh
-node packages/agent/scripts/scout-seed.js --seeds 1234,100,31337 [--out scout.json] [--write-seed 1234]
-```
-
-Starts a server per seed, joins a creative bot and surveys the spawn area with `findBlocks` (trees, exposed stone,
-surface lava, gravel, the nearest ore of each kind), `/locate`s the mountain biomes (`/locate biome minecraft:<id>`)
-and teleports there to look for emerald ore. Cheats are allowed only here; the milestones never read seed.json.
-Chosen: **1234** — spawn (-516, 69, 77) in plains with oak/birch woods 25 blocks away, exposed stone, surface lava 58
-blocks away, gravel, coal/copper/iron within 15 blocks, every deep ore within ~70 blocks, and a meadow with emerald
-ore 150 blocks west (emerald at (-663, 121, 43)).
-
 ## Data and attribution
 
 `src/data/smelting.json` holds the furnace recipes of [CloudburstMC/Data](https://github.com/CloudburstMC/Data)
@@ -558,5 +534,4 @@ names checked against the 1.26.51 registry, newer wood types added). Fuel burn t
 
 ## Combat & dimensions (U18)
 
-The `combat`, `portal`, `nether` and `end` skills, the `combat.defend()` guard, the milestone scenarios (C1, N1, N2,
-E1, chain) and their e2e commands: [scenarios/README.md](scenarios/README.md#combat--dimensions-u18).
+The `combat`, `portal`, `nether` and `end` skills and the `combat.defend()` guard live in `src/skills/`.

@@ -18,7 +18,6 @@ have written a mineflayer bot before, only steps 1–3 are new: the bot code is 
 - Node.js **24** or newer, on **x64** (Linux, Windows or macOS on Intel). The RakNet backend (raknet-native) ships x64
   prebuilds only; NetherNet is pure JavaScript and works anywhere Node does.
 - A BDS **1.26.51.x** (or 1.26.52.x, which speaks the same protocol 2193). Other versions are refused at login.
-- Docker, only if you want the repository's throw-away test servers (`corepack pnpm bds …`).
 
 ## 2. Get the code
 
@@ -51,23 +50,6 @@ corepack pnpm install
 and `mineflayer-pathfinder` resolve there.)
 
 ## 3. Prepare the server
-
-### Option A — a local test server with Docker
-
-```sh
-corepack pnpm bds pull                                  # once: image + BDS 1.26.51.1 (sha256-verified download)
-corepack pnpm bds up --name mybds --gamemode survival --difficulty normal --world default
-# bedboo-mybds ready on 127.0.0.1:41000 (slot 0, …)
-# BDS_HOST=127.0.0.1 BDS_PORT=41000 BDS_CONTAINER=bedboo-mybds
-```
-
-The harness writes a `server.properties` that suits bots: `online-mode=false`, `allow-list=false`,
-`transport=raknet`, `allow-cheats=true`, operators by default, LAN visibility off. `--transport nethernet` starts a
-NetherNet server instead; `--property key=value` sets anything else. Use `corepack pnpm bds cmd mybds <command>` for
-the console, `bds logs mybds -f` for the log and `bds down mybds` to remove it (world included). See
-[testing.md](testing.md#bds-cli).
-
-### Option B — your own BDS
 
 Install BDS 1.26.51.x from [minecraft.net](https://www.minecraft.net/download/server/bedrock) and set in
 `server.properties`:
@@ -144,7 +126,7 @@ differs is in [api.md](api.md#bedrock-differences-in-short).
 ## 5. Run it
 
 ```sh
-node packages/my-bot/index.js 127.0.0.1 19132        # or the port `bds up` printed
+node packages/my-bot/index.js 127.0.0.1 19132
 ```
 
 Join the server with a Bedrock client (or another bot), say `come` in chat and the bot walks to you. The same file
@@ -154,7 +136,7 @@ works with `require('mineflayer')` against a Java server, minus the Bedrock bloc
 
 - `bot.chat('/…')` sends a command request (Bedrock has no chat-typed commands). Commands need
   `allow-cheats=true` and an operator: on BDS a player cannot op itself, so op the bot from the console
-  (`op Bot`, or `bds cmd mybds op Bot`), or set `default-player-permission-level=operator`.
+  (`op Bot`), or set `default-player-permission-level=operator`.
 - Command results arrive as `message` events (Bedrock's `command_output`, one per line).
 - `/give`, `/replaceitem`, `/tp` etc. are visible to the bot like on Java (`playerCollect`, `forcedMove`, …).
 
@@ -196,8 +178,7 @@ const bot = mineflayer.createBot({ host: '127.0.0.1', port: 19132, username: 'Bo
   `nethernet: { serverKey: 'sha256:<hex>' }`; `nethernet: { onServerKey: (fingerprint, url) => true | false }` lets you
   decide (and shows you the fingerprint to pin). HTTPS signalling URLs (`nethernet: { url: 'https://…' }`) are
   trusted through TLS.
-- The bot's API is identical on both transports. With the Docker harness: `corepack pnpm bds up --name nn --transport
-  nethernet`.
+- The bot's API is identical on both transports.
 
 ## Troubleshooting
 

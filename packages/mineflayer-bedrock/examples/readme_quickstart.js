@@ -4,8 +4,8 @@
  *
  *   node examples/readme_quickstart.js <host> <port> [<name>] [microsoft]
  *
- * Identical to the README snippet except for the command-line arguments and the `loaded` → `Ready!` handshake the
- * e2e test (test/external/readmeQuickstart.test.js, via bot.test.runExample) uses, like upstream's examples.
+ * Identical to the README snippet except for the command-line arguments and the `loaded` → `Ready!` handshake,
+ * like upstream's examples.
  */
 const mineflayer = require('mineflayer-bedrock') // instead of require('mineflayer')
 const { pathfinder, Movements, goals } = require('mineflayer-pathfinder')

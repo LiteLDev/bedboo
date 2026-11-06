@@ -4,16 +4,15 @@
  * Conformance of mineflayer-bedrock with mineflayer 4.39.0 — no server needed.
  *
  * Reference surface (./reference.js): built from upstream itself — a real mineflayer bot (fake Java
- * client) + its window openers + a static scan of its lib/ + docs/upstream/index.d.ts (TypeScript
- * compiler) + master's abilities plugin. `bot.connect` and other d.ts-only drift are excluded.
+ * client) + its window openers + a static scan of its lib/ + its index.d.ts (TypeScript compiler) +
+ * master's abilities plugin. `bot.connect` and other d.ts-only drift are excluded.
  * Bedrock surface (./bedrock.js): a mineflayer-bedrock bot on a fake bedrock-protocol client, the same
  * window probe, and a replay of the recorded BDS join (test/fixtures join_flat).
  *
  * Fails now: missing members/exports, wrong arity, wrong sync/promise kind, wrong value type, top-level
- * extras (Bedrock-only members belong under bot.bedrock), index.d.ts gaps, events without a parity row,
- * parity fragment errors (`corepack pnpm parity --check`).
+ * extras (Bedrock-only members belong under bot.bedrock), index.d.ts gaps.
  * Pending (fails only in strict mode, ./config.js): notImplemented stubs, members not yet produced by the
- * join replay, window members that cannot be probed, events without an asserting test, join replay errors.
+ * join replay, window members that cannot be probed, join replay errors.
  *
  *   cd packages/mineflayer-bedrock
  *   npx mocha --no-config --timeout 60000 test/unit/conformance/conformance.test.js   # this suite only
@@ -21,12 +20,10 @@
  *   BEDBOO_CONFORMANCE_REPORT=1 npx mocha …                                           # list every pending item
  */
 const assert = require('assert')
-const path = require('path')
-const { buildReference, referenceItems, REPO_ROOT } = require('./reference')
+const { buildReference } = require('./reference')
 const { injectSurface, postJoinSurface, dtsSurface } = require('./bedrock')
 const { compare } = require('./compare')
 const { isStrict } = require('./config')
-const { assemble } = require(path.join(REPO_ROOT, 'scripts/parity/lib/assemble'))
 
 const STRICT = isStrict()
 
@@ -36,7 +33,7 @@ function format (findings) {
 
 describe(`conformance with mineflayer 4.39.0 (${STRICT ? 'strict' : 'non-strict'} mode)`, function () {
   this.timeout(60000)
-  let ref, findings, parity
+  let ref, findings
 
   before(async function () {
     ref = await buildReference()
@@ -47,11 +44,7 @@ describe(`conformance with mineflayer 4.39.0 (${STRICT ? 'strict' : 'non-strict'
     } catch (err) {
       post = { failed: err }
     }
-    parity = assemble({
-      repoRoot: REPO_ROOT,
-      reference: { mineflayer: ref.meta.mineflayer, items: referenceItems(ref), excluded: ref.excluded }
-    })
-    findings = compare(ref, { ...inject, post, dts: dtsSurface() }, { parity })
+    findings = compare(ref, { ...inject, post, dts: dtsSurface() })
   })
 
   function check (areas) {
@@ -64,8 +57,6 @@ describe(`conformance with mineflayer 4.39.0 (${STRICT ? 'strict' : 'non-strict'
     assert.ok(Object.keys(ref.exports).length >= 10)
     assert.ok(Object.values(ref.members).filter(m => m.kind === 'method').length > 100)
     assert.ok(Object.keys(ref.events).length > 100)
-    assert.strictEqual(ref.tests.external.length, 46)
-    assert.ok(ref.tests.internal.length > 20)
     assert.ok(!ref.members['bot.connect'], 'bot.connect (d.ts only) must be excluded')
     for (const p of ['bot.signBook', 'bot.findPlayer', 'bot.findPlayers', 'bot.isAlive', 'bot.vehicle', 'bot.uuidToUsername', 'bot.rainState', 'bot.abilities']) {
       assert.ok(ref.members[p], `${p} (runtime only) must be in the reference`)
@@ -88,14 +79,7 @@ describe(`conformance with mineflayer 4.39.0 (${STRICT ? 'strict' : 'non-strict'
 
   it('window classes (Chest/Dispenser/Furnace/EnchantmentTable/Anvil/Villager) members', () => check(['windows']))
 
-  it('every mineflayer event is tracked in the parity fragments (with an asserting test in strict mode)', () => check(['events']))
-
   it('index.d.ts declares the mineflayer 4.39.0 types', () => check(['dts']))
-
-  it('parity fragments are consistent (corepack pnpm parity --check)', () => {
-    const errors = parity.problems.filter(p => p.level === 'error')
-    assert.ok(errors.length === 0, `${errors.length} parity error(s):\n${errors.map(p => `  - ${p.code}: ${p.message}${p.file ? ` (${p.file}:${p.line})` : ''}`).join('\n')}`)
-  })
 
   it('pending items', function () {
     const pending = findings.filter(f => f.severity === 'pending')
