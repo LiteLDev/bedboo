@@ -1,8 +1,8 @@
 'use strict'
 // mineflayer's test/internalTest.js `onceWithCleanup` cases, ported verbatim (mineflayer 4.39.0, MIT,
 // Copyright (c) 2013 Andrew Kelley). They test the helper
-// module itself: docs/CONTRIBUTING.md has mineflayer-bedrock reuse the unmodified
-// `mineflayer/lib/promise_utils` (deep require) in its vendored plugins instead of a copy. If a unit ever
+// module itself: the vendored plugins reuse the unmodified
+// `mineflayer/lib/promise_utils` (deep require) instead of a copy. If that is ever
 // replaces it with its own helper, point these tests at that helper.
 const { describe, it } = require('node:test')
 const assert = require('assert')

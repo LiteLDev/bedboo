@@ -122,7 +122,7 @@ function compare (ref, bed) {
   for (const p of topLevel) {
     const key = p.slice(4)
     if (ref.members[p] || excluded.has(p) || key.startsWith('_') || key === 'bedrock') continue
-    push('extras', p, 'property', { severity: 'fail', message: 'not a mineflayer member: Bedrock-only extras go under bot.bedrock.* (docs/CONTRIBUTING.md)' })
+    push('extras', p, 'property', { severity: 'fail', message: 'not a mineflayer member: Bedrock-only extras go under bot.bedrock.*' })
   }
 
   if (bed.post && bed.post.failed) {

@@ -12,7 +12,7 @@ export interface BedrockExtras {
   // off-hand); resolves true once it was applied, false when no answer came within 2 s
   resyncInventory: () => Promise<boolean>
   // only with `transport: 'bedd'` (a real client hosted by Be.D.D.): the BeDD ops this instance offers and
-  // whether a bot API works with them (lib/bedd/surface.js, docs/bedd.md)
+  // whether a bot API works with them (lib/bedd/surface.js, https://docs.levimc.org/bedboo/guide/bedd)
   bedd?: BeddExtras
 }
 
