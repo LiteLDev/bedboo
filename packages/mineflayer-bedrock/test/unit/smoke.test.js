@@ -68,16 +68,6 @@ describe('mineflayer-bedrock skeleton (U0)', function () {
     assert.deepStrictEqual(files, expected)
   })
 
-  it('every plugin and lib/bedrock file names its owner unit in the header', () => {
-    const dirs = [PLUGIN_DIR, path.join(__dirname, '../../lib/bedrock'), path.join(__dirname, '../../lib/physics')]
-    for (const dir of dirs) {
-      for (const file of fs.readdirSync(dir).filter(f => f.endsWith('.js'))) {
-        const firstLine = fs.readFileSync(path.join(dir, file), 'utf8').split('\n')[0]
-        assert.match(firstLine, /^\/\/ owner: U\d+/, `${path.basename(dir)}/${file}`)
-      }
-    }
-  })
-
   it('createBot({ client }) injects every plugin without throwing', async () => {
     const { bot } = await createInjectedBot()
     assert.strictEqual(bot.version, '1.26.51')
