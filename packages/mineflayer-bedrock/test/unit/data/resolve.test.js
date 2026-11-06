@@ -1,5 +1,6 @@
 'use strict'
-// owner: U2 (Bedrock data layer) — one (patched) copy of every data package, whoever requires it
+// one (patched) copy of every data package, whoever requires it
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const fs = require('fs')
 const path = require('path')

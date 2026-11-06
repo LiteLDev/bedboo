@@ -1,8 +1,9 @@
 'use strict'
-// owner: BEDD-3 (bedd action translation) — lib/bedd/router_actions.js and the bedd-mode gates of digging.js,
+// lib/bedd/router_actions.js and the bedd-mode gates of digging.js,
 // placement.js and transactions.js, on the real createBot over a fake client that carries a hand-built client.bedd stub
 // (a recording rpc) and replays the recorded BDS join (join_flat); the client's queue/write go through client.bedd.route
 // like the bedd transport does.
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const { Vec3 } = require('vec3')
 const { createFakeBot, replayJoin } = require('../helpers/fake')
@@ -83,9 +84,7 @@ function anglesTo (bot, target) {
 
 const near = (a, b, eps = 1e-6) => Math.abs((((a - b) % 360) + 540) % 360 - 180) < eps
 
-describe('bedd action translation (BEDD-3): lib/bedd/router_actions.js', function () {
-  this.timeout(30000)
-
+describe('bedd action translation: lib/bedd/router_actions.js', () => {
   it('registry: registers block_action and inventory_transaction in the shared registry (lib/bedd/routes.js), once', async () => {
     const calls = []
     const client = { bedd: { rpc: { call: async (op, args) => { calls.push([op, args]); return { ok: true } } }, caps: { button: 'present' } } }

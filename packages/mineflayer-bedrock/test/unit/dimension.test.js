@@ -1,6 +1,7 @@
 'use strict'
-// owner: U9 (player state, world extras & dimensions) — the dimension flow (lifecycle.js + game.js + blocks.js +
+// the dimension flow (lifecycle.js + game.js + blocks.js +
 // health.js) on the recorded BDS join: world switch, 'respawn' / 'game' / 'spawn', acks, End credits
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const { Vec3 } = require('vec3')
 const { createFakeBot, replayJoin } = require('./helpers/fake')
@@ -9,9 +10,7 @@ const SELF = 91n
 const ZERO = { x: 0, y: 0, z: 0 }
 const serverAck = (client) => client.receive('player_action', { runtime_entity_id: SELF, action: 'dimension_change_ack', position: ZERO, result_position: ZERO, face: 0 })
 
-describe('dimension changes (U9)', function () {
-  this.timeout(30000)
-
+describe('dimension changes', () => {
   it('internalTest › world › switchWorld respawn', async () => {
     const { bot, client } = await createFakeBot()
     await replayJoin(bot, client)

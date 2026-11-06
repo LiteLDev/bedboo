@@ -1,5 +1,6 @@
 'use strict'
-// owner: U18 (agent combat & dimensions) — portal frame planner, portal site search, obsidian casting (mold) planner
+// portal frame planner, portal site search, obsidian casting (mold) planner
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const { Vec3 } = require('vec3')
 const portal = require('../src/skills/portal')
@@ -35,7 +36,7 @@ function fakeWorld ({ groundY = 63, ground = 'grass_block' } = {}) {
 
 const s = (p) => `${p.x},${p.y},${p.z}`
 
-describe('U18 portal frame planner', () => {
+describe('portal frame planner', () => {
   it('10 obsidian: bottom 2 + sides 6 + top 2; the bottom corners are ground, the top corners scaffolding', () => {
     const plan = portal.planPortalFrame({ x: 10, y: 63, z: 5 }, 'x')
     assert.strictEqual(plan.obsidianNeeded, 10)
@@ -79,7 +80,7 @@ describe('U18 portal frame planner', () => {
   })
 })
 
-describe('U18 portal site search', () => {
+describe('portal site search', () => {
   it('finds a flat site near the bot, never over the bot itself', () => {
     const w = fakeWorld()
     const bot = new Vec3(0, 64, 0)
@@ -108,7 +109,7 @@ describe('U18 portal site search', () => {
   })
 })
 
-describe('U18 obsidian casting planner (mold)', () => {
+describe('obsidian casting planner (mold)', () => {
   /** a 6×6 lava pool sunk 2 deep at x 0..5, z 0..5 */
   function poolWorld () {
     const w = fakeWorld()

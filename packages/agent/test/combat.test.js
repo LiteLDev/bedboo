@@ -1,5 +1,6 @@
 'use strict'
-// owner: U16b (seeded combat library; the combat skill itself is U18's) — no server: a fake mineflayer bot
+// the combat library (skills/combat.js helpers) on a fake mineflayer bot (no server)
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const { EventEmitter } = require('events')
 const { Vec3 } = require('vec3')
@@ -51,8 +52,8 @@ function mob (id, name, position, extra = {}) {
   return { id, name, type: 'hostile', kind: 'Hostile mobs', position, width: 0.6, height: 1.9, ...extra }
 }
 
-describe('combat library (U16b seed of skills/combat.js)', () => {
-  it('the skill (U18) is implemented and still exposes the helpers', async () => {
+describe('combat library (skills/combat.js)', () => {
+  it('the skill is implemented and still exposes the helpers', async () => {
     assert.notStrictEqual(combat.notImplemented, true)
     assert.strictEqual(combat.length, 2)
     for (const fn of ['fight', 'fightAll', 'nearestHostile', 'equipForCombat', 'bowAim', 'hitboxDistance']) assert.strictEqual(typeof combat[fn], 'function', fn)

@@ -1,5 +1,6 @@
 'use strict'
-// owner: U2 (Bedrock data layer) — patched prismarine-block on the bedrock_1.26.51 overlay
+// patched prismarine-block on the bedrock_1.26.51 overlay
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const fixtures = require('../../fixtures')
 const { createRegistry } = require('../../../lib/registry')

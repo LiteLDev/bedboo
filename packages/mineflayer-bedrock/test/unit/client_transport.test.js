@@ -1,6 +1,7 @@
 'use strict'
-// owner: U16b — createBot transport options (lib/client.js) and the NetherNet HTTP signalling patches
+// createBot transport options (lib/client.js) and the NetherNet HTTP signalling patches
 // (bedrock-protocol#831 + node-nethernet#32 backports), without a server
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const http = require('http')
 const path = require('path')
@@ -12,9 +13,7 @@ function requireFrom (pkg, request) {
   return require(require.resolve(request, { paths: [dir] }))
 }
 
-describe('transport options (U16b): raknet default, nethernet over HTTP signalling', function () {
-  this.timeout(20000)
-
+describe('transport options: raknet default, nethernet over HTTP signalling', () => {
   function capture (fn) {
     const bedrock = require('bedrock-protocol')
     const original = bedrock.createClient

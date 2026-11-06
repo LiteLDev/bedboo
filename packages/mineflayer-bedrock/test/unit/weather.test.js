@@ -1,12 +1,11 @@
 'use strict'
-// owner: U9 (player state, world extras & dimensions) — rain.js and time.js on the recorded BDS join (start_game
+// rain.js and time.js on the recorded BDS join (start_game
 // rain level, the `/weather rain|clear` level_events, sync_world_clocks of `/time set`) + synthesized packets
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const { createFakeBot, replayJoin, afterSpawnRecords } = require('./helpers/fake')
 
-describe('weather and time (U9)', function () {
-  this.timeout(30000)
-
+describe('weather and time', () => {
   it('internalTest › rain › flips isRaining on rain level zero-crossings without start_raining', async () => {
     const { bot, client } = await createFakeBot()
     const rain = []

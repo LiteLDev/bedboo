@@ -1,6 +1,7 @@
 'use strict'
-// owner: U5 (physics & movement) — the Bedrock engine (lib/physics) on offline worlds, with the values measured on
-// BDS 1.26.51.1 (docs/differences/U5.md#engine), and the internalTest physics analogs.
+// the Bedrock engine (lib/physics) on offline worlds, with the values measured on
+// BDS 1.26.51.1, and the internalTest physics analogs.
+const { describe, it, beforeEach } = require('node:test')
 const assert = require('assert')
 const { Vec3 } = require('vec3')
 const { Physics, PlayerState, defaultPhysicsFields } = require('../../lib/physics')
@@ -17,8 +18,7 @@ function run (physics, world, state, ticks, each) {
   return state
 }
 
-describe('physics engine (U5): Bedrock movement', function () {
-  this.timeout(20000)
+describe('physics engine: Bedrock movement', () => {
   let world
   let physics
   beforeEach(() => {

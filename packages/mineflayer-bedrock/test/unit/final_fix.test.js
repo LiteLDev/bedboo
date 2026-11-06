@@ -1,6 +1,7 @@
 'use strict'
-// owner: FINAL-FIX-LIB (final-acceptance review fixes) — regression tests (no server) on a fake client with the
+// regression tests (no server) on a fake client with the
 // recorded BDS join (flat world).
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const { Vec3 } = require('vec3')
 const { createFakeBot, replayJoin } = require('./helpers/fake')
@@ -34,9 +35,7 @@ async function until (fn, what = 'condition', ms = 3000) {
   throw new Error(`timed out waiting for ${what}`)
 }
 
-describe('final-acceptance review fixes (FINAL-FIX-LIB)', function () {
-  this.timeout(30000)
-
+describe('final-acceptance review fixes', () => {
   describe('#1 / #3 placing: a click that changed the clicked block is not stale; a raced held stack is retried', () => {
     async function placing ({ survival = true } = {}) {
       const created = await spawned()

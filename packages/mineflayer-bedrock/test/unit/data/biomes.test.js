@@ -1,5 +1,6 @@
 'use strict'
-// owner: U2 (Bedrock data layer) — biome ids on the U0 BDS 1.26.51.1 capture
+// biome ids on the U0 BDS 1.26.51.1 capture
+const { describe, it, before } = require('node:test')
 const assert = require('assert')
 const { Vec3 } = require('vec3')
 const fixtures = require('../../fixtures')
@@ -40,7 +41,7 @@ function paletteIds (column) {
 
 describe('biomes (vanilla Bedrock ids) on BDS 1.26.51 chunks', () => {
   let columns
-  before(async () => { columns = await decodeColumns() })
+  before(async () => { columns = await decodeColumns() }, { timeout: 60000 })
 
   it('registry.biomes is keyed by the vanilla ids: plains 1, hell 8, the_end 9', () => {
     assert.strictEqual(registry.biomes[1].name, 'plains')

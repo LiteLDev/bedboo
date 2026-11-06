@@ -21,22 +21,7 @@
  * `BEDBOO_AGENT_LOG=1`). Skills that wait use `sleep(ms, signal)` / `withTimeout()` so an abort stops them.
  */
 
-const { NotImplementedError, AbortError, SkillError } = require('./errors')
-
-/**
- * Stub skill (rejects with NotImplementedError).
- * @param {string} unit owner tag reported in the error
- * @param {string} name skill name
- */
-function stubSkill (unit, name) {
-  const skill = async function (bot, args) {
-    throw new NotImplementedError(unit, `skill ${name}`)
-  }
-  Object.defineProperty(skill, 'name', { value: name })
-  skill.notImplemented = true
-  skill.unit = unit
-  return skill
-}
+const { AbortError, SkillError } = require('./errors')
 
 /**
  * Name a skill function and attach metadata (shown by the runner / README).
@@ -198,4 +183,4 @@ function waitTicks (bot, n, signal) {
     .finally(() => clearTimeout(timer))
 }
 
-module.exports = { stubSkill, defineSkill, setContext, context, log, progress, heartbeat, agentOf, sleep, withTimeout, waitTicks, withoutMeals, eatNow }
+module.exports = { defineSkill, setContext, context, log, progress, heartbeat, agentOf, sleep, withTimeout, waitTicks, withoutMeals, eatNow }

@@ -1,7 +1,8 @@
 'use strict'
-// owner: U8 (inventory, windows, creative & item use) — inventory plugin + model on a fake client: Bedrock inventory
+// inventory plugin + model on a fake client: Bedrock inventory
 // packets → Java-layout windows, held item, clickWindow → item stack requests (prediction, response, rollback),
 // the inventory screen, creative, item use, and the internalTest heldItemChanged / activateItem analogs
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const { createFakeBot, replayJoin, afterSpawnRecords } = require('./helpers/fake')
 const { serveInventory, wireItem, inventoryContent, tick } = require('./helpers/inventory_server')
@@ -24,9 +25,7 @@ function serialize (name, params) {
 
 const names = (window) => window.slots.map((it, i) => it ? `${i}:${it.name}x${it.count}` : null).filter(Boolean).join(' ')
 
-describe('inventory: packets → bot.inventory, held item (U8)', function () {
-  this.timeout(30000)
-
+describe('inventory: packets → bot.inventory, held item', () => {
   it('inventory_content of the inventory / armor / off-hand / ui windows → Java slots, cursor, stack ids', async () => {
     const { bot, client } = await joined()
     assert.strictEqual(bot.quickBarSlot, 0, 'player_hotbar at join selects slot 0')
@@ -99,9 +98,7 @@ describe('inventory: packets → bot.inventory, held item (U8)', function () {
   })
 })
 
-describe('inventory: clickWindow → item stack requests (U8)', function () {
-  this.timeout(30000)
-
+describe('inventory: clickWindow → item stack requests', () => {
   it('opens the inventory screen, predicts, sends one request per click, applies the response stack ids, closes when idle', async () => {
     const { bot, client, server } = await joined()
     client.receive('inventory_content', inventoryContent(bot, { 0: ['stone', 10], 9: ['dirt', 4] }, { firstStackId: 100 }))
@@ -186,7 +183,7 @@ describe('inventory: clickWindow → item stack requests (U8)', function () {
     assert.strictEqual(bot.inventory.selectedItem, null)
   })
 
-  describe('overlapping requests on the same slot (a click planned on another one\'s prediction)', function () {
+  describe('overlapping requests on the same slot (a click planned on another one\'s prediction)', () => {
     const slotResult = (slot, count, stackId) => ({ slot, hotbar_slot: slot, count, ...(count ? { item_stack_id: stackId } : {}), custom_name: '', filtered_custom_name: '', durability_correction: 0 })
     const ok = (request, containers) => ({ status: 'ok', request_id: request.request_id, containers: Object.entries(containers).map(([id, slots]) => ({ slot_type: { container_id: id }, slots: slots.map(s => slotResult(...s)) })) })
     const err = (request, status = 49) => ({ status, request_id: request.request_id })
@@ -456,9 +453,7 @@ describe('inventory: clickWindow → item stack requests (U8)', function () {
   })
 })
 
-describe('inventory: creative and item use (U8)', function () {
-  this.timeout(30000)
-
+describe('inventory: creative and item use', () => {
   it('creative.setInventorySlot: craft_creative (creative_content entry) + place from creative_output 50; replace = destroy first; clear = destroy', async () => {
     const { bot, client, server, Item } = await joined()
     const stone = bot._bedrock.creativeItems.entryFor(new Item(bot.registry.itemsByName.stone.id, 1))
@@ -500,7 +495,7 @@ describe('inventory: creative and item use (U8)', function () {
     await assert.rejects(bot.creative.setInventorySlot(46, null))
   })
 
-  it('creative flight: startFlying / stopFlying → bot._bedrock.physics.setFlying (gravity untouched with the hook); flyTo → physics.flyTo (U5)', async () => {
+  it('creative flight: startFlying / stopFlying → bot._bedrock.physics.setFlying (gravity untouched with the hook); flyTo → physics.flyTo', async () => {
     const { bot } = await joined()
     const calls = []
     const physics = bot._bedrock.physics
@@ -508,7 +503,7 @@ describe('inventory: creative and item use (U8)', function () {
     physics.setFlying = function (on) { calls.push(['setFlying', on, this === physics]); return setFlying.call(this, on) }
     const gravity = bot.physics.gravity
     bot.creative.startFlying()
-    // W3-FIX-A: the Bedrock engine flies without upstream's gravity = 0 (it would stay 0 after a flight that ends
+    // the Bedrock engine flies without upstream's gravity = 0 (it would stay 0 after a flight that ends
     // without stopFlying)
     assert.strictEqual(bot.physics.gravity, gravity)
     bot.creative.stopFlying()

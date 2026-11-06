@@ -1,7 +1,8 @@
 'use strict'
-// owner: U11 (placing & placement-based parity) — generic_place / place_block / place_entity and lib/bedrock/placement.js
+// generic_place / place_block / place_entity and lib/bedrock/placement.js
 // on a fake client fed with the recorded BDS join (flat world) and synthesized BDS answers (the update_block burst BDS
-// sends for every click, set_entity_data sneaking, add_entity), as measured on BDS 1.26.51.1 (docs/differences/U11.md).
+// sends for every click, set_entity_data sneaking, add_entity), as measured on BDS 1.26.51.1.
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const { Vec3 } = require('vec3')
 const { createFakeBot, replayJoin } = require('./helpers/fake')
@@ -57,9 +58,7 @@ async function spawned () {
   return created
 }
 
-describe('placement (U11): bot._genericPlace, placeBlock, placeEntity over Bedrock click_block', function () {
-  this.timeout(30000)
-
+describe('placement: bot._genericPlace, placeBlock, placeEntity over Bedrock click_block', () => {
   it('_genericPlace: look, start_item_use_on → item_use click_block (exact held item, runtime id, click point, eye position) → stop_item_use_on', async () => {
     const { bot, client, give, rid, names } = await spawned()
     give({ 0: ['dirt', 5] })

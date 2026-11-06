@@ -1,6 +1,7 @@
 'use strict'
-// owner: U17 — the obtain planner on a fake bot with the real 1.26.51 data: the registry, BDS's recorded
+// the obtain planner on a fake bot with the real 1.26.51 data: the registry, BDS's recorded
 // crafting_data (mineflayer-bedrock's fixture, parsed by its recipes module) and a small fake world
+const { describe, it, before } = require('node:test')
 const assert = require('assert')
 const { Vec3 } = require('vec3')
 const knowledge = require('../src/knowledge')
@@ -12,8 +13,7 @@ function requireBedrock (request) {
   return require(request.startsWith('lib/') || request.startsWith('test/') ? require('path').join(bedrockRoot, request) : require.resolve(request, { paths: [bedrockRoot] }))
 }
 
-describe('obtain planner on a fake bot with real recipe data (U17)', function () {
-  this.timeout(60000)
+describe('obtain planner on a fake bot with real recipe data', () => {
   let registry, recipes
 
   before(() => {

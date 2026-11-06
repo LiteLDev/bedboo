@@ -1,6 +1,7 @@
 'use strict'
-// owner: U9 (player state, world extras & dimensions) — abilities, experience, breath, spawn point, command block,
+// abilities, experience, breath, spawn point, command block,
 // ray trace and explosion plugins on the recorded BDS join
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const nbt = require('prismarine-nbt')
 const { Vec3 } = require('vec3')
@@ -10,9 +11,7 @@ const { toBigInt } = require('../../lib/plugins/abilities')
 
 const SELF = 91n
 
-describe('player state (U9)', function () {
-  this.timeout(30000)
-
+describe('player state', () => {
   it('abilities: update_abilities layers at join (li64 unique id), derived per game mode, entity.flying', async () => {
     const { bot, client } = await createFakeBot()
     const seen = []
@@ -100,7 +99,7 @@ describe('player state (U9)', function () {
   it('spawn point: start_game world spawn, set_spawn_position world → spawnPoint + game; the player spawn type is not it', async () => {
     const { bot, client } = await createFakeBot()
     await replayJoin(bot, client)
-    // start_game.spawn_position (0, 32767, 0): the spawn search height, resolved (U17) to the spawn column's ground once
+    // start_game.spawn_position (0, 32767, 0): the spawn search height, resolved to the spawn column's ground once
     // the column is loaded — the flat world's grass at y -61 → -60
     assert.ok(bot.spawnPoint.equals(new Vec3(0, -60, 0)), `start_game.spawn_position ${bot.spawnPoint}`)
     let games = 0
@@ -164,7 +163,7 @@ describe('player state (U9)', function () {
     // survival world, difficulty easy (×0.5), no armor attribute on Bedrock → unarmored (upstream: null)
     assert.strictEqual(bot.game.difficulty, 'easy')
     assert.strictEqual(bot.getExplosionDamages(bot.entity, pos.offset(0, 0, 1), 4), Math.floor(raw * 0.5))
-    // an armor attribute (U7 synthesizes generic.armor) absorbs damage
+    // an armor attribute (entities.js synthesizes generic.armor) absorbs damage
     const armored = { ...bot.entity, position: pos, type: 'player', attributes: { 'generic.armor': { value: 20, modifiers: [] }, 'generic.armorToughness': { value: 8, modifiers: [] } } }
     assert.ok(bot.getExplosionDamages(armored, pos.offset(0, 0, 1), 4) < Math.floor(raw * 0.5))
     assert.strictEqual(bot.getExplosionDamages({ position: pos, attributes: {} }, pos.offset(0, 0, 1), 4), null, 'not living: null like upstream')

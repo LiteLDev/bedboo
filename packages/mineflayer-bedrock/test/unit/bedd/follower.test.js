@@ -1,8 +1,9 @@
 'use strict'
-// owner: BEDD-4 (physics follower + external tick clock) — transport 'bedd': the input queue's external clock
+// transport 'bedd': the input queue's external clock
 // (setExternalClock / pumpTo), and bot.entity / physicsTick / look driven by the real client's echoed
 // player_auth_input (lib/bedd/follower.js + the bedd branch of lib/plugins/physics.js). A real createBot on the fake
 // client replays the recorded BDS join; the join's own outbound player_auth_input records play the client's echoes.
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const { Vec3 } = require('vec3')
 const fixtures = require('../../fixtures')
@@ -33,7 +34,7 @@ function echoRecords () {
 
 /**
  * A bot on the fake client in mode 'bedd' (client.bedd stub), with a manual clock and recording timers, the follower
- * attached and the join replayed. bedd transport (BB1) sets bot._bedrock.mode itself; set here when absent.
+ * attached and the join replayed. bedd transport sets bot._bedrock.mode itself; set here when absent.
  */
 async function beddBot ({ mode = 'bedd' } = {}) {
   const client = fakeClient()
@@ -59,9 +60,7 @@ async function beddBot ({ mode = 'bedd' } = {}) {
   return { bot, client, clock, timers, errors, handle, echo, inputs: () => client.sent('player_auth_input') }
 }
 
-describe('bedd physics follower (BEDD-4)', function () {
-  this.timeout(30000)
-
+describe('bedd physics follower', () => {
   describe('input queue external clock', () => {
     function queue () {
       const clock = { now: 10000 }
@@ -352,7 +351,7 @@ describe('bedd physics follower (BEDD-4)', function () {
   describe('raknet mode (no-op)', () => {
     it('attach does nothing, echoes are ignored and the timer clock is unchanged', async () => {
       const { bot, client } = await createFakeBot()
-      assert.strictEqual(bot._bedrock.mode, 'raknet') // lib/loader.js (BEDD-1): the transport name without client.bedd
+      assert.strictEqual(bot._bedrock.mode, 'raknet') // lib/loader.js: the transport name without client.bedd
       assert.strictEqual(follower.attach(bot, client), null)
       assert.strictEqual(bot.bedrock.bedd, undefined)
       await replayJoin(bot, client)

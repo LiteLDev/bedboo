@@ -1,5 +1,6 @@
 'use strict'
-// owner: U4 (core runtime) — the local player entity (entities.js self part + lib/bedrock/entity_data.js)
+// the local player entity (entities.js self part + lib/bedrock/entity_data.js)
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const { Vec3 } = require('vec3')
 const { createFakeBot, replayJoin, afterSpawnRecords } = require('./helpers/fake')
@@ -16,9 +17,7 @@ async function joined () {
 
 const flags = (on) => ({ _value: 0n, onfire: false, sneaking: false, sprinting: false, gliding: false, swimming: false, ...on })
 
-describe('local player entity (U4)', function () {
-  this.timeout(30000)
-
+describe('local player entity', () => {
   it('internalTest › entities › entity id from start_game', async () => {
     const { bot, spawned } = await joined()
     assert.strictEqual(bot.entity.id, 91, 'Number(start_game.runtime_entity_id)')
@@ -32,7 +31,7 @@ describe('local player entity (U4)', function () {
     assert.strictEqual(bot.entity.width, 0.6)
     assert.strictEqual(bot.entity.eyeHeight, 1.62)
     assert.ok(bot.entity.velocity instanceof Vec3)
-    // (the capture's other entities spawn too since U7)
+    // (the capture's other entities spawn too)
     assert.deepStrictEqual(spawned.filter(e => e === bot.entity), [bot.entity], "entitySpawn(bot.entity) on 'spawn'")
     // self player record from player_list
     assert.strictEqual(bot.player, bot.players.U0Bot)
@@ -62,7 +61,7 @@ describe('local player entity (U4)', function () {
     assert.strictEqual(movement.modifiers[0].uuid, '91aeaa56-376b-4498-935b-2f7f68070635')
     assert.ok(Math.abs(baseValue(1.5, [{ operation: 0, amount: 0.5 }]) - 1) < 1e-9)
     assert.ok(Math.abs(baseValue(3, [{ operation: 1, amount: 0.5 }, { operation: 0, amount: 1 }]) - 1) < 1e-9)
-    // other entities are U7's
+    // other entities are covered by entities.test.js
     bot._client.receive('update_attributes', { ...speed, runtime_entity_id: 5n })
     assert.strictEqual(updates, 1)
   })
@@ -93,7 +92,7 @@ describe('local player entity (U4)', function () {
     client.receive('set_entity_data', { runtime_entity_id: 91n, metadata: [{ key: 'flags', type: 'long', value: flags({ gliding: true }) }], tick: 2n })
     assert.strictEqual(bot.entity.crouching, false)
     assert.strictEqual(bot.entity.elytraFlying, true)
-    // BDS 1.26.51 reports a sleeping player in player_flags (bit 1), not in flags_extended (U7, observed live)
+    // BDS 1.26.51 reports a sleeping player in player_flags (bit 1), not in flags_extended (observed live)
     client.receive('set_entity_data', { runtime_entity_id: 91n, metadata: [{ key: 'player_flags', type: 'byte', value: 2 }, { key: 'flags_extended', type: 'long', value: { _value: 0n, sleeping: false } }], tick: 3n })
     client.receive('set_entity_data', { runtime_entity_id: 91n, metadata: [{ key: 'player_flags', type: 'byte', value: 0 }], tick: 4n })
     assert.deepStrictEqual(events, ['entityUpdate', 'entityCrouch', 'entityUpdate', 'entityUncrouch', 'entityElytraFlew', 'entityUpdate', 'entitySleep', 'entityUpdate', 'entityWake'])

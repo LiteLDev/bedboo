@@ -1,4 +1,3 @@
-// owner: U3 (parity tooling)
 'use strict'
 /**
  * Runtime surface snapshots of a bot (mineflayer or mineflayer-bedrock): which members exist, their
@@ -60,7 +59,7 @@ function fnKind (fn) {
 
 /**
  * Describe one own property of `obj` without invoking getters.
- * @returns {{ type: string, ctor?: string|null, arity?: number, kind?: string, stub?: boolean, unit?: string }|null}
+ * @returns {{ type: string, ctor?: string|null, arity?: number, kind?: string, stub?: boolean }|null}
  */
 function describeProperty (obj, key) {
   const desc = Object.getOwnPropertyDescriptor(obj, key)
@@ -76,7 +75,6 @@ function describeValue (v) {
     const out = { type: 'function', arity: v.length, kind: fnKind(v) }
     if (v.notImplemented === true) {
       out.stub = true
-      out.unit = v.unit ?? null
     }
     return out
   }

@@ -1,6 +1,7 @@
 'use strict'
-// owner: U9 (player state, world extras & dimensions) — block_actions.js, block entities (blocks.js), sign.js and the
+// block_actions.js, block entities (blocks.js), sign.js and the
 // prismarine-block / prismarine-chunk patches, on the recorded BDS join + packets observed on BDS 1.26.51.1
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const nbt = require('prismarine-nbt')
 const { Vec3 } = require('vec3')
@@ -28,9 +29,7 @@ const pistonArm = (pos, state, sticky = 0) => ({
   })
 })
 
-describe('block actions, block entities, signs (U9)', function () {
-  this.timeout(30000)
-
+describe('block actions, block entities, signs', () => {
   it('noteHeard: block_event { type: instrument, data: pitch } on a note block (bell = 6, harp = 0 → "sound")', async () => {
     const { bot, client, set } = await world()
     const pos = new Vec3(3, -60, 3)

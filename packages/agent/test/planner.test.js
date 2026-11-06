@@ -1,5 +1,6 @@
 'use strict'
-// owner: U17 — the obtain planner on a fake world model (no server)
+// the obtain planner on a fake world model (no server)
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const { plan, fromMineflayerRecipe } = require('../src/planner')
 
@@ -85,7 +86,7 @@ function simulate (steps, inventory) {
   return inv
 }
 
-describe('obtain planner (U17)', () => {
+describe('obtain planner', () => {
   it('already carried: no steps', () => {
     const r = plan({ item: 'stone_pickaxe', count: 1 }, fakeWorld({ inventory: { stone_pickaxe: 1 } }))
     assert.deepStrictEqual(r, { ok: true, steps: [], cost: 0 })

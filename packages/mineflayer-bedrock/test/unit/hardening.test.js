@@ -1,6 +1,7 @@
 'use strict'
-// owner: U16 (wave 5, U16a parity hardening) — regression tests for the wave-4 review findings (no server), on a fake
+// regression tests (no server) on a fake
 // client with the recorded BDS join (flat world).
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const { Vec3 } = require('vec3')
 const { createFakeBot, replayJoin } = require('./helpers/fake')
@@ -69,9 +70,7 @@ const blockNamed = (bot, name, pos = new Vec3(1, -60, 0)) => {
   return block
 }
 
-describe('wave-4 review fixes (U16a)', function () {
-  this.timeout(30000)
-
+describe('parity hardening', () => {
   describe('#3 digging air', () => {
     it('air has hardness 0 (raw minecraft-data / Java), digTime(air) === 0 in survival and creative', async () => {
       const { bot } = await spawned()
@@ -134,7 +133,7 @@ describe('wave-4 review fixes (U16a)', function () {
     })
   })
 
-  describe('double-tapped forward (U15 open item): BDS sprints, the bot predicts it', () => {
+  describe('double-tapped forward ): BDS sprints, the bot predicts it', () => {
     async function walk (pattern) {
       const created = await spawned()
       const { bot, tick, inputs } = created
@@ -181,7 +180,7 @@ describe('wave-4 review fixes (U16a)', function () {
       assert.ok(!inputs().some((p) => flags(p).includes('sprinting')), 'sneaking: no sprint')
     })
 
-    it('setControlState(\'sprint\', false) does not end it while forward is held (Bedrock: sticky, FINAL-FIX-LIB); no tap sprint while riding', async () => {
+    it('setControlState(\'sprint\', false) does not end it while forward is held (Bedrock: sticky); no tap sprint while riding', async () => {
       const created = await spawned()
       const { bot, tick, inputs } = created
       bot.game.gameMode = 'survival'

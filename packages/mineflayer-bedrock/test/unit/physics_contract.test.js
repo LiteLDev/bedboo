@@ -1,8 +1,9 @@
 'use strict'
-// owner: U5 (physics & movement) — contract: mineflayer-pathfinder's lib/physics.js (simulateUntil, canStraightLine,
+// contract: mineflayer-pathfinder's lib/physics.js (simulateUntil, canStraightLine,
 // canWalkJump / canSprintJump, …) runs unchanged on a mineflayer-bedrock bot: it builds prismarine-physics'
 // own PlayerState (require('minecraft-data')(bot.version) → the Bedrock data) and steps it with
 // bot.physics.simulatePlayer (the Bedrock engine) on the recorded flat world (test/fixtures join_flat) plus an overlay.
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const { Vec3 } = require('vec3')
 const PathfinderPhysics = require('mineflayer-pathfinder/lib/physics')
@@ -29,9 +30,7 @@ async function pathfinderBot () {
   return bot
 }
 
-describe('mineflayer-pathfinder lib/physics.js on the Bedrock engine (U5 contract)', function () {
-  this.timeout(30000)
-
+describe('mineflayer-pathfinder lib/physics.js on the Bedrock engine (contract)', () => {
   it('builds prismarine-physics PlayerStates from the bot and simulates them with bot.physics.simulatePlayer', async () => {
     const bot = await pathfinderBot()
     const physics = new PathfinderPhysics(bot)

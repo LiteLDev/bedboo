@@ -1,5 +1,0 @@
-{
-  "spec": ["test/unit/**/*.test.js"],
-  "timeout": 20000,
-  "require": ["./test/strict-features.js"]
-}

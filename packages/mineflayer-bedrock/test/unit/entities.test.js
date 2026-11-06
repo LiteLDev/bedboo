@@ -1,7 +1,8 @@
 'use strict'
-// owner: U7 (entities & players) — every other entity and player (lib/plugins/entities.js, lib/bedrock/paintings.js,
+// every other entity and player (lib/plugins/entities.js, lib/bedrock/paintings.js,
 // the prismarine-entity patch), on a fake client fed with the recorded BDS join (test/fixtures join_flat) and
 // synthesized Bedrock packets. The upstream internalTest analogs keep their names.
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const { Vec3 } = require('vec3')
 const { createFakeBot, fakeClient, replayJoin, afterSpawnRecords } = require('./helpers/fake')
@@ -82,9 +83,7 @@ function playerRecord (uuid, username, uniqueId) {
 const near = (a, b, eps = 1e-4) => Math.abs(a - b) < eps
 const nearVec = (v, x, y, z, eps = 1e-4) => near(v.x, x, eps) && near(v.y, y, eps) && near(v.z, z, eps)
 
-describe('entities & players (U7)', function () {
-  this.timeout(30000)
-
+describe('entities & players', () => {
   it('internalTest › entity effects', async () => {
     const { bot, client, events, record } = await joined()
     record('entityEffect', 'entityEffectEnd')
@@ -593,8 +592,8 @@ describe('entities & players (U7)', function () {
     assert.deepStrictEqual(client.sent('interact'), [{ action_id: 'leave_vehicle', target_entity_id: 1051n, has_position: false }])
     assert.strictEqual(bot.attack.length, 1)
     assert.strictEqual(bot.swingArm.length, 0)
-    // moveVehicle is the physics plugin's (U5, input.setVehicle; tested in physics_plugin.test.js)
-    assert.ok(!bot.moveVehicle.notImplemented && bot.moveVehicle.length === 2, 'moveVehicle is implemented by the physics plugin (U5)')
+    // moveVehicle is the physics plugin's (input.setVehicle; tested in physics_plugin.test.js)
+    assert.ok(!bot.moveVehicle.notImplemented && bot.moveVehicle.length === 2, 'moveVehicle is implemented by the physics plugin')
   })
 
   it('nearestEntity skips the bot; unknown entity types; xp orbs; dimension change drops the entities', async () => {
@@ -630,7 +629,7 @@ describe('entities & players (U7)', function () {
     assert.ok(bot.fireworkRocketDuration >= 30 && bot.fireworkRocketDuration <= 41, `duration ${bot.fireworkRocketDuration}`)
     client.receive('set_entity_data', { runtime_entity_id: 1071n, metadata: [{ key: 'owner_eid', type: 'long', value: SELF_UNIQUE }], properties: { ints: [], floats: [] }, tick: 0n })
     assert.strictEqual(events.length, 1, 'once per rocket')
-    // what BDS 1.26.51.1 sends for a boosting rocket (U14, live): owner_eid -1, the boosted player's unique id in
+    // what BDS 1.26.51.1 sends for a boosting rocket (live): owner_eid -1, the boosted player's unique id in
     // metadata key 18 (`minecart_has_display`, a long for rockets)
     bot.fireworkRocketDuration = 0
     addEntity(client, { runtimeId: 1072n, type: 'fireworks_rocket', metadata: [{ key: 'owner_eid', type: 'long', value: -1n }, { key: 'minecart_has_display', type: 'long', value: SELF_UNIQUE }, { key: 'minecart_display_block', type: 'compound', value: nbt }] })

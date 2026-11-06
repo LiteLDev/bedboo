@@ -1,12 +1,13 @@
 'use strict'
-// owner: U17 — blueprint compiler and verifier (no server)
+// blueprint compiler and verifier (no server)
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const { Vec3 } = require('vec3')
 const { compile, verify, inBounds, BLUEPRINTS, STONE, PLANKS } = require('../src/blueprint')
 
 const key = (p) => `${p.x},${p.y},${p.z}`
 
-describe('blueprint compiler (U17)', () => {
+describe('blueprint compiler', () => {
   const house = BLUEPRINTS.house5x5
 
   it('house5x5: 98 structure blocks + door, table, chest; materials per spec', () => {

@@ -1,8 +1,8 @@
-// owner: BEDD-2 (authority table + core intent router)
 'use strict'
 // The bedd-mode router on the real createBot: a fake bedrock-protocol client whose queue/write go to
-// client.bedd.route (what BB1's bedd client does), a hand-built client.bedd stub with a recording rpc and caps
+// client.bedd.route (what the bedd client does), a hand-built client.bedd stub with a recording rpc and caps
 // permutations, and the recorded BDS join (join_flat). Bot APIs are called for real and the recorded ops asserted.
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const { createDeserializer } = require('bedrock-protocol/src/transforms/serializer')
 const fixtures = require('../../fixtures')
@@ -21,7 +21,7 @@ function capsWith (overrides = {}) {
   return Object.assign(caps, overrides)
 }
 
-/** client.bedd as BB1 builds it (spec D), with an rpc that records every call */
+/** client.bedd as the bedd client builds it, with an rpc that records every call */
 function beddStub (caps, world) {
   const calls = []
   const rpc = {
@@ -50,7 +50,7 @@ async function beddBot ({ caps = capsWith(), world = { inLevel: true, mouseGrabb
   const clock = fakeClock()
   client.options.bedd = { router: { timers, now: () => clock.now } }
   client.bedd.attach = (bot) => routerModule.attach(bot, client)
-  // BB1's bedd client: queue/write never reach a wire, they go to client.bedd.route
+  // the bedd client: queue/write never reach a wire, they go to client.bedd.route
   const record = (kind) => (name, params) => {
     client.written.push([kind, name, params])
     return client.bedd.route?.(name, params)
@@ -97,7 +97,7 @@ function decode (buf) {
   return des.parsePacketBuffer(Buffer.from(buf, 'base64')).data
 }
 
-describe('bedd authority table (BEDD-2)', () => {
+describe('bedd authority table', () => {
   it('classifies the spec table (item_stack_request translated per the override)', () => {
     const c = authority.classify
     for (const name of ['login', 'request_chunk_radius', 'subchunk_request', 'serverbound_loading_screen', 'set_local_player_as_initialized', 'tick_sync', 'respawn', 'animate', 'network_stack_latency']) {
@@ -130,9 +130,7 @@ describe('bedd authority table (BEDD-2)', () => {
   })
 })
 
-describe('bedd router on createBot + join_flat (BEDD-2)', function () {
-  this.timeout(30000)
-
+describe('bedd router on createBot + join_flat', () => {
   it('the recorded join_flat player_auth_input records (idle) and the clientOwned join packets never reach the rpc', async () => {
     const { client, router, ops, calls } = await beddBot()
     // the join (replayed in beddBot) wrote set_local_player_as_initialized, subchunk_request, …: all dropped

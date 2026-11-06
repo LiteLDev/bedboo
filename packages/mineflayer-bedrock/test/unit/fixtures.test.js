@@ -1,8 +1,9 @@
 'use strict'
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const fixtures = require('../fixtures')
 
-describe('packet fixtures (U0 capture of BDS 1.26.51.1)', () => {
+describe('packet fixtures (capture of BDS 1.26.51.1)', () => {
   const cap = fixtures.load('join_flat')
 
   it('lists the join_flat capture with metadata', () => {

@@ -1,6 +1,7 @@
 'use strict'
-// owner: U6 (chat, commands & HUD) — lib/bedrock/text.js: Bedrock text → prismarine-chat ChatMessage
-// (recorded BDS 1.26.51.1 `text` / `command_output` packets of the U0 capture + /tellraw rawtext seen on BDS)
+// lib/bedrock/text.js: Bedrock text → prismarine-chat ChatMessage
+// (recorded BDS 1.26.51.1 `text` / `command_output` packets of the join capture + /tellraw rawtext seen on BDS)
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const { createRegistry } = require('../../lib/registry')
 const text = require('../../lib/bedrock/text')
@@ -10,7 +11,7 @@ const registry = createRegistry()
 const ChatMessage = require('prismarine-chat')(registry)
 const packet = (fields) => ({ needs_translation: false, category: 'message_only', xuid: '', platform_chat_id: '', has_filtered_message: false, ...fields })
 
-describe('text.js: Bedrock text → ChatMessage (U6)', function () {
+describe('text.js: Bedrock text → ChatMessage', () => {
   it('contract: toChatMessage / fromRawText / fromFormattedString', () => {
     const chat = text.toChatMessage(registry, packet({ category: 'authored', type: 'chat', source_name: 'gary§r', message: 'hello' }))
     assert.strictEqual(chat.message.constructor.name, 'ChatMessage')

@@ -2,6 +2,7 @@
 // bedd mode (transport 'bedd'): the real client requests its own sub-chunks, so lib/plugins/blocks.js sets a column at
 // its level_chunk and decodes every subchunk entry into the column it names, whatever the request origin, without
 // queueing a subchunk_request of its own (it is client-owned and the router drops it).
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const { Vec3 } = require('vec3')
 const { createFakeBot, joinRecords } = require('../helpers/fake')
@@ -15,9 +16,7 @@ async function feed (bot, client, records) {
   await new Promise(resolve => setImmediate(resolve))
 }
 
-describe('bedd chunks: the client owns the sub-chunk requests (lib/plugins/blocks.js)', function () {
-  this.timeout(30000)
-
+describe('bedd chunks: the client owns the sub-chunk requests (lib/plugins/blocks.js)', () => {
   it('columns load from level_chunk + the client\'s subchunk answers; bedboo sends no subchunk_request', async () => {
     const { bot, client } = await createFakeBot()
     bot._bedrock.mode = 'bedd'

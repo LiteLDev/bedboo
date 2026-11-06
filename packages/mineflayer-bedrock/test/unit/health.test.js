@@ -1,6 +1,7 @@
 'use strict'
-// owner: U9 (player state, world extras & dimensions) — health.js (health/food, death, the 3-step respawn, isAlive)
+// health.js (health/food, death, the 3-step respawn, isAlive)
 // on the recorded BDS join + the death / respawn packet sequences observed on BDS 1.26.51.1
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const { createFakeBot, replayJoin } = require('./helpers/fake')
 
@@ -33,9 +34,7 @@ function record (bot, names) {
   return events
 }
 
-describe('health / death / respawn (U9)', function () {
-  this.timeout(30000)
-
+describe('health / death / respawn', () => {
   it('health, food and saturation from the join attributes and set_health; health event per packet', async () => {
     const { bot, client } = await createFakeBot()
     let healthEvents = 0

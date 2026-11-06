@@ -1,6 +1,7 @@
 'use strict'
-// owner: FINAL-FIX-AGENT-A — the agent core's final fixes on fake bots (no server): safety under U18 guards, the
+// the agent core on fake bots (no server): safety under combat guards, the
 // runner's wind-down and stuck watchdog, navigate's spawn goal, smelting splits, nights
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const { EventEmitter } = require('events')
 const { Vec3 } = require('vec3')
@@ -46,7 +47,7 @@ function fakeBot ({ position = new Vec3(0.5, 0, 0.5) } = {}) {
 
 const mob = (id, name, position, extra = {}) => ({ id, name, type: 'mob', position, width: 0.6, height: 1.9, ...extra })
 
-describe('final fix (agent): safety under U18 guards', () => {
+describe('agent core: safety under combat guards', () => {
   it('pushGuard widens the radius, adds ignore rules and a height band; popGuard restores', () => {
     const safety = new Safety(fakeBot())
     assert.strictEqual(safety.effective().radius, 5)
@@ -174,7 +175,7 @@ describe('final fix (agent): safety under U18 guards', () => {
     safety.attackers.set(zombie, Date.now() + 20000) // it just hit the bot
     assert.strictEqual(safety.betterTarget(creeper), true)
     assert.strictEqual(safety.betterTarget(zombie), false, 'the target itself in reach: no switch')
-    // (FINAL-ROUND) a target within reach but a block farther than the mob hitting the bot: the closer one
+    // a target within reach but a block farther than the mob hitting the bot: the closer one
     const skeleton = mob(10, 'skeleton', new Vec3(3.6, 0, 0.5), { kind: 'Hostile mobs' })
     bot.entities[10] = skeleton
     assert.strictEqual(safety.betterTarget(skeleton), true)

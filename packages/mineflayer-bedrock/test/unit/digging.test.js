@@ -1,7 +1,8 @@
 'use strict'
-// owner: U10 (digging) — lib/bedrock/dig_speed.js (Bedrock break speed, calibrated on BDS 1.26.51.1) and the digging
+// lib/bedrock/dig_speed.js (Bedrock break speed, calibrated on BDS 1.26.51.1) and the digging
 // plugin's block-action protocol on a fake client with the recorded BDS join (flat world), plus the mineflayer
 // internalTest digTime analog.
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const { Vec3 } = require('vec3')
 const { createFakeBot, replayJoin } = require('./helpers/fake')
@@ -14,7 +15,7 @@ const CONDUIT_POWER = 26
 
 /**
  * BDS 1.26.51.1 measurements: level_event block_start_break data (progress per tick × 65535, floored) when the bot
- * started breaking `block` with `tool` (scratch probe, docs/differences/U10.md#dig-speed).
+ * started breaking `block` with `tool` (scratch probe on BDS).
  */
 const MEASURED = [
   { block: 'dirt', data: 4369 },
@@ -82,8 +83,7 @@ function inputsOf (registry, c) {
   }
 }
 
-describe('dig speed (lib/bedrock/dig_speed.js)', function () {
-  this.timeout(60000)
+describe('dig speed (lib/bedrock/dig_speed.js)', () => {
   const registry = createRegistry('1.26.51')
   const Block = require('prismarine-block')(registry)
 
@@ -158,9 +158,7 @@ function serverSets (bot, client, pos, name) {
   })
 }
 
-describe('digging plugin (U10): Bedrock server-authoritative block breaking', function () {
-  this.timeout(30000)
-
+describe('digging plugin: Bedrock server-authoritative block breaking', () => {
   it('internalTest › digTime › should use eye-level water check instead of isInWater for dig speed', async () => {
     const { bot, client } = await spawned()
     bot.game.gameMode = 'survival'
@@ -583,7 +581,7 @@ describe('digging plugin (U10): Bedrock server-authoritative block breaking', fu
   })
 })
 
-describe('physics engine: resting on ground needs ground (U10 minimal fix in lib/physics/engine.js)', function () {
+describe('physics engine: resting on ground needs ground (lib/physics/engine.js)', () => {
   const registry = createRegistry('1.26.51')
   const Block = require('prismarine-block')(registry)
   const { Physics } = require('../../lib/physics')

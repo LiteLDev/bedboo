@@ -1,4 +1,3 @@
-// owner: U4 (core runtime) — shared by the U4 unit tests (and free to reuse by later units)
 'use strict'
 /**
  * A mineflayer-bedrock bot on a fake bedrock-protocol client (no network), with a controllable tick clock,

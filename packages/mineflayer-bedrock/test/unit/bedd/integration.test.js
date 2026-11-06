@@ -5,6 +5,7 @@
 // player_auth_input per tick carrying the rotation the `look` op set, answers `action inventory` / ESC with the
 // screens the client would open, and submits `stack` requests with its own ids (counting down from -0x40000001 like
 // BD9), answering through the tap. Each bot API must come out as the right control ops.
+const { describe, it, before, after } = require('node:test')
 const assert = require('assert')
 const { once } = require('events')
 const { Vec3 } = require('vec3')
@@ -117,8 +118,7 @@ function startEchoes (game, template) {
   return () => clearInterval(timer)
 }
 
-describe('bedd integration: createBot({ transport: \'bedd\' }) with every module, against the fake Be.D.D.', function () {
-  this.timeout(60000)
+describe('bedd integration: createBot({ transport: \'bedd\' }) with every module, against the fake Be.D.D.', () => {
   let game, bot, stopEchoes
 
   before(async () => {
@@ -133,13 +133,13 @@ describe('bedd integration: createBot({ transport: \'bedd\' }) with every module
     stopEchoes = startEchoes(game, template)
     await until(() => bot.bedrock.bedd?.observed, { what: 'the follower' })
     game.fake.calls.length = 0
-  })
+  }, { timeout: 60000 })
 
   after(async () => {
     stopEchoes?.()
     bot?.end()
     await game?.fake.close()
-  })
+  }, { timeout: 60000 })
 
   const ops = (op) => game.fake.callsOf(op).map(c => c.args)
 
@@ -291,9 +291,7 @@ describe('bedd integration: createBot({ transport: \'bedd\' }) with every module
   })
 })
 
-describe('bedd integration: no stack op', function () {
-  this.timeout(60000)
-
+describe('bedd integration: no stack op', () => {
   it('clickWindow and craft reject with ERR_BEDD_UNSUPPORTED and nothing reaches the control pipe', async () => {
     const game = await fakeGame({ caps: { stack: 'absent' }, handlers: { stack: () => NO_REPLY } })
     const bot = mineflayerBedrock.createBot({ transport: 'bedd', bedd: game.fake.botOptions(), logErrors: false, hideErrors: true })

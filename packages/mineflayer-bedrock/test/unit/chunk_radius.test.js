@@ -1,13 +1,13 @@
 'use strict'
-// owner: U16b — regression: columns BDS sends for the granted chunk radius before its publisher updates catch up
+// regression: columns BDS sends for the granted chunk radius before its publisher updates catch up
 // must not be unloaded (BDS never resends them; waitForChunksToLoad then times out — seen with runExample children)
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const { Vec3 } = require('vec3')
 const { createFakeBot, replayJoin } = require('./helpers/fake')
 
-describe('chunk radius vs publisher radius (U16b fix in blocks.js)', function () {
+describe('chunk radius vs publisher radius (blocks.js)', () => {
   // 'publisher radius + two chunks': with the join radius 64 BDS sends corner columns ~82 blocks away
-  this.timeout(30000)
 
   async function joined () {
     const created = await createFakeBot()

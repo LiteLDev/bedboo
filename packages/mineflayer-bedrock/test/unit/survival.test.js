@@ -1,10 +1,9 @@
-// owner: U14 (survival interactions)
 'use strict'
 /**
- * fishing.js and book.js on a fake client fed with the packets BDS 1.26.51.1 sends (shapes recorded live, see
- * docs/differences/U14.md): the bobber (add_entity fishing_hook with owner_eid), the bite (entity_event fish_hook_hook),
+ * fishing.js and book.js on a fake client fed with the packets BDS 1.26.51.1 sends (shapes recorded live): the bobber (add_entity fishing_hook with owner_eid), the bite (entity_event fish_hook_hook),
  * the book opened by a use, edited with book_edit and sent back on the release.
  */
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const { createFakeBot, replayJoin } = require('./helpers/fake')
 const { serveInventory, wireItem, inventoryContent, tick } = require('./helpers/inventory_server')
@@ -47,9 +46,7 @@ function addHook (bot, client, runtimeId, owner = BigInt(bot._bedrock.ids.selfUn
 const entityEvent = (client, runtimeId, eventId) => client.receive('entity_event', { runtime_entity_id: runtimeId, event_id: eventId, data: 0 })
 const uses = (client) => client.sent('inventory_transaction').filter((p) => p.transaction.transaction_data?.action_type === 'click_air')
 
-describe('fishing (U14)', function () {
-  this.timeout(30000)
-
+describe('fishing', () => {
   it('fish(): cast, ignore teasing / other bobbers, reel in on fish_hook_hook and resolve', async () => {
     const { bot, client } = await joined()
     client.receive('inventory_content', inventoryContent(bot, { 0: ['fishing_rod', 1] }))
@@ -88,9 +85,7 @@ describe('fishing (U14)', function () {
   })
 })
 
-describe('book (U14)', function () {
-  this.timeout(30000)
-
+describe('book', () => {
   /** the book NBT BDS sends: writable_book pages [{ photoname, text }] */
   function bookNbt (pages, extra = {}) {
     return {
@@ -181,7 +176,7 @@ describe('book (U14)', function () {
   })
 })
 
-describe('bed sleep / wake packets (U14)', function () {
+describe('bed sleep / wake packets', () => {
   it('wake(): player_action stop_sleeping while sleeping, "already awake" otherwise', async () => {
     const { bot, client } = await joined()
     await assert.rejects(bot.wake(), /already awake/)

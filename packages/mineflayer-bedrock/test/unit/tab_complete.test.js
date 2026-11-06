@@ -1,6 +1,7 @@
 'use strict'
-// owner: U6 (chat, commands & HUD) — bot.tabComplete: client-side completion from the recorded BDS 1.26.51.1
+// bot.tabComplete: client-side completion from the recorded BDS 1.26.51.1
 // available_commands (lib/bedrock/commands.js)
+const { describe, it, before } = require('node:test')
 const assert = require('assert')
 const fixtures = require('../fixtures')
 const { createFakeBot, replayJoin } = require('./helpers/fake')
@@ -9,8 +10,7 @@ const { createCommandTree, tokenize } = require('../../lib/bedrock/commands')
 const availableCommands = () => fixtures.load('join_flat').first('available_commands')
 const names = (matches) => matches.map(m => m.match)
 
-describe('tabComplete from available_commands (U6)', function () {
-  this.timeout(30000)
+describe('tabComplete from available_commands', () => {
   let tree
   before(() => {
     tree = createCommandTree()

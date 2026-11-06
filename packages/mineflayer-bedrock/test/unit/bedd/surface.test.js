@@ -1,8 +1,9 @@
 'use strict'
-// owner: BEDD-5 (bedd lifecycle, capability surface and BeddUnsupportedError) — a real createBot on the fake client
+// a real createBot on the fake client
 // (test/unit/helpers/fake.js) carrying a `client.bedd` stub, with the join_flat replay: the real client owns the
 // loading screen / respawn / dimension acks, the capability surface follows the caps, item stack requests need the
 // `stack` op, and a bot without client.bedd is unchanged.
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const mineflayerBedrock = require('../../..')
 const { fakeClient, fakeClock, createFakeBot, replayJoin } = require('../helpers/fake')
@@ -64,9 +65,7 @@ function assertUnsupported (err, feature, missing) {
   assert.ok(isBeddUnsupported(err))
 }
 
-describe('bedd: lifecycle, capability surface and BeddUnsupportedError (BEDD-5)', function () {
-  this.timeout(30000)
-
+describe('bedd: lifecycle, capability surface and BeddUnsupportedError', () => {
   describe('BeddUnsupportedError', () => {
     it('carries code, bedd, feature and missing; names the missing op or v2', () => {
       const err = new BeddUnsupportedError('bot.craft', { missing: ['stack'] })

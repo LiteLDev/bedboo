@@ -1,5 +1,6 @@
 'use strict'
-// owner: U2 (Bedrock data layer) — patched prismarine-chunk on the U0 BDS 1.26.51.1 capture
+// patched prismarine-chunk on the U0 BDS 1.26.51.1 capture
+const { describe, it, before } = require('node:test')
 const assert = require('assert')
 const { Vec3 } = require('vec3')
 const fixtures = require('../../fixtures')
@@ -44,7 +45,7 @@ async function decodeCapture () {
 
 describe('prismarine-chunk (bedboo patch) on BDS 1.26.51 chunks', () => {
   let decoded
-  before(async () => { decoded = await decodeCapture() })
+  before(async () => { decoded = await decodeCapture() }, { timeout: 60000 })
 
   it('has a bedrock 1.26 implementation', () => {
     assert.strictEqual(typeof ChunkColumn, 'function')

@@ -13,7 +13,7 @@
     "node": ">=24"
   },
   "scripts": {
-    "test": "mocha",
+    "test": "node --test --test-isolation=none --test-timeout=60000 \"test/**/*.test.js\"",
     "generate": "node scripts/fetch-sources.js && node scripts/generate.js",
     "generate:check": "node scripts/fetch-sources.js && node scripts/generate.js --check"
   },
@@ -21,7 +21,6 @@
     "minecraft-data": "3.117.0"
   },
   "devDependencies": {
-    "mocha": "12.0.3",
     "prismarine-nbt": "2.8.0"
   },
   "files": [

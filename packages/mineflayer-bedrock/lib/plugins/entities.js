@@ -963,7 +963,7 @@ function inject (bot) {
   bot.mount = mount
   bot.dismount = dismount
   bot.useOn = useOn
-  bot.moveVehicle = stubSync('U5', 'bot.moveVehicle', 2) // vehicle input belongs to the physics plugin (input.setVehicle)
+  bot.moveVehicle = stubSync('bot.moveVehicle', 2) // vehicle input belongs to the physics plugin (input.setVehicle)
 
   function selfRuntimeId () {
     return ids()?.selfRuntimeId() ?? BigInt(bot.entity?.id ?? 0)

@@ -1,4 +1,3 @@
-// owner: U3 (parity tooling)
 'use strict'
 /**
  * Declaration surface of a mineflayer-style index.d.ts, read with the TypeScript compiler.

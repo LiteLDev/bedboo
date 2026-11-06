@@ -1,4 +1,3 @@
-// owner: U3 (parity tooling)
 'use strict'
 /**
  * Window-class probe: opens every mineflayer window kind without a server and records the members
@@ -53,7 +52,7 @@ function createWindow (windows, spec) {
  *   `require` resolves prismarine-* the way this bot does (upstream: from mineflayer's dir); `tradeList` builds the
  *   packet a villager opener waits for;
  *   `freshBot` creates another injected bot, used after a probe left an opener pending.
- * @returns {Promise<Record<string, { status: 'ok'|'stub'|'unverified', members?: object, unit?: string, reason?: string }>>}
+ * @returns {Promise<Record<string, { status: 'ok'|'stub'|'unverified', members?: object, reason?: string }>>}
  */
 async function probeWindows (bot, { require: req, timeoutMs = 300, tradeList = null, freshBot = null }) {
   const results = {}
@@ -79,7 +78,7 @@ async function probeWindows (bot, { require: req, timeoutMs = 300, tradeList = n
 async function probeOne (bot, spec, { req, timeoutMs, tradeList }) {
   const opener = bot[spec.opener]
   if (typeof opener !== 'function') return { status: 'unverified', reason: `bot.${spec.opener} is missing` }
-  if (opener.notImplemented === true) return { status: 'stub', unit: opener.unit }
+  if (opener.notImplemented === true) return { status: 'stub' }
 
   const registry = bot.registry
   let target, windows, window

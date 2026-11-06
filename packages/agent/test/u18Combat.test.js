@@ -1,5 +1,6 @@
 'use strict'
-// owner: U18 (agent combat & dimensions) — the combat skill's guard / hunt / safety helpers on a fake mineflayer bot
+// the combat skill's guard / hunt / safety helpers on a fake mineflayer bot
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const { EventEmitter } = require('events')
 const { Vec3 } = require('vec3')
@@ -76,7 +77,7 @@ const until = async (predicate, ms = 3000) => {
   }
 }
 
-describe('U18 combat skill: safety (hazardAhead)', () => {
+describe('combat skill: safety (hazardAhead)', () => {
   it('lava or fire ahead, a void or a cliff higher than 3 blocks are hazards; a step down onto ground is not', () => {
     const facingNorth = { forward: true } // yaw 0 → -z
     assert.strictEqual(combat.hazardAhead(fakeBot(), facingNorth), false)
@@ -117,7 +118,7 @@ describe('U18 combat skill: safety (hazardAhead)', () => {
   })
 })
 
-describe('U18 combat skill: defend (background guard)', () => {
+describe('combat skill: defend (background guard)', () => {
   it('engages a hostile that comes within the radius, kills it, reports busy → idle and the kill', async () => {
     const bot = fakeBot({ items: [{ name: 'iron_sword' }] })
     const guard = combat.defend(bot, { radius: 8, interval: 10, eat: false })
@@ -251,7 +252,7 @@ describe('U18 combat skill: defend (background guard)', () => {
   })
 })
 
-describe('U18 dims/util goto with a guard', () => {
+describe('dims/util goto with a guard', () => {
   const util = require('../src/dims/util')
   function fakeGuard () {
     const g = new EventEmitter()
@@ -330,7 +331,7 @@ describe('U18 dims/util goto with a guard', () => {
   })
 })
 
-describe('U18 combat skill: modes', () => {
+describe('combat skill: modes', () => {
   it('nearby with nothing around: cleared, no fights', async () => {
     const bot = fakeBot({ items: [{ name: 'iron_sword' }] })
     const r = await combat(bot, { mode: 'nearby', settleMs: 30 })

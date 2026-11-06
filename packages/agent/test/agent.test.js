@@ -1,5 +1,6 @@
 'use strict'
-// owner: U17 — the Agent's task handling and the safety lock, on a fake bot (no server)
+// the Agent's task handling and the safety lock, on a fake bot (no server)
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const { EventEmitter } = require('events')
 const { Vec3 } = require('vec3')
@@ -18,7 +19,7 @@ function fakeBot () {
   return bot
 }
 
-describe('Agent tasks (U17)', () => {
+describe('Agent tasks', () => {
   it('run(): result, events and the report entry', async () => {
     const skills = { hello: async (bot, args) => ({ hi: args.name }) }
     const agent = new Agent({ bot: fakeBot(), skills })
@@ -69,7 +70,7 @@ describe('Agent tasks (U17)', () => {
   })
 })
 
-describe('Safety lock (U17)', () => {
+describe('Safety lock', () => {
   it('idle() waits while a behaviour has the controls, rejects on abort', async () => {
     const safety = new Safety(fakeBot())
     await safety.idle()

@@ -1,5 +1,6 @@
 'use strict'
-// owner: U2 (Bedrock data layer) — lib/bedrock/features.js covers every feature name used upstream
+// lib/bedrock/features.js covers every feature name used upstream
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const fs = require('fs')
 const path = require('path')

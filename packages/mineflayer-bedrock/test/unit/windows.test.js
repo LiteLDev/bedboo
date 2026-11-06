@@ -1,6 +1,7 @@
 'use strict'
-// owner: U8 (inventory, windows, creative & item use) — the window registry (lib/bedrock/windows.js), every slot
+// the window registry (lib/bedrock/windows.js), every slot
 // map (lib/bedrock/slots.js), container_open → windows, and the internalTest window analogs
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const { Vec3 } = require('vec3')
 const { createFakeBot, replayJoin } = require('./helpers/fake')
@@ -27,9 +28,7 @@ const ALL_TYPES = ['inventory', 'container', 'chest', 'trapped_chest', 'copper_c
   'smoker', 'brewing_stand', 'workbench', 'enchantment', 'anvil', 'grindstone', 'stonecutter', 'loom', 'cartography',
   'smithing_table', 'beacon', 'trading', 'horse', 'lectern']
 
-describe('windows: registry and slot maps (U8)', function () {
-  this.timeout(30000)
-
+describe('windows: registry and slot maps', () => {
   it('the registry holds every Bedrock container type; register/get/has/types', () => {
     const registry = createWindowRegistry()
     assert.deepStrictEqual(registry.types().sort(), [...ALL_TYPES].sort())
@@ -153,9 +152,7 @@ describe('windows: registry and slot maps (U8)', function () {
   })
 })
 
-describe('windows: container_open → windowOpen / windowClose (U8)', function () {
-  this.timeout(30000)
-
+describe('windows: container_open → windowOpen / windowClose', () => {
   async function joined () {
     const created = await createFakeBot()
     await replayJoin(created.bot, created.client)

@@ -1,4 +1,3 @@
-// owner: U3 (parity tooling)
 'use strict'
 /**
  * mineflayer-bedrock's surface, collected the same way as the upstream reference (./reference.js):

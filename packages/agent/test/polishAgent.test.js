@@ -1,6 +1,7 @@
 'use strict'
-// owner: POLISH-AGENT — the End's walk up from the arrival platform (another way after a stall), the exit through the
+// the End's walk up from the arrival platform (another way after a stall), the exit through the
 // portal during a fight, and the Nether's guard (piglins left alone in gold, no arrows near them, hoglins) on fake bots
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const { EventEmitter } = require('events')
 const { Vec3 } = require('vec3')

@@ -1,6 +1,7 @@
 'use strict'
-// owner: U8 (inventory, windows, creative & item use) — lib/bedrock/stack_request.js: ids, legacy action ids,
+// lib/bedrock/stack_request.js: ids, legacy action ids,
 // validation, response matching / errors / timeouts, observers; every action serialized with bedrock-protocol 1.26.51
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const { createFakeBot } = require('./helpers/fake')
 const { createStackRequestManager, normalizeAction, StackRequestError, LEGACY_ACTION_IDS } = require('../../lib/bedrock/stack_request')
@@ -41,9 +42,7 @@ const EVERY_ACTION = [
   { type_id: 'results_deprecated', result_items: [], times_crafted: 1 }
 ]
 
-describe('item stack requests (U8)', function () {
-  this.timeout(30000)
-
+describe('item stack requests', () => {
   it('legacy_type_id: the pre-1.26.40 action numbering (craft_creative 14, results_deprecated 19)', () => {
     assert.deepStrictEqual(
       ['take', 'place', 'swap', 'drop', 'destroy', 'consume', 'create'].map(t => LEGACY_ACTION_IDS[t]), [0, 1, 2, 3, 4, 5, 6])

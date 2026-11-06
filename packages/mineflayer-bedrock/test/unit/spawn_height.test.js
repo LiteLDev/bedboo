@@ -1,5 +1,6 @@
 'use strict'
-// owner: U17 — bot.spawnPoint: BDS's spawn search height (y 32767) is resolved to the spawn column's ground
+// bot.spawnPoint: BDS's spawn search height (y 32767) is resolved to the spawn column's ground
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const { EventEmitter } = require('events')
 const { Vec3 } = require('vec3')
@@ -18,7 +19,7 @@ function fakeBot ({ ground = 70, loaded = false, dimension = 'overworld' } = {})
   return bot
 }
 
-describe('spawn point height (U17)', () => {
+describe('spawn point height', () => {
   it('y 32767 stays until the spawn column is loaded, then becomes the ground height + 1', () => {
     const bot = fakeBot({ ground: 70 })
     bot._client.emit('start_game', { spawn_position: { x: -516, y: 32767, z: 77 } })

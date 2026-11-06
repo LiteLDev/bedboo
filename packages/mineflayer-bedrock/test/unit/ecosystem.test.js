@@ -1,9 +1,10 @@
 'use strict'
-// owner: U15 (ecosystem plugins & examples) — the pnpm patches of mineflayer-pathfinder / -tool / -auto-eat /
+// the pnpm patches of mineflayer-pathfinder / -tool / -auto-eat /
 // -armor-manager and the core hooks they use, on a fake client with the recorded BDS join (flat world): Bedrock block
 // names, doors and gates, dig-time estimates (Bedrock effect factors, `ench` enchantments), auto-eat's completion on
 // completed_using_item, armor-manager's serialized equips, Java version comparisons on the Bedrock registry, the
 // dig completing when mineflayer-pathfinder stops it during the breaking update.
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const { Vec3 } = require('vec3')
 const { createFakeBot, replayJoin } = require('./helpers/fake')
@@ -41,7 +42,7 @@ function serverSets (bot, client, pos, name, props) {
 
 /**
  * fill blocks (Bedrock states) into the bot's world, so bot.blockAt — which pathfinder reads blocks through — answers
- * them like blocks the server sent (FINAL-FIX-LIB: through blocks.js, e.g. a door's upper half takes its shapes from
+ * them like blocks the server sent (through blocks.js, e.g. a door's upper half takes its shapes from
  * the lower half)
  */
 function withOverlay (bot) {
@@ -66,7 +67,7 @@ function item (bot, name, { ench } = {}) {
   return it
 }
 
-describe('Java version comparisons on the Bedrock registry (bedrock-data, U15)', function () {
+describe('Java version comparisons on the Bedrock registry (bedrock-data)', () => {
   it('a Java version compares numerically; Bedrock versions compare exactly as before; anything else throws', () => {
     const registry = createRegistry()
     assert.strictEqual(registry.isNewerOrEqualTo('1.9'), true)
@@ -83,8 +84,7 @@ describe('Java version comparisons on the Bedrock registry (bedrock-data, U15)',
   })
 })
 
-describe('mineflayer-pathfinder patch (Bedrock)', function () {
-  this.timeout(30000)
+describe('mineflayer-pathfinder patch (Bedrock)', () => {
   const { Movements } = require('mineflayer-pathfinder')
   const pfBedrock = require('mineflayer-pathfinder/lib/bedrock')
 
@@ -122,7 +122,7 @@ describe('mineflayer-pathfinder patch (Bedrock)', function () {
     assert.deepStrictEqual(closed.toPlace.map(p => [p.x, p.y, p.z, !!p.useOne]), [[0, g, -1, true]])
     assert.ok(!north(Object.assign(new Movements(bot), { canOpenDoors: false, canDig: false })), 'closed + no digging + no opening: no way')
     // open: walked through, no click (a click would close it). BDS opens the lower half only: the upper half keeps
-    // open_bit 0 (measured on 1.26.51.1), its leaf follows the lower half (FINAL-FIX-LIB)
+    // open_bit 0 (measured on 1.26.51.1), its leaf follows the lower half
     fill(0, g, -1, 0, g, -1, 'wooden_door', { 'minecraft:cardinal_direction': 'west', upper_block_bit: 0, open_bit: 1, door_hinge_bit: 0 })
     fill(0, g + 1, -1, 0, g + 1, -1, 'wooden_door', { 'minecraft:cardinal_direction': 'west', upper_block_bit: 1, open_bit: 0, door_hinge_bit: 0 })
     const open = north(Object.assign(new Movements(bot), { canOpenDoors: true, canDig: false }))
@@ -216,8 +216,7 @@ describe('mineflayer-pathfinder patch (Bedrock)', function () {
   })
 })
 
-describe('mineflayer-pathfinder: a failed equip / placement never hangs the path (FINAL-ROUND)', function () {
-  this.timeout(30000)
+describe('mineflayer-pathfinder: a failed equip / placement never hangs the path', () => {
   const { pathfinder, Movements, goals } = require('mineflayer-pathfinder')
   const g = -60 // the flat world's feet level (grass at -61)
   const settle = () => new Promise((resolve) => setImmediate(resolve))
@@ -398,9 +397,7 @@ describe('mineflayer-pathfinder: a failed equip / placement never hangs the path
   })
 })
 
-describe('digging: stopDigging while the breaking update is dispatched completes the dig (U15)', function () {
-  this.timeout(30000)
-
+describe('digging: stopDigging while the breaking update is dispatched completes the dig', () => {
   it("a 'blockUpdate' listener calling stopDigging (mineflayer-pathfinder) → diggingCompleted, not aborted", async () => {
     const { bot, client, tick } = await spawned()
     bot.game.gameMode = 'survival'
@@ -436,9 +433,7 @@ describe('digging: stopDigging while the breaking update is dispatched completes
   })
 })
 
-describe('mineflayer-auto-eat patch (Bedrock)', function () {
-  this.timeout(30000)
-
+describe('mineflayer-auto-eat patch (Bedrock)', () => {
   it('loads (util plugin on the Bedrock registry); a meal completes on completed_using_item', async () => {
     const { bot, client } = await spawned()
     const { loader } = await import('mineflayer-auto-eat')
@@ -458,9 +453,7 @@ describe('mineflayer-auto-eat patch (Bedrock)', function () {
   })
 })
 
-describe('mineflayer-pvp patch', function () {
-  this.timeout(30000)
-
+describe('mineflayer-pvp patch', () => {
   it('a fusing creeper (Bedrock `ignited` entity flag) raises the shield', async () => {
     const { bot } = await spawned()
     bot.loadPlugin(require('mineflayer-pathfinder').pathfinder)
@@ -482,9 +475,7 @@ describe('mineflayer-pvp patch', function () {
   })
 })
 
-describe('mineflayer-armor-manager patch', function () {
-  this.timeout(30000)
-
+describe('mineflayer-armor-manager patch', () => {
   it('pieces picked up together are equipped one at a time', async () => {
     const { bot } = await spawned()
     bot.loadPlugin(require('mineflayer-armor-manager'))

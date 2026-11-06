@@ -1,5 +1,5 @@
-// owner: BEDD-1 (transport 'bedd': control RPC, tap reader, createBeddClient, optional-module manifest)
 'use strict'
+const { describe, it, before, after, afterEach } = require('node:test')
 const assert = require('assert')
 const fs = require('fs')
 const os = require('os')
@@ -38,8 +38,7 @@ function endOf (bot) {
   return new Promise(resolve => bot.once('end', resolve))
 }
 
-describe("transport 'bedd' (BEDD-1)", function () {
-  this.timeout(30000)
+describe("transport 'bedd'", () => {
   const fakes = []
   const bots = []
   async function fakeBedd (opts) {
@@ -50,7 +49,7 @@ describe("transport 'bedd' (BEDD-1)", function () {
   afterEach(async () => {
     for (const bot of bots.splice(0)) bot.end()
     for (const fake of fakes.splice(0)) await fake.close()
-  })
+  }, { timeout: 60000 })
 
   describe('createBot against a fake BeDD replaying join_flat', () => {
     const cap = fixtures.load('join_flat')

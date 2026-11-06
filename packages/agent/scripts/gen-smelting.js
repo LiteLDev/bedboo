@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// owner: U17 (agent core & overworld milestones)
 'use strict'
 /**
  * Regenerates src/data/smelting.json — the furnace recipes the obtain planner may use.

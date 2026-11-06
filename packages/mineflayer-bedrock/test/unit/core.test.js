@@ -1,14 +1,13 @@
 'use strict'
-// owner: U4 (core runtime) — client options, module exports, registry wiring from the recorded join
+// client options, module exports, registry wiring from the recorded join
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const mineflayerBedrock = require('../..')
 const { createFakeBot, replayJoin } = require('./helpers/fake')
 const { offlineFromAuth } = require('../../lib/client')
 const { normalizeFormat } = require('../../lib/registry')
 
-describe('core runtime: client, exports, registry (U4)', function () {
-  this.timeout(30000)
-
+describe('core runtime: client, exports, registry', () => {
   it('createClient maps mineflayer options onto bedrock-protocol (auth, defaults, mineflayer-only options dropped)', () => {
     const bedrock = require('bedrock-protocol')
     const original = bedrock.createClient
@@ -56,7 +55,7 @@ describe('core runtime: client, exports, registry (U4)', function () {
     for (const cls of ['Location', 'Painting', 'ScoreBoard', 'BossBar']) {
       assert.strictEqual(mineflayerBedrock[cls], require('mineflayer')[cls], cls)
     }
-    // U6: Particle is adapted to Bedrock packets; same loader shape, subclass of upstream's class
+    // Particle is adapted to Bedrock packets; same loader shape, subclass of upstream's class
     const { Vec3 } = require('vec3')
     const Particle = mineflayerBedrock.Particle(require('../../lib/registry').createRegistry())
     const particle = new Particle('heart', new Vec3(1, 2, 3), new Vec3(0, 0, 0))

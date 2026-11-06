@@ -1,6 +1,7 @@
 'use strict'
-// owner: U4 (core runtime) — inventory_transaction builders + the held-item provider (lib/bedrock/transactions.js),
+// inventory_transaction builders + the held-item provider (lib/bedrock/transactions.js),
 // lib/bedrock/item.js; every built packet is serialized with bedrock-protocol 1.26.51
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const { Vec3 } = require('vec3')
 const { createFakeBot, replayJoin, afterSpawnRecords } = require('./helpers/fake')
@@ -32,9 +33,7 @@ async function withPickaxe () {
   return created
 }
 
-describe('transactions + held item provider (U4 → U8)', function () {
-  this.timeout(30000)
-
+describe('transactions + held item provider', () => {
   it('heldNetworkItem mirrors the raw inventory packets (exact server copy) and the selected slot', async () => {
     const { bot, client } = await withPickaxe()
     const held = bot._bedrock.heldNetworkItem()
@@ -46,7 +45,7 @@ describe('transactions + held item provider (U4 → U8)', function () {
     assert.strictEqual(bot._bedrock.heldNetworkItem().network_id, 0)
     client.receive('mob_equipment', { runtime_entity_id: 91n, item: held, slot: 1, selected_slot: 1, window_id: 'inventory' })
     assert.strictEqual(bot._bedrock.heldNetworkItem.selectedSlot(), 1)
-    // U8's provider reads the inventory model: slot 1 is empty, the pickaxe (exact copy) stays in slot 0
+    // the inventory's provider reads the inventory model: slot 1 is empty, the pickaxe (exact copy) stays in slot 0
     assert.deepStrictEqual(bot._bedrock.heldNetworkItem(), bot._bedrock.heldNetworkItem.slot(1))
     assert.deepStrictEqual(bot._bedrock.heldNetworkItem.slot(0), held)
     client.receive('mob_equipment', { runtime_entity_id: 7n, item: held, slot: 5, selected_slot: 5, window_id: 'inventory' })

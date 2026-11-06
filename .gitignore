@@ -1,7 +1,4 @@
 node_modules/
-.pnpm-store/
 *.log
 .DS_Store
-coverage/
-.nyc_output/
-*.tsbuildinfo
+.claude/

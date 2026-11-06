@@ -1,4 +1,3 @@
-// owner: U3 (parity tooling)
 'use strict'
 /**
  * The mineflayer 4.39.0 reference surface, built from upstream itself (never by hand):

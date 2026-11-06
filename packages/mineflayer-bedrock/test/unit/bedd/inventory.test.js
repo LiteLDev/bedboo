@@ -1,9 +1,10 @@
 'use strict'
-// owner: BEDD-7 (inventory routing through BeDD's `stack` op) — lib/bedd/inventory.js on a real createBot over the
+// lib/bedd/inventory.js on a real createBot over the
 // fake client (recorded join) in bedd mode: clickWindow / craft / equip go out as `stack` rpc calls, the fake BeDD
 // remaps the request ids like the real client's ItemStackNetManager and answers with the client's ids; the bot's
 // pending requests resolve, the inventory updates, unknown / colliding responses are ignored, a missing cap rejects
 // with ERR_BEDD_UNSUPPORTED
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const { createFakeBot, replayJoin } = require('../helpers/fake')
 const { serveInventory, inventoryContent, tick } = require('../helpers/inventory_server')
@@ -42,7 +43,7 @@ function answer (bot, request, nextStackId) {
 /**
  * A bot on the fake client in bedd mode. The fake BeDD:
  * - `client.queue` goes through `client.bedd.route` (the bedd transport's contract); the inventory screen
- *   open / close is answered by the U8 responder (standing in for the router + the real client's screen);
+ *   open / close is answered by the inventory responder (standing in for the router + the real client's screen);
  * - `stack` decodes the buffer, gives the request the client's next id (-1001, -1003, …), and the "server" answers
  *   with that id — after the reply (default), or before it (`fake.responseFirst`), or never (`fake.hold`).
  */
@@ -103,9 +104,7 @@ async function beddBot ({ stack = 'present', route } = {}) {
 const names = (window) => window.slots.map((it, i) => it ? `${i}:${it.name}x${it.count}` : null).filter(Boolean).join(' ')
 const stackCalls = (fake) => fake.calls.filter(([op]) => op === 'stack')
 
-describe('bedd inventory: item_stack_request through BeDD\'s stack op (BEDD-7)', function () {
-  this.timeout(30000)
-
+describe('bedd inventory: item_stack_request through BeDD\'s stack op', () => {
   it('clickWindow: one stack call per click, the client-id response resolves it and updates bot.inventory', async () => {
     const { bot, client, fake, state } = await beddBot()
     client.receive('inventory_content', inventoryContent(bot, { 0: ['stone', 10], 9: ['dirt', 4] }, { firstStackId: 100 }))
@@ -205,7 +204,7 @@ describe('bedd inventory: item_stack_request through BeDD\'s stack op (BEDD-7)',
       assert.strictEqual(bot.inventory.slots[36]?.count, 10, 'rolled back')
       assert.strictEqual(bot.inventory.selectedItem, null)
       const [planks] = bot.recipesFor(bot.registry.itemsByName.oak_planks.id, null, 1, null)
-      // bot.craft wraps every failure in `new Error(err)` (upstream); BEDD-5's surface stubs it with the code itself
+      // bot.craft wraps every failure in `new Error(err)` (upstream); the bedd surface stubs it with the code itself
       await assert.rejects(bot.craft(planks, 1, null), /BeddUnsupportedError/)
       await assert.rejects(bot.equip(bot.inventory.slots[9], 'hand'), { code: 'ERR_BEDD_UNSUPPORTED' })
       assert.strictEqual(stackCalls(fake).length, 0)
@@ -253,7 +252,7 @@ describe('bedd inventory: item_stack_request through BeDD\'s stack op (BEDD-7)',
     const route = client.bedd.route
     ensureDispatch(client.bedd)
     assert.strictEqual(client.bedd.route, route)
-    // a router (BEDD-2) owning the registry and its route: only registers
+    // a router owning the registry and its route: only registers
     const routes = createRouteRegistry()
     const own = markDispatch(() => {})
     const bedd = { routes, route: own }
