@@ -1,5 +1,6 @@
 'use strict'
-// owner: U2 (Bedrock data layer) — patched prismarine-item (ItemV4) on the U0 BDS 1.26.51.1 capture
+// patched prismarine-item (ItemV4) on the U0 BDS 1.26.51.1 capture
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const fixtures = require('../../fixtures')
 const { createRegistry } = require('../../../lib/registry')

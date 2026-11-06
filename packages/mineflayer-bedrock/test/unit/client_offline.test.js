@@ -1,8 +1,9 @@
 'use strict'
-// owner: U17 — offline players keep their saved data: a SelfSignedId derived from the username (lib/client.js)
+// offline players keep their saved data: a SelfSignedId derived from the username (lib/client.js)
+const { describe, it } = require('node:test')
 const assert = require('assert')
 
-describe('offline SelfSignedId (U17): stable per username so BDS restores the player', () => {
+describe('offline SelfSignedId: stable per username so BDS restores the player', () => {
   function capture (fn) {
     const bedrock = require('bedrock-protocol')
     const original = bedrock.createClient

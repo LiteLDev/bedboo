@@ -1,6 +1,7 @@
 'use strict'
-// owner: U18 (agent combat & dimensions) — FINAL-FIX-AGENT-B: lava pools, bounded searches, fight-only retries, the
+// lava pools, bounded searches, fight-only retries, the
 // dimension-change tick, the nether skill's restart after a death
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const { EventEmitter } = require('events')
 const { Vec3 } = require('vec3')
@@ -23,7 +24,7 @@ function world (blocks = {}) {
   }
 }
 
-describe('U18 lava pools (FINAL-FIX-AGENT-B)', () => {
+describe('lava pools', () => {
   it('clusters connected lava blocks (diagonals included) into pools, largest first', () => {
     const a = [new Vec3(0, 62, 0), new Vec3(1, 62, 0), new Vec3(2, 62, 1)] // (1,0) → (2,1) diagonal
     const b = [new Vec3(10, 62, 10), new Vec3(10, 62, 11)]
@@ -100,7 +101,7 @@ describe('U18 lava pools (FINAL-FIX-AGENT-B)', () => {
   })
 })
 
-describe('U18 bounded waits (FINAL-FIX-AGENT-B)', () => {
+describe('bounded waits', () => {
   function guardLike ({ safety } = {}) {
     const g = new EventEmitter()
     g.busy = false
@@ -238,7 +239,7 @@ describe('U18 bounded waits (FINAL-FIX-AGENT-B)', () => {
   })
 })
 
-describe('U18 nether skill restarts (FINAL-FIX-AGENT-B)', () => {
+describe('nether skill restarts', () => {
   function overworldBot (items = []) {
     const bot = new EventEmitter()
     bot.game = { dimension: 'overworld' }
@@ -259,7 +260,7 @@ describe('U18 nether skill restarts (FINAL-FIX-AGENT-B)', () => {
   })
 })
 
-describe('U18 night ahead (FINAL-FIX-AGENT-B)', () => {
+describe('night ahead', () => {
   const shelter = require('../src/dims/shelter')
   const at = (timeOfDay, armor = []) => ({ time: { timeOfDay, doDaylightCycle: true }, inventory: { slots: Object.assign(new Array(46).fill(null), armor) } })
 
@@ -282,7 +283,7 @@ describe('U18 night ahead (FINAL-FIX-AGENT-B)', () => {
   })
 })
 
-describe('U18 retaliation next to the Agent\'s safety (FINAL-FIX-AGENT-B)', () => {
+describe('retaliation next to the Agent\'s safety', () => {
   const { retaliate } = require('../src/dims/retaliate')
 
   function setup ({ mob = 'enderman', distance = 2, food = 20 } = {}) {
@@ -349,7 +350,7 @@ describe('U18 retaliation next to the Agent\'s safety (FINAL-FIX-AGENT-B)', () =
   })
 })
 
-describe('U18 end skill: a death ends the phase (FINAL-FIX-AGENT-B)', () => {
+describe('end skill: a death ends the phase', () => {
   it('endWatch aborts on the death / a spawn in another dimension, with the reason', () => {
     const end = require('../src/skills/end')
     const bot = new EventEmitter()

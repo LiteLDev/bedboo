@@ -1,6 +1,7 @@
 'use strict'
-// owner: U6 (chat, commands & HUD) — title, boss_bar, scoreboard, sound, particle, team plugins on packets shaped
-// exactly like BDS 1.26.51.1 sent them (U0 capture + the U6 probes recorded in docs/differences/U6.md)
+// title, boss_bar, scoreboard, sound, particle, team plugins on packets shaped
+// exactly like BDS 1.26.51.1 sent them (the join capture + probes on BDS)
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const { Vec3 } = require('vec3')
 const { createFakeBot, replayJoin, afterSpawnRecords } = require('./helpers/fake')
@@ -18,9 +19,7 @@ function record (bot, event) {
 const setTitle = (type, text = '', times = [-1, -1, -1]) => ({ type, text, fade_in_time: times[0], stay_time: times[1], fade_out_time: times[2], xuid: '', platform_online_id: '', filtered_message: '' })
 const bossEvent = (id, fields) => ({ target_entity_id: BigInt(id), type: 'show_bar', title: '', filtered_title: '', progress: 1, color: 'pink', overlay: 'progress', ...fields })
 
-describe('HUD plugins: title, boss bars, scoreboards, sounds, particles, teams (U6)', function () {
-  this.timeout(30000)
-
+describe('HUD plugins: title, boss bars, scoreboards, sounds, particles, teams', () => {
   it('title: set_title / set_subtitle (upstream parseTitle), *_json rawtext, set_durations, clear / reset', async () => {
     const { bot, client } = await joined()
     const titles = record(bot, 'title')

@@ -1,4 +1,4 @@
-// owner: U5 (physics & movement) — offline worlds for the physics engine tests
+// offline worlds for the physics engine tests
 'use strict'
 /**
  * A minimal `world` ({ getBlock(pos) }) over the Bedrock 1.26.51 registry: the default flat world (bedrock -64,

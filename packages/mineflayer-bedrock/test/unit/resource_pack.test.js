@@ -1,6 +1,7 @@
 'use strict'
-// owner: U4 (core runtime) — resource_pack.js + the bedrock-protocol patch that holds the resource pack answer
+// resource_pack.js + the bedrock-protocol patch that holds the resource pack answer
 // (patches/bedrock-protocol@3.60.1.patch).
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const { createFakeBot } = require('./helpers/fake')
 
@@ -18,9 +19,7 @@ function protocolClient () {
   return client
 }
 
-describe('resource packs (U4)', function () {
-  this.timeout(30000)
-
+describe('resource packs', () => {
   it('bedrock-protocol patch: no hook → accepted at once (unchanged behaviour)', () => {
     const client = protocolClient()
     try {

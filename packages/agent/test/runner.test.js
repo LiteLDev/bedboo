@@ -1,36 +1,16 @@
 'use strict'
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const { runSkill, runScenario, skills } = require('..')
 
-const OWNERS = {
-  navigate: 'U17',
-  explore: 'U17',
-  gather: 'U17',
-  craft: 'U17',
-  smelt: 'U17',
-  mine: 'U17',
-  build: 'U17',
-  obtain: 'U17',
-  combat: 'U18',
-  portal: 'U18',
-  nether: 'U18',
-  end: 'U18'
-}
+const SKILLS = ['navigate', 'explore', 'gather', 'craft', 'smelt', 'mine', 'build', 'obtain', 'combat', 'portal', 'nether', 'end']
 
 describe('@bedboo/agent runner', () => {
   it('auto-discovers every skill file with the `async (bot, args) => result` shape', () => {
-    for (const name of Object.keys(OWNERS)) assert.ok(Object.hasOwn(skills, name), `skill ${name} registered`)
+    for (const name of SKILLS) assert.ok(Object.hasOwn(skills, name), `skill ${name} registered`)
     for (const [name, skill] of Object.entries(skills)) {
       assert.strictEqual(typeof skill, 'function', name)
       assert.strictEqual(skill.length, 2, `${name} takes (bot, args)`)
-    }
-  })
-
-  it('U17 skills are implemented; remaining stubs reject with NotImplementedError of their owner unit', async () => {
-    for (const [name, unit] of Object.entries(OWNERS)) {
-      if (unit === 'U17') assert.ok(!skills[name].notImplemented, `${name} is implemented`)
-      if (!skills[name].notImplemented) continue
-      await assert.rejects(skills[name]({}, {}), (err) => err.notImplemented === true && err.unit === unit, name)
     }
   })
 

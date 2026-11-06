@@ -1,4 +1,3 @@
-// owner: U16b (README quick start; examples/** is U15's — this file is listed in U16b's PR)
 /*
  * The README's quick start, runnable: an echo bot that walks to you when you say "come".
  *

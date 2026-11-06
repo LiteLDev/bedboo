@@ -1,5 +1,4 @@
 'use strict'
-// owner: U3 (parity tooling)
 /**
  * Conformance of mineflayer-bedrock with mineflayer 4.39.0 — no server needed.
  *
@@ -15,10 +14,11 @@
  * join replay, window members that cannot be probed, join replay errors.
  *
  *   cd packages/mineflayer-bedrock
- *   npx mocha --no-config --timeout 60000 test/unit/conformance/conformance.test.js   # this suite only
- *   BEDBOO_CONFORMANCE_STRICT=1 npx mocha …                                           # failing mode
- *   BEDBOO_CONFORMANCE_REPORT=1 npx mocha …                                           # list every pending item
+ *   node --test --require ./test/strict-features.js test/unit/conformance/conformance.test.js   # this suite only
+ *   BEDBOO_CONFORMANCE_STRICT=0 node --test …   # non-failing mode
+ *   BEDBOO_CONFORMANCE_REPORT=1 node --test …   # list every pending item
  */
+const { describe, it, before } = require('node:test')
 const assert = require('assert')
 const { buildReference } = require('./reference')
 const { injectSurface, postJoinSurface, dtsSurface } = require('./bedrock')
@@ -28,14 +28,13 @@ const { isStrict } = require('./config')
 const STRICT = isStrict()
 
 function format (findings) {
-  return findings.map(f => `  - ${f.item}${f.kind ? ` (${f.kind})` : ''}: ${f.message}${f.unit ? ` [${f.unit}]` : ''}`).join('\n')
+  return findings.map(f => `  - ${f.item}${f.kind ? ` (${f.kind})` : ''}: ${f.message}`).join('\n')
 }
 
-describe(`conformance with mineflayer 4.39.0 (${STRICT ? 'strict' : 'non-strict'} mode)`, function () {
-  this.timeout(60000)
+describe(`conformance with mineflayer 4.39.0 (${STRICT ? 'strict' : 'non-strict'} mode)`, () => {
   let ref, findings
 
-  before(async function () {
+  before(async () => {
     ref = await buildReference()
     const inject = await injectSurface()
     let post
@@ -45,7 +44,7 @@ describe(`conformance with mineflayer 4.39.0 (${STRICT ? 'strict' : 'non-strict'
       post = { failed: err }
     }
     findings = compare(ref, { ...inject, post, dts: dtsSurface() })
-  })
+  }, { timeout: 60000 })
 
   function check (areas) {
     const relevant = findings.filter(f => areas.includes(f.area))
@@ -81,16 +80,10 @@ describe(`conformance with mineflayer 4.39.0 (${STRICT ? 'strict' : 'non-strict'
 
   it('index.d.ts declares the mineflayer 4.39.0 types', () => check(['dts']))
 
-  it('pending items', function () {
+  it('pending items', (t) => {
     const pending = findings.filter(f => f.severity === 'pending')
-    const perUnit = {}
-    for (const f of pending) perUnit[f.unit ?? '?'] = (perUnit[f.unit ?? '?'] || 0) + 1
-    const units = Object.entries(perUnit).sort(([a], [b]) => (Number(a.slice(1)) || 0) - (Number(b.slice(1)) || 0))
-    this.test.title = pending.length
-      ? `pending: ${pending.length} item(s) — ${units.map(([u, n]) => `${u} ${n}`).join(', ')}`
-      : 'pending: none'
     if (process.env.BEDBOO_CONFORMANCE_REPORT) console.log(format(pending))
     if (STRICT) assert.ok(pending.length === 0, `${pending.length} pending item(s) in strict mode:\n${format(pending)}`)
-    else if (pending.length) this.skip()
+    else if (pending.length) t.skip(`pending: ${pending.length} item(s)`)
   })
 })

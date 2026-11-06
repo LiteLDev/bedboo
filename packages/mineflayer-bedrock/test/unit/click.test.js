@@ -1,18 +1,18 @@
 'use strict'
-// owner: U8 (inventory, windows, creative & item use) — lib/bedrock/click.js: Java click semantics → Bedrock steps
+// lib/bedrock/click.js: Java click semantics → Bedrock steps
+const { describe, it, before } = require('node:test')
 const assert = require('assert')
 const { createFakeBot } = require('./helpers/fake')
 const { planClick, placeBackPlan, armorSlotFor } = require('../../lib/bedrock/click')
 
-describe('clickWindow planner (U8)', function () {
-  this.timeout(30000)
+describe('clickWindow planner', () => {
   let bot, Item, Window
 
   before(async () => {
     ({ bot } = await createFakeBot())
     Item = require('prismarine-item')(bot.registry)
     Window = require('prismarine-windows')(bot.registry).Window
-  })
+  }, { timeout: 60000 })
 
   const item = (name, count = 1) => new Item(bot.registry.itemsByName[name].id, count, 0, null, 1, true)
   function inventory (contents = {}, cursor = null) {

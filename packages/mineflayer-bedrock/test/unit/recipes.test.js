@@ -1,6 +1,7 @@
 'use strict'
-// owner: U12 (crafting) — lib/bedrock/recipes.js on the recorded crafting_data of BDS 1.26.51.1: recipe model, tag
+// lib/bedrock/recipes.js on the recorded crafting_data of BDS 1.26.51.1: recipe model, tag
 // expansion, the Java-shaped registry.recipes, limited crafting, and the craft request planner
+const { describe, it, before } = require('node:test')
 const assert = require('assert')
 const fixtures = require('../fixtures')
 const { createRegistry } = require('../../lib/registry')
@@ -18,8 +19,7 @@ function setup () {
 const nameOf = (registry, it) => it.id === -1 ? '-' : registry.items[it.id].name
 const shape = (registry, recipe) => recipe.inShape.map(row => row.map(it => nameOf(registry, it)).join(',')).join(' / ')
 
-describe('recipes: crafting_data → prismarine-recipe Recipes (U12)', function () {
-  this.timeout(30000)
+describe('recipes: crafting_data → prismarine-recipe Recipes', () => {
   let registry, packet, all
 
   before(() => {
@@ -142,7 +142,7 @@ describe('recipes: crafting_data → prismarine-recipe Recipes (U12)', function 
   })
 })
 
-describe('recipes: planCraft — the item stack request of one craft batch (U12)', function () {
+describe('recipes: planCraft — the item stack request of one craft batch', () => {
   let registry, Item, book
   before(() => {
     const s = setup()

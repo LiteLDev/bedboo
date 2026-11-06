@@ -1,5 +1,6 @@
 'use strict'
-// owner: U4 (core runtime) — tick clock + player_auth_input queue (lib/bedrock/input_queue.js)
+// tick clock + player_auth_input queue (lib/bedrock/input_queue.js)
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const { EventEmitter } = require('events')
 const { createInputQueue } = require('../../lib/bedrock/input_queue')

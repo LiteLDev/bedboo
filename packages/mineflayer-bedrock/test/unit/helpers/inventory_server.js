@@ -1,4 +1,3 @@
-// owner: U8 (inventory, windows, creative & item use) — shared by the U8 unit tests (free to reuse by later units)
 'use strict'
 /**
  * A tiny server-side responder for a fake bedrock-protocol client (test/unit/helpers/fake.js): answers what BDS
@@ -88,7 +87,7 @@ function serveInventory (bot, client, { firstWindowId = 2 } = {}) {
         later(() => client.receive('item_stack_response', answer))
       }
     } else if (name === 'inventory_transaction' && params?.transaction?.transaction_type === 'inventory_mismatch') {
-      // BDS resends the player's inventory (POLISH-LIB): the inventory window's content, then armor / ui / off-hand —
+      // BDS resends the player's inventory: the inventory window's content, then armor / ui / off-hand —
       // the state when the request arrives (here: the model's, predictions included), or `server.truth`
       // ({ bedrockSlot: [name, count, stackId] }) for the inventory window
       server.resyncs++

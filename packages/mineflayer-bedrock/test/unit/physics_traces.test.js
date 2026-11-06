@@ -1,8 +1,9 @@
 'use strict'
-// owner: U5 (physics & movement) — offline regression on movement traces recorded against BDS 1.26.51.1
+// offline regression on movement traces recorded against BDS 1.26.51.1
 // (test/fixtures/physics/*.json.gz): every sent position was offset by +5 so that the server never adopted it and each
 // correct_player_move_prediction carries the server's own simulation state (about every 6 ticks). Between two such
 // states (or a teleport and a state) the engine, fed the recorded inputs, must land on the server's state.
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const fs = require('fs')
 const path = require('path')
@@ -16,8 +17,7 @@ const CONTROLS = ['forward', 'back', 'left', 'right', 'jump', 'sprint', 'sneak']
 
 /**
  * Per-trace limits: `pos` = largest position error over the verified intervals (blocks), `share` = share of intervals
- * that must match within 1e-3. Exact scenarios match to float precision; the others carry the residuals listed in
- * docs/differences/U5.md#residuals.
+ * that must match within 1e-3. Exact scenarios match to float precision; the others carry known residuals.
  */
 const LIMITS = {
   default: { pos: 2e-3, share: 1 },
@@ -117,8 +117,7 @@ function effectLevels (logged, events, t) {
   return levels
 }
 
-describe('physics traces (U5): the engine reproduces BDS 1.26.51.1 states offline', function () {
-  this.timeout(120000)
+describe('physics traces: the engine reproduces BDS 1.26.51.1 states offline', () => {
   const files = fs.existsSync(DIR) ? fs.readdirSync(DIR).filter((f) => f.endsWith('.json.gz')).sort() : []
 
   it('has recorded traces', () => {

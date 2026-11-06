@@ -1,7 +1,8 @@
 'use strict'
-// owner: U5 (physics & movement) — the physics plugin on a fake client with the recorded BDS join (flat world):
+// the physics plugin on a fake client with the recorded BDS join (flat world):
 // player_auth_input building, rewind + replay, teleports, knockback, flight, flyTo, elytra, vehicles, and the
 // mineflayer internalTest physics analogs.
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const { Vec3 } = require('vec3')
 const { createFakeBot, replayJoin } = require('./helpers/fake')
@@ -32,9 +33,7 @@ async function spawned (options) {
 
 function selfRuntime (bot) { return bot._bedrock.ids.selfRuntimeId() }
 
-describe('physics plugin (U5): Bedrock movement over player_auth_input', function () {
-  this.timeout(30000)
-
+describe('physics plugin: Bedrock movement over player_auth_input', () => {
   it('internalTest › physics › no physics if there is no chunk', async () => {
     // Bedrock always sends one player_auth_input per tick: the analog is that the bot does not simulate (nor move)
     // while its column is not loaded
@@ -122,7 +121,7 @@ describe('physics plugin (U5): Bedrock movement over player_auth_input', functio
     for (const f of ['up', 'sprint_down', 'sprinting', 'start_sprinting', 'vertical_collision']) assert.ok(first.input_data.includes(f), f)
     tick()
     assert.ok(!last().input_data.includes('start_sprinting'), 'edge flag sent once')
-    // Bedrock's sprint is sticky (FINAL-FIX-LIB): it only ends with forward released — for 7 ticks, a re-press
+    // Bedrock's sprint is sticky: it only ends with forward released — for 7 ticks, a re-press
     // within 6 ticks of the previous press would be a double tap
     bot.setControlState('sprint', false)
     bot.setControlState('forward', false)

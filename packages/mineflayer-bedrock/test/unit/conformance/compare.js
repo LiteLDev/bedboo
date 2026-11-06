@@ -1,9 +1,8 @@
-// owner: U3 (parity tooling)
 'use strict'
 /**
  * Compare mineflayer-bedrock's surface (./bedrock.js) with the mineflayer reference (./reference.js).
  *
- * Every finding is `{ area, item, kind, severity, unit, message }`:
+ * Every finding is `{ area, item, kind, severity, message }`:
  * - severity 'fail'    → the conformance test fails now (missing member, wrong arity / sync-promise
  *                        kind / value type, extra top-level member, missing export, d.ts gap, …);
  * - severity 'pending' → fails only in strict mode (./config.js): notImplemented stubs, members only
@@ -14,7 +13,7 @@ const { WINDOW_SPECS } = require('./windows')
 
 /** Values whose class legitimately differs (Java vs Bedrock protocol client). */
 const CTOR_EXEMPT = new Set(['bot._client'])
-/** Members Bedrock never produces (docs/differences/U4.md#max-players). */
+/** Members Bedrock never produces (BDS sends no max player count). */
 const NOT_APPLICABLE = new Set(['bot.game.maxPlayers'])
 
 function describeKind (k) {
@@ -41,7 +40,7 @@ function checkMethod (ref, ours) {
       out.push({ severity: 'fail', message: 'looks synchronous, upstream returns a promise (make it `async` or return the promise)' })
     }
   }
-  if (ours.stub) out.push({ severity: 'pending', message: 'notImplemented stub', unit: ours.unit })
+  if (ours.stub) out.push({ severity: 'pending', message: 'notImplemented stub' })
   return out
 }
 
@@ -75,7 +74,7 @@ function isEmpty (d) {
  */
 function compare (ref, bed) {
   const findings = []
-  const push = (area, item, kind, f) => findings.push({ area, item, kind, severity: f.severity, unit: f.unit ?? null, message: f.message })
+  const push = (area, item, kind, f) => findings.push({ area, item, kind, severity: f.severity, message: f.message })
 
   // ---- exports ----------------------------------------------------------------------------------
   for (const e of Object.values(ref.exports)) {
@@ -140,7 +139,7 @@ function compare (ref, bed) {
     const opener = cls === 'Window' ? 'bot.openBlock/openContainer' : `bot.${WINDOW_SPECS.find(s => s.cls === cls).opener}`
     for (const w of Object.values(ref.windows).filter(w => w.cls === cls)) {
       if (!probe || probe.status === 'stub') {
-        push('windows', w.name, w.kind, { severity: 'pending', message: `${opener} is a notImplemented stub`, unit: probe?.unit })
+        push('windows', w.name, w.kind, { severity: 'pending', message: `${opener} is a notImplemented stub` })
         continue
       }
       if (probe.status === 'unverified') {
@@ -161,7 +160,7 @@ function compare (ref, bed) {
 /** mineflayer-bedrock's index.d.ts must declare everything mineflayer's does (plus Bedrock extras). */
 function compareDts (ref, ours) {
   const out = []
-  const fail = (item, message) => out.push({ area: 'dts', item, kind: 'type', severity: 'fail', unit: null, message })
+  const fail = (item, message) => out.push({ area: 'dts', item, kind: 'type', severity: 'fail', message })
   const up = ref.dts
   for (const name of up.declarations) if (!ours.declarations.includes(name)) fail(name, 'declaration missing from index.d.ts')
   const compareMembers = (label, upMembers, ourMembers) => {

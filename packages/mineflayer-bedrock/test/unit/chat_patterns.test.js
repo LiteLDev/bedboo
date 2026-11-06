@@ -1,6 +1,7 @@
 'use strict'
-// owner: U6 (chat, commands & HUD) — lib/plugins/chat.js beyond U4's core: chat patterns (upstream semantics),
+// lib/plugins/chat.js beyond the core: chat patterns (upstream semantics),
 // the default chat / whisper patterns on Bedrock packets, awaitMessage, actionBar, whisper, unmatchedMessage.
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const { once } = require('mineflayer/lib/promise_utils')
 const { createFakeBot, replayJoin } = require('./helpers/fake')
@@ -23,9 +24,7 @@ function record (bot, event) {
   return calls
 }
 
-describe('chat plugin: patterns, chat/whisper events, awaitMessage, actionBar (U6)', function () {
-  this.timeout(30000)
-
+describe('chat plugin: patterns, chat/whisper events, awaitMessage, actionBar', () => {
   it('internalTest › chat', async () => {
     // upstream: a player chat → 'chat' ('gary', 'hello'); the reply bot.chat('hi') is a chat packet
     const { bot, client } = await joined()

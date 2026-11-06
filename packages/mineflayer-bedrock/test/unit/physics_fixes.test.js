@@ -1,8 +1,8 @@
 'use strict'
-// owner: W3-FIX-A (wave-3 gate fix-ups: movement, flight, lifecycle, abilities) — regressions of the wave-3 review on
-// the fake client with the recorded BDS join: abilities as the single flight source, firework boosts across rewinds,
+// regression tests on the fake client with the recorded BDS join: abilities as the single flight source, firework boosts across rewinds,
 // the raised shield, the End exit spawn, sneak / sprint before clicks, look() from tick listeners, queued jumps across
 // replays, creative gravity, throwing physicsTick listeners, plain creative fireworks / banners, entityElytraFlew.
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const { Vec3 } = require('vec3')
 const { createFakeBot, replayJoin } = require('./helpers/fake')
@@ -64,9 +64,7 @@ function correctTo (client, entry) {
   client.receive('correct_player_move_prediction', { prediction_type: 'player', position: { x: pos.x, y: pos.y + EYE, z: pos.z }, delta: { x: vel.x, y: vel.y, z: vel.z }, rotation: { x: 0, z: 0 }, on_ground: onGround, tick: entry.tick })
 }
 
-describe('wave-3 fix-ups (W3-FIX-A): physics, flight, lifecycle, abilities', function () {
-  this.timeout(30000)
-
+describe('physics, flight, lifecycle, abilities fixes', () => {
   it('abilities.js is the single flight source: game mode changes and repeated update_abilities give one abilities event, no request_ability', async () => {
     const { bot, client, tick } = await spawned()
     const self = bot._bedrock.ids.selfUniqueId()
@@ -235,8 +233,7 @@ describe('wave-3 fix-ups (W3-FIX-A): physics, flight, lifecycle, abilities', fun
     assert.deepStrictEqual(events.map(([e]) => e), ['forcedMove', 'spawn'])
   })
 
-  it('End exit without the respawn state 1: spawns after the fallback timeout', async function () {
-    this.timeout(SPAWN_POSITION_TIMEOUT_MS + 5000)
+  it('End exit without the respawn state 1: spawns after the fallback timeout', { timeout: SPAWN_POSITION_TIMEOUT_MS + 5000 }, async () => {
     const { bot, client } = await spawned()
     const SELF = bot._bedrock.ids.selfRuntimeId()
     let spawns = 0

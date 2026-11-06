@@ -1,6 +1,7 @@
 'use strict'
 // owner: U16b — the user docs stay in sync: every `bot.bedrock.*` extra typed in types/bedrock.d.ts is documented in
 // docs/api.md, and every relative link (and #anchor) of the user docs resolves.
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const fs = require('fs')
 const path = require('path')
@@ -36,7 +37,7 @@ function links (text) {
   return [...prose.matchAll(/\]\(([^)\s]+)\)/g)].map((m) => m[1]).filter((t) => !/^[a-z]+:/i.test(t))
 }
 
-describe('user docs (U16b)', function () {
+describe('user docs (U16b)', () => {
   it('docs/api.md documents every bot.bedrock extra of types/bedrock.d.ts', () => {
     const api = fs.readFileSync(path.join(ROOT, 'docs/api.md'), 'utf8')
     const extras = bedrockExtras()

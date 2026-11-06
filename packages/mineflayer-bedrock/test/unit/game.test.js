@@ -1,11 +1,10 @@
 'use strict'
-// owner: U4 (core runtime) — game.js, settings.js, kick.js on the recorded BDS join + bedrock-protocol keep-alive
+// game.js, settings.js, kick.js on the recorded BDS join + bedrock-protocol keep-alive
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const { createFakeBot, replayJoin, afterSpawnRecords } = require('./helpers/fake')
 
-describe('game / settings / kick (U4)', function () {
-  this.timeout(30000)
-
+describe('game / settings / kick', () => {
   it('internalTest › game › dimension from start_game', async () => {
     const { bot, client } = await createFakeBot()
     const order = []

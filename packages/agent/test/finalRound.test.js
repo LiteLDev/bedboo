@@ -1,6 +1,7 @@
 'use strict'
-// owner: FINAL-ROUND — the build skill's block-by-block repair (M4: a house left 1 of 125 blocks wrong after BDS refused
+// the build skill's block-by-block repair (M4: a house left 1 of 125 blocks wrong after BDS refused
 // the same placement four times from the same spot) on a fake bot whose "server" refuses placements like BDS does
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const { EventEmitter } = require('events')
 const { Vec3 } = require('vec3')

@@ -1,6 +1,6 @@
 'use strict'
-// owner: U4 (core runtime) — the physics SURFACE (U4 stationary stub, U5 replaces the engine): these tests guard
-// the contract U5 must keep (docs/CONTRIBUTING.md "Physics surface").
+// the physics SURFACE: these tests guard the contract the physics engine keeps.
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const { Vec3 } = require('vec3')
 const conv = require('mineflayer/lib/conversions')
@@ -39,9 +39,7 @@ async function spawnedBot (options) {
   return created
 }
 
-describe('physics stub surface (U4 → U5)', function () {
-  this.timeout(30000)
-
+describe('physics stub surface', () => {
   it('bot.physics: every mineflayer default field + a working simulatePlayer / adjustPositionHeight', async () => {
     const { bot } = await spawnedBot()
     const fields = defaultPhysicsFields()
@@ -52,7 +50,7 @@ describe('physics stub surface (U4 → U5)', function () {
     assert.ok(!isStub(bot.physics.simulatePlayer))
     const state = { pos: new Vec3(0, 0, 0) }
     assert.strictEqual(bot.physics.simulatePlayer(state, bot.world), state)
-    // upstream prismarine-physics semantics (U5 engine): lowers onto the ground at most 1 block below
+    // upstream prismarine-physics semantics (Bedrock engine): lowers onto the ground at most 1 block below
     const pos = new Vec3(0.5, -59.5, 0.5)
     bot.physics.adjustPositionHeight(pos)
     assert.strictEqual(pos.y, -60, 'lowered onto the grass of the flat world')
@@ -92,7 +90,7 @@ describe('physics stub surface (U4 → U5)', function () {
     assert.ok(packets.length >= 199 && packets.length <= 202, `${packets.length} ticks in 10 s`)
     assert.strictEqual(physicsTicks, packets.length)
     assert.strictEqual(physicTicks, packets.length)
-    // U5 engine: the spawn position is 1e-5 above the grass (BDS); the first tick after the forced spawn position is not
+    // the spawn position is 1e-5 above the grass (BDS); the first tick after the forced spawn position is not
     // simulated (like BDS after a teleport), the second settles onto the grass. Bedrock's delta is
     // the velocity at the end of the tick: standing still that is the gravity step (0, -0.0784, 0)
     for (const p of packets.slice(2)) {
@@ -101,7 +99,7 @@ describe('physics stub surface (U4 → U5)', function () {
       assert.ok(Math.abs(p.delta.y - -0.0784) < 1e-6, `resting delta ${p.delta.y}`)
       assert.ok(p.input_data.includes('vertical_collision'))
     }
-    assert.ok(moves <= 2, 'standing still emits no move events (U5: besides the first packet and the 1e-5 settle)')
+    assert.ok(moves <= 2, 'standing still emits no move events (besides the first packet and the 1e-5 settle)')
     assert.strictEqual(bot.entity.onGround, true)
   })
 
@@ -192,7 +190,7 @@ describe('physics stub surface (U4 → U5)', function () {
     while (!bot.entity.onGround && ticks < 100) { tick(); ticks++ }
     assert.ok(ticks > 5 && ticks < 30, `landed after ${ticks} ticks`)
     assert.strictEqual(bot.entity.position.y, -60)
-    assert.ok(Math.abs(bot.entity.velocity.y - -0.0784) < 1e-6, 'U5 engine: resting velocity = one gravity step')
+    assert.ok(Math.abs(bot.entity.velocity.y - -0.0784) < 1e-6, 'resting velocity = one gravity step')
     const falling = client.sent('player_auth_input').filter(p => p.delta.y < 0)
     assert.ok(falling.length > 3, 'delta carries the velocity while falling')
 

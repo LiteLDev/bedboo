@@ -1,4 +1,5 @@
 'use strict'
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const fs = require('fs')
 const path = require('path')
@@ -49,7 +50,7 @@ function pluginFunctions (bot) {
   return out
 }
 
-describe('mineflayer-bedrock skeleton (U0)', function () {
+describe('mineflayer-bedrock skeleton', () => {
   it('exports the same names as mineflayer 4.39.0', () => {
     const upstream = require('mineflayer')
     assert.deepStrictEqual(Object.keys(mineflayerBedrock).sort(), Object.keys(upstream).sort())
@@ -104,7 +105,7 @@ describe('mineflayer-bedrock skeleton (U0)', function () {
     assert.deepStrictEqual(bot.experience, { level: null, points: null, progress: null })
     assert.ok('clocks' in bot.time)
     assert.ok(bot.spawnPoint && typeof bot.spawnPoint.x === 'number')
-    // Bedrock-only extras (types/bedrock.d.ts) are added by the plugins, e.g. U9's gameRules
+    // Bedrock-only extras (types/bedrock.d.ts) are added by the plugins, e.g. gameRules
     assert.ok(bot.bedrock && typeof bot.bedrock === 'object' && !Array.isArray(bot.bedrock))
   })
 
@@ -121,8 +122,7 @@ describe('mineflayer-bedrock skeleton (U0)', function () {
     assert.strictEqual(typeof bot._bedrock.windows.register, 'function')
   })
 
-  // U4 (wave 2) implemented its members; every remaining stub still names its owner unit.
-  const U4_IMPLEMENTED = [
+  const CORE_IMPLEMENTED = [
     'bot.blockAt', 'bot.findBlocks', 'bot.findBlock', 'bot.canSeeBlock', 'bot.waitForChunksToLoad',
     'bot._updateBlockState', 'bot._getDimensionName', 'bot.chat', 'bot.quit', 'bot.setControlState',
     'bot.getControlState', 'bot.clearControlStates', 'bot.look', 'bot.lookAt', 'bot.waitForTicks',
@@ -130,33 +130,33 @@ describe('mineflayer-bedrock skeleton (U0)', function () {
     'bot.physics.adjustPositionHeight'
   ]
 
-  it('every plugin method is implemented or a stub flagged notImplemented with its owner unit', async () => {
+  it('every plugin method is implemented or a stub flagged notImplemented with its feature name', async () => {
     const { bot } = await createInjectedBot()
     const fns = pluginFunctions(bot)
     assert.ok(fns.length > 90, `expected the full method surface, got ${fns.length}`)
     for (const [name, fn] of fns) {
-      if (U4_IMPLEMENTED.includes(name)) {
-        assert.ok(!isStub(fn), `${name} is implemented by U4`)
+      if (CORE_IMPLEMENTED.includes(name)) {
+        assert.ok(!isStub(fn), `${name} is implemented`)
         continue
       }
-      if (!isStub(fn)) continue // implemented by a later unit
-      assert.match(fn.unit, /^U\d+$/, `${name}.unit`)
+      if (!isStub(fn)) continue
+      assert.strictEqual(fn.feature, name, `${name}.feature`)
     }
-    for (const name of U4_IMPLEMENTED) assert.ok(fns.some(([n]) => n === name), `${name} is part of the surface`)
+    for (const name of CORE_IMPLEMENTED) assert.ok(fns.some(([n]) => n === name), `${name} is part of the surface`)
   })
 
   it('stubs throw (sync APIs) or reject (promise APIs) with NotImplementedError', async () => {
     const { bot } = await createInjectedBot()
-    // whichever plugin APIs are still stubs (units replace them wave by wave)
+    // whichever plugin APIs are still stubs
     for (const [name, fn] of pluginFunctions(bot).filter(([, f]) => isStub(f))) {
       let result
       try {
         result = fn.call(bot)
       } catch (err) {
-        assert.ok(err instanceof NotImplementedError && err.notImplemented && err.unit === fn.unit, `${name} throws NotImplementedError`)
+        assert.ok(err instanceof NotImplementedError && err.notImplemented && err.feature === fn.feature, `${name} throws NotImplementedError`)
         continue
       }
-      if (result instanceof Promise) await assert.rejects(result, (err) => err.notImplemented === true && err.unit === fn.unit, `${name} rejects`)
+      if (result instanceof Promise) await assert.rejects(result, (err) => err.notImplemented === true && err.feature === fn.feature, `${name} rejects`)
       else assert.strictEqual(result, undefined, `${name}: a no-op stub returns nothing`)
     }
     assert.doesNotThrow(() => bot.stopDigging(), 'stopDigging is a no-op while idle, like upstream')

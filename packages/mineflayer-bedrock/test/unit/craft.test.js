@@ -1,7 +1,8 @@
 'use strict'
-// owner: U12 (crafting) — the craft plugin on a fake client (recorded join + the U8 inventory responder): recipes from
+// the craft plugin on a fake client (recorded join + the inventory responder): recipes from
 // the join's crafting_data, recipesFor / recipesAll, bot.craft's item stack requests (2×2 with the inventory screen,
 // crafting table window, batches, several results) serialized by bedrock-protocol, upstream errors
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const { Vec3 } = require('vec3')
 const { createFakeBot, replayJoin } = require('./helpers/fake')
@@ -28,9 +29,7 @@ const strip = (x) => JSON.parse(JSON.stringify(x, (k, v) => typeof v === 'bigint
 const summary = (request) => request.actions.map(a => [a.type_id, a.legacy_type_id, a.count ?? a.times_crafted ?? a.result_slot_id, a.source && `${a.source.slot_type.container_id}:${a.source.slot}`, a.destination && `${a.destination.slot_type.container_id}:${a.destination.slot}`].filter(x => x !== undefined))
 const names = (window) => window.slots.map((it, i) => it ? `${i}:${it.name}x${it.count}` : null).filter(Boolean).join(' ')
 
-describe('craft: recipes, recipesFor / recipesAll, bot.craft requests (U12)', function () {
-  this.timeout(30000)
-
+describe('craft: recipes, recipesFor / recipesAll, bot.craft requests', () => {
   it('recipes come from the join\'s crafting_data; recipesFor checks the inventory, recipesAll the table', async () => {
     const { bot, client } = await joined()
     const book = bot._bedrock.recipes

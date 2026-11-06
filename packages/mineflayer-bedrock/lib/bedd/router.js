@@ -76,7 +76,7 @@ function serializePacket (name, params, version = VERSION) {
   return serializer.createPacketBuffer({ name, params })
 }
 
-/** BeddUnsupportedError from lib/bedd/errors.js (BB5) when it is installed, otherwise an equivalent Error. */
+/** BeddUnsupportedError from lib/bedd/errors.js when it is installed, otherwise an equivalent Error. */
 function unsupportedError (feature) {
   let ErrorClass = null
   try {

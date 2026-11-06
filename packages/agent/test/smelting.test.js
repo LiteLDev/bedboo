@@ -1,9 +1,10 @@
 'use strict'
-// owner: U17 — the vendored smelting table and the drop / fuel knowledge, checked against the 1.26.51 registry
+// the vendored smelting table and the drop / fuel knowledge, checked against the 1.26.51 registry
+const { describe, it, before } = require('node:test')
 const assert = require('assert')
 const data = require('../src/data')
 
-describe('smelting table + game knowledge (U17)', () => {
+describe('smelting table + game knowledge', () => {
   let registry
   before(() => {
     require('@bedboo/bedrock-data').install()

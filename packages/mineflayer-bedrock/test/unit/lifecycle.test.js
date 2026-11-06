@@ -1,12 +1,11 @@
 'use strict'
-// owner: U4 (core runtime) — join / dimension / respawn lifecycle (lib/bedrock/lifecycle.js), the only 'spawn'
+// join / dimension / respawn lifecycle (lib/bedrock/lifecycle.js), the only 'spawn'
 // emitter
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const { createFakeBot, replayJoin } = require('./helpers/fake')
 
-describe('lifecycle (join, dimension change, respawn hooks)', function () {
-  this.timeout(30000)
-
+describe('lifecycle (join, dimension change, respawn hooks)', () => {
   it('join: respawn state 1 → client state 2, player_spawn → loading screen 1 then 2 → login, game, spawn in order', async () => {
     const { bot, client, errors } = await createFakeBot()
     const events = []
@@ -67,7 +66,7 @@ describe('lifecycle (join, dimension change, respawn hooks)', function () {
     await assert.rejects(lifecycle.waitFor('dead', { timeout: 20 }), /timed out/)
   })
 
-  it('respawn hooks (U9): dead keeps the input running, markSpawned("respawn") emits spawn again', async () => {
+  it('respawn hooks: dead keeps the input running, markSpawned("respawn") emits spawn again', async () => {
     const { bot, client } = await createFakeBot()
     await replayJoin(bot, client)
     const { lifecycle, input } = bot._bedrock

@@ -1,6 +1,7 @@
 'use strict'
-// owner: U4 (core runtime) — world core (lib/plugins/blocks.js) on the recorded BDS join + the prismarine-chunk
+// world core (lib/plugins/blocks.js) on the recorded BDS join + the prismarine-chunk
 // patch (dimension bounds, layer-1 superimposition)
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const { performance } = require('perf_hooks')
 const { Vec3 } = require('vec3')
@@ -17,9 +18,7 @@ async function joined () {
   return created
 }
 
-describe('world core (blocks.js) on the BDS 1.26.51.1 join capture', function () {
-  this.timeout(30000)
-
+describe('world core (blocks.js) on the BDS 1.26.51.1 join capture', () => {
   it('internalTest › blockAt', async () => {
     const { bot, loads, errors } = await joined()
     assert.deepStrictEqual(errors, [])
@@ -202,7 +201,7 @@ describe('world core (blocks.js) on the BDS 1.26.51.1 join capture', function ()
     const { bot, client, loads } = await joined()
     const unloaded = []
     bot.on('chunkColumnUnload', (p) => unloaded.push(p))
-    client.receive('chunk_radius_update', { chunk_radius: 1 }) // the granted radius bounds the publisher radius (U16b)
+    client.receive('chunk_radius_update', { chunk_radius: 1 }) // the granted radius bounds the publisher radius
     client.receive('network_chunk_publisher_update', { coordinates: { x: 0, y: -59, z: 0 }, radius: 16, saved_chunks: [] })
     assert.ok(unloaded.length > 0)
     for (const corner of unloaded) assert.ok(Math.hypot(corner.x + 8, corner.z + 8) > 32)
@@ -246,7 +245,7 @@ describe('world core (blocks.js) on the BDS 1.26.51.1 join capture', function ()
   })
 })
 
-describe('prismarine-chunk patch (U4, wave 2)', () => {
+describe('prismarine-chunk patch', () => {
   const registry = createRegistry()
   const cap = fixtures.load('join_flat')
   registry.handleStartGame(cap.first('start_game'))

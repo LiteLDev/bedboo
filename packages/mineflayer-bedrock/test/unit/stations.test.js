@@ -1,7 +1,8 @@
 'use strict'
-// owner: U13 (stations) — furnace / enchanting table / anvil / villager plugins on a fake client (the Bedrock
+// furnace / enchanting table / anvil / villager plugins on a fake client (the Bedrock
 // packets observed on BDS 1.26.51.1), the Bedrock anvil rules (lib/bedrock/anvil.js) and the station helpers
 // (lib/bedrock/stations.js). Internal-test analogs of the station flows: upstream has no internal test for them.
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const nbt = require('prismarine-nbt')
 const { Vec3 } = require('vec3')
@@ -47,9 +48,7 @@ const blockNamed = (bot, name, pos = new Vec3(1, -60, 0)) => {
   return block
 }
 
-describe('stations: furnace (U13)', function () {
-  this.timeout(30000)
-
+describe('stations: furnace', () => {
   it('container_set_data before / after container_open → fuel, progress, totals, seconds and update events', async () => {
     const { bot, client, activations } = await joined()
     // BDS sends the block's state BEFORE its container_open
@@ -108,9 +107,7 @@ describe('stations: furnace (U13)', function () {
   })
 })
 
-describe('stations: enchanting table (U13)', function () {
-  this.timeout(30000)
-
+describe('stations: enchanting table', () => {
   const OPTIONS = [
     { cost: 4, slot_flags: 16, equip_enchants: [], held_enchants: [], self_enchants: [{ id: 12, level: 1 }], name: 'ball ignite', option_id: -2385 },
     { cost: 9, slot_flags: 16, equip_enchants: [], held_enchants: [{ id: 10, level: 2 }, { id: 17, level: 2 }], self_enchants: [], name: 'cold galvanize', option_id: 2385 },
@@ -202,9 +199,7 @@ describe('stations: enchanting table (U13)', function () {
   })
 })
 
-describe('stations: anvil (U13)', function () {
-  this.timeout(30000)
-
+describe('stations: anvil', () => {
   function anvilOf () {
     require('@bedboo/bedrock-data').install()
     const registry = require('prismarine-registry')('bedrock_1.26.51')
@@ -309,9 +304,7 @@ describe('stations: anvil (U13)', function () {
   })
 })
 
-describe('stations: villager (U13)', function () {
-  this.timeout(30000)
-
+describe('stations: villager', () => {
   const nbtItem = (name, count, damage = 0, tag) => nbt.comp({ Count: nbt.byte(count), Damage: nbt.short(damage), Name: nbt.string(`minecraft:${name}`), WasPickedUp: nbt.byte(0), ...(tag ? { tag } : {}) })
   const recipe = ({ buyA, buyCountA, buyB, buyCountB = 0, sell, tier = 0, uses = 0, maxUses = 12, netId, demand = 0, pmA = 0.05 }) => ({
     buyA, buyCountA: nbt.int(buyCountA), ...(buyB ? { buyB } : {}), buyCountB: nbt.int(buyCountB), demand: nbt.int(demand), maxUses: nbt.int(maxUses), netId: nbt.int(netId), priceMultiplierA: nbt.float(pmA), priceMultiplierB: nbt.float(0), rewardExp: nbt.byte(1), sell, tier: nbt.int(tier), traderExp: nbt.int(2), uses: nbt.int(uses)
@@ -416,7 +409,7 @@ describe('stations: villager (U13)', function () {
   })
 })
 
-describe('stations: helpers (U13)', function () {
+describe('stations: helpers', () => {
   it('zigzag32 / itemFromNbt / resultSteps', async () => {
     assert.deepStrictEqual([-2386, 2385, -2385, 0].map(zigzag32), [4771, 4770, 4769, 0])
     const { bot, client, Item } = await joined()

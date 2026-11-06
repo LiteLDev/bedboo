@@ -1,5 +1,5 @@
 'use strict'
-// owner: POLISH-LIB (last library gaps found by the agent runs) — regression tests (no server) on a fake client with
+// regression tests (no server) on a fake client with
 // the recorded BDS join (flat world).
 // - falling blocks: update_block_synced (BDS 1.26.51.1 sends it — not update_block — when a block starts falling and
 //   when it lands) updates the world like update_block, with blockUpdate events (pathfinder re-plans);
@@ -8,6 +8,7 @@
 //   (it recursed for ever: the process froze and ran out of memory);
 // - inventory resync: a slot found out of date (un-raced stack id mismatch, a server transaction whose old item is
 //   not ours) makes the model ask for the server's copy (inventory_mismatch); bot.bedrock.resyncInventory().
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const { Vec3 } = require('vec3')
 const { createFakeBot, replayJoin } = require('./helpers/fake')
@@ -52,9 +53,7 @@ async function spawned () {
   return created
 }
 
-describe('falling blocks: update_block_synced (POLISH-LIB)', function () {
-  this.timeout(30000)
-
+describe('falling blocks: update_block_synced', () => {
   it('start of the fall (create → air) and the landing (destroy → the block) update the world with blockUpdate events', async () => {
     const { bot, setBlock, synced } = await spawned()
     const top = new Vec3(2, G + 2, 0)
@@ -126,9 +125,7 @@ describe('falling blocks: update_block_synced (POLISH-LIB)', function () {
   })
 })
 
-describe('mineflayer-auto-eat patch: failures (POLISH-LIB)', function () {
-  this.timeout(30000)
-
+describe('mineflayer-auto-eat patch: failures', () => {
   async function eater (opts = {}) {
     const created = await spawned()
     const { bot } = created
@@ -227,9 +224,7 @@ describe('mineflayer-auto-eat patch: failures (POLISH-LIB)', function () {
   })
 })
 
-describe('mineflayer-tool patch: no harvest tool, no chest (POLISH-LIB)', function () {
-  this.timeout(30000)
-
+describe('mineflayer-tool patch: no harvest tool, no chest', () => {
   it('equipForBlock({ requireHarvest, getFromChest }) without a pickaxe and without chests rejects with NoItem', async () => {
     const { bot, setBlock } = await spawned()
     bot.loadPlugin(require('mineflayer-tool').plugin)
@@ -248,9 +243,7 @@ describe('mineflayer-tool patch: no harvest tool, no chest (POLISH-LIB)', functi
   })
 })
 
-describe('inventory resync: inventory_mismatch (POLISH-LIB)', function () {
-  this.timeout(30000)
-
+describe('inventory resync: inventory_mismatch', () => {
   async function joined () {
     const created = await createFakeBot()
     await replayJoin(created.bot, created.client)
@@ -525,7 +518,7 @@ describe('inventory resync: inventory_mismatch (POLISH-LIB)', function () {
   })
 })
 
-describe("spawn point: no 'game' for the join's spawn height (POLISH-LIB)", function () {
+describe("spawn point: no 'game' for the join's spawn height", () => {
   it("the spawn column loading before the first spawn emits no 'game' (login → game → spawn); later resolutions do", () => {
     const { EventEmitter } = require('events')
     const bot = new EventEmitter()

@@ -1,17 +1,5 @@
 'use strict'
 
-/** Same contract as mineflayer-bedrock's lib/bedrock/errors.js NotImplementedError. */
-class NotImplementedError extends Error {
-  constructor (unit, feature) {
-    super(`${feature ?? 'This feature'} is not implemented yet in @bedboo/agent (owner: ${unit})`)
-    this.name = 'NotImplementedError'
-    this.code = 'ERR_NOT_IMPLEMENTED'
-    this.notImplemented = true
-    this.unit = unit
-    this.feature = feature
-  }
-}
-
 /**
  * A skill failed. `code` says why (callers branch on it, never on the message):
  * - `NO_PATH`     pathfinder found no way (or kept getting stuck)
@@ -49,4 +37,4 @@ function isAbort (err) {
   return err?.code === 'ABORTED' || err?.name === 'AbortError'
 }
 
-module.exports = { NotImplementedError, SkillError, AbortError, checkAbort, isAbort }
+module.exports = { SkillError, AbortError, checkAbort, isAbort }

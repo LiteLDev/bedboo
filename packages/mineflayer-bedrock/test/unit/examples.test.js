@@ -1,7 +1,8 @@
 'use strict'
-// owner: U15 (ecosystem plugins & examples) — every example ported from mineflayer 4.39.0 (packages/mineflayer-bedrock/
+// every example ported from mineflayer 4.39.0 (packages/mineflayer-bedrock/
 // examples) parses and resolves each module it loads (require / import) from its own directory: `mineflayer-bedrock`
 // itself (the root workspace link), vec3 and the ecosystem plugins (mineflayer-bedrock's devDependencies).
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const fs = require('fs')
 const path = require('path')
@@ -27,11 +28,10 @@ function loadedModules (source) {
   return [...names]
 }
 
-describe('examples (mineflayer 4.39.0 examples ported to mineflayer-bedrock)', function () {
-  this.timeout(60000)
+describe('examples (mineflayer 4.39.0 examples ported to mineflayer-bedrock)', () => {
   const files = exampleFiles()
 
-  it('the upstream examples are ported (Java-only ones excepted, docs/differences/U15.md#examples)', () => {
+  it('the upstream examples are ported (Java-only ones excepted)', () => {
     const names = files.map(f => path.relative(EXAMPLES, f))
     for (const name of ['bee.js', 'blockfinder.js', 'digger.js', 'inventory.js', 'chatterbox.js', 'guard.js', 'jumper.js',
       'trader.js', 'collectblock.js', 'auto-eat.js', 'pathfinder/gps.js', 'place_end_crystal/index.js', 'plugins/afk.js',

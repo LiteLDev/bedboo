@@ -48,9 +48,9 @@ const extras: BedrockExtras = bot.bedrock
 const furnaceIds: number[] = bot.bedrock.blockVariants('furnace')
 console.log(bot.findBlock({ matching: furnaceIds }), bot.bedrock.gameRules.doDayLightCycle)
 bot.bedrock.resyncInventory().then((synced: boolean) => console.log(synced))
-// BEDD-5: bedd capability surface (only with transport 'bedd')
+// bedd capability surface (only with transport 'bedd')
 if (bot.bedrock.bedd) console.log(bot.bedrock.bedd.supports('dig'), bot.bedrock.bedd.caps.stack === 'present')
-const observedYaw: number | undefined = bot.bedrock.bedd?.observed?.yaw // BEDD-4
+const observedYaw: number | undefined = bot.bedrock.bedd?.observed?.yaw
 console.log(observedYaw)
 const beddExtras: BeddExtras | undefined = bot.bedrock.bedd
 const observed: BeddObserved | null | undefined = beddExtras?.observed
@@ -65,7 +65,7 @@ console.log(testedVersions, latestSupportedVersion, oldestSupportedVersion, supp
 // mineflayer.createBot({ client }) overload
 createBot({ client: bot._client, username: 'x' })
 
-// U16b: transports (BotOptions extends bedrock-protocol's ClientOptions, NethernetOptions from the patch)
+// transports (BotOptions extends bedrock-protocol's ClientOptions, NethernetOptions from the patch)
 createBot({ host: '127.0.0.1', port: 19132, username: 'nn', auth: 'offline', transport: 'nethernet' })
 createBot({
   username: 'nn2',
@@ -74,7 +74,7 @@ createBot({
 })
 createBot({ username: 'rak', transport: 'raknet', raknetBackend: 'raknet-native' })
 
-// BEDD-1: transport 'bedd' (a Be.D.D.-hosted real client) and its client.bedd surface
+// transport 'bedd' (a Be.D.D.-hosted real client) and its client.bedd surface
 const beddBot = createBot({ transport: 'bedd', bedd: { pipe: '\\\\.\\pipe\\BeDD', tapPipe: '\\\\.\\pipe\\BeDD-tap', timeoutMs: 3000, modules: ['router'] } })
 const beddApi = (beddBot._client as unknown as { bedd: BeddClientApi }).bedd
 beddApi.ready.then((caps: BeddCaps) => console.log(caps.look === 'present', beddApi.supports('input'), beddApi.link.state))

@@ -1,4 +1,4 @@
-// owner: BEDD-1 (transport 'bedd') — shared by every bedd unit test (free to reuse and extend additively)
+// shared by every bedd unit test (free to reuse and extend additively)
 'use strict'
 /**
  * A fake Be.D.D.: both pipes of the bedd-bedboo wire protocol on an injectable local path (a unix socket in the OS

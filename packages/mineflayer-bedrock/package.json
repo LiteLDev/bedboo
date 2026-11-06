@@ -41,7 +41,7 @@
     "COPYING.LESSER"
   ],
   "scripts": {
-    "test": "mocha",
+    "test": "node --test --test-isolation=none --test-timeout=60000 --require ./test/strict-features.js \"test/unit/**/*.test.js\"",
     "typecheck": "node test/types/check.js"
   },
   "dependencies": {
@@ -73,7 +73,6 @@
     "mineflayer-pathfinder": "2.4.5",
     "mineflayer-pvp": "1.3.2",
     "mineflayer-tool": "1.2.0",
-    "mocha": "12.0.3",
     "typescript": "7.0.2"
   }
 }

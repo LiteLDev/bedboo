@@ -1,5 +1,6 @@
 'use strict'
-// owner: U9 (wave 3, bed state) → U14 (wave 4, sleep/wake) — bed.js on the recorded BDS join
+// bed.js on the recorded BDS join
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const { Vec3 } = require('vec3')
 const { createFakeBot, replayJoin } = require('./helpers/fake')
@@ -25,9 +26,7 @@ async function bedWorld () {
   return { bot, client, Block, clock }
 }
 
-describe('bed state (U9)', function () {
-  this.timeout(30000)
-
+describe('bed state', () => {
   it('internalTest › bed (parseBedMetadata: Bedrock direction / head_piece_bit / occupied_bit)', async () => {
     const { bot } = await bedWorld()
     for (const bed of BEDS) {
@@ -59,7 +58,7 @@ describe('bed state (U9)', function () {
 
     const events = []
     for (const e of ['sleep', 'wake', 'spawnReset']) bot.on(e, () => events.push(e))
-    // BDS reports a sleeping player in player_flags (bit 1, U7's entity data), the entities plugin emits entitySleep
+    // BDS reports a sleeping player in player_flags (bit 1, entity data), the entities plugin emits entitySleep
     const sleeping = (on) => client.receive('set_entity_data', { runtime_entity_id: 91n, metadata: [{ key: 'player_flags', type: 'byte', value: on ? 2 : 0 }], tick: 0n })
     sleeping(true)
     assert.strictEqual(bot.isSleeping, true)
@@ -76,7 +75,7 @@ describe('bed state (U9)', function () {
     assert.deepStrictEqual(events, ['sleep', 'wake', 'spawnReset', 'spawnReset'])
   })
 
-  it('internalTest › bed (sleep: a far bed / monsters nearby reject, the other beds are clicked and slept in) (U14)', async () => {
+  it('internalTest › bed (sleep: a far bed / monsters nearby reject, the other beds are clicked and slept in)', async () => {
     const { bot, client, clock } = await bedWorld()
     bot.time.timeOfDay = 18000
     // upstream: the player at (10, 0, 0), a zombie at (0, 0, 0)
@@ -128,8 +127,7 @@ describe('bed state (U9)', function () {
     }
   })
 
-  it("sleep() checks in upstream's order: day, not a bed, occupied, half a bed; 'bot is not sleeping' without an answer (U14)", async function () {
-    this.timeout(10000)
+  it("sleep() checks in upstream's order: day, not a bed, occupied, half a bed; 'bot is not sleeping' without an answer", { timeout: 10000 }, async () => {
     const { bot, Block, clock } = await bedWorld()
     bot.entity.position.set(10.5, Y, 0.5)
     bot.time.timeOfDay = 1000

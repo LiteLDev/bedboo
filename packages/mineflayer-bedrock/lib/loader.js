@@ -103,9 +103,9 @@ function createBedrockState (bot, options) {
     /** physics hooks used outside physics.js (stubs here, implemented by the physics plugin) */
     physics: {
       /** set the feet position; `forced` = server teleport/correction (resets velocity, sends handled_teleport) */
-      setPosition: stubSync('U4', 'bot._bedrock.physics.setPosition', 2),
+      setPosition: stubSync('bot._bedrock.physics.setPosition', 2),
       /** creative/abilities flight on/off */
-      setFlying: stubSync('U4', 'bot._bedrock.physics.setFlying', 1)
+      setFlying: stubSync('bot._bedrock.physics.setFlying', 1)
     },
     /** spawn/respawn/dimension state machine; the only emitter of `spawn` (lib/bedrock/lifecycle.js) */
     lifecycle: createLifecycle(bot),

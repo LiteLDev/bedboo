@@ -1,6 +1,7 @@
 'use strict'
-// owner: U4 (core runtime) — chat core (lib/plugins/chat.js): bot.chat, message / messagestr from `text` and
+// chat core (lib/plugins/chat.js): bot.chat, message / messagestr from `text` and
 // `command_output` packets (recorded BDS 1.26.51.1 packets + synthesized ones)
+const { describe, it } = require('node:test')
 const assert = require('assert')
 const { createFakeBot, replayJoin, afterSpawnRecords } = require('./helpers/fake')
 
@@ -22,12 +23,10 @@ async function joined () {
 
 const text = (fields) => ({ needs_translation: false, category: 'message_only', xuid: '', platform_chat_id: '', has_filtered_message: false, ...fields })
 
-describe('chat core (U4 → U6)', function () {
-  this.timeout(30000)
-
+describe('chat core', () => {
   it('internalTest › chat', async () => {
-    // upstream: a player chat → 'chat' ('gary', 'hello') (U6: default chat patterns over messagestr) and the reply
-    // bot.chat('hi') is a chat packet. Here: the message / messagestr part (U4) and the reply packet.
+    // upstream: a player chat → 'chat' ('gary', 'hello') (default chat patterns over messagestr) and the reply
+    // bot.chat('hi') is a chat packet. Here: the message / messagestr part and the reply packet.
     const { bot, client, messages, strs } = await joined()
     client.receive('text', text({ category: 'authored', type: 'chat', source_name: 'gary', message: 'hello' }))
     assert.strictEqual(messages.length, 1)
