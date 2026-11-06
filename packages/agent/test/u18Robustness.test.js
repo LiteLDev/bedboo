@@ -1,13 +1,12 @@
 'use strict'
 // owner: U18 (agent combat & dimensions) — FINAL-FIX-AGENT-B: lava pools, bounded searches, fight-only retries, the
-// dimension-change tick, the End's locate parsing, the nether skill's restart after a death
+// dimension-change tick, the nether skill's restart after a death
 const assert = require('assert')
 const { EventEmitter } = require('events')
 const { Vec3 } = require('vec3')
 const portal = require('../src/skills/portal')
 const nether = require('../src/skills/nether')
 const u = require('../src/dims/util')
-const e1 = require('../scenarios/end/e1-end')
 
 /** blocks by "x,y,z"; default: stone below y 63, grass at 63, air above */
 function world (blocks = {}) {
@@ -369,20 +368,5 @@ describe('U18 end skill: a death ends the phase (FINAL-FIX-AGENT-B)', () => {
     bot.emit('spawn')
     assert.match(w2.reason, /no longer in The End \(overworld\)/)
     w2.done()
-  })
-})
-
-describe('U18 E1 cheat-assisted setup helpers (FINAL-FIX-AGENT-B)', () => {
-  it('parses Bedrock\'s locate answer', () => {
-    assert.deepStrictEqual(e1.parseLocate(['The nearest stronghold is at block -878, (y?), 194 (389 blocks away)']), { x: -878, z: 194 })
-    assert.deepStrictEqual(e1.parseLocate(['The nearest stronghold is at block 1666, (y?), -830 (1861 blocks away)']), { x: 1666, z: -830 })
-    assert.strictEqual(e1.parseLocate(['Could not find a structure of type stronghold within a reasonable distance']), null)
-  })
-
-  it('looks at the locate point first, then 64 and 128 blocks around it', () => {
-    const pts = e1.searchPoints({ x: 100, z: -50 })
-    assert.deepStrictEqual(pts[0], { x: 100, z: -50 })
-    assert.strictEqual(pts.length, 17)
-    assert.ok(pts.some((p) => p.x === 228 && p.z === -50))
   })
 })

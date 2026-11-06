@@ -1,11 +1,10 @@
 'use strict'
 // owner: U3 (parity tooling)
 // mineflayer's test/internalTest.js `onceWithCleanup` cases, ported verbatim (mineflayer 4.39.0, MIT,
-// Copyright (c) 2013 Andrew Kelley; pinned copy in docs/upstream/internalTest.js). They test the helper
+// Copyright (c) 2013 Andrew Kelley). They test the helper
 // module itself: docs/CONTRIBUTING.md has mineflayer-bedrock reuse the unmodified
 // `mineflayer/lib/promise_utils` (deep require) in its vendored plugins instead of a copy. If a unit ever
-// replaces it with its own helper, point these tests at that helper. Mapped in
-// docs/parity/U3-internal-tests.md.
+// replaces it with its own helper, point these tests at that helper.
 const assert = require('assert')
 const { EventEmitter } = require('events')
 const { onceWithCleanup } = require('mineflayer/lib/promise_utils')

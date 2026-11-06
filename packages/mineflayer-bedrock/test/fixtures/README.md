@@ -13,8 +13,7 @@ gzip'd JSON lines. Line 1: `{"meta": {bds, version, protocol, transport, raknetB
 capturedAt, milestones, stats}}` (`stats` counts every packet seen, including dropped duplicates).
 Every other line: `{"i", "t", "dir": "in"|"out", "name", "buf"}` where `buf` is the base64 raw
 decompressed packet (varint id header + body) — exactly what bedrock-protocol's deserializer reads.
-Identical packets are stored once; per-name caps keep the file small (see
-`scripts/capture-fixtures.js`). The client's own `login` packet is never stored.
+Identical packets are stored once; per-name caps keep the file small. The client's own `login` packet is never stored.
 
 ## Use
 
@@ -23,14 +22,6 @@ const fixtures = require('../fixtures')
 const cap = fixtures.load('join_flat')
 const startGame = cap.first('start_game')
 for (const { params } of cap.packets('subchunk')) { /* … */ }
-```
-
-## Regenerate
-
-See `docs/testing.md` ("Fixtures"). In short: start the manual BDS container, then
-
-```sh
-node scripts/capture-fixtures.js --port 40100 --container bds-u0
 ```
 
 Notable observations (BDS 1.26.51.1): `level_chunk` arrives in sub-chunk request mode with

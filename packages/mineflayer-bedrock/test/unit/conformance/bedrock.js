@@ -81,7 +81,7 @@ async function injectSurface () {
       created.push(await createInjectedBot())
       return created[created.length - 1].bot
     }
-    const windows = await probeWindows(bot, { require: bedrockRequire, freshBot })
+    const windows = await probeWindows(bot, { require: bedrockRequire, freshBot, tradeList: (w) => ['update_trade', { window_id: w.id, trade_tier: 0 }] })
     const errors = created.flatMap(c => c.errors.map(e => e.message))
     return { inject, exports, windows, errors }
   } finally {

@@ -4,8 +4,7 @@
  * Combat.
  *
  * The `combat` **skill** (`async (bot, args) → { killed }`) is U18's (wave 6) and is still a stub. U16b seeded this
- * module with a reusable, cheat-free **combat library** that the mob combat matrix
- * (packages/mineflayer-bedrock/test/external/combatMatrix.test.js) uses and the skill is meant to build on. It only
+ * module with a reusable, cheat-free **combat library** that the skill is meant to build on. It only
  * uses the public mineflayer API (no `bot._client`), so it runs unchanged on mineflayer (Java) too:
  * `nearestEntity`, `entities`, `lookAt`/`look`, `setControlState`/`clearControlStates`, `attack`,
  * `activateItem`/`deactivateItem` (bow, shield), `equip`, `inventory`, `health`, `waitForTicks` and the

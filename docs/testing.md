@@ -2,6 +2,9 @@
 
 Owner: U1 (wave 1). U0 seeded it with the transport spike results, which are kept below.
 
+> The Docker BDS harness (`@bedboo/bds`) and the end-to-end suites described here have been removed from the
+> repository; this page is kept for its notes on BDS behaviour. `corepack pnpm test` runs the unit tests only.
+
 - [Quick start](#quick-start)
 - [How the harness works](#how-the-harness-works)
 - [`@bedboo/bds` API](#bedboobds-api)

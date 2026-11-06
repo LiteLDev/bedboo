@@ -12,7 +12,6 @@
  * recipe using that tag (accepted = member; status 35 "mismatched recipe for grid items" = not a member). Found that
  * way: the poplar wood family (`planks`, `logs`, `wooden_slabs`) and `mushrooms_for_stew` (absent from the 1.26.30
  * data). (`logs_that_burn` is only used by a furnace recipe, which is not crafting: left out.)
- * test/external/craftingTags.test.js re-checks every member of every crafting tag against the server.
  * Names are given without the `minecraft:` namespace.
  */
 module.exports = Object.freeze({

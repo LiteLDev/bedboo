@@ -20,7 +20,7 @@ is documented.
 
 The repository and its pnpm workspace are called bedboo; the packages inside it have their own names. The library is
 `mineflayer-bedrock`, named after the mineflayer API it implements, and it ships with the helper packages
-`@bedboo/bedrock-data`, `@bedboo/bds` and `@bedboo/agent` (see [Repository layout](#repository-layout)).
+`@bedboo/bedrock-data` and `@bedboo/agent` (see [Repository layout](#repository-layout)).
 
 ## Table of Contents
 
@@ -28,7 +28,6 @@ The repository and its pnpm workspace are called bedboo; the packages inside it 
 - [Install](#install)
   - [Dependencies](#dependencies)
 - [Usage](#usage)
-  - [CLI](#cli)
 - [Server setup](#server-setup)
   - [RakNet or NetherNet?](#raknet-or-nethernet)
   - [Driving a real client (Be.D.D.)](#driving-a-real-client-bedd)
@@ -62,9 +61,7 @@ It is built on:
 
 Small fixes to those dependencies are pnpm patches in [`patches/`](patches) (see [Install](#install)).
 
-See also [docs/differences.md](docs/differences.md), which lists every Java ↔ Bedrock difference, and
-[docs/parity.md](docs/parity.md), the parity matrix that maps every mineflayer member, event and test to the test that
-proves it.
+See also [docs/differences.md](docs/differences.md), which lists every Java ↔ Bedrock difference.
 
 ## Install
 
@@ -94,9 +91,7 @@ but without the patched dependencies it cannot join a server.)
   (see [docs/testing.md](docs/testing.md#transport-spike-u0-2026-10-18--result-raknet-works)).
 - **pnpm**, through corepack: the version is pinned in `package.json` (`packageManager`), so nothing is installed
   globally.
-- **A Bedrock Dedicated Server 1.26.51.x** to connect to: your own (see [Server setup](#server-setup)) or a throw-away
-  one from the [CLI](#cli).
-- **Docker**, only for the CLI's servers and the end-to-end tests.
+- **A Bedrock Dedicated Server 1.26.51.x** to connect to (see [Server setup](#server-setup)).
 
 ## Usage
 
@@ -136,8 +131,7 @@ bot.on('error', console.log)
 ```
 
 The runnable copy is
-[`packages/mineflayer-bedrock/examples/readme_quickstart.js`](packages/mineflayer-bedrock/examples/readme_quickstart.js);
-an end-to-end test runs it against a real BDS on every test run:
+[`packages/mineflayer-bedrock/examples/readme_quickstart.js`](packages/mineflayer-bedrock/examples/readme_quickstart.js):
 
 ```sh
 node packages/mineflayer-bedrock/examples/readme_quickstart.js <host> <port>
@@ -145,25 +139,9 @@ node packages/mineflayer-bedrock/examples/readme_quickstart.js <host> <port>
 
 Step by step, including the server setup: **[docs/getting-started.md](docs/getting-started.md)**.
 
-### CLI
-
-`@bedboo/bds` provides the `bds` CLI, which downloads the official server once and starts isolated BDS instances in
-Docker. Use them as servers to develop against:
-
-```sh
-corepack pnpm bds pull                           # once: Docker image + BDS 1.26.51.1 (verified checksum)
-corepack pnpm bds up --name mybds --gamemode survival
-#   bedboo-mybds ready on 127.0.0.1:41000 …      → createBot({ host: '127.0.0.1', port: 41000, … })
-corepack pnpm bds cmd mybds op Bot               # console commands
-corepack pnpm bds down mybds
-```
-
-`corepack pnpm bds --help` lists every command (logs, world snapshots, cleanup, …); see
-[docs/testing.md](docs/testing.md#bds-cli).
-
 ## Server setup
 
-Any BDS 1.26.51.x works, whether it comes from the [CLI](#cli) or you run it yourself. Your own BDS needs, in
+Any BDS 1.26.51.x works. It needs, in
 `server.properties`:
 
 | property | value | why |
@@ -201,27 +179,20 @@ patched in `patches/`. A plugin that only uses mineflayer's public API needs not
 ```sh
 corepack pnpm lint && corepack pnpm test         # unit tests (no server)
 corepack pnpm typecheck                          # index.d.ts
-corepack pnpm bds pull                           # once per host: golden BDS cache (Docker required)
-corepack pnpm test:e2e                           # every end-to-end suite against real BDS instances
-corepack pnpm test:e2e -- --grep "combat matrix" # one suite (mocha --grep)
 ```
 
-The end-to-end suites start one isolated BDS per test file (host networking, slots of ports from 41000). They port
-every mineflayer external test and add Bedrock-specific ones: digging every block, crafting, containers, physics
-against server corrections, dimensions, a combat matrix against 21 hostile mobs, NetherNet (`--grep nethernet`,
-opt-in) and more. See [docs/testing.md](docs/testing.md).
+The unit tests run against recorded BDS 1.26.51.1 packets (`packages/mineflayer-bedrock/test/fixtures`); no server is
+needed.
 
 ## Repository layout
 
 | path | |
 |---|---|
-| [`packages/mineflayer-bedrock`](packages/mineflayer-bedrock) | the library (`index.js`, `index.d.ts`, `lib/plugins/*` — one file per mineflayer plugin, `lib/bedrock/*` — Bedrock internals, `lib/physics/` — Bedrock movement engine, `examples/`, `test/unit`, `test/external`) |
+| [`packages/mineflayer-bedrock`](packages/mineflayer-bedrock) | the library (`index.js`, `index.d.ts`, `lib/plugins/*` — one file per mineflayer plugin, `lib/bedrock/*` — Bedrock internals, `lib/physics/` — Bedrock movement engine, `examples/`, `test/unit`) |
 | [`packages/bedrock-data`](packages/bedrock-data) | `@bedboo/bedrock-data`: the BDS 1.26.51 data overlay for minecraft-data |
-| [`packages/bds`](packages/bds) | `@bedboo/bds`: Docker BDS harness and the `bds` CLI |
 | [`packages/agent`](packages/agent) | `@bedboo/agent`: a scripted survival agent (skills: navigate, gather, craft, mine, build, combat, …) |
 | [`patches/`](patches) | pnpm patches of dependencies |
 | [`docs/`](docs) | documentation (see [API](#api)) and the contributor guide ([`CONTRIBUTING.md`](docs/CONTRIBUTING.md)) |
-| [`scripts/`](scripts) | e2e runner, parity tooling, fixture capture |
 
 ## API
 
@@ -234,9 +205,8 @@ mineflayer-bedrock's API is mineflayer 4.39.0's: the same exports (`createBot(op
 | [docs/api.md](docs/api.md) | API reference: mineflayer's API, the Bedrock differences in short, `bot.bedrock.*` extras, connection options |
 | [docs/getting-started.md](docs/getting-started.md) | connect a bot to your own BDS, step by step |
 | [docs/differences.md](docs/differences.md) / [docs/differences/](docs/differences) | every Java ↔ Bedrock difference, in detail |
-| [docs/parity.md](docs/parity.md) | parity matrix: every mineflayer member, event and test, and the test that proves it |
 | [docs/bedd.md](docs/bedd.md) | `transport: 'bedd'`: driving a real client hosted by Be.D.D. |
-| [docs/testing.md](docs/testing.md) | the BDS Docker harness, e2e tests, BDS quirks |
+| [docs/testing.md](docs/testing.md) | BDS quirks and notes |
 | [docs/README.md](docs/README.md) | index of all documents |
 
 ## Acknowledgements
@@ -244,7 +214,7 @@ mineflayer-bedrock's API is mineflayer 4.39.0's: the same exports (`createBot(op
 bedboo builds on, and partly adapts, the work of others:
 
 - [mineflayer](https://github.com/PrismarineJS/mineflayer) — MIT, Copyright (c) 2013 Andrew Kelley. Plugins adapted
-  from it keep an attribution header; pinned reference copies are in [docs/upstream/](docs/upstream).
+  from it keep an attribution header.
 - [bedrock-protocol](https://github.com/PrismarineJS/bedrock-protocol), [node-nethernet](https://github.com/PrismarineJS/node-nethernet),
   prismarine-auth, -block, -chat, -chunk, -entity, -item, -nbt, -physics (forked in `lib/physics/`), -recipe,
   -registry, -windows, -world, [minecraft-data](https://github.com/PrismarineJS/minecraft-data) — MIT, PrismarineJS
@@ -255,9 +225,6 @@ bedboo builds on, and partly adapts, the work of others:
   [packages/bedrock-data/NOTICE.md](packages/bedrock-data/NOTICE.md)).
 - [pmmp/BedrockData](https://github.com/pmmp/BedrockData) — CC0 1.0: biome ids and item tags.
 - [Sandertv/gophertunnel](https://github.com/Sandertv/gophertunnel) — MIT: sound event and effect ids.
-- [itzg/docker-minecraft-bedrock-server](https://github.com/itzg/docker-minecraft-bedrock-server) — MIT: the Docker
-  image the test harness runs BDS in. BDS itself is downloaded from minecraft.net under Mojang's
-  [EULA](https://www.minecraft.net/eula) and never redistributed.
 
 ## Contributing
 
@@ -265,7 +232,7 @@ Ask questions and report bugs in [GitHub issues](https://github.com/LiteLDev/bed
 welcome. Before you open one, check that:
 
 - `corepack pnpm lint` ([standard](https://standardjs.com) style) and `corepack pnpm test` pass, and a change in
-  behaviour comes with an end-to-end test against a real BDS (see [Testing](#testing));
+  behaviour comes with a unit test (see [Testing](#testing));
 - code adapted from mineflayer or another project keeps an attribution header naming its source and license;
 - every Java ↔ Bedrock difference you introduce is documented in [docs/differences/](docs/differences).
 

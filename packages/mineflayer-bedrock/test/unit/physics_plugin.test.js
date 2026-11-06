@@ -1,7 +1,7 @@
 'use strict'
 // owner: U5 (physics & movement) — the physics plugin on a fake client with the recorded BDS join (flat world):
 // player_auth_input building, rewind + replay, teleports, knockback, flight, flyTo, elytra, vehicles, and the
-// mineflayer internalTest physics analogs (docs/parity/U3-internal-tests.md).
+// mineflayer internalTest physics analogs.
 const assert = require('assert')
 const { Vec3 } = require('vec3')
 const { createFakeBot, replayJoin } = require('./helpers/fake')

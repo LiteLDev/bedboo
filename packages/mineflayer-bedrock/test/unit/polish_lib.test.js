@@ -1,6 +1,6 @@
 'use strict'
 // owner: POLISH-LIB (last library gaps found by the agent runs) — regression tests (no server) on a fake client with
-// the recorded BDS join (flat world). The live counterparts are in test/external/polishLib.test.js.
+// the recorded BDS join (flat world).
 // - falling blocks: update_block_synced (BDS 1.26.51.1 sends it — not update_block — when a block starts falling and
 //   when it lands) updates the world like update_block, with blockUpdate events (pathfinder re-plans);
 // - mineflayer-auto-eat patch: a failed equip clears the eating flag; strictErrors emits 'eatFail' too;

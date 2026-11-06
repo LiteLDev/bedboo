@@ -17,7 +17,6 @@ const dirOf = (req, name) => path.dirname(req.resolve(name + '/package.json'))
 const SCANNED = {
   'mineflayer lib/': path.join(dirOf(requireLib, 'mineflayer'), 'lib'),
   'mineflayer examples/ (ported by U15)': path.join(dirOf(requireLib, 'mineflayer'), 'examples'),
-  'mineflayer external tests (docs/upstream)': path.join(repoRoot, 'docs', 'upstream'),
   ...Object.fromEntries(['mineflayer-pathfinder', 'mineflayer-pvp', 'mineflayer-collectblock', 'mineflayer-tool', 'mineflayer-armor-manager', 'mineflayer-auto-eat']
     .map(name => [name, dirOf(requireAgent, name)])),
   // registry.supportFeature callers (prismarine-physics is forked in-repo by U5 and has its own feature list)
@@ -46,7 +45,7 @@ function usedFeatureNames () {
   const used = new Map() // name → first place
   for (const [label, dir] of Object.entries(SCANNED)) {
     for (const file of jsFiles(dir)) {
-      if (/(^|[\\/])test[\\/]/.test(path.relative(dir, file)) && !label.startsWith('mineflayer external')) continue
+      if (/(^|[\\/])test[\\/]/.test(path.relative(dir, file))) continue
       const src = fs.readFileSync(file, 'utf8')
       for (const name of featureNamesIn(src)) {
         if (!used.has(name)) used.set(name, `${label}: ${path.relative(dir, file)}`)

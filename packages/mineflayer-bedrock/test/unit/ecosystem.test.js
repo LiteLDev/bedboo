@@ -3,8 +3,7 @@
 // -armor-manager and the core hooks they use, on a fake client with the recorded BDS join (flat world): Bedrock block
 // names, doors and gates, dig-time estimates (Bedrock effect factors, `ench` enchantments), auto-eat's completion on
 // completed_using_item, armor-manager's serialized equips, Java version comparisons on the Bedrock registry, the
-// dig completing when mineflayer-pathfinder stops it during the breaking update. The live flows are in
-// test/external/ecosystem*.test.js.
+// dig completing when mineflayer-pathfinder stops it during the breaking update.
 const assert = require('assert')
 const { Vec3 } = require('vec3')
 const { createFakeBot, replayJoin } = require('./helpers/fake')

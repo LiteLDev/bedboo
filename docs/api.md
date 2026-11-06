@@ -1,8 +1,8 @@
 # API reference
 
 **The API of mineflayer-bedrock is mineflayer's API.** Every class, property, method and event documented in
-mineflayer 4.39.0's [`api.md`](upstream/api.md) (pinned copy; upstream:
-[PrismarineJS/mineflayer docs/api.md](https://github.com/PrismarineJS/mineflayer/blob/4.39.0/docs/api.md)) exists
+mineflayer 4.39.0's
+[`api.md`](https://github.com/PrismarineJS/mineflayer/blob/4.39.0/docs/api.md) exists
 with the same name, arguments, return value, error messages and event order, and the TypeScript definitions
 ([`packages/mineflayer-bedrock/index.d.ts`](../packages/mineflayer-bedrock/index.d.ts)) are mineflayer's with the
 protocol client swapped. Read upstream's document for the reference; this page lists only what is different or extra:
@@ -14,7 +14,7 @@ protocol client swapped. Read upstream's document for the reference; this page l
 - [Internals](#internals)
 
 Every difference is documented in full in [differences.md](differences.md) (assembled from
-[differences/](differences)); the [parity matrix](parity.md) lists every upstream member and the test proving it.
+[differences/](differences)).
 
 ## Module exports
 

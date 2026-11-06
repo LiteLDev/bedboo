@@ -51,7 +51,7 @@ const COLLISION_FROM_CLOUDBURST = [
  */
 const HASH_FROM_CLOUDBURST = new Set(['unknown'])
 
-const PROBE = require('./probe/1.26.51.json') // live BDS facts, see probe-bds.js
+const PROBE = require('./probe/1.26.51.json') // facts observed on a live BDS 1.26.51.1
 
 const readJson = id => JSON.parse(fs.readFileSync(sourcePath(id), 'utf8'))
 const mcdata = (type, dataset, version = VERSION) => require(path.join(MCD, dataPaths[type][version][dataset], dataset + '.json'))

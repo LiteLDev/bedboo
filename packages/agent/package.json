@@ -14,11 +14,7 @@
     "node": ">=24"
   },
   "scripts": {
-    "test": "mocha",
-    "test:e2e": "mocha --config .mocharc.e2e.json",
-    "scout": "node scripts/scout-seed.js",
-    "full-run": "node scenarios/overworld/full-run.js",
-    "final-chain": "node scenarios/overworld/final-chain.js"
+    "test": "mocha"
   },
   "dependencies": {
     "mineflayer-armor-manager": "2.0.1",
@@ -31,7 +27,6 @@
     "vec3": "0.1.10"
   },
   "devDependencies": {
-    "@bedboo/bds": "workspace:*",
     "@bedboo/bedrock-data": "workspace:*",
     "mocha": "12.0.3",
     "prismarine-registry": "1.12.0"

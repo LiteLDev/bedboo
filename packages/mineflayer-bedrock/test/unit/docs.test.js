@@ -4,7 +4,6 @@
 const assert = require('assert')
 const fs = require('fs')
 const path = require('path')
-const { anchors } = require('../../../../scripts/parity/lib/markdown')
 
 const ROOT = path.join(__dirname, '../../../..')
 const USER_DOCS = ['README.md', 'docs/README.md', 'docs/api.md', 'docs/getting-started.md', 'docs/differences/U16-transport.md']
@@ -15,6 +14,20 @@ function bedrockExtras () {
   const body = /interface BedrockExtras\s*\{([\s\S]*?)\n\}/.exec(text)?.[1]
   assert.ok(body !== undefined, 'interface BedrockExtras in types/bedrock.d.ts')
   return [...body.matchAll(/^\s*(?:readonly\s+)?([A-Za-z_$][\w$]*)\??\s*[:(]/gm)].map((m) => m[1])
+}
+
+/** GitHub heading slug */
+function slug (text) {
+  return text.trim().toLowerCase().replace(/\{#[^}]*\}/g, '').replace(/`/g, '').replace(/[^\p{L}\p{N}\s_-]/gu, '').trim().replace(/\s/g, '-')
+}
+
+/** anchors of a markdown document: `{#anchor}` markers, `<a id|name="…">` tags and heading slugs */
+function anchors (text) {
+  return new Set([
+    ...[...text.matchAll(/\{#([A-Za-z0-9_.:-]+)\}/g)].map((m) => m[1]),
+    ...[...text.matchAll(/<a\s+(?:id|name)="([^"]+)"/g)].map((m) => m[1]),
+    ...[...text.matchAll(/^#{1,6}\s+(.*)$/gm)].map((m) => slug(m[1]))
+  ])
 }
 
 /** relative markdown links outside code: [text](target) */

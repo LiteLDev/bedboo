@@ -1,6 +1,0 @@
-{
-  "spec": ["test/bedd/**/*.e2e.js"],
-  "timeout": 120000,
-  "exit": true,
-  "require": ["./test/strict-features.js", "./test/bedd/hooks.js"]
-}

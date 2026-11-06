@@ -42,7 +42,6 @@
   ],
   "scripts": {
     "test": "mocha",
-    "test:e2e": "mocha --config .mocharc.e2e.json",
     "typecheck": "node test/types/check.js"
   },
   "dependencies": {
@@ -67,7 +66,6 @@
     "vec3": "0.1.10"
   },
   "devDependencies": {
-    "@bedboo/bds": "workspace:*",
     "@types/node": "24.19.2",
     "mineflayer-armor-manager": "2.0.1",
     "mineflayer-auto-eat": "5.0.3",

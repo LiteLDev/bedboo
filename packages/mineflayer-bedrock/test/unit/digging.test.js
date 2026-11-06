@@ -1,7 +1,7 @@
 'use strict'
 // owner: U10 (digging) — lib/bedrock/dig_speed.js (Bedrock break speed, calibrated on BDS 1.26.51.1) and the digging
 // plugin's block-action protocol on a fake client with the recorded BDS join (flat world), plus the mineflayer
-// internalTest digTime analog (docs/parity/U3-internal-tests.md).
+// internalTest digTime analog.
 const assert = require('assert')
 const { Vec3 } = require('vec3')
 const { createFakeBot, replayJoin } = require('./helpers/fake')

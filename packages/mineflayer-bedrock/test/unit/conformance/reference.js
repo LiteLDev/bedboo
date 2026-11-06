@@ -9,13 +9,12 @@
  * 2. windows: every window kind is opened through mineflayer's own openers (./windows.js);
  * 3. static scan of mineflayer's lib/: members assigned only on later packets (bot.player, bot.vehicle,
  *    bot.oxygenLevel, bot.game.serverBrand, …) and every emitted event name;
- * 4. docs/upstream/index.d.ts read with the TypeScript compiler (./dts.js): Bot members, BotEvents,
- *    exports, window classes;
- * 5. master's abilities plugin (docs/upstream/abilities.master.js): bot.abilities + 'abilities';
- * 6. tests: docs/upstream/externalTests/*.js and every describe/it of docs/upstream/internalTest.js.
+ * 4. the mineflayer package's index.d.ts read with the TypeScript compiler (./dts.js): Bot members,
+ *    BotEvents, exports, window classes;
+ * 5. master's abilities plugin (test/fixtures/upstream/abilities.master.js): bot.abilities + 'abilities'.
  *
  * d.ts declarations that do not exist at runtime (drift) are listed in `excluded` and not required:
- * `bot.connect`, `bot.chatPatterns`, the PhysicsOptions fields, the window 'open' event, ….
+ * `bot.connect`, `bot.chatPatterns`, the PhysicsOptions fields, ….
  */
 const fs = require('fs')
 const path = require('path')
@@ -25,8 +24,7 @@ const { snapshot, namespace, describeValue, describeProperty, unrefTimers } = re
 const { probeWindows } = require('./windows')
 const { readDts } = require('./dts')
 
-const REPO_ROOT = path.join(__dirname, '../../../../..')
-const UPSTREAM_DOCS = path.join(REPO_ROOT, 'docs/upstream')
+const UPSTREAM_FIXTURES = path.join(__dirname, '../../fixtures/upstream')
 const MINEFLAYER_DIR = path.dirname(require.resolve('mineflayer/package.json'))
 const mfRequire = createRequire(path.join(MINEFLAYER_DIR, 'index.js'))
 const MINEFLAYER_VERSION = '4.39.0'
@@ -71,7 +69,7 @@ async function upstreamRuntimeInner () {
   bot.emit('inject_allowed')
   const inject = snapshot(bot)
 
-  const windows = await probeWindows(bot, { require: mfRequire, tradeListPacket: 'trade_list' })
+  const windows = await probeWindows(bot, { require: mfRequire, tradeList: (w) => ['trade_list', { windowId: w.id, trades: [] }] })
 
   const loginPacket = bot.registry.loginPacket
   for (const key in loginPacket.dimensionCodec) client.emit('registry_data', loginPacket.dimensionCodec[key])
@@ -95,7 +93,6 @@ function staticScan () {
   const gameKeys = new Set()
   const events = new Set()
   const templated = new Set()
-  const windowEvents = new Set()
   const read = (f) => fs.readFileSync(f, 'utf8')
   for (const file of files) {
     const src = read(file)
@@ -104,7 +101,6 @@ function staticScan () {
     for (const m of src.matchAll(/\bbot\.game\.([A-Za-z_$][\w$]*)\s*=(?![=>])/g)) gameKeys.add(m[1])
     for (const m of src.matchAll(/\bbot\.emit\(\s*'([^']+)'/g)) events.add(m[1])
     for (const m of src.matchAll(/\bbot\.emit\(\s*`([^`]+)`/g)) templated.add(m[1])
-    for (const m of src.matchAll(/\b(?:window|furnace|enchantmentTable|villager|anvil)\.emit\(\s*'([^']+)'/g)) windowEvents.add(m[1])
   }
   // Events emitted through lookup tables (entities.js animation / entity_status, blocks.js forwarding).
   const entitiesSrc = read(path.join(pluginDir, 'entities.js'))
@@ -116,12 +112,12 @@ function staticScan () {
   const fwd = /const forwardedEvents = \[([^\]]*)\]/.exec(read(path.join(pluginDir, 'blocks.js')))
   if (!fwd) throw new Error('mineflayer blocks.js: forwardedEvents not found')
   for (const v of fwd[1].matchAll(/'([^']+)'/g)) events.add(v[1])
-  return { assigned, gameKeys, events, templated, windowEvents }
+  return { assigned, gameKeys, events, templated }
 }
 
 /** bot.abilities shape and events of mineflayer master's abilities plugin (run against a stub bot). */
 function masterAbilities () {
-  const file = path.join(UPSTREAM_DOCS, 'abilities.master.js')
+  const file = path.join(UPSTREAM_FIXTURES, 'abilities.master.js')
   const bot = new EventEmitter()
   bot._client = new EventEmitter()
   require(file)(bot)
@@ -129,31 +125,6 @@ function masterAbilities () {
   const events = [...src.matchAll(/\bbot\.emit\(\s*'([^']+)'/g)].map(m => m[1])
   const members = { 'bot.abilities': describeProperty(bot, 'abilities'), ...namespace(bot.abilities, 'bot.abilities', 'abilities') }
   return { members, events }
-}
-
-/** describe/it titles of mineflayer's test/internalTest.js → ['describe › … › it', …] (root describe dropped). */
-function internalTests (file = path.join(UPSTREAM_DOCS, 'internalTest.js')) {
-  const src = fs.readFileSync(file, 'utf8')
-  const out = []
-  const stack = []
-  const re = /^(\s*)(describe|it)(?:\.skip|\.only)?\(\s*(?:'((?:\\.|[^'\\])*)'|"((?:\\.|[^"\\])*)"|`([^`]*)`)/
-  for (const line of src.split('\n')) {
-    const m = re.exec(line)
-    if (!m) continue
-    const indent = m[1].length
-    const title = (m[3] ?? m[4] ?? m[5]).replace(/\\(.)/g, '$1')
-    while (stack.length && stack[stack.length - 1].indent >= indent) stack.pop()
-    if (m[2] === 'describe') {
-      stack.push({ indent, title })
-    } else {
-      out.push(stack.slice(1).map(s => s.title).concat(title).join(' › '))
-    }
-  }
-  return out
-}
-
-function externalTests () {
-  return fs.readdirSync(path.join(UPSTREAM_DOCS, 'externalTests')).filter(f => f.endsWith('.js')).map(f => f.slice(0, -3)).sort()
 }
 
 /**
@@ -198,7 +169,7 @@ function buildReference () {
 async function build () {
   const rt = await upstreamRuntime()
   const st = staticScan()
-  const dts = readDts(path.join(UPSTREAM_DOCS, 'index.d.ts'))
+  const dts = readDts(path.join(MINEFLAYER_DIR, 'index.d.ts'))
   const abilities = masterAbilities()
   const excluded = []
 
@@ -291,20 +262,6 @@ async function build () {
       } else excluded.push({ kind: m.kind, name: `${cls}.${m.name}`, reason: 'declared in mineflayer index.d.ts but not added to the window at runtime' })
     }
   }
-  // window events: base StorageEvents + the class-specific event interfaces
-  const storage = dts.interfaces.StorageEvents.members.map(m => m.name)
-  const emitted = new Set([...st.windowEvents, 'updateSlot']) // updateSlot: emitted by prismarine-windows
-  for (const ev of storage) {
-    if (emitted.has(ev)) addWin(`Window:${ev}`, { name: `Window:${ev}`, cls: 'Window', member: ev, kind: 'event', sources: new Set(['dts']) })
-    else excluded.push({ kind: 'event', name: `Window:${ev}`, reason: 'declared in mineflayer index.d.ts (StorageEvents) but never emitted' })
-  }
-  for (const [cls, decl] of Object.entries(dts.classes)) {
-    if (!probes[cls] || !decl.typeArg || !dts.interfaces[decl.typeArg]) continue
-    for (const m of dts.interfaces[decl.typeArg].members) {
-      if (!storage.includes(m.name)) addWin(`${cls}:${m.name}`, { name: `${cls}:${m.name}`, cls, member: m.name, kind: 'event', sources: new Set(['dts']) })
-    }
-  }
-
   // ---- exports --------------------------------------------------------------------------------
   const exportsRef = {}
   for (const [name, d] of Object.entries(rt.exports)) {
@@ -325,37 +282,13 @@ async function build () {
   }
 
   return {
-    meta: { mineflayer: MINEFLAYER_VERSION, javaVersion: rt.version },
     exports: exportsRef,
     members,
     events,
     windows,
-    tests: { external: externalTests(), internal: internalTests() },
     dts,
     excluded
   }
 }
 
-/**
- * Flat list of reference items in parity form: { kind, name, display, category }.
- * `name` is the canonical parity name (scripts/parity/lib/items.js).
- */
-function referenceItems (ref) {
-  const { displayItem } = require('../../../../../scripts/parity/lib/items')
-  const out = []
-  for (const e of Object.values(ref.exports)) out.push({ kind: 'export', name: e.name, display: displayItem('export', e.name), category: 'export' })
-  for (const m of Object.values(ref.members)) out.push({ kind: m.kind, name: m.path, display: displayItem(m.kind, m.path), category: m.kind })
-  for (const e of Object.values(ref.events)) out.push({ kind: 'event', name: e.name, display: displayItem('event', e.name), category: 'event' })
-  for (const w of Object.values(ref.windows)) {
-    const args = w.kind === 'method' ? '' : null
-    out.push({ kind: w.kind, name: w.name, display: displayItem(w.kind, w.name, { args }), category: 'window' })
-  }
-  for (const t of ref.tests.external) out.push({ kind: 'test', name: t, display: displayItem('test', t), category: 'test' })
-  for (const t of ref.tests.internal) {
-    const name = `internalTest › ${t}`
-    out.push({ kind: 'test', name, display: displayItem('test', name), category: 'internal-test' })
-  }
-  return out
-}
-
-module.exports = { buildReference, referenceItems, internalTests, externalTests, fakeJavaClient, MINEFLAYER_VERSION, UPSTREAM_DOCS, REPO_ROOT }
+module.exports = { buildReference }
