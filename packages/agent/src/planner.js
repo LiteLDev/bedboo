@@ -1,4 +1,3 @@
-// owner: U17 (agent core & overworld milestones)
 'use strict'
 /**
  * The obtain planner: how to get `count` × `item` from what the bot has and sees.

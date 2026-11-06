@@ -1,4 +1,3 @@
-// owner: U8 (inventory, windows, creative & item use)
 // Adapted from mineflayer 4.39.0 lib/plugins/chest.js (MIT, Copyright (c) 2013 Andrew Kelley,
 // https://github.com/PrismarineJS/mineflayer). Verbatim except the allowed block names, which add the Bedrock
 // names of the same containers: `undyed_shulker_box` (Java `shulker_box`) and the copper chests.

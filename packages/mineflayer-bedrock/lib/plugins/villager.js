@@ -1,4 +1,3 @@
-// owner: U13 (stations)
 // Adapted from mineflayer 4.39.0 lib/plugins/villager.js (MIT, Copyright (c) 2013 Andrew Kelley,
 // https://github.com/PrismarineJS/mineflayer): openVillager (window + 'ready' bookkeeping), trade (guards, error
 // messages, use counting, putRequirements / deposit, putting the leftovers away) are kept; the trade list and the
@@ -36,7 +35,7 @@ function inject (bot) {
   const Item = require('prismarine-item')(bot.registry)
 
   // BDS opens the trading screen with update_trade alone (no container_open): the inventory plugin opens the merchant
-  // window from it (window type 'trading' → minecraft:merchant, W3-FIX-B); a resend for the open window only
+  // window from it (window type 'trading' → minecraft:merchant); a resend for the open window only
   // refreshes the offers (gotTrades below).
 
   async function openVillager (villagerEntity) {
@@ -72,7 +71,7 @@ function inject (bot) {
     if (!ready) await once(villager, 'ready')
     // a trade window opens with empty input slots on Java (the server returned them when the last one closed). On
     // Bedrock they are the player's ui slots: items a dead trader's window left there (BDS refuses to return them from
-    // that screen, docs/differences/U16a.md#container-gone) show up here — put them back into the inventory (U16a)
+    // that screen) show up here — put them back into the inventory
     const model = bot._bedrock.inventoryModel
     const stuck = [0, 1].filter((slot) => villager.slots[slot]).map((slot) => model.keyOf(villager, slot)).filter(Boolean)
     if (stuck.length > 0 && bot.currentWindow === villager) {

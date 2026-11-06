@@ -1,4 +1,3 @@
-// owner: U8 (inventory, windows, creative & item use)
 // Adapted from mineflayer 4.39.0 lib/plugins/inventory.js (MIT, Copyright (c) 2013 Andrew Kelley,
 // https://github.com/PrismarineJS/mineflayer): putSelectedItemRange, transfer, extendWindow (deposit/withdraw/close),
 // openBlock/openEntity, putAway, moveSlotItem, consume, updateHeldItem, _setSlot and the heldItemChanged / eating
@@ -21,7 +20,7 @@
 //   predicts it, sends one item_stack_request (lib/bedrock/stack_request.js) and waits for the response
 //   (rejected → rolled back + "Server rejected transaction …"). Clicks on bot.inventory open the player's
 //   inventory screen (interact open_inventory) and close it again when idle (BDS rejects cursor moves without it).
-// - resync (POLISH-LIB): inventory_transaction inventory_mismatch makes BDS resend the player's inventory; the model
+// - resync: inventory_transaction inventory_mismatch makes BDS resend the player's inventory; the model
 //   sends it when it finds a slot out of date, Bedrock extra `bot.bedrock.resyncInventory()` on demand.
 // - opening a window (openBlock / openEntity, or activating a container / station block or a trading / storage
 //   entity) while a container window is open closes that one first (windowClose), like Java's server: BDS would
@@ -31,9 +30,9 @@
 //   { window_id, window_type, server: false } closes (the server echoes it; a carried item is first put back
 //   into the inventory, which BDS does not do by itself).
 // - held item: player_hotbar (server) / mob_equipment (setQuickBarSlot); `bot._bedrock.heldNetworkItem()` is the
-//   exact wire item of the held slot from this model (replaces U4's raw provider).
+//   exact wire item of the held slot from this model (replaces the default raw provider).
 // - item use: inventory_transaction item_use click_air (lib/bedrock/transactions.js) + completed_using_item;
-//   deactivate = item_release; a shield is raised by sneaking (Bedrock), see docs/differences/U8.md.
+//   deactivate = item_release; a shield is raised by sneaking (Bedrock).
 'use strict'
 const assert = require('assert')
 const { Vec3 } = require('vec3')
@@ -61,7 +60,7 @@ const CONTENT_TIMEOUT = 1000
 // BDS drops a container activation that arrives in the tick its previous container closed (observed: no
 // container_open, no resync); activations wait this long after a close
 const REOPEN_DELAY = 100
-/** ms after the bot's own hotbar selection during which a contradicting server select is taken as stale (U16a) */
+/** ms after the bot's own hotbar selection during which a contradicting server select is taken as stale */
 const STALE_SELECTION_MS = 1000
 
 /** Bedrock blocks whose activation opens a window (containers and stations) */
@@ -106,7 +105,7 @@ function inject (bot) {
   const windows = require('prismarine-windows')(bot.registry)
   const model = createInventoryModel(bot, { Item, Window: windows.Window })
   bot._bedrock.inventoryModel = model
-  // Bedrock extra (POLISH-LIB): ask BDS for its copy of the player's inventory (inventory_mismatch → inventory_content
+  // Bedrock extra: ask BDS for its copy of the player's inventory (inventory_mismatch → inventory_content
   // of the inventory, armor, ui and off-hand); resolves true once it was applied (false: no answer within 2 s)
   if (bot.bedrock) bot.bedrock.resyncInventory = () => model.resync('bot.bedrock.resyncInventory()')
 
@@ -142,7 +141,7 @@ function inject (bot) {
     }
   })
 
-  // the exact server copy of the held item for inventory_transaction held_item (contract: U4 → U8)
+  // the exact server copy of the held item for inventory_transaction held_item
   const heldNetworkItem = function heldNetworkItem () {
     return toNetwork(bot.registry, bot.heldItem ?? null)
   }
@@ -186,7 +185,7 @@ function inject (bot) {
       eatingTask.finish()
     }
     bot.usingHeldItem = false
-    // the use ended: so does a raised shield's sneak (FINAL-FIX-LIB: it is not cleared with the controls any more)
+    // the use ended: so does a raised shield's sneak (clearControlStates() does not end it)
     if (shieldRaised) raiseShield(false)
   })
   // a death ends the use too (the respawned player does not block)
@@ -217,7 +216,7 @@ function inject (bot) {
 
   function raiseShield (on) {
     shieldRaised = on
-    // FINAL-FIX-LIB: the shield's own sneak (physics holdSneak), so clearControlStates() / a sneak release — e.g.
+    // the shield's own sneak (physics holdSneak), so clearControlStates() / a sneak release — e.g.
     // mineflayer-pathfinder's, under mineflayer-pvp — do not lower it; only deactivateItem() does, like on Java
     const physics = bot._bedrock.physics
     if (typeof physics?.holdSneak === 'function') physics.holdSneak(on)
@@ -235,7 +234,7 @@ function inject (bot) {
       raiseShield(true)
       return
     }
-    // BDS ignores click_air for buckets and boats: the vanilla client clicks the looked-at block / liquid (U11)
+    // BDS ignores click_air for buckets and boats: the vanilla client clicks the looked-at block / liquid
     if (bot._bedrock.placement?.useOnLookedAtBlock(item, offHand)) return
     const packet = tx.buildUseItem(bot, { hand: offHand ? 'off_hand' : 'main_hand' })
     if (offHand) packet.transaction.transaction_data.held_item = heldNetworkItem.offhand()
@@ -619,7 +618,7 @@ function inject (bot) {
    * BDS answers a console command (/clear, /replaceitem, /give) with a player_hotbar select of ITS selected slot, which
    * may predate a selection this client sent a moment ago (the command ran before our mob_equipment was read): the
    * bot would switch back and stay out of sync with the server (seen in the full e2e suite). A select that contradicts
-   * our own selection of the last second is ignored and our selection sent again (U16a).
+   * our own selection of the last second is ignored and our selection sent again.
    */
   function staleSelection (slot) {
     const own = bot._bedrock.hotbarSelection?.last()
@@ -723,7 +722,7 @@ function inject (bot) {
   // screen state matches — without returning the station's input items first, BDS refuses any request on that dead
   // screen (status 49, invalid source slot). Items left in the trade / station input slots (the player's ui
   // container) stay there server side: the next window using those slots shows them (openVillager returns them at
-  // once) — docs/differences/U16a.md#container-gone (U16a).
+  // once).
   function abandonWindow (window, reason) {
     if (!window || bot.currentWindow !== window) return
     bot.currentWindow = null
@@ -787,7 +786,7 @@ function inject (bot) {
   // Java 1.17.1+ resyncs a window on an impossible click. On Bedrock every click is answered (item stack response) and
   // BDS resends nothing after a rejected request: the model rolls its prediction back (inventory_model.js), so there is
   // nothing to wait for here. (A slot found out of date makes the model ask for the server's copy of the player's
-  // inventory itself — inventory_mismatch, model.resync / bot.bedrock.resyncInventory(), POLISH-LIB.)
+  // inventory itself — inventory_mismatch, model.resync / bot.bedrock.resyncInventory().)
   async function syncWindow (window) {}
   bot._syncWindow = syncWindow
 

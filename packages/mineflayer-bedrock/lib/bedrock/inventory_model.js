@@ -1,4 +1,3 @@
-// owner: U8 (inventory, windows, creative & item use)
 'use strict'
 const { performance } = require('perf_hooks')
 const slots = require('./slots')
@@ -121,7 +120,7 @@ function createInventoryModel (bot, { Item, Window }) {
   // was planned on (the previous request's prediction, then that request's server result); see applyResponse
   const chains = new Map() // chain key → entry[]
   // chain key → the server's latest copy of that slot while requests on it are in flight (from server packets and
-  // accepted requests): what a rejected chain goes back to, what a resend is compared with (POLISH-LIB)
+  // accepted requests): what a rejected chain goes back to, what a resend is compared with
   const serverState = new Map()
   const windowTags = new WeakMap()
   let nextWindowTag = 1
@@ -360,13 +359,13 @@ function createInventoryModel (bot, { Item, Window }) {
   }
 
   /**
-   * A server packet sets slot `key` while requests that change it are in flight (FINAL-FIX-LIB): when the server's
+   * A server packet sets slot `key` while requests that change it are in flight: when the server's
    * stack is not the one such a request was planned on (a pickup, /give, a hopper, another player changed it — new
    * stack id), BDS rejects the request (49 stack id mismatch / 50): it is marked `raced` so execute() plans it again
    * on the server's state (Java's server applies a click to its own current state instead of rejecting it).
    * @returns {boolean} the packet only restates what the server's copy of the slot already was (a resync, the resend
    *   after a command) while a prediction is shown: nothing to write — a request planned now builds on that
-   *   prediction, nothing raced (POLISH-LIB)
+   *   prediction, nothing raced
    */
   function noteServerWrite (key, item) {
     if (inflight.size === 0) return false
@@ -494,7 +493,7 @@ function createInventoryModel (bot, { Item, Window }) {
     return a.type === b.type && a.count === b.count
   }
 
-  // ---------------------------------------------------------------- resync (POLISH-LIB)
+  // ---------------------------------------------------------------- resync
   // BDS resends the player's whole inventory (inventory_content of the inventory, armor, ui and off-hand windows, then
   // player_hotbar) when the client sends inventory_transaction { transaction_type: 'inventory_mismatch' } — measured on
   // 1.26.51.1, nothing else happens. Nothing else makes it resend: not (re)opening the inventory screen, not a rejected
@@ -584,7 +583,7 @@ function createInventoryModel (bot, { Item, Window }) {
   // base when rejected — only to one planned on its prediction) to the NEXT request on that slot as its `before`,
   // and only the last request on a slot writes the slot. So a later prediction is never
   // overwritten by an earlier answer, and a chain of rejections ends at the state before the first request, or at what
-  // the server sent for the slot meanwhile (`serverState`: a pickup, /give — POLISH-LIB).
+  // the server sent for the slot meanwhile (`serverState`: a pickup, /give).
 
   function tagOf (window) {
     let tag = windowTags.get(window)
@@ -654,12 +653,12 @@ function createInventoryModel (bot, { Item, Window }) {
           if (next) base = change ? (change.after ?? change.before) : next.byKey.get(key).before
           // the request's own prediction, unless a server packet replaced the slot with something else meanwhile (a
           // resend of the state it was planned on — a resync, a command's resend — does not count: the server applied
-          // the request to that state, POLISH-LIB)
+          // the request to that state)
           else if (change && (late || !current || !change.racedWrite)) base = change.after ?? change.before ?? current
           else base = current ?? change?.after ?? change?.before
           if (!base) {
             bot._warn?.(`item stack response ${response.request_id}: ${containerId} ${s.slot} holds ${s.count} unknown item(s)`)
-            // the server counts items in a slot the model holds nothing in: ask for its copy (POLISH-LIB)
+            // the server counts items in a slot the model holds nothing in: ask for its copy
             if (isPlayerKey(key)) resync(`${key} holds ${s.count} item(s) the model does not know`, { auto: true })
             continue
           }
@@ -701,7 +700,7 @@ function createInventoryModel (bot, { Item, Window }) {
         // request id — rejected too (its stack id mismatch is explained: no resync), planned again like this one. One
         // planned on a server packet that replaced our prediction meanwhile (a pickup) keeps that as its base: handing
         // it our `before` restored the state before the pickup once the chain was rolled back — the pickup was lost
-        // (POLISH-LIB, seen live)
+        // (seen live)
         if (nextChange.before === after || (!!after && nextChange.before?.stackId === entry.id)) {
           nextChange.before = base
           next.chained = true
@@ -790,7 +789,7 @@ function createInventoryModel (bot, { Item, Window }) {
         (slots.isPlayerInventory(window) || window === currentWindow())
       // a stack id mismatch no server packet explains (not raced, not planned on a rejected request): the model's copy
       // of a slot is out of date (a desync) — every request on that slot would fail for good. Ask for the server's copy;
-      // when it differs from what the request was planned on, plan it again once on it (POLISH-LIB)
+      // when it differs from what the request was planned on, plan it again once on it
       if (err.outcome === 'error' && err.status === STACK_ID_MISMATCH_STATUS && !err.raced && !err.chained) {
         if (isRetry || !replannable()) {
           resyncAfterMismatch(err).catch(() => {}) // heals the model for the next request; nothing to wait for here
@@ -805,7 +804,7 @@ function createInventoryModel (bot, { Item, Window }) {
         return true
       }
       // a server packet changed a slot of the request while it was in flight (a pickup, /give, a hopper: new stack
-      // id) and BDS rejected it: plan it again on the server's state, once (FINAL-FIX-LIB; Java's server applies the
+      // id) and BDS rejected it: plan it again on the server's state, once (Java's server applies the
       // click to its current state)
       if (err.raced && err.outcome === 'error') return replannable()
       return false
@@ -977,7 +976,7 @@ function createInventoryModel (bot, { Item, Window }) {
           has_position: false
         })
         screen.opening = new Promise((resolve, reject) => {
-          // U18: BDS drops the request while the player stands in a nether portal and for ~1–2 s after it stepped
+          // BDS drops the request while the player stands in a nether portal and for ~1–2 s after it stepped
           // out of the arrival portal (no container_open at all): ask again every 1.5 s until the timeout
           const resend = setInterval(request, SCREEN_RESEND_MS)
           resend.unref?.()

@@ -1,4 +1,3 @@
-// owner: U17 (agent core & overworld milestones)
 'use strict'
 /**
  * @bedboo/agent — scripted (no LLM) survival agent for mineflayer-bedrock. See README.md.

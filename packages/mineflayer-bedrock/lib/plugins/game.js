@@ -1,4 +1,3 @@
-// owner: U4 (wave 2) → U9 (wave 3)
 // Upstream: mineflayer 4.39.0 lib/plugins/game.js (MIT, Copyright (c) 2013 Andrew Kelley)
 // Surface: bot.game { levelType, hardcore, gameMode, dimension, minY, height, difficulty,
 //   maxPlayers, enableRespawnScreen?, serverViewDistance?, serverBrand }; Bedrock extra bot.bedrock.gameRules
@@ -10,7 +9,7 @@
 // - set_difficulty → difficulty (upstream: no 'game' for a difficulty change either).
 // - chunk_radius_update → serverViewDistance.
 // - game rules: start_game.gamerules + game_rules_changed → bot.bedrock.gameRules (Bedrock names as sent, e.g.
-//   `doDayLightCycle`; Java has no client-side game rule state, docs/differences/U9.md#game-rules).
+//   `doDayLightCycle`; Java has no client-side game rule state).
 // - dimension change (the lifecycle's 'dimensionChange', i.e. change_dimension): dimension/minY/height + 'game'
 //   (upstream: 'game' on a respawn packet); a death respawn in the same dimension also emits 'game' (upstream: every
 //   respawn packet), through the lifecycle's 'respawn' notification from health.js.
@@ -57,14 +56,14 @@ function inject (bot, options) {
     setDimension(packet.dimension)
     bot.game.difficulty = DIFFICULTY_NAMES[packet.difficulty]
     // Bedrock never tells the client the player limit (no field in start_game; BDS does not answer
-    // unconnected pings with enable-lan-visibility=false): docs/differences/U4.md#max-players
+    // unconnected pings with enable-lan-visibility=false)
     bot.game.maxPlayers = undefined
     if (bot.bedrock) bot.bedrock.gameRules = {}
     applyGameRules(packet.gamerules)
     const immediateRespawn = packet.gamerules?.find(rule => rule.name.toLowerCase() === 'doimmediaterespawn')
     if (!immediateRespawn?.value) bot.game.enableRespawnScreen = true
     // No brand plugin channel on Bedrock: the server identifier when the server sets one, else BDS = the
-    // vanilla server (docs/differences/U4.md#server-brand)
+    // vanilla server
     bot.game.serverBrand = packet.server_identifier || 'vanilla'
     bot.emit('login')
     bot.emit('game')

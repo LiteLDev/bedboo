@@ -1,4 +1,3 @@
-// owner: U4 (core runtime)
 'use strict'
 const { EventEmitter } = require('events')
 const { feetFromWire } = require('./conversions')
@@ -10,11 +9,11 @@ const { feetFromWire } = require('./conversions')
  *   1. after join (implemented here, see below);
  *   2. after a respawn reaches "ready" (3-step respawn: server respawn state 0 searching →
  *      client respawn state 2 client_ready → server respawn state 1 ready → client player_action
- *      respawn), driven by U9 (health.js `bot.respawn`): `setState('dead')` / `setState('respawning')`
+ *      respawn), driven by health.js (`bot.respawn`): `setState('dead')` / `setState('respawning')`
  *      then `markSpawned('respawn')`;
  *   3. after a dimension change completes (change_dimension → … → play_status player_spawn), implemented
- *      here (see the dimension path below) so the world reloads; U9 owns everything around it.
- * health.js (U9) must never emit `spawn` itself.
+ *      here (see the dimension path below) so the world reloads; health.js owns everything around it.
+ * health.js must never emit `spawn` itself.
  *
  * Join path (BDS 1.26.51.1, test/fixtures/1.26.51/join_flat.jsonl.gz):
  *   start_game (player_position.y = 32769.62, the spawn search height)       → state 'loading', clock anchored
@@ -41,7 +40,7 @@ const { feetFromWire } = require('./conversions')
  *                      loading_screen_id) → markSpawned('dimension') ('spawn' fires again, as in mineflayer
  *                      where a dimension change toggles isAlive)
  *
- * Spawn search height (W3-FIX-A, observed live): the End exit's change_dimension carries y 32767 (BDS answers our
+ * Spawn search height (observed live): the End exit's change_dimension carries y 32767 (BDS answers our
  *   ack at once; the real eye-level position follows ~50 ms later in respawn state 0 → state 1), and a respawn into
  *   another dimension can get a respawn state 1 — or a move_player / correction — at the search height (the real
  *   position follows). change_dimension / respawn search heights are not applied (no move / forcedMove there), and
@@ -55,7 +54,7 @@ const { feetFromWire } = require('./conversions')
  *
  * Lifecycle events (`lifecycle.events`, an EventEmitter; not bot events):
  *   'state' (state, previous), 'spawned' (reason), 'dimensionChange' ({ dimension, position, packet }),
- *   'dimensionChanged' ({ respawning: true }) — U9: a dimension change during a respawn completed without 'spawn'
+ *   'dimensionChanged' ({ respawning: true }) — a dimension change during a respawn completed without 'spawn'
  *   (the respawn spawns); health.js emits 'respawn' ({ dimensionChange }) before the bot's 'respawn' event.
  *   A change_dimension without loading_screen_id (respawn into another dimension) gets no loading screen acks.
  *
@@ -68,7 +67,7 @@ const { feetFromWire } = require('./conversions')
  * @property {(loadingScreenId?: number) => void} sendLoadingScreenAck serverbound_loading_screen 1 then 2
  * @property {(packet: object) => void} beginDimensionChange
  * @property {() => void} completeDimensionChange
- * @property {() => void} markDead U9: death (deferred to the end of a dimension change in progress)
+ * @property {() => void} markDead death (deferred to the end of a dimension change in progress)
  */
 
 const STATES = ['connecting', 'loading', 'spawned', 'dead', 'respawning', 'changing_dimension', 'ended']
@@ -85,14 +84,14 @@ function createLifecycle (bot) {
   events.setMaxListeners(0)
   let joined = false
   let dimensionLoadingScreenId
-  let resumeState = null // U9: lifecycle state to return to after a dimension change during a respawn
+  let resumeState = null // lifecycle state to return to after a dimension change during a respawn
   let positionPending = false // the server sent the spawn search height: the real position has not arrived yet
   let deferredSpawn = null // { reason, timer }: markSpawned waiting for that position
 
   const input = () => bot._bedrock?.input
   const physics = () => bot._bedrock?.physics
   const selfRuntimeId = () => bot._bedrock?.ids?.selfRuntimeId() ?? 0n
-  // BEDD-5: with transport 'bedd' the real client sends the loading screen acks, the dimension change ack and the
+  // with transport 'bedd' the real client sends the loading screen acks, the dimension change ack and the
   // join's respawn reply itself (lib/bedd/surface.js); bedboo only follows the state
   const clientOwnsLoadingScreen = () => !!bot._client?.bedd && bot._client.bedd.capabilities?.ownsLoadingScreen !== false
   let spawnBeforeStartGame = false
@@ -183,7 +182,7 @@ function createLifecycle (bot) {
      */
     beginDimensionChange (packet) {
       dimensionLoadingScreenId = packet.loading_screen_id ?? undefined
-      // U9: a respawn into another dimension (death in the nether → overworld spawn) changes the dimension while
+      // a respawn into another dimension (death in the nether → overworld spawn) changes the dimension while
       // the player is dead: completing it resumes the respawn (health.js spawns once the player is alive)
       if (lifecycle.state === 'dead' || lifecycle.state === 'respawning') resumeState = lifecycle.state
       else if (lifecycle.state !== 'changing_dimension') resumeState = null
@@ -205,11 +204,11 @@ function createLifecycle (bot) {
     },
 
     /**
-     * U9 (health.js): the player died. A dimension change in progress completes first — without 'spawn' — and then
+     * health.js: the player died. A dimension change in progress completes first — without 'spawn' — and then
      * resumes 'dead'; otherwise the state becomes 'dead' at once.
      */
     markDead () {
-      // a spawn waiting for its position (W3-FIX-A) does not happen any more
+      // a spawn waiting for its position does not happen any more
       if (deferredSpawn) {
         cancelDeferredSpawn()
         positionPending = false
@@ -223,7 +222,7 @@ function createLifecycle (bot) {
     /** End of a dimension change (the server's dimension_change_ack): loading screen acks, then 'spawn'. */
     completeDimensionChange () {
       if (lifecycle.state !== 'changing_dimension') return
-      // U9 (observed on BDS 1.26.51.1): only a change_dimension with a loading_screen_id shows a loading screen.
+      // observed on BDS 1.26.51.1: only a change_dimension with a loading_screen_id shows a loading screen.
       // The respawn-triggered one has none, and serverbound_loading_screen then gets the client disconnected
       // ('unexpected_packet').
       if (dimensionLoadingScreenId !== undefined) lifecycle.sendLoadingScreenAck(dimensionLoadingScreenId)
@@ -294,7 +293,7 @@ function createLifecycle (bot) {
     const feet = feetFromWire(packet.position)
     if (feet.y >= SPAWN_SEARCH_Y && lifecycle.state !== 'loading') positionPending = true
     else setPosition(feet)
-    // join: answer like the vanilla client (client_ready). After a death the respawn handshake is U9's
+    // join: answer like the vanilla client (client_ready). After a death the respawn handshake is health.js's
     // (bot.respawn: client state 2 first, then player_action respawn after this state 1).
     if (lifecycle.state === 'loading' && !clientOwnsLoadingScreen()) client.queue('respawn', { position: packet.position, state: 2, runtime_entity_id: selfRuntimeId() })
   })

@@ -1,4 +1,3 @@
-// owner: U17 (agent core & overworld milestones)
 'use strict'
 /**
  * Smelting with `bot.openFurnace`: a furnace nearby, or the carried one placed next to the bot (taken back afterwards).

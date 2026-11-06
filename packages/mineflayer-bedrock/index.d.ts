@@ -2,7 +2,6 @@
 // Adapted from mineflayer 4.39.0 index.d.ts (MIT, https://github.com/PrismarineJS/mineflayer):
 // identical surface; only the protocol client changed (bedrock-protocol instead of minecraft-protocol)
 // and Bedrock-only extras are declared in types/bedrock.d.ts (`bot.bedrock`).
-// owner: U4 (core runtime); every unit updates the members it implements.
 import { EventEmitter } from 'events'
 import TypedEmitter from 'typed-emitter'
 import { Client, ClientOptions } from 'bedrock-protocol'
@@ -27,11 +26,11 @@ export function createBot (options: BotOptions): Bot
 // bedrock-protocol's ClientOptions.viewDistance is `number`; mineflayer's (below) also accepts names.
 export interface BotOptions extends Omit<ClientOptions, 'viewDistance' | 'transport'> {
   /**
-   * 'raknet' (default) or 'nethernet' connect to a server; BEDD-1: 'bedd' follows a real Minecraft client hosted by
+   * 'raknet' (default) or 'nethernet' connect to a server; 'bedd' follows a real Minecraft client hosted by
    * Be.D.D. (options under `bedd`)
    */
   transport?: 'raknet' | 'nethernet' | 'bedd'
-  /** BEDD-1: Be.D.D. pipes for `transport: 'bedd'` */
+  /** Be.D.D. pipes for `transport: 'bedd'` */
   bedd?: BeddOptions
   /** mineflayer auth: 'offline' (default) or 'microsoft' (Xbox Live via prismarine-auth); 'mojang' does not exist on Bedrock */
   auth?: 'microsoft' | 'offline'
@@ -881,7 +880,7 @@ export class BossBar {
   title: ChatMessage
   health: number
   dividers: number
-  // Bedrock: + 'rebecca_purple' (the wither's bar colour, docs/differences/U6.md#boss-bars)
+  // Bedrock: + 'rebecca_purple' (the wither's bar colour)
   color: 'pink' | 'blue' | 'red' | 'green' | 'yellow' | 'purple' | 'rebecca_purple' | 'white'
   shouldDarkenSky: boolean
   isDragonBar: boolean
@@ -900,7 +899,7 @@ export class BossBar {
 
 export class Particle {
   // Bedrock: a particle effect identifier ('minecraft:heart_particle') when it is not a registry particle type,
-  // then also its `name` (docs/differences/U6.md#particles)
+  // then also its `name`
   id: number | string
   name?: string
   position: Vec3

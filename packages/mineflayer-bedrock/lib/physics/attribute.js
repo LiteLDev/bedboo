@@ -1,4 +1,3 @@
-// owner: U5 (physics & movement)
 // Adapted from prismarine-physics 1.11.1 lib/attribute.js (MIT, Copyright (c) 2020 PrismarineJS,
 // https://github.com/PrismarineJS/prismarine-physics). Same Java attribute formula: base, then operation 0
 // (add), 1 (multiply base), 2 (multiply total). The Bedrock `update_attributes` modifiers use the same

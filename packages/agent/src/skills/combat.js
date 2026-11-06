@@ -1,15 +1,14 @@
-// owner: U18 (agent combat & dimensions; the safety integration: FINAL-FIX-AGENT-A); library helpers seeded by U16b
 'use strict'
 /**
  * Combat.
  *
- * The `combat` **skill** (`async (bot, args) → { killed }`) is U18's (wave 6) and is still a stub. U16b seeded this
- * module with a reusable, cheat-free **combat library** that the skill is meant to build on. It only
- * uses the public mineflayer API (no `bot._client`), so it runs unchanged on mineflayer (Java) too:
+ * The `combat` **skill** (`async (bot, args) → { killed }`) is built on a reusable, cheat-free **combat library**
+ * in this module. The library only uses the public mineflayer API (no `bot._client`), so it runs unchanged on
+ * mineflayer (Java) too:
  * `nearestEntity`, `entities`, `lookAt`/`look`, `setControlState`/`clearControlStates`, `attack`,
  * `activateItem`/`deactivateItem` (bow, shield), `equip`, `inventory`, `health`, `waitForTicks` and the
- * `entityHurt` / `entityDead` / `entityGone` / `death` events. It does not depend on mineflayer-pvp (U15 pins and
- * patches that plugin; the agent runner loads it): U18 may build the skill on these helpers, on mineflayer-pvp, or
+ * `entityHurt` / `entityDead` / `entityGone` / `death` events. It does not depend on mineflayer-pvp (pinned and
+ * patched; the agent runner loads it): a skill may build on these helpers, on mineflayer-pvp, or
  * mix them (e.g. pvp for melee, `fight`'s bow aiming for flying mobs).
  *
  *   const combat = require('@bedboo/agent/src/skills/combat')
@@ -630,7 +629,7 @@ async function fightAll (bot, opts = {}) {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// U18 (wave 6): the agent-level combat skill built on the helpers above
+// the agent-level combat skill built on the helpers above
 
 /** projectiles a melee hit sends back (ghast fireballs) — Bedrock and Java names */
 const DEFLECTABLE = new Set(['fireball', 'large_fireball'])
@@ -895,7 +894,7 @@ class Guard extends EventEmitter {
 }
 
 /**
- * The guard a skill runs under: the running Agent's safety behaviours (src/safety.js, U17) when the skill runs inside
+ * The guard a skill runs under: the running Agent's safety behaviours (src/safety.js) when the skill runs inside
  * an Agent — one background fighter, not two —, else a {@link defend} guard of its own. Both have `busy`, `idle()`,
  * `pause()` / `resume()`, `stop()` and 'busy' / 'idle' events.
  */
@@ -1159,7 +1158,7 @@ async function combatSkill (bot, args) {
 }
 
 module.exports = Object.assign(combatSkill, {
-  // U18 (wave 6) skill API
+  // skill API
   defend,
   guardFor,
   Guard,
@@ -1171,7 +1170,7 @@ module.exports = Object.assign(combatSkill, {
   survive,
   hazardAhead,
   likelyAttacker,
-  // U16b's helpers
+  // combat library helpers
   fight,
   fightAll,
   nearestHostile,

@@ -1,4 +1,3 @@
-// owner: U6 (chat, commands & HUD)
 // Adapted from mineflayer 4.39.0 lib/plugins/title.js (MIT, Copyright (c) 2013 Andrew Kelley,
 // https://github.com/PrismarineJS/mineflayer): parseTitle kept verbatim.
 // Surface: none (events only)

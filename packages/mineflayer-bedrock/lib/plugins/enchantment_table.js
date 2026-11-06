@@ -1,4 +1,3 @@
-// owner: U13 (stations)
 // Adapted from mineflayer 4.39.0 lib/plugins/enchantment_table.js (MIT, Copyright (c) 2013 Andrew Kelley,
 // https://github.com/PrismarineJS/mineflayer): openEnchantmentTable, the 'ready' bookkeeping, takeTargetItem,
 // putTargetItem and putLapis are kept verbatim; the options and the enchant request are Bedrock.
@@ -146,7 +145,7 @@ function inject (bot) {
   /**
    * the item the server makes of `target` with `option` (a book becomes an enchanted book). BDS also offers options
    * that apply no enchantment (a fishing rod or carrot on a stick at a table without bookshelves): it charges for them
-   * and leaves the item as it was, so the prediction is the item unchanged, without an empty `ench` list (U16a).
+   * and leaves the item as it was, so the prediction is the item unchanged, without an empty `ench` list.
    */
   function enchanted (target, option) {
     if (enchantsOf(option).length === 0) return withNbt(Item, target, (value) => value, { count: 1 })

@@ -1,4 +1,3 @@
-// owner: U17 (agent core & overworld milestones)
 'use strict'
 /** World queries over the public mineflayer API (`bot.blockAt`, `bot.findBlocks`). */
 const { Vec3 } = require('vec3')

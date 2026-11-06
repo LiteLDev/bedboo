@@ -1,4 +1,3 @@
-// owner: BEDD-2 (authority table + core intent router)
 'use strict'
 /**
  * bedd-mode intent router. In `transport: 'bedd'` every serverbound packet bedboo would send goes to
@@ -23,8 +22,8 @@
  * whoever attaches first): `client.bedd.routes.register(name, handler)` → unregister function. A registered handler
  * is called as `handler(params, ctx)` and wins over the built-in translation of that name unless every handler
  * returns `false`; player_auth_input handlers run after the built-in movement/look translation. Pseudo-names for
- * parts of player_auth_input: 'block_action' (params = the block_action array, BEDD-3) and 'item_stack_request'
- * (params = { requests: [request] }, ctx.embedded = true, BEDD-7).
+ * parts of player_auth_input: 'block_action' (params = the block_action array) and 'item_stack_request'
+ * (params = { requests: [request] }, ctx.embedded = true).
  */
 const authority = require('./authority')
 const { createRouteRegistry, ensureRoutes, handlersFor, runHandlers: dispatchHandlers, inputParts, markDispatch } = require('./routes')

@@ -1,4 +1,3 @@
-// owner: U5 (physics & movement)
 // Adapted from prismarine-physics 1.11.1 lib/aabb.js (MIT, Copyright (c) 2020 PrismarineJS,
 // https://github.com/PrismarineJS/prismarine-physics). Bedrock change: the computeOffset* sweeps use a 1e-4 contact
 // tolerance (see below); everything else is unchanged.

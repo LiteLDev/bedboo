@@ -1,4 +1,3 @@
-// owner: U7 (entities & players)
 'use strict'
 const { Vec3 } = require('vec3')
 const Painting = require('mineflayer/lib/painting')

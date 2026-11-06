@@ -1,4 +1,3 @@
-// owner: BEDD-7 (inventory routing through BeDD's `stack` op)
 'use strict'
 
 /**
@@ -46,7 +45,7 @@ try {
   if (err.code !== 'MODULE_NOT_FOUND' || !String(err.message).includes('errors')) throw err
 }
 if (typeof BeddUnsupportedError !== 'function') {
-  // minimal stand-in until lib/bedd/errors.js (BEDD-5) is present
+  // minimal stand-in when lib/bedd/errors.js cannot be loaded
   BeddUnsupportedError = class BeddUnsupportedError extends Error {
     constructor (feature, { missing = [], reason } = {}) {
       super(`${feature} is not supported with transport 'bedd': ${reason ?? `missing BeDD op(s) ${missing.join(', ')}`}`)

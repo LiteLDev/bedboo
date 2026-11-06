@@ -1,4 +1,3 @@
-// owner: U17 (agent core & overworld milestones)
 'use strict'
 /**
  * Getting blocks out of the world: find, reach (walk / shaft down / tunnel), dig with the right tool, pick the drops

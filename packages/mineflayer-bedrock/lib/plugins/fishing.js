@@ -1,10 +1,9 @@
-// owner: U14 (survival interactions)
 // Adapted from mineflayer 4.39.0 lib/plugins/fishing.js (MIT, Copyright (c) 2013 Andrew Kelley): the same fishing
 //   task (one at a time, a new bot.fish() cancels the previous one), cast + reel in with bot.activateItem(), the
 //   same resolve / reject points and error messages.
 // Surface: bot.fish() → resolves when a fish bites (the bot reels it in), rejects with 'Fishing cancelled' when the
 //   bobber disappears first, 'Fishing cancelled due to calling bot.fish() again' when called again.
-// Bedrock (BDS 1.26.51.1, verified live — docs/differences/U14.md#fishing):
+// Bedrock (BDS 1.26.51.1, verified live):
 // - cast / reel in = item use click_air with the rod (bot.activateItem); the bobber is an add_entity
 //   `minecraft:fishing_hook` (entity name `fishing_hook`) whose `owner_eid` metadata is the bot's unique id;
 // - while waiting the hook sends entity_event fish_hook_tease / fish_hook_position (fish approaching); the bite is

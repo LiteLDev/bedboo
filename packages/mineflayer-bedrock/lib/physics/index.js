@@ -1,4 +1,3 @@
-// owner: U5 (physics & movement)
 'use strict'
 /**
  * In-repo Bedrock physics engine (prismarine-physics 1.11.1 fork, see engine.js), with the upstream module shape

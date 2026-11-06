@@ -1,4 +1,3 @@
-// owner: U4 (core runtime)
 'use strict'
 const { Vec3 } = require('vec3')
 const conv = require('mineflayer/lib/conversions')

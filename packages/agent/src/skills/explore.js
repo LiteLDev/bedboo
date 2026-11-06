@@ -1,4 +1,3 @@
-// owner: U17 (agent core & overworld milestones)
 'use strict'
 /**
  * Exploration: walk a square spiral around the start until something shows up in the loaded world.

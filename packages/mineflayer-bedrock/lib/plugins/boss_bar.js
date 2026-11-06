@@ -1,9 +1,8 @@
-// owner: U6 (chat, commands & HUD)
 // Adapted from mineflayer 4.39.0 lib/plugins/boss_bar.js (MIT, Copyright (c) 2013 Andrew Kelley,
 // https://github.com/PrismarineJS/mineflayer); BossBar class: mineflayer/lib/bossbar (subclassed for Bedrock colours).
 // Surface: bot.bossBars (getter → BossBar[])
 // Events: 'bossBarCreated' / 'bossBarDeleted' / 'bossBarUpdated' (bossBar)
-// Bedrock (BDS 1.26.51.1, docs/differences/U6.md#boss-bars): there is no /bossbar command; boss bars belong to boss
+// Bedrock (BDS 1.26.51.1): there is no /bossbar command; boss bars belong to boss
 //   entities (wither, ender dragon). boss_event { target_entity_id (boss unique id), type, title, progress, color,
 //   overlay }:
 //   - show_bar: the first one for an entity creates the bar ('bossBarCreated'); BDS re-sends show_bar about once a

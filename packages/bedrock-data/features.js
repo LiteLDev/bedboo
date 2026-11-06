@@ -1,4 +1,3 @@
-// owner: U2 (wave 1) → U9 (wave 3) → U10 (wave 4)
 'use strict'
 
 /**
@@ -9,7 +8,7 @@
  *     (pathfinder, pvp, collectblock, tool, armor-manager, auto-eat) and the prismarine-* modules that call
  *     `registry.supportFeature` (a unit test greps them and fails on any name missing here).
  *
- * How values were chosen (details per name in docs/differences/U2.md#feature-table):
+ * How values were chosen:
  *   1. GAME / DATA FACTS (names, world shape, commands, entity identifiers, item/block scheme): the Bedrock
  *      truth, so reused code and ported tests take the Bedrock-correct branch (e.g. itemsAreNotBlocks,
  *      blockSchemeIsFlat, tallWorld, hasExecuteCommand, enderCrystalNameEndsInErNoCaps, fireworkNamePlural).
@@ -59,7 +58,7 @@ const JAVA = {
   // prismarine-windows: false selects its legacy window table, whose player inventory has 46 slots
   // (shieldSlot). The 1.14+ branch it guards calls `registry.version['>=']('1.20.3')`, a Java version
   // comparison that throws a RangeError for bedrock_1.26.51. Bedrock windows are not Java protocol
-  // windows anyway: U8 registers every Bedrock container type itself (bot._bedrock.windows) and builds a
+  // windows anyway: mineflayer-bedrock registers every Bedrock container type itself (bot._bedrock.windows) and builds a
   // 46-slot Java-layout player inventory.
   'village&pillageInventoryWindows': false,
   // Only read inside prismarine-windows' 1.14+ branch (adds minecraft:smithing), which Bedrock never takes
@@ -81,7 +80,7 @@ const JAVA = {
   itemSerializationUsesBlockId: false,
   itemSerializationWillOnlyUsePresent: false,
   spawnEggsUseEntityTagInNbt: false, // spawn eggs are named after their entity (bat_spawn_egg)
-  metadataIxOfItem: false, // no Java metadata index; dropped items come from add_item_entity (U7)
+  metadataIxOfItem: false, // no Java metadata index; dropped items come from add_item_entity
   // --- entity identifiers (facts) -----------------------------------------------------------------------
   entityNameUpperCaseNoUnderscore: false, // boat, armor_stand, zombie
   entityNameLowerCaseNoUnderscore: false,
@@ -90,7 +89,7 @@ const JAVA = {
   fireworkNamePlural: true, // entity minecraft:fireworks_rocket (the item is firework_rocket)
   fireworkNameSingular: false,
   fishingBobberCorrectlyNamed: false, // entity minecraft:fishing_hook
-  fishingBiteDelayMaxTicks: 600, // same 100..600 tick wait window as Java (not measured on BDS; U14)
+  fishingBiteDelayMaxTicks: 600, // same 100..600 tick wait window as Java (not measured on BDS)
   mcDataHasEntityMetadata: false, // minecraft-data has no Bedrock metadata keys (bedrock-protocol names them)
   // --- commands (facts, checked on BDS 1.26.51.1) -----------------------------------------------------------
   hasExecuteCommand: true, // `execute in overworld run teleport …` works

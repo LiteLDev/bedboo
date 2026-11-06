@@ -1,4 +1,3 @@
-// owner: U17 (agent core & overworld milestones)
 'use strict'
 /**
  * Survival chores.
@@ -328,7 +327,7 @@ function underOpenSky (bot) {
  */
 async function surface (bot, { signal, timeout = 240000 } = {}) {
   const started = Date.now()
-  // the time the Agent's safety held the bot (fights, flights) does not count against the climb: FINAL-ROUND ore1 fought
+  // the time the Agent's safety held the bot (fights, flights) does not count against the climb: one run fought
   // zombies, skeletons, a witch and slimes for 145 s in the caves on the way up from y -59 and ran out of time at y 39
   const spent = () => Date.now() - started - safetyMsSince(agentOf(bot)?.safety, started)
   if (!underOpenSky(bot)) {

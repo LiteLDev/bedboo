@@ -1,4 +1,3 @@
-// owner: U5 (physics & movement)
 // Bedrock Edition player physics.
 // Forked from prismarine-physics 1.11.1 index.js (MIT, Copyright (c) 2020 PrismarineJS,
 // https://github.com/PrismarineJS/prismarine-physics) and made Bedrock-correct. The module shape is the
@@ -9,7 +8,7 @@
 // inputs are optional extras with defaults) and never relies on the class.
 //
 // Bedrock deltas vs. the Java engine — measured against BDS 1.26.51.1 with recorded player_auth_input traces and the
-// server's correct_player_move_prediction states (docs/differences/U5.md#engine, test/fixtures/physics/):
+// server's correct_player_move_prediction states (test/fixtures/physics/):
 // - float32 positions/velocities; the yaw is the float32 degrees of the wire x float32(pi/180), precise sin/cos;
 // - update order: speed + friction from the PREVIOUS tick's onGround (block at floor(pos - 0.5), else the block
 //   supporting the box, else friction 0.6, never air's 0.9) -> moveRelative (move vector, normalized, +-0.3 while
@@ -115,7 +114,7 @@ function Physics (registry, world) {
   const idOf = (name) => blocksByName[name]?.id ?? -1
   const idSet = (...names) => new Set(names.map(idOf).filter((id) => id >= 0))
 
-  // per-block friction (U2 data: Bedrock `friction`, 0.6 default; ice 0.98, blue ice 0.989, slime 0.8, …)
+  // per-block friction (bedrock-data: Bedrock `friction`, 0.6 default; ice 0.98, blue ice 0.989, slime 0.8, …)
   const blockFriction = []
   for (const block of registry.blocksArray ?? Object.values(registry.blocks ?? {})) {
     blockFriction[block.id] = typeof block.friction === 'number' ? block.friction : 0.6
@@ -293,7 +292,7 @@ function Physics (registry, world) {
   }
 
   /**
-   * (U10 fix) A box without vertical velocity keeps onGround only while something is right below it: a teleport
+   * A box without vertical velocity keeps onGround only while something is right below it: a teleport
    * reports the on_ground of the old position, and without gravity (upstream's creative.startFlying) nothing else
    * would ever clear it.
    */

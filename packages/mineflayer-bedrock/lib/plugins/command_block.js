@@ -1,4 +1,3 @@
-// owner: U9 (player state, world extras & dimensions)
 // Adapted from mineflayer 4.39.0 lib/plugins/command_block.js (MIT, Copyright (c) 2013 Andrew Kelley): same checks,
 //   option defaults and option names.
 // Surface: bot.setCommandBlock(pos, command, options = {}) options { mode (0 sequence/chain, 1 auto/repeat,
@@ -7,8 +6,7 @@
 //   needs_redstone: !alwaysActive, conditional, command, last_output, name, filtered_name, should_track_output,
 //   tick_delay, execute_on_first_tick } — the name, tick delay and first-tick flag (no Java option) keep the values of
 //   the block's current block entity. BDS applies it to the block entity (the new `Command` comes back
-//   as block_entity_data → 'blockEntityData') and prints no "Command set" message
-//   (docs/differences/U9.md#command-block).
+//   as block_entity_data → 'blockEntityData') and prints no "Command set" message.
 'use strict'
 const assert = require('assert')
 

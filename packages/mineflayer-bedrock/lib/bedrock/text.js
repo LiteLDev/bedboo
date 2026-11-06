@@ -1,7 +1,6 @@
-// owner: U6 (chat, commands & HUD)
 'use strict'
 /**
- * Bedrock text → prismarine-chat `ChatMessage` (moved here from U4's chat core and completed by U6).
+ * Bedrock text → prismarine-chat `ChatMessage`.
  *
  * Bedrock `text` packets carry plain strings with `§` formatting codes (`raw`, `chat`, `whisper`, `announcement`,
  * `system`, `tip`), strings with `%key` translation references + parameters (`translation`, `popup`,

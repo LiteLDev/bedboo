@@ -1,4 +1,3 @@
-// owner: U17 (agent core & overworld milestones)
 'use strict'
 /**
  * Navigation: mineflayer-pathfinder with Bedrock-tuned Movements, time limits, re-planning and getting unstuck.

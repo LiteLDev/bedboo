@@ -1,4 +1,3 @@
-// owner: BEDD-1 (transport 'bedd': control RPC, tap reader, client)
 'use strict'
 /**
  * `transport: 'bedd'` entry point: createBeddClient(options) and the `client.bedd` surface.

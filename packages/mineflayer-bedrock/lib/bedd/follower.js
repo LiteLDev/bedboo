@@ -1,4 +1,3 @@
-// owner: BEDD-4 (physics follower + external tick clock)
 'use strict'
 /**
  * Transport 'bedd': the real Minecraft client moves the player and owns the tick. This module follows it.

@@ -1,4 +1,3 @@
-// owner: U10 (digging)
 'use strict'
 
 /**
@@ -6,7 +5,7 @@
  *
  * Same structure as prismarine-block's `Block#digTime` (Java's AbstractBlock#calcBlockBreakingDelta), with the
  * Bedrock status-effect factors. Every factor was measured on BDS through `level_event block_start_break`, whose
- * `data` is the server's progress per tick × 65535 (floored) — see docs/differences/U10.md#dig-speed:
+ * `data` is the server's progress per tick × 65535 (floored):
  *
  *   speed  = tool multiplier (registry.materials[block.material][heldItemType]) or 1
  *   speed += efficiency² + 1                       when efficiency > 0 and speed > 1           (= Java)

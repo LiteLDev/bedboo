@@ -1,4 +1,3 @@
-// owner: FINAL-FIX-AGENT-A (agent core robustness)
 'use strict'
 /**
  * Nights. Mobs spawn on the surface at night, and a bot wandering in the dark without armor is how the chained runs

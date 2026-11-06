@@ -1,4 +1,3 @@
-// owner: U17 (agent core & overworld milestones)
 'use strict'
 /**
  * Build a structure from a blueprint (src/blueprint.js): pick a flat site, obtain the materials (obtain skill),

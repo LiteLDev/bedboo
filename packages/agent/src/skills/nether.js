@@ -1,4 +1,3 @@
-// owner: U18 (agent combat & dimensions)
 'use strict'
 /**
  * Nether skill: through the bot's own portal into the Nether, mine nether quartz ore, nether gold ore and ancient

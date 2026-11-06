@@ -1,4 +1,3 @@
-// owner: U17 (agent core & overworld milestones)
 'use strict'
 /**
  * Gather surface resources (logs, sand, gravel, dirt, leaves, …): find the nearest loaded block (exploring when none

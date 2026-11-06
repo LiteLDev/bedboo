@@ -1,4 +1,3 @@
-// owner: U9 (player state, world extras & dimensions)
 // Adapted from mineflayer 4.39.0 lib/plugins/health.js (MIT, Copyright (c) 2013 Andrew Kelley): same members,
 // events, `respawn` option and bot.respawn(); the Java update_health/respawn/client_command packets are replaced by
 // the Bedrock ones below.

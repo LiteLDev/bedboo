@@ -1,4 +1,3 @@
-// owner: U8 (inventory, windows, creative & item use)
 'use strict'
 
 /**
@@ -52,7 +51,7 @@ function sameItem (Item, a, b) {
  * @param {object} opts.Item prismarine-item class (Item.equal)
  * @param {'inventory'|'chest'|'station'} opts.kind player inventory, chest-like container, other (furnace, …)
  * @param {(slot: number) => boolean} [opts.isCreatedOutput] a result slot that only crafting produces (Bedrock
- *   created output) — clicking it needs bot.craft (U12)
+ *   created output) — clicking it needs bot.craft
  * @param {(slot: number) => boolean} [opts.isAddressable] the slot has a Bedrock address
  * @param {(slot: number, item: object) => boolean} [opts.mayPlace] Java Slot.mayPlace (armor slots, result slots)
  * @param {(item: object) => number[]} [opts.quickMoveTargets] container slots a shift click from the player part

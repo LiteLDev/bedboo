@@ -1,4 +1,3 @@
-// owner: BEDD-1 (transport 'bedd': control RPC, tap reader, client)
 'use strict'
 /**
  * createBeddClient: the bot's `_client` for `transport: 'bedd'` — a real Minecraft client hosted by Be.D.D. is

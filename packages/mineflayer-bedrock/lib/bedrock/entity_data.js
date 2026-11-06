@@ -1,16 +1,15 @@
-// owner: U4 (core runtime)
 'use strict'
 
 /**
- * Self entity data. U4 applies the LOCAL player's packets to `bot.entity` (lib/plugins/entities.js
- * routes them here); U7 (entities.js, wave 3) handles every other entity and must skip the local
- * runtime id. The functions are pure enough to be reused by U7 for other entities (they only touch the
+ * Self entity data. The LOCAL player's packets, routed here by lib/plugins/entities.js, are applied to
+ * `bot.entity`; entities.js handles every other entity and must skip the local
+ * runtime id. The functions are pure enough to be reused by entities.js for other entities (they only touch the
  * entity passed in / `bot.entity` and emit mineflayer entity events).
  *
  * Packets: update_attributes, set_health, mob_effect, set_entity_data, set_entity_motion.
  *
  * - Attributes are stored on `entity.attributes` keyed by Java resource names
- *   (`minecraft:movement_speed`, `minecraft:max_health`, … — the `resource` of the U2 attributes dataset,
+ *   (`minecraft:movement_speed`, `minecraft:max_health`, … — the `resource` of the bedrock-data attributes dataset,
  *   `registry.attributesArray[i].bedrockName` is the update_attributes name), value
  *   `{ value, modifiers: [{ uuid, amount, operation, name }], current, min, max, default }` where `value` is the
  *   BASE value like Java (Bedrock's `current` already includes the modifiers; the base is recovered by
@@ -18,14 +17,14 @@
  *   Bedrock-only attributes (player.hunger, player.saturation, underwater_movement, …) keep their Bedrock
  *   name as key. Emits `entityAttributes(entity)`.
  * - Effects are stored on `entity.effects` keyed by Bedrock effect id `{ id, amplifier, duration }`; names come
- *   from `bot.registry.effects` (bedrock-data overlay, U2). Emits `entityEffect` / `entityEffectEnd`.
+ *   from `bot.registry.effects` (bedrock-data overlay). Emits `entityEffect` / `entityEffectEnd`.
  * - `set_entity_data` (metadata): `entity.metadata[<bedrock key name>] = value` (Bedrock metadata keys are
  *   names such as `flags`, `flags_extended`, `air`, `nametag`, not Java indexes; stored as named properties of
  *   prismarine-entity's metadata array). Flags: `sneaking` →
  *   `entity.crouching` (+ `entityCrouch` / `entityUncrouch`), `gliding` → `entity.elytraFlying`
  *   (+ `entityElytraFlew`), `sleeping` (flags_extended) → `entitySleep` / `entityWake`, `sprinting` →
  *   `entity.sprinting`, `swimming` → `entity.swimming`, `onfire` → `entity.onFire`. Emits `entityUpdate(entity)`.
- * - `set_health`: `entity.health` (the bot's own `bot.health` / `health` event belong to health.js, U9).
+ * - `set_health`: `entity.health` (the bot's own `bot.health` / `health` event belong to health.js).
  * - `set_entity_motion`: `entity.velocity` (blocks per tick, as mineflayer).
  *
  * Contract (each takes `(bot, packet, entity = bot.entity)`, returns nothing, emits the mineflayer events of the change):
@@ -46,7 +45,7 @@ const ATTRIBUTE_NAMES = {
 }
 
 const attributeMaps = new WeakMap()
-/** Bedrock attribute name → resource key, from the registry (U2 dataset) with ATTRIBUTE_NAMES as fallback. */
+/** Bedrock attribute name → resource key, from the registry (bedrock-data dataset) with ATTRIBUTE_NAMES as fallback. */
 function attributeKeys (registry) {
   let map = registry ? attributeMaps.get(registry) : null
   if (map) return map
@@ -111,7 +110,7 @@ function applyEffect (bot, packet, entity = bot.entity) {
 /**
  * The server's `gliding` flag. 'entityElytraFlew' fires on the flag's rising edge, like upstream (the server's
  * metadata) — not on entity.elytraFlying, which the physics plugin already sets for the bot when bot.elytraFly()
- * predicts the glide (W3-FIX-A).
+ * predicts the glide.
  */
 function setElytraFlying (bot, entity, flying) {
   const started = flying && !serverGliding.has(entity)
@@ -151,7 +150,7 @@ function applyMetadata (bot, packet, entity = bot.entity) {
     setElytraFlying(bot, entity, !!flags.gliding)
   }
   const extended = entry('flags_extended')
-  // players: BDS 1.26.51 reports sleep in player_flags (bit 1), not in flags_extended (U7 fix, observed live); once
+  // players: BDS 1.26.51 reports sleep in player_flags (bit 1), not in flags_extended (observed live); once
   // player_flags were seen, flags_extended no longer decides (a flags_extended-only update must not wake the player)
   const playerFlags = entry('player_flags')
   if (playerFlags !== undefined) playerFlagEntities.add(entity)

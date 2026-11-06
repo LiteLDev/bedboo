@@ -1,4 +1,3 @@
-// owner: U4 (wave 2: clock + stationary sender) → U5 (wave 3: drain/tick, physics integration); BEDD-4 (external tick clock)
 'use strict'
 const { TICK_MS } = require('./constants')
 
@@ -7,7 +6,7 @@ const { TICK_MS } = require('./constants')
  *
  * Bedrock movement is always server-authoritative with rewind: from spawn on, the client must send
  * one `player_auth_input` per server tick. The clock is anchored on `start_game.current_tick` (by
- * lib/bedrock/lifecycle.js) and may be re-anchored (U5: `correct_player_move_prediction.tick`):
+ * lib/bedrock/lifecycle.js) and may be re-anchored (`correct_player_move_prediction.tick`):
  *
  *     tick = anchorTick + round((now - anchorTime) / 50)
  *
@@ -19,17 +18,17 @@ const { TICK_MS } = require('./constants')
  *
  * - `addFlags(flags)`            one-shot input_data flag names for the next packet, e.g. ['start_sprinting']
  * - `hold(flag, on)`             level flags sent every tick while held, e.g. hold('sneaking', true)
- * - `queueBlockAction(action)`   { action, position, face } (server-auth digging; U10) — all queued actions go
+ * - `queueBlockAction(action)`   { action, position, face } (server-auth digging) — all queued actions go
  *                                into the next packet's `block_action` (+ flag `block_action`)
- * - `queueItemStackRequest(req)` one ItemStackRequest per tick at most (U8) (+ flag `item_stack_request`)
- * - `setVehicle(id, rotation)`   predicted vehicle unique id + vehicle rotation (U14) or (null) to clear
+ * - `queueItemStackRequest(req)` one ItemStackRequest per tick at most (+ flag `item_stack_request`)
+ * - `setVehicle(id, rotation)`   predicted vehicle unique id + vehicle rotation or (null) to clear
  *                                (`predicted_vehicle`, `vehicle_rotation`, flag `client_predicted_vehicle`)
  * - `suspend(reason)` / `resume(reason)` stop/restart sending (loading screen, death, dimension change);
  *   sending resumes only when every reason has been resumed. While suspended nothing is sent and the clock
  *   keeps running (no catch-up burst on resume).
  * - `markTeleportHandled()`      adds `handled_teleport` to the next packet (after a move_player teleport)
  *
- * External clock (BEDD-4, transport 'bedd' only): the real Minecraft client owns the server's tick, so
+ * External clock (transport 'bedd' only): the real Minecraft client owns the server's tick, so
  * `setExternalClock(true)` stops the 50 ms timer (start() then only marks the queue running) and the physics follower
  * calls `pumpTo(tick)` once per echoed client tick: exactly one packet for that tick (never older than the last one
  * sent), the clock re-anchored on it. The packet still goes through `_client.queue('player_auth_input')`, where the
@@ -71,16 +70,16 @@ const { TICK_MS } = require('./constants')
  * @property {() => boolean} isRunning
  * @property {(now?: number) => number} pump send the elapsed ticks now; returns the number of packets sent (none with an
  *   external clock)
- * @property {(on: boolean) => void} setExternalClock BEDD-4: true stops the 50 ms timer (pumpTo drives the queue)
+ * @property {(on: boolean) => void} setExternalClock true stops the 50 ms timer (pumpTo drives the queue)
  * @property {() => boolean} isExternalClock
- * @property {(tick: bigint|number, at?: number) => number} pumpTo BEDD-4: anchor on `tick` and send exactly one packet
+ * @property {(tick: bigint|number, at?: number) => number} pumpTo anchor on `tick` and send exactly one packet
  *   for it (or for lastTick + 1 when `tick` is not newer); 0 while suspended or not running
  * @property {bigint|null} lastTick last tick sent (getter)
  */
 
 const DEFAULT_MAX_CATCHUP_TICKS = 4
 
-/** Fields of an idle, stationary input (the U0 spike's packet, accepted by BDS 1.26.51.1). */
+/** Fields of an idle, stationary input (accepted by BDS 1.26.51.1). */
 function idleFields () {
   return {
     pitch: 0,
@@ -121,7 +120,7 @@ function createInputQueue (bot, opts = {}) {
   const sentListeners = new Set()
   const suspendReasons = new Set()
   const oneShotFlags = []
-  // The vanilla client always reports block breaking delays as enabled (U10 may release it).
+  // The vanilla client always reports block breaking delays as enabled.
   const heldFlags = new Set(['block_breaking_delay_enabled'])
   let blockActions = []
   const itemStackRequests = []
@@ -175,7 +174,7 @@ function createInputQueue (bot, opts = {}) {
   }
 
   function pump (at = now()) {
-    if (externalClock) return 0 // BEDD-4: only pumpTo sends
+    if (externalClock) return 0 // only pumpTo sends
     const target = currentTick(at)
     if (suspendReasons.size > 0) {
       // keep the clock moving: no catch-up burst after resume
@@ -212,7 +211,7 @@ function createInputQueue (bot, opts = {}) {
     timer = null
   }
 
-  /** external clock (BEDD-4): one packet for the client's `tick`, anchored on it */
+  /** external clock: one packet for the client's `tick`, anchored on it */
   function pumpTo (tick, at = now()) {
     const clientTick = BigInt(tick)
     anchorTick = clientTick
@@ -285,7 +284,7 @@ function createInputQueue (bot, opts = {}) {
       else if (running) startTimer()
     },
     isExternalClock () { return externalClock },
-    /** pending one-shot flags / held flags (tests, U5) */
+    /** pending one-shot flags / held flags (tests) */
     pendingFlags () { return [...oneShotFlags] },
     heldFlags () { return [...heldFlags] }
   }

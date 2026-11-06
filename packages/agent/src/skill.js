@@ -1,8 +1,7 @@
-// owner: U17 (agent core & overworld milestones)
 'use strict'
 
 /**
- * Skill interface (shared by U17 and U18).
+ * Skill interface.
  *
  * A skill is `async (bot, args) => result`:
  * - `bot`    a spawned mineflayer-bedrock bot (only the public mineflayer API + ecosystem plugins
@@ -25,8 +24,8 @@
 const { NotImplementedError, AbortError, SkillError } = require('./errors')
 
 /**
- * Stub skill for an owner unit (rejects with NotImplementedError).
- * @param {string} unit e.g. 'U17'
+ * Stub skill (rejects with NotImplementedError).
+ * @param {string} unit owner tag reported in the error
  * @param {string} name skill name
  */
 function stubSkill (unit, name) {

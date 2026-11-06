@@ -1,7 +1,6 @@
-// owner: U18 (agent combat & dimensions)
 'use strict'
 /**
- * Retaliation next to U17's Agent. Under an Agent, combat.guardFor() hands the U18 skills the Agent's safety
+ * Retaliation next to the Agent. Under an Agent, combat.guardFor() hands the dimension skills the Agent's safety
  * behaviours as their guard (one background fighter). Those fight HOSTILE mobs; a NEUTRAL mob that attacks — an
  * enderman the bot looked at, a zombified piglin hit by mistake, a piglin angered by mined gold — is not one of them and
  * kills the bot unopposed (measured, E1A in seed 1234: slain by an enderman during the walk to the exit portal, four

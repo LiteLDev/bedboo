@@ -1,4 +1,3 @@
-// owner: U17 (agent core & overworld milestones)
 'use strict'
 /**
  * Crafting with `bot.recipesFor` / `bot.craft`: the 2×2 grid when a recipe fits it, else a crafting table (one nearby,

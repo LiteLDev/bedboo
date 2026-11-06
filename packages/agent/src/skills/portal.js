@@ -1,4 +1,3 @@
-// owner: U18 (agent combat & dimensions)
 'use strict'
 /**
  * Nether portal skill: obtain obsidian legitimately, build a 4×5 frame, light it with flint and steel (flint from
@@ -330,7 +329,7 @@ function waitCount (bot, name, n, opts = {}) {
   return u.waitFor(() => u.count(bot, name) >= n, { timeout: 5000, interval: 50, message: `${n} ${name}`, ...opts })
 }
 
-/** a U17 skill module when it is there (portal also runs without U17's Agent / skills) */
+/** an agent skill module when it is there (portal also runs without the Agent / its skills) */
 function optional (name) {
   try { return require(name) } catch { return null }
 }
@@ -371,7 +370,7 @@ async function feed (bot, { signal, min: wanted } = {}) {
 /**
  * Up to the open sky before a search over the surface: from a mine or a mineshaft the pools and lakes the bot sees in
  * the loaded chunks are mostly out of reach (chain run 2: 13 min of walks to water sources from a mineshaft).
- * U17's survive.surface (pillar / staircase up, around water above), else a pathfinder climb. Never throws (the
+ * survive.surface (pillar / staircase up, around water above), else a pathfinder climb. Never throws (the
  * searches that follow report what they cannot reach); aborts do.
  */
 async function toSurface (bot, { signal, timeout = 180000 } = {}) {
@@ -398,13 +397,13 @@ async function toSurface (bot, { signal, timeout = 180000 } = {}) {
     if (signal?.aborted) throw err
     u.log(bot, `portal: surfacing from ${feet}: ${err.message}`)
   } finally {
-    u.ensurePathfinder(bot) // U17's skills set their own movements
+    u.ensurePathfinder(bot) // the agent's skills set their own movements
   }
   u.log(bot, `portal: at ${bot.entity.position.floored()} after surfacing`)
   return true
 }
 
-/** walk to within `range` of `target`; far away with U17's navigate (legs, surfacing, unsticking) */
+/** walk to within `range` of `target`; far away with the navigate skill (legs, surfacing, unsticking) */
 async function travelTo (bot, target, range, { signal, timeout = 180000 } = {}) {
   const { goals } = u.ensurePathfinder(bot)
   const t = u.vec(target)
@@ -812,7 +811,7 @@ async function castAtPool (bot, pool, n, ctx) {
 }
 
 /**
- * Out of lava when nothing else gets the bot out: the Agent's safety does it ('lava'); without an Agent (U18's harness,
+ * Out of lava when nothing else gets the bot out: the Agent's safety does it ('lava'); without an Agent (a standalone harness,
  * combat.defend's guard) nobody did — N1 seed 35 stood 4 s in the lava retrying its fills. Every 100 ms: in lava →
  * stop, jump towards the nearest standable cell with no lava. @returns {() => void} stop
  */
@@ -821,7 +820,7 @@ function lavaWatch (bot, guard, cells = new Set()) {
   let escaping = false
   let stopped = false
   const live = () => !stopped
-  // U18's own guard (combat.defend) is marked busy while the bot escapes: every walk waits for it (u.goto) instead of
+  // the skill's own guard (combat.defend) is marked busy while the bot escapes: every walk waits for it (u.goto) instead of
   // re-planning over the escape's controls
   const hold = (on) => { try { if (typeof guard?._setBusy === 'function') guard._setBusy(on) } catch {} }
   const timer = setInterval(async () => {
@@ -937,7 +936,7 @@ async function lowHealthPause (bot, { guard, signal, below = 10, until = 14, max
       await u.goto(bot, new goals.GoalNearXZ(to.x, to.z, 2), { signal, timeout: 15000, retries: 0 }).catch((err) => { if (signal?.aborted) throw err })
     }
   }
-  // hurt at night without armor: out of the mobs' reach until the morning (U17's shelter or a pocket / pit)
+  // hurt at night without armor: out of the mobs' reach until the morning (survive.shelter or a pocket / pit)
   if (nightMs > 0 && shelter.ticksToNight(bot) === 0 && shelter.armorWorn(bot) < 2) {
     return shelterPause()
   }
@@ -1211,7 +1210,7 @@ async function mineMold (bot, mold, before, { signal, goals }) {
     }
   }
   // the drop lies in the hole: step in — or wherever it is within 6 blocks of the mold (washed out by the water
-  // draining off: FINAL-ROUND ore4 lost all 10 casts at two pools, each one dug in 9 s, then 15 s of steps into the
+  // draining off: one run lost all 10 casts at two pools, each one dug in 9 s, then 15 s of steps into the
   // empty hole)
   const centre = M.offset(0.5, 0.5, 0.5)
   const until = Date.now() + 15000
@@ -1429,7 +1428,7 @@ async function lightPortal (bot, frame, { signal } = {}) {
   } catch (err) {
     if (signal?.aborted || !/stalled/.test(err.message)) throw err
     // stood still in the flint's pit, 2–3 deep (a final chain run: 30 s at the bottom, then the whole N1M3 failed —
-    // the unpatched pathfinder hung on a failed placement; the patched one plans around it, docs/differences/U15.md):
+    // the unpatched pathfinder hung on a failed placement; the patched one plans around it):
     // the pathfinder stopped, the bot's own staircase steps out, again (a bounded fallback)
     u.log(bot, `portal: to the frame: ${err.message}; climbing out first`)
     u.stopMoving(bot)

@@ -1,4 +1,3 @@
-// owner: U8 (inventory, windows, creative & item use)
 // Adapted from mineflayer 4.39.0 lib/plugins/simple_inventory.js (MIT, Copyright (c) 2013 Andrew Kelley,
 // https://github.com/PrismarineJS/mineflayer). Verbatim except setQuickBarSlot (Bedrock packet).
 // Surface: bot.QUICK_BAR_START (36), bot.equip(item, destination), bot.unequip(destination),
@@ -67,7 +66,7 @@ function inject (bot) {
   }
 
   // the latest selection this client sent: a player_hotbar select the server built before it read it must not undo it
-  // (the inventory plugin checks it, U16a)
+  // (the inventory plugin checks it)
   let selection = null
   function sendSelection (slot, { resend = false } = {}) {
     if (!resend) selection = { slot, at: Date.now() } // a resend keeps the time of the selection (a bounded window)

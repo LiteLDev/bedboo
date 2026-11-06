@@ -1,19 +1,18 @@
-// owner: U9 (wave 3, bed state: isSleeping, isABed, parseBedMetadata, spawnReset) → U14 (wave 4, sleep/wake)
 // Adapted from mineflayer 4.39.0 lib/plugins/bed.js (MIT, Copyright (c) 2013 Andrew Kelley): isABed,
 //   parseBedMetadata (same result shape), isSleeping + 'sleep' / 'wake', 'spawnReset'.
-// Surface: bot.isSleeping, bot.isABed(block), bot.parseBedMetadata(bedBlock), bot.sleep(bedBlock) (U14),
-//   bot.wake() (U14)
-// U14 (wave 4): sleep / wake adapted from upstream (same checks, order and error messages):
+// Surface: bot.isSleeping, bot.isABed(block), bot.parseBedMetadata(bedBlock), bot.sleep(bedBlock),
+//   bot.wake()
+// sleep / wake adapted from upstream (same checks, order and error messages):
 // - sleep: night (12541..23458) or thunderstorm, not already sleeping, a bed, not occupied, both halves, clickable
 //   (bot.canDigBlock, or upstream's reach check while digging.js is a stub), within the click range, no hostile mob
 //   in the monster range; then bot.activateBlock(bed) (item_use click_block) and resolve on 'sleep' (BDS:
 //   set_entity_data player_flags bit 1 + player_bed_position, the player is moved into the bed with a
 //   correct_player_move_prediction), 'bot is not sleeping' after 3 s.
 // - wake: player_action stop_sleeping (Java: entity_action leave_bed); BDS answers animate wake_up + player_flags 0
-//   → 'wake' (docs/differences/U14.md#beds).
+//   → 'wake'.
 // Events: 'sleep', 'wake' (from entitySleep / entityWake of bot.entity, emitted from the sleeping metadata — BDS:
 //   player_flags bit 1 for players — by the entity data code), 'spawnReset'
-// Bedrock (docs/differences/U9.md#beds):
+// Bedrock:
 // - beds are one block `bed` (colour in the block entity; plus `straw_bed`) with states `direction` (0 south,
 //   1 west, 2 north, 3 east — the head's side, like Java's facing index), `head_piece_bit`, `occupied_bit`
 //   (`straw_bed`: `minecraft:cardinal_direction`).
