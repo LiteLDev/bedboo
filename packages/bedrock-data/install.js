@@ -6,14 +6,14 @@
  * INJECTION CONTRACT
  * - Must run before anything calls `require('minecraft-data')('bedrock_1.26.51')`: minecraft-data
  *   caches the version object on first use, and bedrock-protocol / prismarine-registry /
- *   prismarine-chunk / prismarine-block call it while loading. mineflayer-bedrock's `index.js` calls
+ *   prismarine-chunk / prismarine-block call it while loading. bedboo's `index.js` calls
  *   `install()` as its very first statement; tests and tools that use bedrock-protocol or prismarine-*
  *   directly must call it first too. (If the version object was already built, install() detects it and
  *   refreshes that cached object in place, so late callers still see the overlay; data copied out of it
  *   before that — e.g. an existing prismarine-registry — keeps the old values.)
  * - Idempotent: a second call is a no-op and returns the same result.
  * - It builds minecraft-data's `bedrock_1.26.51` version object (so the datasets are parsed then, not lazily) to relax its
- *   version comparators for Java versions (relaxVersionComparisons); mineflayer-bedrock builds it at require
+ *   version comparators for Java versions (relaxVersionComparisons); bedboo builds it at require
  *   time anyway (lib/registry.js aliasBotVersion).
  * - Mechanism: minecraft-data 3.117.0 keeps every version in `data.js` as an object of lazy getters
  *   (`data.bedrock['1.26.51'].blocks` → `require('…/bedrock/1.26.30/blocks.json')`). install() redefines

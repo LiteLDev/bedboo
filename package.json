@@ -1,8 +1,7 @@
 {
-  "name": "bedboo",
   "version": "0.0.0",
   "private": true,
-  "description": "Mineflayer for Minecraft: Bedrock Edition",
+  "description": "bedboo monorepo: a Minecraft Bedrock Edition bot library with a mineflayer-compatible API",
   "license": "LGPL-3.0-only",
   "repository": {
     "type": "git",
@@ -16,10 +15,10 @@
     "lint": "standard",
     "fix": "standard --fix",
     "test": "pnpm -r --if-present run test",
-    "typecheck": "pnpm --filter mineflayer-bedrock run typecheck"
+    "typecheck": "pnpm --filter bedboo run typecheck"
   },
   "devDependencies": {
-    "mineflayer-bedrock": "workspace:*",
+    "bedboo": "workspace:*",
     "standard": "17.1.2"
   },
   "standard": {

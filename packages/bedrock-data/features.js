@@ -58,7 +58,7 @@ const JAVA = {
   // prismarine-windows: false selects its legacy window table, whose player inventory has 46 slots
   // (shieldSlot). The 1.14+ branch it guards calls `registry.version['>=']('1.20.3')`, a Java version
   // comparison that throws a RangeError for bedrock_1.26.51. Bedrock windows are not Java protocol
-  // windows anyway: mineflayer-bedrock registers every Bedrock container type itself (bot._bedrock.windows) and builds a
+  // windows anyway: bedboo registers every Bedrock container type itself (bot._bedrock.windows) and builds a
   // 46-slot Java-layout player inventory.
   'village&pillageInventoryWindows': false,
   // Only read inside prismarine-windows' 1.14+ branch (adds minecraft:smithing), which Bedrock never takes

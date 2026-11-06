@@ -2,7 +2,7 @@
   "name": "@bedboo/agent",
   "version": "0.0.0",
   "private": true,
-  "description": "Scripted (no LLM) survival agent built on mineflayer-bedrock",
+  "description": "Scripted (no LLM) survival agent built on bedboo",
   "license": "LGPL-3.0-only",
   "main": "index.js",
   "repository": {
@@ -17,9 +17,9 @@
     "test": "node --test --test-isolation=none --test-timeout=60000 \"test/**/*.test.js\""
   },
   "dependencies": {
+    "bedboo": "workspace:*",
     "mineflayer-armor-manager": "2.0.1",
     "mineflayer-auto-eat": "5.0.3",
-    "mineflayer-bedrock": "workspace:*",
     "mineflayer-collectblock": "1.6.0",
     "mineflayer-pathfinder": "2.4.5",
     "mineflayer-pvp": "1.3.2",

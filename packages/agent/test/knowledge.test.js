@@ -1,16 +1,16 @@
 'use strict'
 // the obtain planner on a fake bot with the real 1.26.51 data: the registry, BDS's recorded
-// crafting_data (mineflayer-bedrock's fixture, parsed by its recipes module) and a small fake world
+// crafting_data (bedboo's fixture, parsed by its recipes module) and a small fake world
 const { describe, it, before } = require('node:test')
 const assert = require('assert')
 const { Vec3 } = require('vec3')
 const knowledge = require('../src/knowledge')
 const planner = require('../src/planner')
 
-const bedrockRoot = require('path').dirname(require.resolve('mineflayer-bedrock/package.json'))
-/** a mineflayer-bedrock file (fixtures, recipes parser) or one of its dependencies */
+const bedbooRoot = require('path').dirname(require.resolve('bedboo/package.json'))
+/** a bedboo file (fixtures, recipes parser) or one of its dependencies */
 function requireBedrock (request) {
-  return require(request.startsWith('lib/') || request.startsWith('test/') ? require('path').join(bedrockRoot, request) : require.resolve(request, { paths: [bedrockRoot] }))
+  return require(request.startsWith('lib/') || request.startsWith('test/') ? require('path').join(bedbooRoot, request) : require.resolve(request, { paths: [bedbooRoot] }))
 }
 
 describe('obtain planner on a fake bot with real recipe data', () => {

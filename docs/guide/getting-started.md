@@ -1,7 +1,7 @@
 # Your first bot
 
 This page connects a bedboo bot to a Bedrock Dedicated Server (BDS) you run yourself. If you have written a mineflayer
-bot before, only the first three steps are new: the bot code is mineflayer code.
+bot before, only the first three steps are new: the bot code is the same as for mineflayer.
 
 ## Requirements {#requirements}
 
@@ -75,7 +75,7 @@ right after it is BDS warning that vanilla clients may soon need NetherNet; RakN
 
 ## Write the bot {#write-the-bot}
 
-`packages/my-bot/index.js` is plain mineflayer code:
+`packages/my-bot/index.js` is written exactly as for mineflayer:
 
 ```js
 const bedboo = require('bedboo') // instead of require('mineflayer')

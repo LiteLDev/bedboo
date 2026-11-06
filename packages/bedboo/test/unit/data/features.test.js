@@ -1,0 +1,127 @@
+'use strict'
+// lib/bedrock/features.js covers every feature name used upstream
+const { describe, it } = require('node:test')
+const assert = require('assert')
+const fs = require('fs')
+const path = require('path')
+const { createRequire } = require('module')
+const { FEATURES, createSupportFeature } = require('../../../lib/bedrock/features')
+const { createRegistry } = require('../../../lib/registry')
+
+const pkgDir = path.join(__dirname, '..', '..', '..')
+const repoRoot = path.join(pkgDir, '..', '..')
+const requireLib = createRequire(path.join(pkgDir, 'package.json'))
+const requireAgent = createRequire(path.join(repoRoot, 'packages', 'agent', 'package.json'))
+const dirOf = (req, name) => path.dirname(req.resolve(name + '/package.json'))
+
+/** Every place whose `supportFeature('…')` calls reach bot.supportFeature / registry.supportFeature on Bedrock. */
+const SCANNED = {
+  'mineflayer lib/': path.join(dirOf(requireLib, 'mineflayer'), 'lib'),
+  'mineflayer examples/ (ported to bedboo)': path.join(dirOf(requireLib, 'mineflayer'), 'examples'),
+  ...Object.fromEntries(['mineflayer-pathfinder', 'mineflayer-pvp', 'mineflayer-collectblock', 'mineflayer-tool', 'mineflayer-armor-manager', 'mineflayer-auto-eat']
+    .map(name => [name, dirOf(requireAgent, name)])),
+  // registry.supportFeature callers (prismarine-physics is forked in-repo and has its own feature list)
+  ...Object.fromEntries(['prismarine-item', 'prismarine-block', 'prismarine-chunk', 'prismarine-registry', 'prismarine-entity', 'prismarine-windows', 'prismarine-chat', 'prismarine-recipe', 'prismarine-world']
+    .map(name => [name, dirOf(requireLib, name)]))
+}
+
+function * jsFiles (dir) {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (entry.name === 'node_modules' || entry.name.startsWith('.')) continue
+    const file = path.join(dir, entry.name)
+    if (entry.isDirectory()) yield * jsFiles(file)
+    else if (/\.(c|m)?js$/.test(entry.name)) yield file
+  }
+}
+
+/**
+ * Literal feature names passed to `supportFeature(…)`. A name may contain any character but a quote
+ * (prismarine-windows asks for 'village&pillageInventoryWindows'), so it runs up to the matching quote.
+ */
+function featureNamesIn (src) {
+  return [...src.matchAll(/supportFeature\(\s*(['"`])([^'"`]+)\1/g)].map(m => m[2])
+}
+
+function usedFeatureNames () {
+  const used = new Map() // name → first place
+  for (const [label, dir] of Object.entries(SCANNED)) {
+    for (const file of jsFiles(dir)) {
+      if (/(^|[\\/])test[\\/]/.test(path.relative(dir, file))) continue
+      const src = fs.readFileSync(file, 'utf8')
+      for (const name of featureNamesIn(src)) {
+        if (!used.has(name)) used.set(name, `${label}: ${path.relative(dir, file)}`)
+      }
+    }
+  }
+  return used
+}
+
+describe('lib/bedrock/features.js', () => {
+  it('has an explicit Bedrock value for every feature name used upstream', () => {
+    const used = usedFeatureNames()
+    assert.ok(used.size > 100, `scanned ${used.size} names`)
+    const missing = [...used].filter(([name]) => !Object.prototype.hasOwnProperty.call(FEATURES, name))
+    assert.deepStrictEqual(missing, [], 'add these to packages/bedrock-data/features.js')
+  })
+
+  it('the scan finds names with any non-quote character (village&pillageInventoryWindows)', () => {
+    const src = "a.supportFeature('village&pillageInventoryWindows') || x.supportFeature(\"tallWorld\") || supportFeature( `with-dash.v2` ) || supportFeature(name)"
+    assert.deepStrictEqual(featureNamesIn(src), ['village&pillageInventoryWindows', 'tallWorld', 'with-dash.v2'])
+    assert.ok(usedFeatureNames().has('village&pillageInventoryWindows'), 'prismarine-windows index.js is scanned')
+  })
+
+  it('prismarine-windows loads with a strict supportFeature and keeps the 46-slot player window', () => {
+    const registry = createRegistry()
+    registry.supportFeature = createSupportFeature(registry, { strict: true })
+    assert.strictEqual(registry.supportFeature('village&pillageInventoryWindows'), false)
+    // true would take the 1.14+ branch (Java window type ids, `registry.version['>=']('1.20.3')`: a Java version, which
+    // the Bedrock registry compares numerically — it used to throw)
+    assert.strictEqual(registry.version['>=']('1.20.3'), true)
+    const windows = require('prismarine-windows')(registry)
+    assert.strictEqual(windows.windows['minecraft:inventory'].slots, 46)
+    assert.strictEqual(windows.createWindow(0, 'minecraft:inventory', 'Inventory').slots.length, 46)
+  })
+
+  it('agrees with minecraft-data on every Bedrock feature (so prismarine-* behave the same)', () => {
+    const registry = createRegistry()
+    const supportFeature = createSupportFeature(registry)
+    for (const { name } of require('minecraft-data/minecraft-data/data/bedrock/common/features.json')) {
+      assert.deepStrictEqual(supportFeature(name), registry.supportFeature(name), name)
+    }
+  })
+
+  it('takes the deliberate Bedrock branches', () => {
+    const supportFeature = createSupportFeature(createRegistry())
+    const expected = {
+      itemsAreNotBlocks: true,
+      itemsAreAlsoBlocks: false,
+      blockSchemeIsFlat: true,
+      tallWorld: true,
+      hasElytraFlying: true,
+      effectAreNotPrefixed: true,
+      hasExecuteCommand: true,
+      doesntHaveOffHandSlot: false,
+      itemsWithComponents: false,
+      nbtNameForEnchant: 'ench',
+      fishingBiteDelayMaxTicks: 600
+    }
+    for (const [name, value] of Object.entries(expected)) assert.strictEqual(supportFeature(name), value, name)
+    for (const value of Object.values(FEATURES)) assert.ok(['boolean', 'string', 'number'].includes(typeof value))
+  })
+
+  it('unknown names: strict mode throws, default mode warns once and returns false', () => {
+    const strict = createSupportFeature(createRegistry(), { strict: true })
+    assert.throws(() => strict('someFutureJavaFeature'), /unknown feature 'someFutureJavaFeature'/)
+    const lenient = createSupportFeature(createRegistry(), { strict: false })
+    const warnings = []
+    const emitWarning = process.emitWarning
+    process.emitWarning = (message, options) => { if (options?.code === 'BEDBOO_UNKNOWN_FEATURE') warnings.push(message); else emitWarning.call(process, message, options) }
+    try {
+      assert.strictEqual(lenient('anotherFutureFeature'), false)
+      assert.strictEqual(lenient('anotherFutureFeature'), false)
+    } finally {
+      process.emitWarning = emitWarning
+    }
+    assert.strictEqual(warnings.length, 1)
+  })
+})
