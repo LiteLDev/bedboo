@@ -1,11 +1,10 @@
-// owner: U4 (core runtime)
 'use strict'
 const { VERSION } = require('./bedrock/constants')
 
 /**
  * Registry setup.
  *
- * ORDER MATTERS: the @bedboo/bedrock-data overlay (U2) patches minecraft-data's `bedrock_1.26.51`
+ * ORDER MATTERS: the @bedboo/bedrock-data overlay patches minecraft-data's `bedrock_1.26.51`
  * datasets. minecraft-data caches a version object the first time `require('minecraft-data')(v)`
  * is called, and bedrock-protocol calls it while creating its (de)serializer, so the overlay must be
  * installed BEFORE bedrock-protocol / prismarine-* resolve any Bedrock data. `index.js` calls
@@ -19,7 +18,7 @@ const { VERSION } = require('./bedrock/constants')
  *
  * `registry.language` is the Bedrock en_US language with its printf formats (`%1$d`, `%d`, `%.2f`, `%1`)
  * normalized to the `%s` / `%1$s` forms prismarine-chat substitutes, so `ChatMessage.toString()` renders Bedrock
- * translation keys (docs/differences/U4.md#language-formats).
+ * translation keys.
  */
 
 let overlayInstalled = false
@@ -36,7 +35,7 @@ function installDataOverlay () {
  * mineflayer API: "`require('minecraft-data')(bot.version)` gives you access to it" (mineflayer docs/api.md). bot.version
  * is the bare Bedrock version '1.26.51', which minecraft-data resolves as a Java version (none exists: there is no Java
  * 1.26.51) and answers `null` — breaking upstream code that relies on it, e.g. prismarine-physics' `PlayerState`
- * (built by mineflayer-pathfinder), mineflayer-pvp. Alias it to the `bedrock_1.26.51` data (U5; type 'bedrock').
+ * (built by mineflayer-pathfinder), mineflayer-pvp. Alias it to the `bedrock_1.26.51` data (type 'bedrock').
  */
 function aliasBotVersion () {
   const data = require('minecraft-data/data.js')

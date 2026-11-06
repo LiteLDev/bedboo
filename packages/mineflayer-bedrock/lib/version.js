@@ -1,4 +1,3 @@
-// owner: U4 (core runtime)
 'use strict'
 const { VERSION } = require('./bedrock/constants')
 

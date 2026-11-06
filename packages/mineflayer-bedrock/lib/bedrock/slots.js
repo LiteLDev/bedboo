@@ -1,4 +1,3 @@
-// owner: U8 (inventory, windows, creative & item use)
 'use strict'
 const { PLAYER_INVENTORY } = require('./windows')
 

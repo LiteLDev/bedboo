@@ -1,18 +1,17 @@
-// owner: U0 (skeleton) — shared by every unit; change only with the coordinator's approval.
 'use strict'
 
 /**
  * Thrown (or used to reject) by every API that is not implemented yet.
  *
- * Contract (relied on by the conformance test of U3 and by the smoke tests):
+ * Contract (relied on by the conformance test and by the smoke tests):
  * - `err.notImplemented === true`
- * - `err.unit` is the owning unit id, e.g. `'U8'`
+ * - `err.unit` is the owner tag passed to the constructor
  * - `err.feature` is the public name, e.g. `'bot.equip'`
  * - `err.code === 'ERR_NOT_IMPLEMENTED'`
  */
 class NotImplementedError extends Error {
   /**
-   * @param {string} unit owning unit id, e.g. 'U8'
+   * @param {string} unit owner tag reported in the message
    * @param {string} [feature] public name of the missing API, e.g. 'bot.equip'
    */
   constructor (unit, feature) {
@@ -38,7 +37,7 @@ class NotImplementedError extends Error {
  * Owners replace the stub by assigning the real implementation to the same property; the real
  * function must not carry `notImplemented`.
  *
- * @param {string} unit owning unit id, e.g. 'U8'
+ * @param {string} unit owner tag reported in the error
  * @param {string} feature public name, e.g. 'bot.equip'
  * @param {{ async?: boolean, noop?: boolean, length?: number }} [opts]
  * @returns {Function & { notImplemented: true, unit: string, feature: string }}

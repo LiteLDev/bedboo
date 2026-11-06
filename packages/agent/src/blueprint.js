@@ -1,4 +1,3 @@
-// owner: U17 (agent core & overworld milestones)
 'use strict'
 /**
  * Blueprints and the blueprint compiler (pure: no bot).

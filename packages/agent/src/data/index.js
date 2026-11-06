@@ -1,4 +1,3 @@
-// owner: U17 (agent core & overworld milestones)
 'use strict'
 /**
  * Static game knowledge the planner needs and BDS does not send:

@@ -1,4 +1,3 @@
-// owner: U4 (wave 2, core world) → U9 (wave 3, extras: dimension reset, block entities API)
 // Upstream: mineflayer 4.39.0 lib/plugins/blocks.js (MIT, Copyright (c) 2013 Andrew Kelley) — blockAt,
 //   canSeeBlock, waitForChunksToLoad, the event proxy and the world switch are adapted from it; findBlocks is
 //   vendored with a Bedrock palette shortcut. bot.updateSign lives in sign.js here.
@@ -6,7 +5,7 @@
 //   bot.findBlocks(options), bot.findBlock(options), bot.canSeeBlock(block),
 //   bot.waitForChunksToLoad(), bot._updateBlockState(point, stateId), bot._getDimensionName()
 // Events: 'blockUpdate' (old, new), 'blockUpdate:(x, y, z)', 'chunkColumnLoad' (point),
-//   'chunkColumnUnload' (point), 'blockEntityData' (block) [U9]
+//   'chunkColumnUnload' (point), 'blockEntityData' (block)
 // Bedrock:
 // - registry runtime ids come from start_game (lib/registry.js attachRegistry, before this plugin's listeners).
 // - level_chunk arrives in sub-chunk request mode (sub_chunk_count 0 + highest_subchunk_count): the payload
@@ -18,20 +17,20 @@
 //   dimension's minY/height (prismarine-chunk patch).
 // - update_block: runtime id → registry.blocksByRuntimeId[id].stateId (unknown ids → minecraft:unknown);
 //   layer 0 = the block, layer 1 = the liquid layer (waterlogging). update_subchunk_blocks: `blocks` = layer 0,
-//   `extra` = layer 1. update_block_synced (falling blocks starting to fall / landing; POLISH-LIB) like update_block.
+//   `extra` = layer 1. update_block_synced (falling blocks starting to fall / landing) like update_block.
 //   All emit 'blockUpdate' / 'blockUpdate:(x, y, z)'.
-//   Waterlogging (docs/differences/U4.md#waterlogging): bot.blockAt() returns the layer-0 block; when layer 1
+//   Waterlogging: bot.blockAt() returns the layer-0 block; when layer 1
 //   holds water it carries `block.superimposed` (the layer-1 Block), `block.computedStates.waterlogged = true`
 //   and `block.isWaterlogged = true` (prismarine-chunk's Bedrock representation, patched to skip air).
 // - network_chunk_publisher_update: columns farther than the publisher radius (+2 chunks) are unloaded →
 //   'chunkColumnUnload'. BDS never resends a column it considers sent, so the client must not drop one early
-//   (U16b fix, observed on BDS 1.26.51.1): during the join, before its chunk_radius_update, it sends columns more
+//   (observed on BDS 1.26.51.1): during the join, before its chunk_radius_update, it sends columns more
 //   than 100 blocks away while its publisher updates still say 64 — nothing is unloaded until the granted radius
 //   is known (or, if no chunk_radius_update ever comes, until the bot spawned), and the radius used is at least
 //   the granted one (chunk_radius_update) plus two chunks of slack.
 // - start_game / the lifecycle's 'dimensionChange' (change_dimension): bot._bedrock.world.reset(dimension) unloads
-//   every column (upstream's switchWorld); U9 calls the same hook for its dimension flow.
-// - block entities (U9, upstream tile_entity_data): block.entity / block.blockEntity from the sub-chunk payloads'
+//   every column (upstream's switchWorld); the dimension flow calls the same hook.
+// - block entities (upstream tile_entity_data): block.entity / block.blockEntity from the sub-chunk payloads'
 //   NBT and from block_entity_data { position, nbt } (stored on the column, then 'blockEntityData' with
 //   bot.blockAt(position)); a block replaced by another block type loses its block entity (BDS sends the new one
 //   right after the update_block). Signs: block.signText / getSignText() read FrontText/BackText (prismarine-block
@@ -89,7 +88,7 @@ function inject (bot) {
     bot._client.queue('subchunk_request', { dimension: dimId, requests, origin: { x: column.x, y: 0, z: column.z } })
   }
 
-  // transport 'bedd' (BEDD-1): the real client requests its own sub-chunks (subchunk_request is client-owned and
+  // transport 'bedd': the real client requests its own sub-chunks (subchunk_request is client-owned and
   // dropped), up to each column's highest_subchunk_count and relative to one origin per request: a column is set as
   // soon as its level_chunk arrives, and every subchunk entry is decoded into the column it names
   const clientOwnsChunks = () => bot._bedrock?.mode === 'bedd' || bot._client.bedd?.capabilities?.ownsChunkRequests === true
@@ -208,13 +207,13 @@ function inject (bot) {
     return block
   }
 
-  // ---- doors (FINAL-FIX-LIB) ----------------------------------------------------------------------------
+  // ---- doors ----------------------------------------------------------------------------
   // Bedrock keeps a door's open state and facing on its LOWER half only: BDS never toggles the upper half's open_bit
   // (measured on 1.26.51.1: after opening, the upper half still reports open_bit 0) and the hinge is read from the
   // upper half — the vanilla client draws both halves from both. The per-state shapes of bedrock-data follow the
   // half's own bits, so the upper half of an open door kept the closed leaf (head-height collision in the doorway,
   // pathfinder digging / refusing open doors). blockAt() gives each half the shapes of the combined state; its
-  // stateId and getProperties() stay the server's (docs/differences/U16a.md#door-halves).
+  // stateId and getProperties() stay the server's.
   const doorTypes = new Set(bot.registry.blocksArray.filter((b) => /(^|_)door$/.test(b.name)).map((b) => b.id))
   const DOOR_FACING = ['minecraft:cardinal_direction', 'direction', 'facing_direction']
   const DOOR_STATES = ['open_bit', 'upper_block_bit', 'door_hinge_bit', ...DOOR_FACING]
@@ -346,7 +345,7 @@ function inject (bot) {
   const LIQUID_REFRESH_RETRIES = 3
   /**
    * A block's liquid layer is asked for at most LIQUID_ASKS times per LIQUID_ASK_WINDOW_MS (a block that keeps
-   * changing type every round trip would otherwise be asked for forever, U16a; placing and breaking at one spot stays
+   * changing type every round trip would otherwise be asked for forever; placing and breaking at one spot stays
    * well below); beyond that the prediction stands.
    * 'x,y,z' → { n, at }
    */
@@ -488,7 +487,7 @@ function inject (bot) {
     const rule = liquidLayerRule(old0, layerStateId(column, local, 1), stateId)
     const { layer1 } = rule
     // a block whose check is out became another block: its answer may predate the change, ask again (a state change of
-    // the same block keeps the layer: no new request, U16a)
+    // the same block keeps the layer: no new request)
     const confirm = rule.confirm || (stateIdType(old0) !== stateIdType(stateId) && liquidRefreshPending(point.floored()))
     if (layer1 === undefined) {
       updateBlockState(point, stateId) // 'blockUpdate' with the old block still carrying its block entity
@@ -504,7 +503,7 @@ function inject (bot) {
     if (confirm) refreshLiquidLayer(point.floored())
   }
 
-  // ---- block entities (U9) -----------------------------------------------------------------------------
+  // ---- block entities -----------------------------------------------------------------------------
   // block.entity (raw NBT) / block.blockEntity (simplified) come from the sub-chunk payloads (prismarine-chunk) and
   // block_entity_data packets; BDS sends the new block's block_entity_data right after its update_block, so the
   // block entity of a replaced block (another block type) is dropped with the update.
@@ -540,7 +539,7 @@ function inject (bot) {
     for (const update of packet.extra ?? []) applyBlockUpdate(update.position, update.runtime_id, 1)
   })
 
-  // Falling blocks (POLISH-LIB, BDS 1.26.51.1): a block that starts falling (gravel, sand, concrete powder, an anvil …)
+  // Falling blocks (BDS 1.26.51.1): a block that starts falling (gravel, sand, concrete powder, an anvil …)
   // and a falling block that lands are sent as update_block_synced only, never as update_block — the start position
   // turns into air with transition 'create' (then add_entity minecraft:falling_block), the landing position into the
   // block with 'destroy' (then remove_entity of the falling block). Same layer / runtime id handling as update_block:
@@ -775,8 +774,8 @@ function inject (bot) {
   }
 
   /**
-   * Internal world hooks (owner U4 → U9): `reset(dimension)` (the dimension switch), `dimension()` (mineflayer
-   * name), `pendingColumns` (columns waiting for sub-chunks), `paintings` (U7 registers add_painting here so
+   * Internal world hooks: `reset(dimension)` (the dimension switch), `dimension()` (mineflayer
+   * name), `pendingColumns` (columns waiting for sub-chunks), `paintings` (entities.js registers add_painting here so
    * blockAt(…, true).painting works), `stateIdOf(runtimeId)`, `applyBlockUpdate(position, runtimeId, layer)`.
    */
   if (bot._bedrock) {
@@ -791,7 +790,7 @@ function inject (bot) {
   }
 
   /**
-   * Bedrock extra (U16a, docs/differences/U16a.md#block-variants): the ids of the Bedrock blocks that Java models as
+   * Bedrock extra: the ids of the Bedrock blocks that Java models as
    * one block with a state — a burning furnace is `lit_furnace`, a powered repeater `powered_repeater` — so
    * `bot.findBlock({ matching: bot.bedrock.blockVariants('furnace') })` also finds a furnace while it burns.
    * Accepts a block name or id; any other block → [its id]; unknown → [].

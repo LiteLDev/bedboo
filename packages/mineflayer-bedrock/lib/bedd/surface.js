@@ -1,4 +1,3 @@
-// owner: BEDD-5 (bedd lifecycle, capability surface and BeddUnsupportedError)
 'use strict'
 const { BeddUnsupportedError } = require('./errors')
 

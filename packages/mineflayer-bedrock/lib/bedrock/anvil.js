@@ -1,4 +1,3 @@
-// owner: U13 (stations)
 // Adapted from prismarine-item 1.18.0 lib/anvil.js (MIT, Copyright (c) 2015-2016 PrismarineJS,
 // https://github.com/PrismarineJS/prismarine-item): same `combine(itemOne, itemTwo, creative, renamedName)
 // → { xpCost, item, usedMats }` contract (prismarine-item has no Bedrock anvil: `Item.anvil` is undefined there),

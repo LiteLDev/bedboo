@@ -1,19 +1,18 @@
-// owner: U4 (wave 2, local player only) → U7 (wave 3, all other entities & players)
 // Adapted from mineflayer 4.39.0 lib/plugins/entities.js (MIT, Copyright (c) 2013 Andrew Kelley,
 // https://github.com/PrismarineJS/mineflayer): the same members, events, arguments and event order; the packets
-// are Bedrock's. Differences are documented in docs/differences/U7.md.
+// are Bedrock's.
 //
-// Surface: bot.entity (local player Entity, created on start_game by U4), bot.username,
+// Surface: bot.entity (local player Entity, created on start_game), bot.username,
 //   bot.entities {id: Entity}, bot.players {username: Player}, bot.player, bot.uuidToUsername,
 //   bot.vehicle, bot.fireworkRocketDuration, bot.findPlayer(s)(filter), bot.nearestEntity(match),
 //   bot._playerFromUUID(uuid), bot.swingArm(hand, showHand), bot.attack(entity, swing = true),
-//   bot.mount(entity), bot.dismount(), bot.useOn(entity), bot.moveVehicle(left, forward) (U5: input.setVehicle)
+//   bot.mount(entity), bot.dismount(), bot.useOn(entity), bot.moveVehicle(left, forward) (input.setVehicle)
 // Events: entitySpawn/Gone/Moved/Update/Hurt/Dead/SwingArm/Equip/Sleep/Wake/Eat/Crouch/Uncrouch/
 //   Attributes/Effect/EffectEnd/Attach/Detach/ElytraFlew/Taming/Tamed/ShakingOffWater/EatingGrass/
 //   CriticalEffect/MagicCriticalEffect, playerJoined/Updated/Left, itemDrop, playerCollect,
-//   mount, dismount, usedFirework (entityHandSwap: no Bedrock packet, docs/differences/U7.md#hand-swap)
+//   mount, dismount, usedFirework (entityHandSwap: no Bedrock packet)
 //
-// Bedrock packets (BDS 1.26.51.1, verified live — docs/differences/U7.md#positions):
+// Bedrock packets (BDS 1.26.51.1, verified live):
 // - Entity ids: mineflayer `entity.id` = Number(runtime id); `entity.runtimeId` / `entity.uniqueId` are BigInt.
 //   add_* register runtime ↔ unique in `bot._bedrock.ids`; remove_entity and set_entity_link carry UNIQUE ids.
 //   Packets for runtime ids that were never added are ignored (no ghost entities like upstream's fetchEntity).
@@ -35,7 +34,7 @@
 //   already online; those records are kept and applied after start_game's reset (playerJoined for each, the bot
 //   included, like upstream's player_info).
 //
-// U4 (wave 2) — the local player, kept as is:
+// the local player:
 // - start_game → bot.entity = prismarine-entity Entity(Number(runtime_entity_id)): type/name 'player',
 //   username, uuid, uniqueId (BigInt start_game.entity_id), height 1.8, width 0.6, eyeHeight 1.62, FEET
 //   position (wire eye level − 1.62), yaw/pitch (radians) from start_game.rotation; bot.entities[id] = bot.entity;
@@ -136,7 +135,7 @@ function armorTotals (equipment) {
 }
 
 /**
- * Synthesized armor attributes (Bedrock sends none): `minecraft:armor` / `minecraft:armor_toughness` (U2 attribute
+ * Synthesized armor attributes (Bedrock sends none): `minecraft:armor` / `minecraft:armor_toughness` (bedrock-data attribute
  * resource names) and the keys upstream's explosion plugin reads (`generic.armor`, `generic.armorToughness`), live
  * from the entity's equipment so `bot.getExplosionDamages(entity, …)` works unchanged.
  */
@@ -412,7 +411,7 @@ function inject (bot) {
     const md = entity.metadata ?? {}
     const self = ids()?.selfUniqueId()
     const selfRuntime = ids()?.selfRuntimeId()
-    // BDS 1.26.51.1 (U14, live): a rocket boosting a gliding player has owner_eid -1 and names that player's unique
+    // BDS 1.26.51.1: a rocket boosting a gliding player has owner_eid -1 and names that player's unique
     // id in metadata key 18, which bedrock-protocol calls `minecart_has_display` (a long for rockets)
     const owners = [md.minecart_has_display, md.owner_eid, md.firework_shooter_id, md.arrow_shooter_id]
     const mine = owners.some(v => v !== undefined && v !== null && (BigInt(v) === self || BigInt(v) === selfRuntime))
@@ -505,7 +504,7 @@ function inject (bot) {
     if (selfRuntime !== null && selfRuntime !== undefined) ids()?.trackEntity(selfRuntime, selfUnique)
   }
 
-  // ---- the local player (U4) ----
+  // ---- the local player ----
 
   bot._client.on('start_game', (packet) => {
     // reset on login, like upstream (silently); also the state that refers to the old entities
@@ -542,7 +541,7 @@ function inject (bot) {
     entity.onGround = false
     entity.attributes = {}
     // live equipment view like upstream inventory.js (held, off-hand, armor) — Java slot layout of bot.inventory;
-    // configurable so U8's inventory plugin can redefine it
+    // configurable so the inventory plugin can redefine it
     Object.defineProperty(entity, 'equipment', {
       configurable: true,
       enumerable: true,
@@ -850,7 +849,7 @@ function inject (bot) {
     player.displayName = new ChatMessage({ text: '', extra: [{ text: player.username }] })
     player.gamemode = player.gamemode ?? (mine ? selfGameModeIndex() : gameModeIndex())
     player.ping = player.ping ?? 0
-    player.skinData = undefined // Bedrock skins are raw images (docs/differences/U7.md#skin-data)
+    player.skinData = undefined // Bedrock skins are raw images
     if (record.entity_unique_id !== undefined) playerUniques.set(BigInt(record.entity_unique_id), player.uuid)
 
     if (newPlayer) {
@@ -979,7 +978,7 @@ function inject (bot) {
 
   /**
    * Bedrock has a single arm swing animation (no off-hand swing, no hidden hand): `arm` and `showHand` are
-   * accepted for compatibility (docs/differences/U7.md#swing-arm).
+   * accepted for compatibility.
    */
   function swingArm (arm = 'right', showHand = true) {
     sendSwing()

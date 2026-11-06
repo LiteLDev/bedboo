@@ -1,4 +1,3 @@
-// owner: U4 (wave 2, core: bot.chat, message/messagestr) → U6 (wave 3, everything else)
 // Adapted from mineflayer 4.39.0 lib/plugins/chat.js (MIT, Copyright (c) 2013 Andrew Kelley,
 // https://github.com/PrismarineJS/mineflayer): chat patterns (addChatPattern / addChatPatternSet /
 // removeChatPattern / chatAddPattern, the messagestr matcher and the default patterns), chatWithHeader splitting,
@@ -12,7 +11,7 @@
 //   'chat' / 'whisper' (username, message, translate, jsonMsg), 'actionBar' (jsonMsg, verified),
 //   'chat:<name>' (matches), 'unmatchedMessage' (str, jsonMsg)
 //
-// Bedrock (docs/differences/U6.md):
+// Bedrock:
 // - bot.chat(msg): '/'-prefixed → command_request { command, origin: { type: 'player', uuid: <fresh uuid>,
 //   request_id: '', player_entity_id: 0n }, internal: false, version: 'latest' }; BDS echoes the origin uuid in
 //   command_output, which correlates the answer (`bot._bedrock.commands`). Anything else → a `text` chat packet

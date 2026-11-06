@@ -1,4 +1,3 @@
-// owner: U17 (agent core & overworld milestones)
 'use strict'
 /**
  * Mine ores and stone: the nearest loaded block (bot.findBlocks sees every loaded sub-chunk, -64..319), reached by a

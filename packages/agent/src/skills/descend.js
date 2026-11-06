@@ -1,4 +1,3 @@
-// owner: FINAL-FIX-AGENT-A (agent core robustness)
 'use strict'
 /**
  * Down to a level where the bot stands: a safe vertical shaft (src/dig.js `shaftTo`: a column with no liquid in or

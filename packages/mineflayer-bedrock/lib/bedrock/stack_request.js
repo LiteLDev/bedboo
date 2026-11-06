@@ -1,4 +1,3 @@
-// owner: U8 (inventory, windows, creative & item use)
 'use strict'
 const { BeddUnsupportedError } = require('../bedd/errors')
 
@@ -37,14 +36,14 @@ const { BeddUnsupportedError } = require('../bedd/errors')
  *   {@link StackRequestError} on an error status, a timeout (`opts.timeout`, default 5000 ms) or disconnect.
  *   The caller sends it (`write(request)`) right away.
  * - `send(actions, opts?) → Promise<ItemStackResponse>` = create + write.
- * - BEDD-5: with `transport: 'bedd'` and no BeDD `stack` op, `create` throws (and `send` rejects with) a
+ * - with `transport: 'bedd'` and no BeDD `stack` op, `create` throws (and `send` rejects with) a
  *   BeddUnsupportedError (`code: 'ERR_BEDD_UNSUPPORTED'`, feature 'item_stack_request') before registering anything.
  * - `write(request, { viaInput })`, `nextRequestId()`, `observe(fn) → unsubscribe` (fn({ request, response,
  *   outcome: 'ok'|'error'|'timeout'|'closed', meta }) runs synchronously for every settled request, before its
  *   promise settles; an answer to a request that already timed out is reported once more as 'late-ok' /
  *   'late-error' — the promise stays rejected), `pending` (Map requestId → entry), `normalizeAction(action)`.
  *   opts: `{ customNames = [], cause = -1, timeout, meta, requestId, viaInput }`.
- * - bedd mode (BEDD-7, lib/bedd/inventory.js): `bedd` is null unless that module sets `{ responseId(response) }`,
+ * - bedd mode (lib/bedd/inventory.js): `bedd` is null unless that module sets `{ responseId(response) }`,
  *   which maps the request id of an item_stack_response (the real client's) to bedboo's, or to undefined for a
  *   response to a request bedboo did not send. `abort(requestId, err)` rejects a pending request with `err` (rolled
  *   back like an error status). `receive(packet)` handles an item_stack_response packet as if it had arrived (a
@@ -145,7 +144,7 @@ function createStackRequestManager (bot, { timeout: defaultTimeout = DEFAULT_TIM
   // requests that timed out, kept briefly: a late answer is reported as 'late-ok' / 'late-error'
   const expired = new Map()
   const MAX_EXPIRED = 64
-  let bedd = null // BEDD-7 hook, see the module comment
+  let bedd = null // bedd-mode hook, see the module comment
 
   function notify (event) {
     for (const fn of [...observers]) {
@@ -185,7 +184,7 @@ function createStackRequestManager (bot, { timeout: defaultTimeout = DEFAULT_TIM
     entry.reject(new StackRequestError(message, { status, outcome, request: entry.request, response }))
   }
 
-  // BEDD-5: with transport 'bedd' the real client owns item_stack_request; it can only go through BeDD's `stack` op
+  // with transport 'bedd' the real client owns item_stack_request; it can only go through BeDD's `stack` op
   // (lib/bedd/inventory.js). Without that op every request is refused before it is registered or predicted (the public
   // inventory APIs are refused earlier still, before any screen opens: lib/bedd/surface.js).
   function beddUnsupported () {
@@ -259,7 +258,7 @@ function createStackRequestManager (bot, { timeout: defaultTimeout = DEFAULT_TIM
   bot._client.on('close', closeAll)
   bot._client.on('end', closeAll)
 
-  /** reject a pending request with `err` (BEDD-7: e.g. a BeddUnsupportedError); false when it is not pending */
+  /** reject a pending request with `err` (e.g. a BeddUnsupportedError); false when it is not pending */
   function abort (requestId, err) {
     const entry = pending.get(requestId)
     if (!entry) return false

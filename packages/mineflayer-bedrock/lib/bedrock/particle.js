@@ -1,4 +1,3 @@
-// owner: U6 (chat, commands & HUD)
 'use strict'
 /**
  * `Particle` adapted to Bedrock (export `Particle` of mineflayer-bedrock, used by the particle plugin).
@@ -6,7 +5,7 @@
  * Same loader shape and constructor as mineflayer 4.39.0 lib/particle.js — `require('mineflayer-bedrock').Particle
  * (registry)` → class `Particle(id, position, offset, count = 1, movementSpeed = 0, longDistanceRender = false)`,
  * which copies `registry.particles[id] || registry.particlesByName[id]` (`{ id, name }`) onto the instance — and
- * `instanceof` the upstream class. Differences (docs/differences/U6.md#particles):
+ * `instanceof` the upstream class. Differences:
  *   - `fromNetwork(packet)` reads Bedrock packets:
  *       `spawn_particle_effect { position, particle_name, … }` (what `/particle` and scripts send): `id` is the
  *       particle effect identifier ('minecraft:heart_particle'), resolved through the registry when it is a

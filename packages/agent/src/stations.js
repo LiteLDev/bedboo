@@ -1,4 +1,3 @@
-// owner: U17 (agent core & overworld milestones)
 'use strict'
 /**
  * Crafting tables and furnaces: use one nearby, or place the one the bot carries (and take it back afterwards, so the

@@ -1,4 +1,3 @@
-// owner: U4 (core runtime); BEDD-3: bedd-mode gates
 'use strict'
 const { Vec3 } = require('vec3')
 const { EMPTY_NETWORK_ITEM } = require('./item')
@@ -9,8 +8,8 @@ const { feetToWire, FACE_VECTORS } = require('./conversions')
  * held-item provider.
  *
  * Every transaction carries `held_item`, which must equal the server's copy of the held hotbar item;
- * it comes from `bot._bedrock.heldNetworkItem()` (U4: `createHeldItemProvider` mirrors the raw
- * inventory packets; U8 replaces the provider with its inventory model).
+ * it comes from `bot._bedrock.heldNetworkItem()` (`createHeldItemProvider` mirrors the raw
+ * inventory packets; the inventory plugin replaces the provider with its inventory model).
  *
  * Contract (all return a Promise that resolves once the packet(s) are queued; none wait for
  * server confirmation — callers wait for block_update/inventory events themselves):
@@ -27,7 +26,7 @@ const { feetToWire, FACE_VECTORS } = require('./conversions')
  * The builders (`buildUseItemOn`, `buildUseItem`, `buildRelease`, `buildUseOnEntity`, `buildMouseOver`) return
  * the packet params without sending (unit-tested against bedrock-protocol's serializer).
  *
- * Sneak / sprint ordering (W3-FIX-A): `setControlState('sneak' | 'sprint')` reaches the server only with the next
+ * Sneak / sprint ordering: `setControlState('sneak' | 'sprint')` reaches the server only with the next
  * player_auth_input (upstream sends it at once), so `useItemOn` and `useOnEntity` first wait for
  * `bot._bedrock.physics.controlsSent()` when a change is pending — a sneak-click on a chest places instead of
  * opening it. Nothing pending: the packets are queued synchronously, as before.
@@ -37,7 +36,7 @@ const { feetToWire, FACE_VECTORS } = require('./conversions')
  * (hand, client_prediction 'success') → stop_item_use_on ~150 ms later; click_air uses trigger 'unknown',
  * face 255 and prediction 'failure'.
  *
- * bedd mode (`bot._bedrock.mode === 'bedd'`, BEDD-3): the real client owns player_action start/stop_item_use_on and
+ * bedd mode (`bot._bedrock.mode === 'bedd'`): the real client owns player_action start/stop_item_use_on and
  * interact mouse_over_entity, so `useItemOn` sends only the transaction (the router turns it into look + use click) and
  * `mouseOver` sends nothing.
  */
@@ -231,7 +230,7 @@ function mouseOver (bot, entity, position) {
 }
 
 /**
- * U4's `bot._bedrock.heldNetworkItem` provider: mirrors the raw player inventory packets (the exact server
+ * The default `bot._bedrock.heldNetworkItem` provider: mirrors the raw player inventory packets (the exact server
  * copy of each hotbar item) and the selected hotbar slot.
  * - `inventory_content` window `inventory` (what `/give`, `/replaceitem`, `/clear` produce) → all slots
  * - `inventory_slot` window `inventory` → one slot

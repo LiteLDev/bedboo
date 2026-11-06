@@ -1,4 +1,3 @@
-// owner: U13 (stations)
 // Adapted from mineflayer 4.39.0 lib/plugins/furnace.js (MIT, Copyright (c) 2013 Andrew Kelley,
 // https://github.com/PrismarineJS/mineflayer): openFurnace, the window members and the fuel / progress
 // normalisation are kept verbatim; the window properties come from Bedrock's container_set_data.

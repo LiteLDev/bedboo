@@ -1,18 +1,17 @@
-// owner: U9 (player state, world extras & dimensions)
 // Adapted from mineflayer master lib/plugins/abilities.js (MIT, Copyright (c) 2013 Andrew Kelley; not in 4.39.0;
 //   pinned copy in test/fixtures/upstream/abilities.master.js, master SHA 7b4bb8d2b56be9cdb832474af873acd37e609746)
 // Surface: bot.abilities { invulnerable, flying, mayFly, instantBuild, flyingSpeed, walkingSpeed }
 //   (also mirrors bot.entity.flying / bot.entity.flyingSpeed for physics, like master)
 // Events: 'abilities' (abilities)
 // This plugin is the single source of truth for bot.abilities (the only parser of update_abilities): the physics
-//   plugin follows bot.abilities for the engine's flight state and reads flyingSpeed / mayFly from it (W3-FIX-A).
-// Bedrock (docs/differences/U9.md#abilities, docs/differences/W3FIX.md#abilities):
+//   plugin follows bot.abilities for the engine's flight state and reads flyingSpeed / mayFly from it.
+// Bedrock:
 // - update_abilities for the local player (entity_unique_id = own unique id): ability layers (base, spectator,
 //   commands, editor, loading_screen), each with `allowed` / `enabled` flag sets and fly/walk speeds. A layer decides
 //   a flag when it allows it, later layers override earlier ones (the client's layered abilities).
 // - BDS 1.26.51.1 sends update_abilities at join, on permission changes, twice in answer to a request_ability, and
-//   on a game mode change only when the flight changes (flying → survival, into / out of spectator; measured by
-//   W3-FIX-A) — the vanilla client derives the game mode's abilities itself. The same derivation as the Java
+//   on a game mode change only when the flight changes (measured: flying → survival,
+//   into / out of spectator) — the vanilla client derives the game mode's abilities itself. The same derivation as the Java
 //   server's GameType.updatePlayerAbilities (what mineflayer receives on Java) is applied on update_player_game_type /
 //   set_player_game_type: creative → mayFly, instantBuild, invulnerable (flying kept); spectator → mayFly,
 //   flying, invulnerable; survival/adventure → none; speeds kept.

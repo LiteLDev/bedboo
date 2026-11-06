@@ -1,11 +1,9 @@
-// owner: U9 (player state, world extras & dimensions); U17 minimal fix: the spawn search height is resolved;
-//   POLISH-LIB: no 'game' for the join's resolution (before the first spawn)
 // Adapted from mineflayer 4.39.0 lib/plugins/spawn_point.js (MIT, Copyright (c) 2013 Andrew Kelley)
 // Surface: bot.spawnPoint (Vec3): the world spawn ("where all compasses point to")
 // Events: 'game' (when the spawn point changes, like upstream)
-// Bedrock (docs/differences/U9.md#spawn-point):
+// Bedrock:
 // - start_game.spawn_position: the world spawn at join (y = 32767 when the server has not fixed the height yet: it
-//   searches the highest safe block when a player spawns there). U17 (docs/differences/U17.md#spawn-height): that y is
+//   searches the highest safe block when a player spawns there). That y is
 //   replaced by the height of the spawn column (highest solid block + 1) as soon as the column is loaded in the
 //   overworld, so bot.spawnPoint is a real position like on Java.
 // - set_spawn_position { spawn_type: 'world', player_position } (/setworldspawn) → the new world spawn.
@@ -53,7 +51,7 @@ function inject (bot) {
 
   // the spawn column usually loads before the join's 'spawn': that resolution is part of start_game's spawn position,
   // covered by the login's 'game' (mineflayer order connect → login → game → spawn, test coreJoin); later ones (a
-  // respawn, a dimension change back) emit 'game' (POLISH-LIB)
+  // respawn, a dimension change back) emit 'game'
   let spawned = false
   bot.on('chunkColumnLoad', (pos) => {
     if (bot.spawnPoint.y < SEARCH_Y) return

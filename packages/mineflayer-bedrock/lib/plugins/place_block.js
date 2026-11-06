@@ -1,4 +1,3 @@
-// owner: U11 (placing & placement-based parity)
 // Vendored from mineflayer 4.39.0 lib/plugins/place_block.js (MIT, Copyright (c) 2013 Andrew Kelley,
 // https://github.com/PrismarineJS/mineflayer) — unchanged: never `pnpm patch mineflayer`.
 // Surface: bot.placeBlock(referenceBlock, faceVector), bot._placeBlockWithOptions(referenceBlock, faceVector, options)
@@ -6,7 +5,7 @@
 // Bedrock: bot._genericPlace (generic_place.js) sends the click; BDS answers every click_block with update_block for
 // the clicked (reference) block first, then the block across the face (measured on BDS 1.26.51.1, also for refusals:
 // an entity in the way, an item that is not a block, the bot's own hitbox), which is exactly the reply shape this
-// logic expects from a Java server (docs/differences/U11.md#placement-protocol).
+// logic expects from a Java server.
 'use strict'
 const { onceWithCleanup } = require('mineflayer/lib/promise_utils')
 

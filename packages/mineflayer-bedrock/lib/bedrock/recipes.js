@@ -1,4 +1,3 @@
-// owner: U12 (crafting)
 'use strict'
 const ITEM_TAGS = require('./item_tags')
 
@@ -6,7 +5,7 @@ const ITEM_TAGS = require('./item_tags')
  * Bedrock crafting recipes (`crafting_data`) → prismarine-recipe `Recipe` objects, so `bot.recipesFor`,
  * `bot.recipesAll` and `bot.craft` keep mineflayer's semantics, plus the request planner of `bot.craft`.
  *
- * Recipe model (docs/differences/U12.md#recipes):
+ * Recipe model:
  * - Crafting recipes are the `shaped_recipes`, `shapeless_recipes` and `shulker_box_recipes` (dyeing that keeps the
  *   input's NBT) whose `block` is `crafting_table` (the tag of every recipe of the crafting grid, 2×2 included; whether
  *   a recipe needs the table is decided by its size, exactly like prismarine-recipe's `requiresTable`). `deprecated`
@@ -138,7 +137,7 @@ function resolveIngredient (registry, desc, tags) {
  * cells (resolved ingredients) → list of concrete cell assignments ({ id, metadata } | null per cell).
  * Shaped recipes use the same member in every cell of a tag (upstream's Java recipes do: a crafting table is 4 planks
  * of one wood). Shapeless recipes expand each tag cell on its own when that stays within MAX_VARIANTS: BDS matches
- * every cell independently and Java's shapeless recipes mix too (mushroom stew = brown + red mushroom + bowl, U16a).
+ * every cell independently and Java's shapeless recipes mix too (mushroom stew = brown + red mushroom + bowl).
  */
 function expandCells (cells, { shapeless = false } = {}) {
   const independent = shapeless && cells.reduce((n, cell) => cell && cell.options.length > 1 ? n * cell.options.length : n, 1) <= MAX_VARIANTS
@@ -417,7 +416,7 @@ function resultDescriptor (registry, wire) {
 }
 
 /**
- * Plan one crafting item stack request, verified on BDS 1.26.51.1 (docs/differences/U12.md#craft-request):
+ * Plan one crafting item stack request, verified on BDS 1.26.51.1:
  *   place × n (inventory → grid cell)  then  craft_recipe { recipe_network_id, times_crafted }
  *   + results_deprecated { result_items, times_crafted } + consume × cells (from the grid)
  *   + per result k: [create { result_slot_id: k } when several results] + place × m (created output 50 → inventory)

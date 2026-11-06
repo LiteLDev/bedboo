@@ -1,4 +1,3 @@
-// owner: U4 (core runtime) → U16b (wave 5: transport options); U17 minimal fix: offline SelfSignedId; BEDD-1: transport 'bedd'
 'use strict'
 const crypto = require('crypto')
 const { VERSION } = require('./bedrock/constants')
@@ -6,7 +5,7 @@ const { VERSION } = require('./bedrock/constants')
 /**
  * bedrock-protocol client wrapper used by createBot when `options.client` is not given.
  *
- * Defaults (verified by the U0 spike against BDS 1.26.51.1, see docs/testing.md):
+ * Defaults (verified against BDS 1.26.51.1, see docs/testing.md):
  * - `auth: 'offline'`            → bedrock-protocol `offline: true` (BDS runs with online-mode=false in tests)
  * - `transport: 'raknet'`        RakNet works on 1.26.51.1 with `transport=raknet` in server.properties
  * - `raknetBackend: 'raknet-native'` (patched to load its bundled prebuild); jsp-raknet is rejected by
@@ -18,7 +17,7 @@ const { VERSION } = require('./bedrock/constants')
  * - `conLog: null`               bedrock-protocol logs connection events to the console by default;
  *                                mineflayer prints nothing (pass `conLog: console.log` to get them)
  *
- * Transports (U16b):
+ * Transports:
  * - `transport: 'raknet'` (default) — BDS must run with `transport=raknet` (BDS 1.26.51 still ships it;
  *   Mojang announced its removal, possibly in 26.60).
  * - `transport: 'nethernet'` — BDS's default transport (WebRTC data channels). Signalling defaults to
@@ -29,7 +28,7 @@ const { VERSION } = require('./bedrock/constants')
  *   identity key), `onServerKey(fingerprint, url) → boolean` (approve an unpinned key), `networkId`,
  *   `webrtcBackend`, `signallingConnectTimeout`. Without `serverKey`/`onServerKey` an unpinned plain-HTTP key
  *   is accepted (the server is no more authenticated than over RakNet); pin it to reject anything else.
- * - `transport: 'bedd'` (BEDD-1) — no connection of its own: a real Minecraft client hosted by Be.D.D. is in the
+ * - `transport: 'bedd'` — no connection of its own: a real Minecraft client hosted by Be.D.D. is in the
  *   world, bedboo follows it through Be.D.D.'s tap pipe and acts through its control pipe (lib/bedd/). Options
  *   under `bedd`: `pipe` (control pipe, default `\\.\pipe\BeDD` or $BEDBOO_BEDD_PIPE), `tapPipe` (default
  *   `<pipe>-tap`), `connect(path) → Duplex` (default `net.connect`), `timeoutMs`, `modules`.
@@ -42,7 +41,7 @@ const { VERSION } = require('./bedrock/constants')
  * - `auth: 'mojang'` does not exist on Bedrock and throws
  * An explicit bedrock-protocol `offline` option wins over `auth`.
  *
- * Offline players keep their saved data (U17): BDS keys an offline (xuid 0) player's data — inventory, position,
+ * Offline players keep their saved data: BDS keys an offline (xuid 0) player's data — inventory, position,
  * spawn point, … — by the client's `SelfSignedId`, which bedrock-protocol randomizes for every connection, so each
  * rejoin was a brand-new player. Like Java's offline-mode UUIDs it is derived from the username here
  * (`offlineSelfSignedId`); `skinData.SelfSignedId` overrides it.

@@ -1,11 +1,10 @@
-// owner: U4 (core runtime)
 // Upstream: mineflayer 4.39.0 lib/plugins/kick.js
 // Surface: bot.quit(reason = 'disconnect.quitting') → bot.end(reason)
 // Events: 'kicked' (reason, loggedIn) — Bedrock `disconnect` packet (bedrock-protocol then emits 'kick'
 //   and closes the connection, which the loader turns into 'end').
 //   `reason` is the Bedrock disconnect message string (e.g. 'Kicked by an operator.' or a translation key
-//   such as 'disconnectionScreen.serverFull'); with hide_disconnect_reason it is the reason code name
-//   (docs/differences/U4.md#kick-reason). `loggedIn` is true once start_game was received (Java: kicked in the
+//   such as 'disconnectionScreen.serverFull'); with hide_disconnect_reason it is the reason code name.
+//   `loggedIn` is true once start_game was received (Java: kicked in the
 //   play state) and false during the login/resource-pack phase.
 'use strict'
 

@@ -1,4 +1,3 @@
-// owner: BEDD-2 (route registry shared by every bedd module: router, router_actions, inventory)
 'use strict'
 /**
  * The one route registry of `transport: 'bedd'`. Every serverbound packet bedboo would send reaches
@@ -15,10 +14,10 @@
  *   pseudo-names 'block_action' (params = the block_action array) and 'item_stack_request' (params =
  *   `{ requests: [request] }`, ctx.embedded = true), then the 'player_auth_input' handlers. Inside the tick a handler
  *   never throws to the bot (it only warns).
- * - item_stack_request sent on its own is dispatched under its own name (BEDD-7's handler).
+ * - item_stack_request sent on its own is dispatched under its own name (lib/bedd/inventory.js handles it).
  *
  * Without the router (a custom `bedd.modules` list, unit tests) `ensureDispatch(bedd)` installs a minimal
- * `bedd.route` that does the same dispatch and hands unhandled names to the previous route (BEDD-1's default drops
+ * `bedd.route` that does the same dispatch and hands unhandled names to the previous route (the transport's default drops
  * and counts them).
  */
 

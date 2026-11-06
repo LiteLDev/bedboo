@@ -1,4 +1,3 @@
-// owner: U17 (agent core & overworld milestones)
 'use strict'
 
 /** Same contract as mineflayer-bedrock's lib/bedrock/errors.js NotImplementedError. */

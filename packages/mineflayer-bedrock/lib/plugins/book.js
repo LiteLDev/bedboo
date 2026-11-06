@@ -1,9 +1,8 @@
-// owner: U14 (survival interactions)
 // Adapted from mineflayer 4.39.0 lib/plugins/book.js (MIT, Copyright (c) 2013 Andrew Kelley): the same argument
 //   checks and messages, the book is moved to the first hotbar slot and held while it is edited, then the held slot
 //   and the book's slot are restored; the call resolves once the server's copy of the book reflects the edit.
 // Surface: bot.writeBook(slot, pages), bot.signBook(slot, pages, author, title)
-// Bedrock (BDS 1.26.51.1, verified live — docs/differences/U14.md#books):
+// Bedrock (BDS 1.26.51.1, verified live):
 // - the book must be opened first: item use click_air with the held writable_book (BDS gives a new book an empty
 //   `pages` list then); edits sent before that are ignored;
 // - book_edit { inventory_slot: hotbar slot, type: replace_page | add_page | delete_page, page_number, text,
@@ -28,8 +27,8 @@ const ATTEMPTS = [{ openDelay: 150, ackTimeout: 5000 }, { openDelay: 500, ackTim
 /** ms to wait for the page list BDS gives a new book when it is opened */
 const OPEN_TIMEOUT = 2000
 /**
- * BDS 1.26.51.1 keeps at most 50 pages (Java: 100) and drops the rest, so a longer book could never be acknowledged
- * (U16a): rejected up front like upstream's argument checks.
+ * BDS 1.26.51.1 keeps at most 50 pages (Java: 100) and drops the rest, so a longer book could never be acknowledged:
+ * rejected up front like upstream's argument checks.
  */
 const MAX_PAGES = 50
 
@@ -92,7 +91,7 @@ function inject (bot) {
       failure = err
     }
 
-    // restore the held slot and the book's slot also when the edit failed (U16a)
+    // restore the held slot and the book's slot also when the edit failed
     bot.setQuickBarSlot(quickBarSlot)
 
     if (moveToQuickBar) {

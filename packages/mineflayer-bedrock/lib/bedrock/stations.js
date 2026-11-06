@@ -1,4 +1,3 @@
-// owner: U13 (stations)
 'use strict'
 
 /**
@@ -107,7 +106,7 @@ function resultSteps (model, window, item) {
  */
 async function runStation (bot, window, steps, { what, customNames, cause, timeout = STATION_TIMEOUT_MS } = {}) {
   try {
-    // the model forwards the request-level custom_names / cause to the stack request manager (W3-FIX-B)
+    // the model forwards the request-level custom_names / cause to the stack request manager
     return await bot._bedrock.inventoryModel.execute(window, steps, { timeout, customNames, cause })
   } catch (err) {
     if (err.name !== 'StackRequestError') throw err
@@ -120,7 +119,7 @@ async function runStation (bot, window, steps, { what, customNames, cause, timeo
 
 /**
  * BDS ignores a container activation while another window is open (the opener would wait 20 s for windowOpen):
- * close the current window first (coordinator note, until W3-FIX-B makes openBlock / openEntity do it).
+ * close the current window first.
  */
 async function closeCurrentWindow (bot) {
   const window = bot.currentWindow

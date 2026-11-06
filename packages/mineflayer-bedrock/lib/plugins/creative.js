@@ -1,4 +1,3 @@
-// owner: U8 (inventory, windows, creative & item use; flight delegates to U5's physics hook)
 // Adapted from mineflayer 4.39.0 lib/plugins/creative.js (MIT, Copyright (c) 2013 Andrew Kelley,
 // https://github.com/PrismarineJS/mineflayer): the setInventorySlot guards (same item → no-op, concurrent call on
 // the same slot → error), clearInventory, startFlying/stopFlying (gravity) and the flyTo fallback are verbatim.
@@ -9,7 +8,7 @@
 //   creative_output 50 into the slot; clearing = destroy. Only items of the server's creative inventory
 //   (creative_content: base items and the listed NBT variants such as enchanted books) can be created; the
 //   creative index is exposed as `bot._bedrock.creativeItems` ({ entryFor(item), entries, ready }).
-//   Flight: bot._bedrock.physics.setFlying(on) / .flyTo(destination) (U5) when implemented (gravity untouched then).
+//   Flight: bot._bedrock.physics.setFlying(on) / .flyTo(destination) when implemented (gravity untouched then).
 'use strict'
 const assert = require('assert')
 const { Vec3 } = require('vec3')
@@ -49,7 +48,7 @@ function createCreativeIndex (bot) {
     /**
      * the creative entry that creates `item` (same type, metadata and NBT), or null. An item without NBT that the
      * catalogue only lists with NBT (firework rockets: Fireworks {Flight 1}, banners: Type 0, firework stars) gets
-     * the plain default: the variant with the fewest NBT tags when exactly one has the fewest (W3-FIX-A); enchanted
+     * the plain default: the variant with the fewest NBT tags when exactly one has the fewest; enchanted
      * books, whose variants are all alike, stay refused.
      */
     entryFor (item) {
@@ -177,9 +176,9 @@ function inject (bot) {
     await once(bot, 'move', /* no timeout */ 0)
   }
 
-  // With the physics flight hook (U5) the Bedrock engine simulates creative flight itself and uses bot.physics.gravity
-  // for every other movement: upstream's gravity = 0 is only the fallback without the hook (W3-FIX-A — it used to
-  // stay 0 when the flight ended any other way: refused request, game mode change, death).
+  // With the physics flight hook the Bedrock engine simulates creative flight itself and uses bot.physics.gravity
+  // for every other movement: upstream's gravity = 0 is only the fallback without the hook (setting 0 under the
+  // hook would leave it at 0 when the flight ended any other way: refused request, game mode change, death).
   function startFlying () {
     const setFlying = physicsHook('setFlying')
     if (setFlying) {

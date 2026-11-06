@@ -1,9 +1,8 @@
-// owner: U9 (player state, world extras & dimensions)
 // Adapted from mineflayer 4.39.0 lib/plugins/rain.js (MIT, Copyright (c) 2013 Andrew Kelley): same state, 'rain'
 //   once per isRaining change (zero crossings), 'weatherUpdate' per level change.
 // Surface: bot.isRaining, bot.rainState (0..1), bot.thunderState (0..1)
 // Events: 'rain' (isRaining toggled), 'weatherUpdate' (rain/thunder level changed)
-// Bedrock (BDS 1.26.51.1, observed live; docs/differences/U9.md#weather):
+// Bedrock (BDS 1.26.51.1, observed live):
 // - start_game.rain_level / lightning_level (0..1, the current levels at join: BDS sends no level_event for the rain
 //   that is already falling) — like the Java join (start_raining + level changes) they emit 'rain' / 'weatherUpdate'.
 // - level_event start_rain (3001) / stop_rain (3003), start_thunder (3002) / stop_thunder (3004); `data` is the

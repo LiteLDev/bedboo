@@ -1,4 +1,3 @@
-// owner: U17 (agent core & overworld milestones)
 'use strict'
 /**
  * Scripted (no LLM) agent runner.
@@ -20,7 +19,7 @@
  * Every skill log line / progress event becomes an `event` ({ t, type, … }); `report()` is a JSON-serialisable
  * summary (tasks with timings and results, deaths, safety interventions, final inventory, the event log).
  *
- * Legacy helpers (U0 skeleton contract, used by U18's tests): `runSkill(bot, name, args, { skills, timeout })`,
+ * Legacy helpers: `runSkill(bot, name, args, { skills, timeout })`,
  * `runScenario(bot, scenario, { skills, log })`.
  */
 const { EventEmitter } = require('events')
@@ -40,7 +39,7 @@ const WIND_DOWN_MS = 10000
  * The stuck watchdog (Agent#run): a task whose bot stayed in a box of `STUCK_EXTENT` blocks for `stuckMs` without doing
  * anything (no block dug / placed, nothing crafted / smelted / picked up, no heartbeat) is aborted, the bot escapes
  * (out of the water, up to the sky, away from the spot) and the task runs again. Skills that stand still on purpose
- * (smelting, fishing, sleeping) send heartbeats. Defaults per skill; U18's skills (portal, nether, end, combat) have
+ * (smelting, fishing, sleeping) send heartbeats. Defaults per skill; portal, nether, end and combat have
  * their own budgets and run without it.
  */
 const STUCK_MS = { obtain: 180000, mine: 180000, gather: 180000, navigate: 150000, explore: 150000, build: 240000, food: 150000, surface: 150000, fish: 150000, hunt: 150000, descend: 180000 }

@@ -1,4 +1,3 @@
-// owner: U13 (stations)
 // Adapted from mineflayer 4.39.0 lib/plugins/anvil.js (MIT, Copyright (c) 2013 Andrew Kelley,
 // https://github.com/PrismarineJS/mineflayer): openAnvil, combine / rename (guards, cost checks, input order,
 // error messages, waiting for the experience change) are kept; the name and the result are Bedrock.

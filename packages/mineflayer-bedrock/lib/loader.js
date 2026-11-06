@@ -1,4 +1,3 @@
-// owner: U4 (core runtime); BEDD-1: bot._bedrock.mode + client.bedd.attach
 // Adapted from mineflayer 4.39.0 lib/loader.js (MIT, Copyright (c) 2013 Andrew Kelley,
 // https://github.com/PrismarineJS/mineflayer). Same createBot options, plugin selection and
 // `inject_allowed` sequencing; the client is bedrock-protocol instead of minecraft-protocol.
@@ -72,7 +71,7 @@ module.exports = {
   Painting: require('mineflayer/lib/painting'),
   ScoreBoard: require('mineflayer/lib/scoreboard'),
   BossBar: require('mineflayer/lib/bossbar'),
-  Particle: require('./bedrock/particle'), // U6: adapted to Bedrock packets (docs/differences/U6.md#particles)
+  Particle: require('./bedrock/particle'), // adapted to Bedrock packets
   latestSupportedVersion,
   oldestSupportedVersion,
   testedVersions,
@@ -80,7 +79,7 @@ module.exports = {
 }
 
 // mineflayer's module-level supportFeature(feature, version). The Bedrock feature table does not depend on a
-// registry, so no registry is built per call (U2 note); other versions are answered by minecraft-data like upstream.
+// registry, so no registry is built per call; other versions are answered by minecraft-data like upstream.
 let tableSupportFeature = null
 function supportFeature (feature, version) {
   const v = typeof version === 'string' ? version.replace(/^bedrock_/, '') : version
@@ -90,18 +89,18 @@ function supportFeature (feature, version) {
   }
   return require('minecraft-data')(version).supportFeature(feature)
 }
-// internal (tests / U3 conformance tooling); non-enumerable so the export names match mineflayer's
+// internal (tests / conformance tooling); non-enumerable so the export names match mineflayer's
 Object.defineProperty(module.exports, '_plugins', { value: plugins, enumerable: false })
 
 /**
- * Bedrock-only internal state shared between plugins (`bot._bedrock`). Each namespace has one
- * owner (docs/CONTRIBUTING.md); plugins may replace a namespace's stub functions they own.
+ * Bedrock-only internal state shared between plugins (`bot._bedrock`). Each namespace is created here; the
+ * plugin that implements it may replace its stub functions.
  */
 function createBedrockState (bot, options) {
   return {
     /** tick clock + player_auth_input queue (lib/bedrock/input_queue.js) */
     input: createInputQueue(bot, { maxCatchupTicks: options.maxCatchupTicks }),
-    /** physics hooks used outside physics.js (implemented by the physics plugin: U4 stub → U5) */
+    /** physics hooks used outside physics.js (stubs here, implemented by the physics plugin) */
     physics: {
       /** set the feet position; `forced` = server teleport/correction (resets velocity, sends handled_teleport) */
       setPosition: stubSync('U4', 'bot._bedrock.physics.setPosition', 2),
@@ -110,17 +109,17 @@ function createBedrockState (bot, options) {
     },
     /** spawn/respawn/dimension state machine; the only emitter of `spawn` (lib/bedrock/lifecycle.js) */
     lifecycle: createLifecycle(bot),
-    /** item_stack_request manager (lib/bedrock/stack_request.js, U8) */
+    /** item_stack_request manager (lib/bedrock/stack_request.js) */
     stackRequests: createStackRequestManager(bot),
-    /** Bedrock container type → Java window spec registry (lib/bedrock/windows.js, U8) */
+    /** Bedrock container type → Java window spec registry (lib/bedrock/windows.js) */
     windows: createWindowRegistry(bot),
-    /** () => wire Item currently held (exact server copy) for inventory_transaction held_item (U4 → U8) */
+    /** () => wire Item currently held (exact server copy) for inventory_transaction held_item (replaced by the inventory plugin) */
     heldNetworkItem: createHeldItemProvider(bot),
     /** runtime/unique entity ids, item network ids (lib/bedrock/ids.js) */
     ids: createIds(),
-    /** the raw start_game packet params once received (U4), else null */
+    /** the raw start_game packet params once received, else null */
     startGame: null,
-    /** BEDD-1: 'bedd' when the client is a Be.D.D.-hosted real client (client.bedd), else the transport name */
+    /** 'bedd' when the client is a Be.D.D.-hosted real client (client.bedd), else the transport name */
     mode: bot._client?.bedd ? 'bedd' : (options.transport ?? 'raknet')
   }
 }
@@ -205,7 +204,7 @@ function createBot (options = {}) {
   let ended = false
   // mineflayer emits 'end' asynchronously: client.end() only ends the socket, 'end' follows on its close. bedrock-protocol
   // emits 'close' inside close() (so inside bot.end() / bot.quit()): the bot's 'end' is deferred the same way, so state
-  // set right after bot.quit() is seen by 'end' listeners (FINAL-FIX-LIB). The lifecycle stops at once (lifecycle.js).
+  // set right after bot.quit() is seen by 'end' listeners. The lifecycle stops at once (lifecycle.js).
   const emitEnd = (reason) => {
     if (ended) return
     ended = true
@@ -226,7 +225,7 @@ function createBot (options = {}) {
     bot.emit('error', err)
   })
   // minecraft-protocol style clients (and test fakes) emit 'end' (reason); bedrock-protocol emits
-  // 'close' without a reason, so the reason given to bot.end()/bot.quit() is used. U4 maps kicks.
+  // 'close' without a reason, so the reason given to bot.end()/bot.quit() is used. kick.js maps kicks.
   bot._client.on('end', (reason) => emitEnd(reason))
   bot._client.on('close', () => emitEnd(endReason ?? 'socketClosed'))
 

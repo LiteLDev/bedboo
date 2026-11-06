@@ -1,4 +1,3 @@
-// owner: U4 (core runtime)
 // Upstream: mineflayer 4.39.0 lib/plugins/settings.js (MIT, Copyright (c) 2013 Andrew Kelley) — same
 //   settings object, defaults, validation and error messages.
 // Surface: bot.settings {chat, colorsEnabled, viewDistance, difficulty, skinParts, mainHand,
@@ -8,8 +7,7 @@
 // Bedrock: only viewDistance has a wire effect: request_chunk_radius { chunk_radius, max_radius } in chunks
 //   ('far' 12, 'normal' 10, 'short' 8, 'tiny' 6, or a number). The join request is bedrock-protocol's (it reads
 //   `client.viewDistance`, kept in sync here); later setSettings calls send their own request. The server
-//   answers with chunk_radius_update (→ bot.game.serverViewDistance). Other settings are kept locally
-//   (docs/differences/U4.md#settings).
+//   answers with chunk_radius_update (→ bot.game.serverViewDistance). Other settings are kept locally.
 'use strict'
 const assert = require('assert')
 

@@ -1,4 +1,3 @@
-// owner: BEDD-2 (authority table + core intent router)
 'use strict'
 /**
  * Who sends what in bedd mode (`transport: 'bedd'`). The real Minecraft client hosted by Be.D.D. is authoritative for

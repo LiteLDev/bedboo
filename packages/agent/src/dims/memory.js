@@ -1,4 +1,3 @@
-// owner: U18 (agent combat & dimensions)
 'use strict'
 /**
  * What the agent remembers between skills (per bot, in memory): its nether portals on both sides, so the nether

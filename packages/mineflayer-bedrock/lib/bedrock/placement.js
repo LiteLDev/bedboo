@@ -1,4 +1,3 @@
-// owner: U11 (placing & placement-based parity); BEDD-3: bedd-mode gates
 'use strict'
 const { Vec3 } = require('vec3')
 const { RaycastIterator } = require('prismarine-world').iterators
@@ -10,7 +9,7 @@ const { viewDirection } = require('./conversions')
  * Bedrock placement internals shared by lib/plugins/generic_place.js (bot._genericPlace), place_entity.js and item use
  * on blocks (buckets, boats). Exposed as `bot._bedrock.placement` by generic_place.js.
  *
- * Wire protocol (measured on BDS 1.26.51.1, see docs/differences/U11.md#placement-protocol):
+ * Wire protocol (measured on BDS 1.26.51.1):
  * - a click on a block face is `player_action start_item_use_on` (clicked block, clicked block + face, face) →
  *   `inventory_transaction item_use click_block` (held item = the exact server copy, the clicked block's runtime id,
  *   the click position on the face, the hotbar slot, the hand, the EYE-level player position) → `player_action
@@ -24,7 +23,7 @@ const { viewDirection } = require('./conversions')
  *   have processed a sneaking input before the click (set_entity_data `sneaking` acknowledges it; while flying the
  *   raw sneak keys of the input are enough).
  *
- * bedd mode (`bot._bedrock.mode === 'bedd'`, BEDD-3): the click is the bare item_use transaction (the real client
+ * bedd mode (`bot._bedrock.mode === 'bedd'`): the click is the bare item_use transaction (the real client
  * owns start/stop_item_use_on and sends them around its own click); the router turns it into `look` at the clicked
  * point, waits for the look to converge, then `button use click`. Sneaking for interactive blocks still goes through
  * the controls (generic_place.js sneakForClick → player_auth_input → `input`), and the answer matching on update_block
@@ -33,7 +32,7 @@ const { viewDirection } = require('./conversions')
 
 /** ms between start_item_use_on and stop_item_use_on (vanilla client) */
 const STOP_DELAY_MS = tx.DEFAULT_STOP_DELAY_MS
-/** ms to wait at most for BDS's answer to a click before the next click goes out anyway (U16a) */
+/** ms to wait at most for BDS's answer to a click before the next click goes out anyway */
 const ANSWER_TIMEOUT_MS = 500
 /** ms a click's answer is remembered for stale() */
 const STALE_MEMORY_MS = 5000
@@ -132,7 +131,7 @@ const isMergeable = (name) => MERGEABLE_BLOCKS.has(name) || /(^|_)candle$/.test(
   (/_slab$/.test(name) && !/_double_slab$/.test(name))
 
 /**
- * Whether a click on `block` holding `itemName` may itself change the clicked block (FINAL-FIX-LIB): the block is
+ * Whether a click on `block` holding `itemName` may itself change the clicked block: the block is
  * replaceable (the placed block takes its place) or the held item merges into it (a slab onto the same half slab →
  * double slab, one more candle / sea pickle / turtle egg / snow layer / petal, a candle onto a cake). The server's
  * answer then carries another state for the clicked block although the click was not stale.
@@ -205,7 +204,7 @@ function raycast (bot, { maxDistance = PICK_RANGE, liquids = 'none' } = {}) {
 /**
  * Click sender with the vanilla start/stop pairing.
  *
- * Clicks wait for the server's answer to the previous one (U16a, wave-4 review): BDS gives the held stack a new stack
+ * Clicks wait for the server's answer to the previous one: BDS gives the held stack a new stack
  * id after every use (inventory_content, sent right before its update_block answer), and a click carrying the old one
  * is refused — so back-to-back or concurrent placements wait until the held item was updated, the clicked block was
  * answered, or ANSWER_TIMEOUT_MS: `const release = await placer.acquire(); try { placer.click(…) } finally { release() }`
@@ -213,11 +212,11 @@ function raycast (bot, { maxDistance = PICK_RANGE, liquids = 'none' } = {}) {
  * The answer (the first update_block for the clicked block) also tells whether the click carried a stale block runtime
  * id (the server changed the block meanwhile, e.g. farmland turned into dirt under a placed block): BDS refuses such a
  * click; `stale(position)` reports it so the caller can click again with the fresh block. A click that changed the
- * clicked block itself is never stale (FINAL-FIX-LIB): a replaceable block or one the held item merges into
+ * clicked block itself is never stale: a replaceable block or one the held item merges into
  * (clickMayChange), or a click that used up an item of the held stack.
  * BDS also refuses a click whose held item is not the server's copy any more: a pickup, /give, … changed the held
  * stack (new stack id) while the click was on its way. The server-side change arrives before the answer (an
- * inventory_transaction of the held slot, the count grew); `staleHeld(position)` reports it (FINAL-FIX-LIB).
+ * inventory_transaction of the held slot, the count grew); `staleHeld(position)` reports it.
  * @param {object} bot
  */
 function createPlacer (bot) {

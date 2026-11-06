@@ -1,4 +1,3 @@
-// owner: U17 (agent core & overworld milestones)
 'use strict'
 /** Inventory helpers over the public mineflayer API (`bot.inventory`, `bot.heldItem`, `bot.equip`). */
 
@@ -198,7 +197,7 @@ async function declutter (bot, { minFree = 4, keep = null, late = false } = {}) 
 /**
  * Room before collecting: fewer than `min` free slots → junk and surplus tossed until `target` are free (never what is
  * being collected: `keep`). A full inventory leaves a new kind of drop on the ground: an ore dug for nothing, again and
- * again; meat a hunt killed for (FINAL-ROUND chain d2). `away`: a point to toss away from (the prey: the chase would
+ * again; meat a hunt killed for. `away`: a point to toss away from (the prey: the chase would
  * walk over the tossed stacks and take them back). @returns {Promise<Record<string, number>>} what was tossed
  */
 async function makeRoom (bot, { min = 3, target = min + 2, keep = null, away = null } = {}) {

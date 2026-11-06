@@ -1,11 +1,10 @@
-// owner: U9 (player state, world extras & dimensions)
 // Adapted from mineflayer 4.39.0 lib/plugins/blocks.js (MIT, Copyright (c) 2013 Andrew Kelley): bot.updateSign
 //   (same validation and errors) and 'signOpen'; split into its own plugin file so blocks.js (world core) and sign
-//   editing have separate owners.
+//   editing stay separate.
 // Surface: bot.updateSign(block, text, back = false); block.signText / getSignText() via prismarine-block (Bedrock
-//   FrontText/BackText, patched by U9)
+//   FrontText/BackText, patched)
 // Events: 'signOpen' (block)
-// Bedrock (BDS 1.26.51.1, observed live; docs/differences/U9.md#signs):
+// Bedrock (BDS 1.26.51.1, observed live):
 // - open_sign { position, is_front } → 'signOpen' (bot.blockAt(position)). BDS opens the editor when the player
 //   places a sign or interacts with an unwaxed sign (inventory_transaction click_block).
 // - edits are block_entity_data { position, nbt } with the whole sign compound: `FrontText` / `BackText`

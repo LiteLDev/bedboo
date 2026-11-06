@@ -1,4 +1,3 @@
-// owner: U4 (core runtime)
 'use strict'
 
 /**
@@ -22,7 +21,7 @@ const EYE_HEIGHT = 1.62
 /** Player bounding box. */
 const PLAYER_HEIGHT = 1.8
 const PLAYER_WIDTH = 0.6
-/** Sneaking bounding box / eye height (Bedrock values; the 1.49 box was measured against BDS 1.26.51.1 by U5). */
+/** Sneaking bounding box / eye height (Bedrock values; the 1.49 box was measured against BDS 1.26.51.1). */
 const SNEAK_HEIGHT = 1.49
 const SNEAK_EYE_HEIGHT = 1.27
 

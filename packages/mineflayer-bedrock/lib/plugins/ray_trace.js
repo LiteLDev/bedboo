@@ -1,7 +1,6 @@
-// owner: U9 (player state, world extras & dimensions)
 // Vendored from mineflayer 4.39.0 lib/plugins/ray_trace.js (MIT, Copyright (c) 2013 Andrew Kelley,
 //   https://github.com/PrismarineJS/mineflayer) — never `pnpm patch mineflayer`; one fix: a pitch or yaw of exactly 0
-//   no longer makes blockAtEntityCursor return null (docs/differences/U9.md#ray-trace). It only needs bot.world.raycast
+//   no longer makes blockAtEntityCursor return null. It only needs bot.world.raycast
 //   (prismarine-world), bot.entity (feet position, height, yaw/pitch in radians) and bot.entities, which keep the
 //   mineflayer conventions on Bedrock.
 // Surface: bot.blockInSight(maxSteps = 256, vectorLength = 5 / 16), bot.blockAtCursor(maxDistance = 256,

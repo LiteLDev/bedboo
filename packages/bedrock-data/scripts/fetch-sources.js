@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// owner: U2 (wave 1) → U9 (wave 3) → U10 (wave 4)
 'use strict'
 
 /**

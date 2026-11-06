@@ -1,10 +1,9 @@
-// owner: U9 (player state, world extras & dimensions)
 // Upstream: mineflayer 4.39.0 lib/plugins/experience.js (MIT, Copyright (c) 2013 Andrew Kelley)
 // Surface: bot.experience { level, points, progress } (null until the first update)
 // Events: 'experience' (once per update carrying the level or the progress)
 // Bedrock: update_attributes of the local player: `minecraft:player.level` (level) and `minecraft:player.experience`
 //   (progress 0..1). Bedrock sends no total: points = the XP needed for `level` + progress × the XP of the next
-//   level, with the XP curve Bedrock shares with Java (docs/differences/U9.md#experience-points).
+//   level, with the XP curve Bedrock shares with Java.
 'use strict'
 
 module.exports = inject

@@ -1,10 +1,9 @@
-// owner: U6 (chat, commands & HUD)
 // Adapted from mineflayer 4.39.0 lib/plugins/sound.js (MIT, Copyright (c) 2013 Andrew Kelley,
 // https://github.com/PrismarineJS/mineflayer).
 // Surface: none (events only)
 // Events: 'soundEffectHeard' (soundName, position, volume, pitch),
 //   'hardcodedSoundEffectHeard' (soundId, soundCategory, position, volume, pitch)
-// Bedrock (BDS 1.26.51.1, docs/differences/U6.md#sounds):
+// Bedrock (BDS 1.26.51.1):
 //   play_sound { name, coordinates (block position × 8, like Java's x/y/z), volume, pitch } — `/playsound`, scripts —
 //     → 'soundEffectHeard'(name, position / 8, volume, pitch). Names are Bedrock sound definitions ('note.harp',
 //     'random.click'); BDS forwards any name.

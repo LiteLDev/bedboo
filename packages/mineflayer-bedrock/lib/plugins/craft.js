@@ -1,4 +1,3 @@
-// owner: U12 (crafting)
 // Adapted from mineflayer 4.39.0 lib/plugins/craft.js (MIT, Copyright (c) 2013 Andrew Kelley,
 // https://github.com/PrismarineJS/mineflayer): craft's argument checks, error wrapping and crafting-table window
 // handling, and recipesFor / recipesAll / requirementsMetForRecipe are kept verbatim; recipes come from the
@@ -15,7 +14,6 @@
 //   { result_slot_id } per result when there are several] + place from the created output (50) into the inventory
 //   (upstream putSelectedItemRange order; what does not fit is carried and tossed like upstream's tossLeftover).
 //   Batches: `count` crafts in as few requests as possible (a request makes at most one stack of each result).
-//   docs/differences/U12.md
 'use strict'
 const assert = require('assert')
 const { createRecipeBook, planCraft } = require('../bedrock/recipes')
@@ -110,7 +108,7 @@ function inject (bot) {
     if (leftovers.length > 0) await model.returnItems(window, leftovers)
 
     // planned when the request is built: after the inventory screen opened for the 2×2 grid (a pickup meanwhile can
-    // fill the slot the result was planned for) and again on the status-7 retry; `plan` is the one that was sent (U16a)
+    // fill the slot the result was planned for) and again on the status-7 retry; `plan` is the one that was sent
     let plan = null
     const replan = () => {
       plan = planCraft({

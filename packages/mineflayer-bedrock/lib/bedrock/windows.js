@@ -1,10 +1,9 @@
-// owner: U8 (inventory, windows, creative & item use)
 'use strict'
 
 /**
  * Window registry, exposed as `bot._bedrock.windows`: Bedrock container type → Java (prismarine-windows)
- * window type + slot map. U8 registers EVERY container type at creation; station units (U12 craft, U13
- * furnace/enchanting/anvil/villager, U14) only read entries (or `register()` a refined spec for their type).
+ * window type + slot map. Every container type is registered at creation; the station plugins (craft,
+ * furnace/enchanting/anvil/villager) only read entries (or `register()` a refined spec for their type).
  *
  * Registry key ("container type"): the Bedrock `container_open.window_type` name, except for
  * `window_type: 'container'`, which BDS uses for every chest-like block and entity; those are told apart by
@@ -26,7 +25,7 @@
  *   quickMoveTargets    optional `(item) → javaSlot[]`: where a shift click from the player part puts `item`
  *                       (Java's per-menu quickMoveStack rules; [] = none, then main ↔ hotbar like Java). Without it
  *                       the item goes into the first container slots that take it. The furnace / brewing rules use
- *                       item-name lists (no smelting/brewing recipe data here); U13 may register refined specs.
+ *                       item-name lists (no smelting/brewing recipe data here); station plugins may register refined specs.
  *   slotLimits          optional `{ javaSlot: maxStack }` (Java slots that hold one item: brewing bottles,
  *                       enchanting item, beacon payment)
  *

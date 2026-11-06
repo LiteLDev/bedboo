@@ -1,4 +1,3 @@
-// owner: U5 (physics & movement)
 'use strict'
 /**
  * Bedrock math helpers. The game simulates movement in single precision (float32): the engine rounds positions and

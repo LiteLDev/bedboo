@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// owner: U2 (wave 1) → U9 (wave 3) → U10 (wave 4)
 'use strict'
 
 /**
@@ -12,7 +11,7 @@
  *
  * Every deviation from the vendored minecraft-data PR #1335 files is either derived from the BDS dumps of
  * CloudburstMC/Data (allowlisted below, the generator fails on any other disagreement) or comes from a
- * documented table in tables.js. See docs/differences/U2.md.
+ * documented table in tables.js.
  */
 const fs = require('fs')
 const path = require('path')

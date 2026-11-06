@@ -1,4 +1,3 @@
-// owner: U4 (core runtime)
 'use strict'
 if (typeof process !== 'undefined' && parseInt(process.versions.node.split('.')[0]) < 24) {
   console.error('Your node version is currently', process.versions.node)

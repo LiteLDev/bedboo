@@ -1,4 +1,3 @@
-// owner: U6 (chat, commands & HUD)
 'use strict'
 /**
  * Online player names from bedrock-protocol `player_list` packets, for the plugins that need a name before (or

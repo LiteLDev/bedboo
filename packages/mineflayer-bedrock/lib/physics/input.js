@@ -1,4 +1,3 @@
-// owner: U5 (physics & movement)
 'use strict'
 /**
  * player_auth_input movement fields and edge flags from mineflayer control states.

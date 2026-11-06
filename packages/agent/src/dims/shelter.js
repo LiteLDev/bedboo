@@ -1,16 +1,15 @@
-// owner: U18 (agent combat & dimensions)
 'use strict'
 /**
- * Waiting out the night, U18's minimal version (U17's survive.shelter is used instead when it exists): an unarmored
+ * Waiting out the night, a minimal version (survive.shelter is used instead when it exists): an unarmored
  * bot that bucket-casts obsidian next to a lava pool at night is shot, blown up or pushed into the lava (N1M3 from
- * U17's M3 snapshot starts ≈ 200 s before nightfall: 0/2 runs survived it). Like a player it stays out of the mobs'
+ * the M3 snapshot starts ≈ 200 s before nightfall: 0/2 runs survived it). Like a player it stays out of the mobs'
  * reach until the morning:
  *
  * - underground (a mine, a tunnel): it walls in the 1×2 cell it stands in (every open side at the feet and the head,
  *   and the cell above the head) with its scaffolding blocks;
  * - under the open sky: it digs down two blocks (never next to lava or water) and closes the hole above its head;
  * - then waits until the day (bot.time: no night within `needMs`) or `maxMs`, eating (the guard / auto-eat) — and is
- *   left where it is: the caller climbs out (U17's survive.surface / the pathfinder digs).
+ *   left where it is: the caller climbs out (survive.surface / the pathfinder digs).
  */
 const { Vec3 } = require('vec3')
 const u = require('./util')
@@ -98,7 +97,7 @@ async function digPit (bot, { signal } = {}) {
 }
 
 /**
- * Stay out of the mobs' reach until the day: U17's survive.shelter when it exists, else a sealed pocket / pit.
+ * Stay out of the mobs' reach until the day: survive.shelter when it exists, else a sealed pocket / pit.
  * @returns {Promise<{ waited: number, how: string }>}
  */
 async function untilDay (bot, { signal, guard, maxMs = 10 * 60 * 1000, needMs = 0, why = 'night' } = {}) {

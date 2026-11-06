@@ -1,4 +1,3 @@
-// owner: U2 (wave 1) → U9 (wave 3) → U10 (wave 4); U15 (wave 5): relaxVersionComparisons
 'use strict'
 
 /**
@@ -14,7 +13,7 @@
  *   before that — e.g. an existing prismarine-registry — keeps the old values.)
  * - Idempotent: a second call is a no-op and returns the same result.
  * - It builds minecraft-data's `bedrock_1.26.51` version object (so the datasets are parsed then, not lazily) to relax its
- *   version comparators for Java versions (relaxVersionComparisons, U15); mineflayer-bedrock builds it at require
+ *   version comparators for Java versions (relaxVersionComparisons); mineflayer-bedrock builds it at require
  *   time anyway (lib/registry.js aliasBotVersion).
  * - Mechanism: minecraft-data 3.117.0 keeps every version in `data.js` as an object of lazy getters
  *   (`data.bedrock['1.26.51'].blocks` → `require('…/bedrock/1.26.30/blocks.json')`). install() redefines
@@ -110,7 +109,7 @@ function compareDotted (a, b) {
 }
 
 /**
- * U15 (wave 5): code written for Java compares the registry version with Java versions —
+ * Code written for Java compares the registry version with Java versions —
  * `bot.registry.isNewerOrEqualTo('1.9')` (mineflayer's examples/inventory.js and test exampleInventory),
  * `registry.version['>=']('1.16')` (@nxg-org/mineflayer-util-plugin, loaded by mineflayer-auto-eat). minecraft-data
  * only knows the Bedrock versions for a Bedrock version object and throws a RangeError for any other; a version it

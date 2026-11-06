@@ -1,4 +1,3 @@
-// owner: BEDD-3 (bedd action translation: dig, place, use, attack)
 'use strict'
 const { Vec3 } = require('vec3')
 const { toBedrockYaw, toBedrockPitch, FACE_VECTORS } = require('../bedrock/conversions')
@@ -28,7 +27,7 @@ const { ensureDispatch } = require('./routes')
  * pick = middle). Without `look` the click goes where the client already looks (bot.lookAt came first). The
  * transaction's hand is not translated: the client uses its main hand (it has no off-hand use button).
  *
- * Composition with the core router (BEDD-2): two handlers in the shared route registry (./routes.js) —
+ * Composition with the core router: two handlers in the shared route registry (./routes.js) —
  * 'block_action' (the router dispatches the block_action part of every player_auth_input under that name, after its
  * own movement/look translation) and 'inventory_transaction' (declines, returning false, the transaction types it does
  * not translate, so the router reports them unsupported). Without the router, ensureDispatch() makes `bedd.route`

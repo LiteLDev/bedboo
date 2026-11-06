@@ -1,11 +1,10 @@
-// owner: U11 (placing & placement-based parity)
 // Adapted from mineflayer 4.39.0 lib/plugins/generic_place.js (MIT, Copyright (c) 2013 Andrew Kelley,
 // https://github.com/PrismarineJS/mineflayer): the held-item checks, the look at the face center (half / delta /
 // forceLook), the arm swing and the resolved value are kept verbatim; the packet is Bedrock's.
 // Surface: bot._genericPlace(referenceBlock, faceVector, options) options {half, delta, forceLook, offhand, swingArm,
 //   showHand} → Promise<Vec3> (the reference block's position), resolved as soon as the click is sent (like upstream:
 //   callers wait for the server's answer themselves)
-// Bedrock (lib/bedrock/placement.js, measured on BDS 1.26.51.1 — docs/differences/U11.md#placement-protocol):
+// Bedrock (lib/bedrock/placement.js, measured on BDS 1.26.51.1):
 // - the click is player_action start_item_use_on → inventory_transaction item_use click_block (exact held item from
 //   bot._bedrock.heldNetworkItem(), the reference block's runtime id, the click position on the face = the look target,
 //   the face, the hotbar slot, the hand, the EYE-level player position) → stop_item_use_on 150 ms later;
@@ -58,7 +57,7 @@ function inject (bot) {
     })
   }
 
-  /** resolves once the control states set so far went out with a player_auth_input (W3-FIX-A hook when present) */
+  /** resolves once the control states set so far went out with a player_auth_input (physics hook when present) */
   function controlsSent () {
     const physics = bot._bedrock?.physics
     if (typeof physics?.controlsSent === 'function') return Promise.resolve(physics.controlsSent()).catch(() => {})
@@ -202,7 +201,7 @@ function inject (bot) {
     const releaseSneak = await sneakForClick(referenceBlock)
     try {
       // Bedrock: the previous click must have been answered (its new held-item stack id) before this one goes out
-      // (U16a: back-to-back / concurrent placements)
+      // (back-to-back / concurrent placements)
       const releaseTurn = await placer.acquire()
       try {
         // Bedrock: a jump-placement under the feet waits until the hitbox rose out of the destination (right before
@@ -245,7 +244,7 @@ function inject (bot) {
   /**
    * Item use on the looked-at block (Bedrock): BDS ignores the click_air of buckets and boats, the vanilla client
    * clicks the block under the crosshair instead (liquids included where the item acts on them). Meant for
-   * bot.activateItem (lib/plugins/inventory.js, not U11's file). Returns false when `item` is not such an item or
+   * bot.activateItem (lib/plugins/inventory.js). Returns false when `item` is not such an item or
    * nothing is in reach (the caller then sends its click_air).
    */
   function useOnLookedAtBlock (item, offHand = false) {
@@ -286,12 +285,12 @@ function inject (bot) {
   }
 
   /**
-   * Bedrock recovery around the vendored place_block.js (U16a): BDS refuses a click whose block runtime id is not the
+   * Bedrock recovery around the vendored place_block.js: BDS refuses a click whose block runtime id is not the
    * server's state of the clicked block — which happens when the server changed it right before (farmland and grass
    * paths turn into dirt under a placed block one tick after the placement). The answer to the click discloses it
    * (placer.stale): such a refusal is retried once with the block as it is now. A click that changed the clicked block
    * itself (a replaceable block, a slab merged into a double slab, …) is not stale: it rejects like upstream after one
-   * click (FINAL-FIX-LIB).
+   * click.
    * BDS likewise refuses a click whose held item the server changed meanwhile (a pickup or /give merged into the held
    * stack: new stack id, placer.staleHeld; Java's block_place carries no item): retried once with the server's copy.
    */

@@ -1,4 +1,3 @@
-// owner: U12 (crafting)
 'use strict'
 
 /**

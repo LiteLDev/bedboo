@@ -1,4 +1,3 @@
-// owner: U10 (digging); BEDD-3: bedd-mode gates
 // Adapted from mineflayer 4.39.0 lib/plugins/digging.js (MIT, Copyright (c) 2013 Andrew Kelley): dig() argument checks,
 //   digFace vector / 'raycast' face selection, the look, the swing interval, stopDigging (+ the Java cancellation-face
 //   oddity), the death handler, canDigBlock, digTime's inputs and _getBlockAtEyeLevel are kept; Java's block_dig packets
@@ -7,7 +6,7 @@
 //   bot.stopDigging() (no-op while not digging, as upstream), bot.canDigBlock(block), bot.digTime(block),
 //   bot._getBlockAtEyeLevel()
 // Events: 'diggingCompleted' (block), 'diggingAborted' (block)
-// Bedrock (BDS 1.26.51.1, measured live — docs/differences/U10.md#protocol):
+// Bedrock (BDS 1.26.51.1, measured live):
 // - server-authoritative breaking (start_game.server_authoritative_block_breaking, always true on BDS): block actions
 //   ride player_auth_input (bot._bedrock.input.queueBlockAction). `start_break` = the mouse is pressed on the block:
 //   from that input on BDS adds the break progress itself every tick (start tick included) and destroys the block in
@@ -29,7 +28,7 @@
 // - digTime: lib/bedrock/dig_speed.js (Bedrock Haste / Conduit Power / Mining Fatigue factors); the speed BDS
 //   reports for the break (level_event block_start_break / block_break_speed data) replaces the estimate when they
 //   disagree. bot._bedrock.digging = { active(), last, history } keeps per-dig diagnostics (tests).
-// - bedd mode (bot._bedrock.mode === 'bedd', BEDD-3): the real client times the break. start_break / abort_break still
+// - bedd mode (bot._bedrock.mode === 'bedd'): the real client times the break. start_break / abort_break still
 //   ride the input (the router turns them into `look` + `button attack down releaseOn:blockChange` / `attack up`), but
 //   no predict_break goes out (neither the timed one nor the instant one), the legacy finishLegacy transaction is never
 //   sent, and the dig completes on the update_block turning the block into air — or aborts after digTime + 40 ticks.
@@ -266,7 +265,7 @@ function inject (bot) {
     if (air) {
       // Nothing to break (the block was air, or is gone by now: another player, a door's other half, a decayed leaf).
       // Upstream sends start/finish, sets air locally and completes on that block update within a tick; BDS would
-      // never report a break of air, so complete at once with the same events (U16a).
+      // never report a break of air, so complete at once with the same events.
       bot.targetDigBlock = null
       bot.targetDigFace = null
       bot.lastDigTime = performance.now()
@@ -336,7 +335,7 @@ function inject (bot) {
       if (!bot.targetDigBlock) return
       // The server's update that breaks the block is being dispatched: 'blockUpdate' listeners run before this dig's
       // per-position one, and mineflayer-pathfinder stops digging on any change near its path. Complete like upstream
-      // (its finishDigging clears targetDigBlock before the local update, so that stopDigging is a no-op) (U15)
+      // (its finishDigging clears targetDigBlock before the local update, so that stopDigging is a no-op)
       const now = bot.blockAt(position)
       if (!state.done && now && isBroken(now, state.block)) return onBlockUpdate(state.block, now)
 
@@ -486,8 +485,8 @@ function inject (bot) {
     state.lastServerIndex = state.index
     // an instant break (start + predict in one input; already predicted) has no progress to follow, and only an instant
     // report (≥ 1 per tick) can be the dug block's: a slower one may be about what replaced it (the water a plant in a
-    // water source leaves, sometimes in the batch BEFORE the update_block) — it only shows the server is at it (U16a:
-    // seen once in digEverything › short_dry_grass after seagrass)
+    // water source leaves, sometimes in the batch BEFORE the update_block) — it only shows the server is at it
+    // (seen once in digEverything › short_dry_grass after seagrass)
     if (state.ticks === 0) {
       if (state.serverData === null && data >= digSpeed.SPEED_SCALE) state.serverData = data
       return
@@ -598,7 +597,7 @@ function inject (bot) {
     /**
      * prismarine-block `block.digTime(heldItemType, creative, inWater, notOnGround, enchantments, effects)` with the
      * Bedrock effect factors (lib/bedrock/dig_speed.js) — the cost estimates of the patched mineflayer-pathfinder /
-     * mineflayer-tool call it for every candidate tool (U15)
+     * mineflayer-tool call it for every candidate tool
      */
     blockDigTime: (block, heldItemType = null, creative = false, inWater = false, notOnGround = false, enchantments = [], effects = {}) =>
       digSpeed.digTime(bot.registry, block, { heldItemType, creative, inWater, notOnGround, enchantments, effects })

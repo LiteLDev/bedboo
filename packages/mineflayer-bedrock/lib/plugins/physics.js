@@ -1,4 +1,3 @@
-// owner: U4 (wave 2, stationary stub with the full surface) → U5 (wave 3, Bedrock engine); BEDD-4 (bedd follower branch)
 // Upstream: mineflayer 4.39.0 lib/plugins/physics.js (MIT, Copyright (c) 2013 Andrew Kelley) — control states,
 //   look/lookAt (sensitivity rounding), waitForTicks, elytraFly checks and the physicTick deprecation warning are
 //   kept verbatim.
@@ -22,14 +21,14 @@
 //   - creative / abilities flight (start_flying / stop_flying), elytra gliding (start_gliding / stop_gliding),
 //     vehicles (client_predicted_vehicle via input.setVehicle).
 // Hooks (bot._bedrock.physics): setPosition(pos, { forced, handledTeleport = forced }), setFlying(on), isFlying(),
-//   holdSneak(on) (FINAL-FIX-LIB: a raised shield sneaks on Bedrock; this sneak is OR-ed with the sneak control, so
+//   holdSneak(on) (a raised shield sneaks on Bedrock; this sneak is OR-ed with the sneak control, so
 //   clearControlStates() / setControlState('sneak', false) leave it — deactivateItem() lowers it, like Java),
 //   flyTo(destination) → Promise (speed-limited flight path, used by bot.creative.flyTo), moveVehicle(left, forward),
 //   history() (recorded ticks, tests/debugging), simulate(state) (one engine step with this bot's world),
 //   onCorrection(fn) / stats() (server corrections, tests and diagnostics),
-//   controlsPending() / controlsSent() → Promise / afterControlsSent(fn) (W3-FIX-A: a sneak / sprint change reaches
+//   controlsPending() / controlsSent() → Promise / afterControlsSent(fn) (a sneak / sprint change reaches
 //   the server only with the next player_auth_input; clicks that depend on it wait for that packet).
-// Transport 'bedd' (BEDD-4, only while bot._bedrock.mode === 'bedd'): a real Minecraft client moves the player. The
+// Transport 'bedd' (only while bot._bedrock.mode === 'bedd'): a real Minecraft client moves the player. The
 //   provider skips the engine step (it still builds the packet: the bedd router turns its controls and rotation into
 //   intents); followEcho(packet) (hook below, wired by lib/bedd/follower.js to the client's echoed player_auth_input)
 //   copies the echo into bot.entity (feet = eye − 1.62, velocity = delta, yaw/pitch, onGround = vertical_collision &&
@@ -67,7 +66,7 @@ const FLY_TO_FORWARD_REPRESS = 10
 /**
  * BDS sprints a player whose forward key (the `up` input flag) is pressed again within this many ticks of its
  * previous press — the double tap, judged by the server from the key flags, also without any sprint flag (measured
- * on 1.26.51.1 walking: press-to-press 6 ticks sprints, 7 does not) — until forward is released (U16a)
+ * on 1.26.51.1 walking: press-to-press 6 ticks sprints, 7 does not) — until forward is released
  */
 const DOUBLE_TAP_TICKS = 6
 /** BDS only starts gliding when start_gliding comes with a jump press (measured) */
@@ -110,12 +109,12 @@ function inject (bot, { physicsEnabled }) {
   let lastSent = null // { position: Vec3 (feet), yaw, pitch } of the last packet
   let lookingTask = createDoneTask()
   let prevInput = null // input record of the previous sent tick (edge flags)
-  // creative flyTo key timing across consecutive flyTo calls (U15): ticks captured, last jump press, last forward release
+  // creative flyTo key timing across consecutive flyTo calls: ticks captured, last jump press, last forward release
   const keyEdges = { tick: 0, jumpPressed: -Infinity, forwardReleased: -Infinity, forwardPressed: -Infinity }
-  // U16a: the server's double-tap sprint, predicted like the vanilla client (which sprints on a double tap itself);
-  // FINAL-FIX-LIB: any sprint (key or double tap) is sticky on Bedrock, see captureInput
+  // the server's double-tap sprint, predicted like the vanilla client (which sprints on a double tap itself);
+  // any sprint (key or double tap) is sticky on Bedrock, see captureInput
   let stickySprint = false
-  // FINAL-FIX-LIB: a raised shield (inventory.js: Bedrock blocks by sneaking) holds the sneak besides the control
+  // a raised shield (inventory.js: Bedrock blocks by sneaking) holds the sneak besides the control
   let heldSneak = false
   let pendingKnockback = null // Vec3 from set_entity_motion, applied at the start of the next tick
   let flyTarget = null // { destination: Vec3, resolve, reject }
@@ -141,7 +140,7 @@ function inject (bot, { physicsEnabled }) {
   let rocketStarted = false // 'usedFirework' since the last tick (a rocket may set the very value the countdown had)
   let clickAirUse = false // a click_air was queued since the bot last stopped using an item (server item use)
   const listenerErrors = [] // errors thrown by physicsTick listeners, reported once the input is sent
-  // transport 'bedd' (BEDD-4): the real client moves the player, bot.entity follows its echoed inputs
+  // transport 'bedd': the real client moves the player, bot.entity follows its echoed inputs
   const beddMode = () => bot._bedrock?.mode === 'bedd'
   let desiredLook = null // bedd: { yaw, pitch } (radians) sent in the packets until an echo converges on it
   let beddLookTimer = null
@@ -153,7 +152,7 @@ function inject (bot, { physicsEnabled }) {
   bot.setControlState = (control, state) => {
     assert.ok(control in controlState, `invalid control: ${control}`)
     assert.ok(typeof state === 'boolean', `invalid state: ${state}`)
-    // FINAL-FIX-LIB: releasing the sprint control does not end a sprint while forward stays held — BDS keeps the
+    // releasing the sprint control does not end a sprint while forward stays held — BDS keeps the
     // sprint speed until forward is released (or sneak, back, a wall, hunger, item use …), see captureInput
     if (controlState[control] === state) return
     controlState[control] = state
@@ -225,7 +224,7 @@ function inject (bot, { physicsEnabled }) {
   // ---- item use as the server sees it ------------------------------------------------------------------
   // The server only enters item use (eating, drawing a bow, …: ±0.1225 impulse clamp, no sprint) on a click_air
   // transaction. bot.usingHeldItem is also true while a shield is raised, which Bedrock does by sneaking without any
-  // click_air (inventory.js, docs/differences/U8.md#item-use): BDS then simulates a plain sneak (measured, W3-FIX-A).
+  // click_air (inventory.js): BDS then simulates a plain sneak (measured).
   // The outgoing click_air / item_release transactions are observed here, whoever queues them.
   const rawQueue = bot._client.queue
   if (typeof rawQueue === 'function') {
@@ -287,8 +286,8 @@ function inject (bot, { physicsEnabled }) {
       keyEdges.forwardPressed = keyEdges.tick
     }
     // BDS sprints on its own after a double-tapped forward: predict it (and report it with the sprinting flags, like
-    // the vanilla client does on its own double tap), or every such step ends in corrections (U16a).
-    // A sprint is sticky on Bedrock (FINAL-FIX-LIB, measured on 1.26.51.1): once the player sprints — sprint control
+    // the vanilla client does on its own double tap), or every such step ends in corrections.
+    // A sprint is sticky on Bedrock (measured on 1.26.51.1): once the player sprints — sprint control
     // or double tap — BDS keeps the sprint speed while forward is held, also after a stop_sprinting (it re-sends the
     // movement attribute with its "Sprinting speed boost" until forward is released), like the vanilla client keeps
     // sprinting when the sprint key is let go. So the sprint lasts while forward is held and sprinting is possible
@@ -413,7 +412,7 @@ function inject (bot, { physicsEnabled }) {
     bot.jumpQueued = false
   }
 
-  // ---- firework boosts (W3-FIX-A) -------------------------------------------------------------------------------
+  // ---- firework boosts -------------------------------------------------------------------------------
   // entities.js starts a boost between ticks by setting bot.fireworkRocketDuration (+ 'usedFirework'); a new rocket may
   // also shorten it. The start is recorded in the next tick's input (fireworkStart) so that replays from an earlier
   // tick boost from that tick on, and a replay before that input keeps it.
@@ -620,7 +619,7 @@ function inject (bot, { physicsEnabled }) {
     }
   }
 
-  // ---- control changes before a click (W3-FIX-A) ------------------------------------------------------------
+  // ---- control changes before a click ------------------------------------------------------------
   // Upstream sends sneak / sprint changes (entity_action / player_input) inside setControlState, so a click right
   // after `setControlState('sneak', true)` is handled while sneaking (placing against a chest, sprint knockback).
   // On Bedrock they travel in the next player_auth_input: clicks that depend on them wait until it was queued.
@@ -675,7 +674,7 @@ function inject (bot, { physicsEnabled }) {
     bot._bedrock.input.onSent(onSent)
   }
 
-  // ---- transport 'bedd': follow the real client (BEDD-4) ------------------------------------------------
+  // ---- transport 'bedd': follow the real client ------------------------------------------------
   /** input_data as a set of flag names (bedrock-protocol gives an array of names; tolerate a { name: bool } map) */
   function flagSet (inputData) {
     if (Array.isArray(inputData)) return new Set(inputData)
@@ -862,7 +861,7 @@ function inject (bot, { physicsEnabled }) {
     const dz = target.z - entity.position.z
     const yaw = Math.hypot(dx, dz) > 1e-3 ? Math.atan2(-dx, -dz) : entity.yaw
     // BDS toggles flight on a double-tapped jump: never press jump again within FLY_TO_JUMP_REPRESS ticks — also across
-    // consecutive flyTo calls (U15); and it sprint-flies (≈ twice as fast as the engine's flight) after a double-tapped
+    // consecutive flyTo calls; and it sprint-flies (≈ twice as fast as the engine's flight) after a double-tapped
     // forward: never press forward again within FLY_TO_FORWARD_REPRESS ticks of releasing it
     const jumpHeld = !!prevInput?.rawControl?.jump
     const forwardHeld = !!prevInput?.rawControl?.forward
@@ -876,7 +875,7 @@ function inject (bot, { physicsEnabled }) {
         const control = { forward, back: false, left: false, right: false, jump: vertical === 'jump', sprint: false, sneak: vertical === 'sneak' }
         const outcome = predictFlight(control, yaw, target)
         // touching the ground ends creative flight on Bedrock (BDS answers flying: false, which rejects the flyTo):
-        // never land anywhere but at the destination (U15: examples/bee.js flew into the ground)
+        // never land anywhere but at the destination (examples/bee.js flew into the ground)
         const score = outcome.pos.distanceTo(target) + (outcome.landsAway ? 1e3 : 0) + (forward ? 1e-9 : 0) + (vertical ? 1e-9 : 0)
         if (!best || score < best.score) best = { score, control, yaw }
       }
@@ -1014,11 +1013,11 @@ function inject (bot, { physicsEnabled }) {
     bot._bedrock.physics.controlsPending = controlsPending
     bot._bedrock.physics.controlsSent = controlsSent
     bot._bedrock.physics.afterControlsSent = afterControlsSent
-    bot._bedrock.physics.followEcho = followEcho // BEDD-4: lib/bedd/follower.js
+    bot._bedrock.physics.followEcho = followEcho // lib/bedd/follower.js
   }
   if (!bot.moveVehicle || isStub(bot.moveVehicle)) bot.moveVehicle = moveVehicle
   bot.on('mount', updateVehicleInput)
-  // ---- the rider's position (W3-FIX-A) ----------------------------------------------------------------------
+  // ---- the rider's position ----------------------------------------------------------------------
   // BDS keeps a rider at its vehicle's seat: vehicle wire position + the rider_seat_position actor data (rotated by
   // the vehicle's yaw), at eye level (measured: boat seat (0, 1.02, 0) → feet 0.225 below the boat's feet, horse
   // (0, 2.32, -0.2) → feet 0.7 above, 0.2 behind). The client does not predict vehicle physics: the vehicle position is
@@ -1026,7 +1025,7 @@ function inject (bot, { physicsEnabled }) {
   // reports that seat and bot.entity.position follows it, so a dismount without a server teleport (boats) leaves the
   // rider next to the vehicle, not where it mounted.
   // BDS sends rider_seat_position only when it changes (the join's actor data has (0, 0, 0)): it is kept across rides —
-  // boat → boat, minecart → boat send no new value (U16a). Should it be unknown, the seat of the vehicle type is used.
+  // boat → boat, minecart → boat send no new value. Should it be unknown, the seat of the vehicle type is used.
   let vehicleBase = null // { vehicle, entityPos: vehicle.position it was taken from, pos: vehicle wire position }
 
   function seatOf (vehicle) {
@@ -1063,7 +1062,7 @@ function inject (bot, { physicsEnabled }) {
     placeAfterDismount(vehicle)
   })
 
-  // ---- getting off (U16a) ------------------------------------------------------------------------------
+  // ---- getting off ------------------------------------------------------------------------------
   // BDS teleports nobody off a boat or minecart: the rider stays at its seat, which is inside the block under a
   // minecart on rails or a boat on land (feet 0.1 / 0.225 down). BDS itself lifts its copy of the rider straight up out
   // of that block (measured on 1.26.51.1: a correction to the seat x/z on top of the block when the client reports

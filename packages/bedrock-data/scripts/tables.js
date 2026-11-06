@@ -1,10 +1,9 @@
-// owner: U2 (wave 1) → U9 (wave 3) → U10 (wave 4)
 'use strict'
 
 /**
  * Hand-maintained tables used by generate.js. Each one is verified: effect and enchantment ids against a
  * live BDS 1.26.51.1 (probe/1.26.51.json; generate.js fails on a mismatch), attribute names
- * against the update_attributes packets BDS sends (U0 fixture), entity names against Cloudburst
+ * against the update_attributes packets BDS sends (a recorded fixture), entity names against Cloudburst
  * entity_identifiers.dat.
  */
 
@@ -191,7 +190,7 @@ const BIOMES_ADDED = {
  * Block fields corrected after minecraft-data PR #1335 (field → value, with the reason):
  * - air: PR #1335 (and BDS's own dump, Cloudburst `hardness` -1) give hardness -1 (unbreakable); raw minecraft-data
  *   bedrock and Java have 0. mineflayer relies on 0: `bot.digTime(air)` is 0 and `bot.dig(air)` resolves at once;
- *   with -1 digTime is Infinity and dig throws (U16a, wave-4 review). Nothing on Bedrock digs air either way.
+ *   with -1 digTime is Infinity and dig throws. Nothing on Bedrock digs air either way.
  */
 const BLOCK_FIXES = {
   air: { hardness: 0 }

@@ -1,4 +1,3 @@
-// owner: U17 (agent core & overworld milestones)
 'use strict'
 /**
  * Background safety behaviours of the Agent. They run between and *during* skills: when one takes over (`busy`),
@@ -21,7 +20,7 @@
  *   auto-eat is paused (the fight eats itself while it retreats).
  * - **drops**: what a mob the bot killed dropped right next to it (string, bones, rotten flesh) is picked up.
  *
- * U18's skills (portal, nether, end) run under `combat.guardFor()`, which under an Agent is a `SafetyGuard` around
+ * The dimension skills (portal, nether, end) run under `combat.guardFor()`, which under an Agent is a `SafetyGuard` around
  * this object: the guard's options (`radius`, `maxDy`, `ignore`, `includeNeutral`, `retaliate`, `deflect`) are pushed
  * with `pushGuard()` for as long as the skill runs, so the skill keeps the protections its own `combat.defend()` guard
  * would give it.
@@ -63,7 +62,7 @@ class Safety extends EventEmitter {
     this._givenUp = new Map() // entity id → { n: fights given up on it (within GIVEN_UP_MS of each other), at: the last }
     this.attackers = new Map() // entity → until: mobs that hurt the bot (retaliation)
     this.swings = new WeakMap() // entity → time of its last arm swing
-    this.guards = [] // option sets of U18 skills running under combat.guardFor()
+    this.guards = [] // option sets of skills running under combat.guardFor()
     this.lastBusyEnd = 0
     this.log = opts.log ?? (() => {})
     this.busy = null // { type, since }
@@ -110,7 +109,7 @@ class Safety extends EventEmitter {
   }
 
   /**
-   * A U18 skill's guard options, in force until `popGuard(token)`. `noBow(target)`: no bow shots in this fight (an
+   * A skill's guard options, in force until `popGuard(token)`. `noBow(target)`: no bow shots in this fight (an
    * arrow that misses a hoglin and hits a piglin turns the whole group against the bot); `flee(target)`: run from it
    * instead of fighting (a hoglin at low health); `retreat(target)`: a fight that keeps its retreat at low health even
    * against a mob as fast as the bot (a hoglin hits too hard to trade blows to the end).
@@ -340,7 +339,7 @@ class Safety extends EventEmitter {
     // suffocating in a block the client does not see yet: no fight now (the task's next climb step gets out of it)
     if (this.inWall()) return
     // (not again and again where it found no way out moments ago: each time it stopped the task digging its way up
-    // through the ceiling over the water — the only way out — until the bot drowned, POLISH-AGENT default chain; again
+    // through the ceiling over the water — the only way out — until the bot drowned in a default-chain run; again
     // once the bot moved, or after 30 s)
     const noAir = this._noAir && Date.now() - this._noAir.at < 30000 && this._noAir.pos.distanceTo(bot.entity.position) < 1.5
     if ((bot.oxygenLevel ?? 20) < 8 && !noAir && (bot.entity.isInWater || this.headWet())) {
@@ -436,7 +435,7 @@ class Safety extends EventEmitter {
       })
       // a mob it could not get at, the bot hurt: a meal now, still holding the claim (and the meal hold: auto-eat must
       // not start one of its own), when nothing is in melee reach. Fight after fight against mobs out of reach (zombies
-      // behind a wall, a skeleton shooting down its shaft) kept every meal suppressed: FINAL-ROUND O1 went 18 → 0 hp in
+      // behind a wall, a skeleton shooting down its shaft) kept every meal suppressed: one run went 18 → 0 hp in
       // 2 min with food 16 (no regeneration below 18)
       if (['unreachable', 'timeout', 'escaped'].includes(r.outcome)) await this.mealBetweenFights().catch(() => {})
     } finally {
@@ -526,7 +525,7 @@ class Safety extends EventEmitter {
     for (const [e, until] of this.attackers) {
       if (e === target || !this.bot.entities[e.id]) continue
       // it hit the bot in the last 2 s from melee reach — and the target is out of reach, or a block farther than it
-      // (FINAL-ROUND R1: a skeleton 3.4 from the bot's eyes, just inside the old cut-off, was fought for 7 s while a
+      // (one run: a skeleton 3.4 from the bot's eyes was fought for 7 s while a
       // zombie 1.4 away hit the unarmored bot every second, 17.5 → 0 hp)
       const d = combat.hitboxDistance(this.bot, e)
       if (until - 20000 > now - 2000 && d <= 3 && (far > 3.5 || d < far - 1)) return true

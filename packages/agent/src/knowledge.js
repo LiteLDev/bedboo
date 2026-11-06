@@ -1,4 +1,3 @@
-// owner: U17 (agent core & overworld milestones)
 'use strict'
 /**
  * The live world model for the obtain planner (src/planner.js): recipes from `bot.recipesAll`, furnace recipes and

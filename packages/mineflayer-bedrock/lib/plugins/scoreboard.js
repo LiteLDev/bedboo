@@ -1,10 +1,9 @@
-// owner: U6 (chat, commands & HUD)
 // Adapted from mineflayer 4.39.0 lib/plugins/scoreboard.js (MIT, Copyright (c) 2013 Andrew Kelley,
 // https://github.com/PrismarineJS/mineflayer); ScoreBoard class: mineflayer/lib/scoreboard (unchanged).
 // Surface: bot.scoreboards {name: ScoreBoard}, bot.scoreboard {list|sidebar|belowName: ScoreBoard} (= ScoreBoard.positions)
 // Events: 'scoreboardCreated' / 'scoreboardDeleted' / 'scoreboardTitleChanged' (scoreboard),
 //   'scoreUpdated' / 'scoreRemoved' (scoreboard, item), 'scoreboardPosition' (position, scoreboard, previous)
-// Bedrock (BDS 1.26.51.1, docs/differences/U6.md#scoreboards): the client only learns about DISPLAYED objectives.
+// Bedrock (BDS 1.26.51.1): the client only learns about DISPLAYED objectives.
 //   set_display_objective { display_slot: list|sidebar|belowname, objective_name, display_name, criteria_name,
 //     sort_order }: an unknown objective → new ScoreBoard ('scoreboardCreated'; title = the plain display name),
 //     a new display name → 'scoreboardTitleChanged', then 'scoreboardPosition' (0 list, 1 sidebar, 2 belowName —

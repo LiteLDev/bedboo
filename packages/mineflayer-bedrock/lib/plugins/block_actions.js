@@ -1,11 +1,10 @@
-// owner: U9 (player state, world extras & dimensions)
 // Adapted from mineflayer 4.39.0 lib/plugins/block_actions.js (MIT, Copyright (c) 2013 Andrew Kelley): same events
 //   and arguments, the per-position open count of chestLidMove, one event per double chest.
 // Surface: none (events only)
 // Events: 'noteHeard' (block, instrument, pitch), 'pistonMove' (block, isPulling, direction),
 //   'chestLidMove' (block, isOpen, block2), 'blockBreakProgressObserved' (block, destroyStage, entity),
 //   'blockBreakProgressEnd' (block, entity)
-// Bedrock (BDS 1.26.51.1, observed live; docs/differences/U9.md#block-actions):
+// Bedrock (BDS 1.26.51.1, observed live):
 // - note blocks: block_event { type: instrument id (bedrock-protocol maps 0/1 to 'sound'/'change_state'), data:
 //   pitch 0..24 } → noteHeard(block, registry.instruments[type], pitch) (Bedrock instrument ids, e.g. 6 bell).
 // - chests & other lidded containers: block_event { type: 'change_state' (1), data: open count } at the opened

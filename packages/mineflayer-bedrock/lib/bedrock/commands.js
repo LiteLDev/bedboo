@@ -1,4 +1,3 @@
-// owner: U6 (chat, commands & HUD)
 'use strict'
 /**
  * Client-side command completion for `bot.tabComplete` (Bedrock has no tab-complete packet; the vanilla client

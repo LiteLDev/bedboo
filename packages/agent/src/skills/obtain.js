@@ -1,4 +1,3 @@
-// owner: U17 (agent core & overworld milestones)
 'use strict'
 /**
  * obtain(item, count): get `count` × `item` into the inventory by whatever it takes, recursively —
@@ -66,7 +65,7 @@ function preyOk (bot, e) {
 
 /**
  * Room for an animal's drops before it is killed (a kill brings up to 2 new kinds: meat and wool / leather / feathers):
- * with no free slot a new kind of item stays on the ground. A final chain's provisions (FINAL-ROUND d2) killed 3 cows
+ * with no free slot a new kind of item stays on the ground. One run's provisions step killed 3 cows
  * and 3 pigs and picked up no beef or porkchop, all 36 slots taken (356 cobblestone, the wool, feathers and leather of
  * earlier kills), and failed with 3 food items of 8. Fewer than 3 free: junk and surplus go until 4 are, never the
  * hunted items, tossed away from the prey. @returns {Promise<Record<string, number>>} what was tossed

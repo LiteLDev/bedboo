@@ -1,10 +1,9 @@
-// owner: U9 (player state, world extras & dimensions)
 // Adapted from mineflayer 4.39.0 lib/plugins/time.js (MIT, Copyright (c) 2013 Andrew Kelley): same bot.time fields
 //   and derivations (timeOfDay, day, isDay, moonPhase), 'time' event.
 // Surface: bot.time { doDaylightCycle, bigTime, time, timeOfDay, day, isDay, moonPhase, bigAge, age, clocks }
 //   (null until the first update)
 // Events: 'time'
-// Bedrock (docs/differences/U9.md#world-time):
+// Bedrock:
 // - BDS 1.26.51 sends NO set_time packet: world time is the `minecraft:overworld` world clock of
 //   `sync_world_clocks` (initialize_registry: clocks with id, name, time, paused, time markers; sync_state: id →
 //   time, paused — sent before start_game, on /time set|add and now and then). bot.time.time is the clock's time

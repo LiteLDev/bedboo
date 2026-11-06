@@ -1,4 +1,3 @@
-// owner: U11 (placing & placement-based parity)
 // Adapted from mineflayer 4.39.0 lib/plugins/place_entity.js (MIT, Copyright (c) 2013 Andrew Kelley,
 // https://github.com/PrismarineJS/mineflayer): held-item checks, the 'Unimplemented' assertion, the spawn-egg /
 // end-crystal / armor-stand / boat entity names (through the same features), the swing defaults, the 5 s
@@ -6,9 +5,9 @@
 // Surface: bot.placeEntity(referenceBlock, faceVector) → Promise<Entity>,
 //   bot._placeEntityWithOptions(referenceBlock, faceVector, options) options {forceLook, offhand, swingArm, showHand}
 // Events: 'entityPlaced' (entity)
-// Bedrock (measured on BDS 1.26.51.1, docs/differences/U11.md#place-entity):
+// Bedrock (measured on BDS 1.26.51.1):
 // - armor stands, spawn eggs, end crystals and minecarts are a click on the reference block (bot._genericPlace) and
-//   the server spawns the entity (add_entity → U7's entitySpawn);
+//   the server spawns the entity (add_entity → entitySpawn);
 // - Java places a boat with use_item (a server-side raycast along the look); BDS ignores a boat's click_air and the
 //   vanilla client clicks the water it aims at: a boat whose reference block is a liquid is a click on that liquid's
 //   top face (the boat spawns centred on it, whatever face was given; the look of the bot does not matter), on any

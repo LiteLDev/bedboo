@@ -1,9 +1,8 @@
-// owner: U9 (player state, world extras & dimensions)
 // Vendored from mineflayer 4.39.0 lib/plugins/explosion.js (MIT, Copyright (c) 2013 Andrew Kelley,
 //   https://github.com/PrismarineJS/mineflayer) — never `pnpm patch mineflayer`. Same exposure sampling, damage
-//   formula and armor absorption; one Bedrock change: the armor attribute lookup (docs/differences/U9.md#explosion).
+//   formula and armor absorption; one Bedrock change: the armor attribute lookup.
 // Surface: bot.getExplosionDamages(targetEntity, sourcePos, power, rawDamages = false) → number | null
-// Bedrock: there is no armor attribute on the wire. U7 synthesizes `generic.armor` / `generic.armorToughness` (Java
+// Bedrock: there is no armor attribute on the wire. entities.js synthesizes `generic.armor` / `generic.armorToughness` (Java
 //   names) on entities from their equipment; Java resource names (`minecraft:armor`, `minecraft:generic.armor`, …) are
 //   accepted too. A living entity (player or mob: it has `minecraft:max_health` or a health) without any armor
 //   attribute counts as unarmored (0 armor, 0 toughness) instead of upstream's `null`, which upstream returns for

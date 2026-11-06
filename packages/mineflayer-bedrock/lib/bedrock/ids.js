@@ -1,4 +1,3 @@
-// owner: U4 (core runtime)
 'use strict'
 
 /**
@@ -6,13 +5,13 @@
  *
  * Entities: Bedrock packets reference an entity either by its *runtime* id (varint64; most
  * packets) or by its *unique* id (zigzag64; add_entity/add_player `unique_id`, set_entity_link,
- * boss_event, …). mineflayer `Entity.id` is `Number(runtimeId)`. U7 registers every entity with
+ * boss_event, …). mineflayer `Entity.id` is `Number(runtimeId)`. entities.js registers every entity with
  * `trackEntity` on add_* and drops it with `untrackEntity` on remove_entity (which carries the
  * unique id). The local player's ids come from start_game (`runtime_entity_id`, `entity_id`).
  *
  * Items: the network id ↔ identifier table comes from the `item_registry` packet (1.21.60+);
  * blocks use hashed runtime ids (FNV-1a of the block state, start_game `block_network_ids_are_hashes`)
- * resolved by prismarine-registry/-chunk (U2).
+ * resolved by prismarine-registry/-chunk.
  *
  * @typedef {object} BedrockIds
  * @property {Map<bigint, bigint>} runtimeToUnique runtime id → unique id

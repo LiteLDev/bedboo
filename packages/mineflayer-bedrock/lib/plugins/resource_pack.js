@@ -1,4 +1,3 @@
-// owner: U4 (core runtime; bedrock-protocol patch holds the resource pack response)
 // Upstream: mineflayer 4.39.0 lib/plugins/resource_pack.js
 // Surface: bot.acceptResourcePack(), bot.denyResourcePack()
 // Events: 'resourcePack' (url, hash, uuid) — once per pack the server offers
@@ -15,8 +14,8 @@
 //     "join without packs"), a required one with 'refused' → BDS disconnects (kicked 'missing_client', loggedIn
 //     false), like a Java server kicking a client that declines its required pack.
 //   Event arguments: `url` = the pack's CDN url ('' when the server sends the pack itself), `hash` = the Bedrock
-//   pack id `<uuid>_<version>`, `uuid` = the pack uuid (docs/differences/U4.md#resource-packs).
-// BEDD-5: with `transport: 'bedd'` the real client answered the packs during its own login: nothing is held, and
+//   pack id `<uuid>_<version>`, `uuid` = the pack uuid.
+// with `transport: 'bedd'` the real client answered the packs during its own login: nothing is held, and
 //   acceptResourcePack() / denyResourcePack() do nothing (one warning). 'resourcePack' still fires for an offer seen.
 'use strict'
 

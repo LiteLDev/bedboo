@@ -1,10 +1,9 @@
-// owner: U18 (agent combat & dimensions)
 'use strict'
 /**
  * End skill: fill the stronghold's end portal frames with eyes of ender, jump in, fight endermen in The End, leave
  * through the exit portal (credits acknowledged by mineflayer-bedrock) back to the overworld. The skill itself is
- * cheat-free; the cheat-assisted parts of the End milestone are scenario setup steps (documented in
- * docs/differences/U18.md): locating the stronghold (`/locate`) and teleporting the bot into its portal room, the
+ * cheat-free; the cheat-assisted parts of the End milestone are scenario setup steps:
+ * locating the stronghold (`/locate`) and teleporting the bot into its portal room, the
  * eyes of ender (`/give`), and killing the ender dragon (`/kill @e[type=ender_dragon]`) so the exit portal opens.
  *
  * Phases (`args.phase`, default all three in order):
@@ -209,7 +208,7 @@ async function enterEndPortal (bot, ring, { signal, timeout = 120000 } = {}) {
   const from = bot.game.dimension
   const deadline = Date.now() + timeout
   // walks in until the bot is through (≤ `timeout`): a fight takes the controls on the way — the portal room's
-  // silverfish spawner (FINAL-ROUND E1A run 1: two silverfish held the bot mid-walk, its one walk-in ran out, and the
+  // silverfish spawner (one run: two silverfish held the bot mid-walk, its one walk-in ran out, and the
   // arrival wait timed out 30 s later). The walk waits for the fight (stepInto), and a walk that did not get the bot
   // through goes again
   for (let walk = 1; ; walk++) {
@@ -409,7 +408,7 @@ function stepOnto (bot, p, signal, { ticks = 30 } = {}) {
   return require('./navigate').stepTo(bot, p, signal, { ticks })
 }
 
-/** a filler block (U17's filler stacks) in the hand, or null */
+/** a filler block (the agent's filler stacks) in the hand, or null */
 async function holdFiller (bot) {
   const inventory = require('../inventory')
   const item = inventory.filler(bot)
@@ -519,7 +518,7 @@ async function manualStep (bot, target, { signal, trail = [] } = {}) {
  * A hop that does not move the bot 2 blocks in `stallMs` (15 s), or that ends with the pathfinder giving up on failed
  * placements, is a stall. The walk once stood still on its half-built bridge for 10 × 30 s (4 chained runs): unpatched,
  * mineflayer-pathfinder never got past a scaffolding block whose equip or placement failed. The patched pathfinder
- * (patches/mineflayer-pathfinder@2.4.5.patch, docs/differences/U15.md#pathfinder) releases its equip lock, retries a
+ * (patches/mineflayer-pathfinder@2.4.5.patch) releases its equip lock, retries a
  * refused cell once and then plans around it or rejects with NoPath ("… placements failed in a row"), and its stop()
  * settles at once; the ways below stay as a bounded defence in depth. The next hop after a stall takes another way:
  * the pathfinder without placements (dropping ≤ 6 off the platform onto the island's slope, digging up through the end

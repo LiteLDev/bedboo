@@ -1,4 +1,3 @@
-// owner: U4 (wave 2) → U8 (wave 3)
 'use strict'
 
 /**
@@ -10,7 +9,7 @@
  * item_stack_request; `block_runtime_id` must round-trip unchanged for held-item checks in
  * inventory_transaction (the server compares held_item with its own copy).
  *
- * prismarine-item (patched by U2, see docs/differences/U2.md) does the conversion: `Item.fromNotch(wire)`
+ * prismarine-item (patched: patches/prismarine-item@1.18.0.patch) does the conversion: `Item.fromNotch(wire)`
  * keeps `item.stackId`, `item.blockRuntimeId`, `canPlaceOn`/`canDestroy` and the NBT, and `Item.toNotch(item)`
  * re-serializes every captured BDS inventory packet byte for byte.
  *

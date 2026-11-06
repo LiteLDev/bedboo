@@ -1,4 +1,3 @@
-// owner: BEDD-1 (transport 'bedd': control RPC, tap reader, client)
 'use strict'
 /**
  * Be.D.D. control pipe client (docs: bedd-bedboo spec, wire protocol B).
