@@ -1,6 +1,6 @@
 'use strict'
 // resource_pack.js + the bedrock-protocol patch that holds the resource pack answer
-// (patches/bedrock-protocol@3.60.1.patch).
+// (patches/bedrock-protocol@3.61.0.patch).
 const { describe, it } = require('node:test')
 const assert = require('assert')
 const { createFakeBot } = require('./helpers/fake')

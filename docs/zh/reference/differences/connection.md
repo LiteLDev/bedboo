@@ -39,7 +39,7 @@ BDS 1.26.51.1（protocol 2193）与 bedrock-protocol 3.60.1。
   NetherNet 服务器不会打开 RakNet 端口，反之亦然。
 - **bedboo：** 默认 `transport: 'raknet'`（raknet-native）。`transport: 'nethernet'` 通过 `host:port` 上的 HTTP 信令加入，
   除非 `nethernet.signalling` 指定 `'lan'` / `'services'`。bedrock-protocol#831 和 node-nethernet#32（尚未发布）以
-  `patches/bedrock-protocol@3.60.1.patch` 与 `patches/nethernet@1.1.2.patch` 的形式回移（另加一条
+  `patches/bedrock-protocol@3.61.0.patch` 与 `patches/nethernet@1.1.2.patch` 的形式回移（另加一条
   `packageExtensions`，为 nethernet 新增的 jsonwebtoken 依赖）。服务器用身份密钥对 answer 签名；纯 HTTP 无法担保该密钥，
   因此默认接受，除非用 `nethernet.serverKey` 固定它（`'sha256:<hex of the DER SPKI>'`，不匹配时以
   `Untrusted Nethernet server key …` 拒绝），或由 `nethernet.onServerKey(fingerprint, url)` 决定。这与 RakNet 的信任程度
