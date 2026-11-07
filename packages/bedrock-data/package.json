@@ -1,7 +1,7 @@
 {
   "name": "@bedboo/bedrock-data",
   "version": "0.0.0",
-  "description": "Bedrock 1.26.51 data overlay injected into minecraft-data (bedrock_1.26.51)",
+  "description": "Bedrock data overlays (one per data version, default 1.26.51) injected into minecraft-data (bedrock_<version>)",
   "license": "LGPL-3.0-only",
   "main": "index.js",
   "repository": {
@@ -15,7 +15,7 @@
   "scripts": {
     "test": "node --test --test-isolation=none --test-timeout=60000 \"test/**/*.test.js\"",
     "generate": "node scripts/fetch-sources.js && node scripts/generate.js",
-    "generate:check": "node scripts/fetch-sources.js && node scripts/generate.js --check"
+    "generate:check": "node scripts/fetch-sources.js --all && node scripts/generate.js --check --all"
   },
   "dependencies": {
     "minecraft-data": "3.117.0"

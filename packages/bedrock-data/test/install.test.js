@@ -1,9 +1,12 @@
 'use strict'
 const { describe, it } = require('node:test')
 const assert = require('assert')
+const fs = require('fs')
+const os = require('os')
 const path = require('path')
 const { execFileSync } = require('child_process')
 const data = require('..')
+const { createInstaller, listVersions } = require('../install')
 
 const DATASETS = [
   'attributes', 'biomes', 'blockCollisionShapes', 'blockStates', 'blocks', 'effects', 'enchantments', 'entities', 'foods',
@@ -18,6 +21,99 @@ describe('@bedboo/bedrock-data install()', () => {
     assert.strictEqual(first.installed, true)
     assert.strictEqual(first.version, '1.26.51')
     assert.deepStrictEqual([...first.datasets].sort(), DATASETS)
+    assert.deepStrictEqual(first.versions, data.versions)
+    assert.deepStrictEqual(first.datasetsByVersion['1.26.51'], first.datasets)
+  })
+
+  it('lists every data/<version>/ directory, sorted, 1.26.51 included', () => {
+    const dirs = fs.readdirSync(path.join(__dirname, '..', 'data')).filter(d => /^\d+(\.\d+)+$/.test(d))
+    assert.deepStrictEqual([...data.versions].sort(), dirs.sort())
+    assert.ok(data.versions.includes('1.26.51'))
+    assert.ok(Object.isFrozen(data.versions))
+  })
+
+  it('overlays every data version and relaxes its Java version comparisons', () => {
+    const { datasetsByVersion } = data.install()
+    const entries = require('minecraft-data/data.js').bedrock
+    for (const version of data.versions) {
+      assert.ok(datasetsByVersion[version].length > 0, version)
+      for (const name of datasetsByVersion[version]) {
+        assert.strictEqual(typeof Object.getOwnPropertyDescriptor(entries[version], name).get, 'function', `${version} ${name}`)
+      }
+      const mcData = require('minecraft-data')('bedrock_' + version)
+      assert.strictEqual(mcData.version.minecraftVersion, version)
+      assert.strictEqual(mcData.isNewerOrEqualTo('1.9'), true, `${version} >= Java 1.9`)
+      assert.strictEqual(mcData.isOlderThan('26.1'), true, `${version} < Java 26.1`)
+    }
+  })
+
+  it('sorts version directories numerically and ignores other entries', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bedrock-data-'))
+    try {
+      for (const d of ['1.26.10', '1.26.9', '1.26.51', 'notes']) fs.mkdirSync(path.join(root, d))
+      fs.writeFileSync(path.join(root, '1.26.60'), 'a file, not a version directory')
+      assert.deepStrictEqual(listVersions(root), ['1.26.9', '1.26.10', '1.26.51'])
+      assert.deepStrictEqual(listVersions(path.join(root, 'missing')), [])
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('throws for a data version minecraft-data has no entry for (before patching anything)', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bedrock-data-'))
+    try {
+      fs.mkdirSync(path.join(root, '9.99.0'))
+      fs.writeFileSync(path.join(root, '9.99.0', 'effects.json'), '[]')
+      assert.throws(() => createInstaller(root)(), /no bedrock 9\.99\.0 entry/)
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('overlays two data directories onto their own versions (and refreshes one built before install)', () => {
+    // fresh process: the getters install() defines are global to minecraft-data
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bedrock-data-'))
+    try {
+      const effect = (id, name) => [{ id, name, displayName: name, type: 'good' }]
+      for (const version of ['1.26.40', '1.26.45']) fs.mkdirSync(path.join(root, version))
+      fs.writeFileSync(path.join(root, '1.26.40', 'effects.json'), JSON.stringify(effect(90, 'Fake40')))
+      fs.writeFileSync(path.join(root, '1.26.45', 'effects.json.gz'), require('zlib').gzipSync(JSON.stringify(effect(91, 'Fake45'))))
+      fs.writeFileSync(path.join(root, '1.26.45', 'features.js'), 'module.exports = {}\n') // not a dataset
+      const script = `
+        const mcData = require('minecraft-data')
+        const early = mcData('bedrock_1.26.45')
+        const { createInstaller } = require(${JSON.stringify(path.join(__dirname, '..', 'install'))})
+        const install = createInstaller(${JSON.stringify(root)})
+        const result = install()
+        const v40 = mcData('bedrock_1.26.40')
+        const v45 = mcData('bedrock_1.26.45')
+        const v51 = mcData('bedrock_1.26.51')
+        process.stdout.write(JSON.stringify({
+          result,
+          again: install() === result,
+          same: early === v45,
+          fake40: v40.effectsByName.Fake40?.id,
+          fake45: early.effectsByName.Fake45?.id,
+          crossed: [v40.effectsByName.Fake45, v45.effectsByName.Fake40].some(Boolean),
+          untouched: v51.effectsByName.Levitation?.id,
+          relaxed: [v40.isNewerOrEqualTo('1.9'), v45.version['<']('26.1')]
+        }))
+      `
+      const out = JSON.parse(execFileSync(process.execPath, ['-e', script], { cwd: path.join(__dirname, '..') }).toString())
+      assert.deepStrictEqual(out.result.versions, ['1.26.40', '1.26.45'])
+      assert.deepStrictEqual(out.result.datasetsByVersion, { '1.26.40': ['effects'], '1.26.45': ['effects'] })
+      assert.strictEqual(out.result.version, '1.26.51')
+      assert.deepStrictEqual(out.result.datasets, [], 'no data for the default version under this root')
+      assert.strictEqual(out.again, true)
+      assert.strictEqual(out.same, true)
+      assert.strictEqual(out.fake40, 90)
+      assert.strictEqual(out.fake45, 91, 'the cached bedrock_1.26.45 object built before install() was refreshed')
+      assert.strictEqual(out.crossed, false)
+      assert.strictEqual(out.untouched, 25, 'bedrock_1.26.51 (no directory under this root) keeps minecraft-data')
+      assert.deepStrictEqual(out.relaxed, [true, true])
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true })
+    }
   })
 
   it('redefines the bedrock 1.26.51 getters of minecraft-data (and nothing else)', () => {

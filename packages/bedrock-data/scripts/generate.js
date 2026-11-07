@@ -2,12 +2,14 @@
 'use strict'
 
 /**
- * Builds `packages/bedrock-data/data/1.26.51/*` (one file per minecraft-data dataset) from the pinned
- * sources (see sources.js; run fetch-sources.js first) and the tables in ./tables.js.
+ * Builds `packages/bedrock-data/data/<version>/*` (one file per minecraft-data dataset) from the pinned
+ * sources of that data version (see sources.js; run fetch-sources.js first), its live probe
+ * (probe/<version>.json) and the tables in ./tables.js (tables.forVersion).
  *
- *   node packages/bedrock-data/scripts/fetch-sources.js
- *   node packages/bedrock-data/scripts/generate.js            # writes data/1.26.51 and test/fixtures
- *   node packages/bedrock-data/scripts/generate.js --check    # verifies the committed output is up to date
+ *   node packages/bedrock-data/scripts/fetch-sources.js [--version <v> | --all]
+ *   node packages/bedrock-data/scripts/generate.js [--version <v> | --all]           # writes data/<v> and test/fixtures/<v>
+ *   node packages/bedrock-data/scripts/generate.js --check [--version <v> | --all]   # verifies the committed output is up to date
+ * Without --version / --all the default data version (1.26.51) is built. `--version` may be repeated.
  *
  * Every deviation from the vendored minecraft-data PR #1335 files is either derived from the BDS dumps of
  * CloudburstMC/Data (allowlisted below, the generator fails on any other disagreement) or comes from a
@@ -17,8 +19,9 @@ const fs = require('fs')
 const path = require('path')
 const zlib = require('zlib')
 const { createRequire } = require('module')
-const { sourcePath, SOURCES } = require('./sources')
-const tables = require('./tables')
+const { sourcePath, sourcesFor, pinsFor, versionsFromArgv } = require('./sources')
+const allTables = require('./tables')
+const { DATASET_FILE } = require('../install')
 
 const pkgRoot = path.join(__dirname, '..')
 const requireFromPkg = createRequire(path.join(pkgRoot, 'package.json'))
@@ -27,9 +30,25 @@ const mcDataRoot = path.dirname(requireFromPkg.resolve('minecraft-data/package.j
 const MCD = path.join(mcDataRoot, 'minecraft-data', 'data')
 const dataPaths = require(path.join(MCD, 'dataPaths.json'))
 
-const VERSION = '1.26.51'
-const OUT_DIR = path.join(pkgRoot, 'data', VERSION)
-const FIXTURE_DIR = path.join(pkgRoot, 'test', 'fixtures')
+// The data version being generated and what depends on it (set by selectVersion before each build).
+let VERSION = null
+let OUT_DIR = null
+let FIXTURE_DIR = null
+let SOURCES = null
+let PROBE = null // facts observed on a live BDS of the version (probe/<version>.json)
+let tables = null
+
+function selectVersion (version) {
+  pinsFor(version) // throws for a version without pinned sources
+  VERSION = version
+  OUT_DIR = path.join(pkgRoot, 'data', version)
+  FIXTURE_DIR = path.join(pkgRoot, 'test', 'fixtures', version)
+  SOURCES = sourcesFor(version)
+  const probe = path.join(__dirname, 'probe', version + '.json')
+  if (!fs.existsSync(probe)) throw new Error(`no ${path.relative(pkgRoot, probe)}: record the facts of BDS ${pinsFor(version).bds} there (see NOTICE.md)`)
+  PROBE = JSON.parse(fs.readFileSync(probe, 'utf8'))
+  tables = allTables.forVersion(version)
+}
 /** Datasets larger than this are written gzip'd (`<name>.json.gz`); the loader decompresses them. */
 const GZIP_THRESHOLD = 256 * 1024
 
@@ -50,9 +69,8 @@ const COLLISION_FROM_CLOUDBURST = [
  */
 const HASH_FROM_CLOUDBURST = new Set(['unknown'])
 
-const PROBE = require('./probe/1.26.51.json') // facts observed on a live BDS 1.26.51.1
-
-const readJson = id => JSON.parse(fs.readFileSync(sourcePath(id), 'utf8'))
+const sourceFile = id => sourcePath(id, VERSION)
+const readJson = id => JSON.parse(fs.readFileSync(sourceFile(id), 'utf8'))
 const mcdata = (type, dataset, version = VERSION) => require(path.join(MCD, dataPaths[type][version][dataset], dataset + '.json'))
 const round = (x, digits = 4) => Math.round(x * 10 ** digits) / 10 ** digits
 
@@ -74,7 +92,7 @@ function blockStateHash (name, states) {
 }
 
 async function readNbt (id) {
-  const { parsed } = await nbt.parse(fs.readFileSync(sourcePath(id)))
+  const { parsed } = await nbt.parse(fs.readFileSync(sourceFile(id)))
   return nbt.simplify(parsed)
 }
 
@@ -365,12 +383,12 @@ async function buildEntities (report) {
       e.height = e.height ?? 0
     }
   }
-  for (const e of bedrock) if (!out.some(o => o.name === e.name)) report.push(`entities: dropped ${e.name} (not a BDS 1.26.51 entity identifier)`)
+  for (const e of bedrock) if (!out.some(o => o.name === e.name)) report.push(`entities: dropped ${e.name} (not a BDS ${VERSION} entity identifier)`)
   return out.sort((a, b) => a.id - b.id)
 }
 
 function buildParticles () {
-  // Bedrock ParticleType: level_event `0x4000 | id` (add_particle_<name>) in bedrock-protocol's 1.26.51 schema.
+  // Bedrock ParticleType: level_event `0x4000 | id` (add_particle_<name>) in bedrock-protocol's schema of the version.
   const protocol = require(path.join(MCD, dataPaths.bedrock[VERSION].protocol, 'protocol.json'))
   const mappings = protocol.types.packet_level_event[1][0].type[1].mappings
   const out = []
@@ -382,13 +400,13 @@ function buildParticles () {
 }
 
 function buildSounds (report) {
-  // Level sound events. On the 1.26.51 wire `level_sound_event.sound_id` is the string identifier
+  // Level sound events. On the 1.26.51 (and later) wire `level_sound_event.sound_id` is the string identifier
   // (gophertunnel's SoundEvent* constants); `id` is the legacy numeric LevelSoundEvent id from
   // bedrock-protocol's `SoundType` enum (matched by constant name).
   const protocol = require(path.join(MCD, dataPaths.bedrock[VERSION].protocol, 'protocol.json'))
   const legacy = protocol.types.SoundType[1].mappings
   const idByCamel = new Map(Object.entries(legacy).map(([id, n]) => [n.toLowerCase(), Number(id)]))
-  const src = fs.readFileSync(sourcePath('gophertunnel/level_sound_event.go'), 'utf8')
+  const src = fs.readFileSync(sourceFile('gophertunnel/level_sound_event.go'), 'utf8')
   const out = []
   const seen = new Set()
   let nextId = Math.max(...idByCamel.values()) + 1
@@ -460,7 +478,7 @@ function buildBiomes (report) {
       depth: def.depth
     })
   }
-  for (const name of Object.keys(ids)) if (!definitions['minecraft:' + name]) throw new Error(`biome id map names ${name}, which BDS 1.26.51 does not define`)
+  for (const name of Object.keys(ids)) if (!definitions['minecraft:' + name]) throw new Error(`biome id map names ${name}, which BDS ${VERSION} does not define`)
   out.sort((a, b) => a.id - b.id)
   for (let i = 1; i < out.length; i++) if (out[i].id === out[i - 1].id) throw new Error(`biome id ${out[i].id} used twice`)
   const order = out.map(b => b.name)
@@ -479,10 +497,12 @@ function encode (name, value) {
   return name.endsWith('.gz') ? zlib.gzipSync(json, { level: 9 }) : Buffer.from(json)
 }
 
-async function main () {
-  const check = process.argv.includes('--check')
+/** Builds (or with `check`, verifies) data/<version> and test/fixtures/<version>; returns the stale file count. */
+async function generate (version, check) {
+  selectVersion(version)
+  console.log(`data version ${version} (BDS ${pinsFor(version).bds})`)
   for (const s of Object.values(SOURCES)) {
-    if (!fs.existsSync(sourcePath(s.id))) throw new Error(`missing source ${s.id}: run scripts/fetch-sources.js`)
+    if (!fs.existsSync(sourceFile(s.id))) throw new Error(`missing source ${version} ${s.id}: run scripts/fetch-sources.js --version ${version}`)
   }
   const report = []
   const { blocks, blockStates, blockCollisionShapes, hashes } = buildBlocks(report)
@@ -536,12 +556,21 @@ async function main () {
   }
   for (const f of fs.existsSync(OUT_DIR) ? fs.readdirSync(OUT_DIR) : []) {
     const file = path.join(OUT_DIR, f)
-    if (expected.has(file)) continue
+    // only datasets are generated: hand-written files (features.js) stay
+    if (expected.has(file) || !DATASET_FILE.test(f)) continue
     if (check) { console.error('unexpected:', f); stale++ } else { fs.unlinkSync(file); console.log('removed', f) }
   }
   for (const line of report) console.log('  ' + line)
-  if (check && stale) throw new Error(`${stale} generated file(s) out of date: run scripts/generate.js`)
-  console.log(check ? 'generated data is up to date' : 'done')
+  return stale
+}
+
+async function main () {
+  const check = process.argv.includes('--check')
+  const versions = versionsFromArgv()
+  let stale = 0
+  for (const version of versions) stale += await generate(version, check)
+  if (check && stale) throw new Error(`${stale} generated file(s) out of date: run scripts/generate.js --version <v>`)
+  console.log(check ? `generated data is up to date (${versions.join(', ')})` : 'done')
 }
 
 if (require.main === module) {
