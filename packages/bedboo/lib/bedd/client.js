@@ -27,7 +27,8 @@
  */
 const net = require('net')
 const { EventEmitter } = require('events')
-const { VERSION, PROTOCOL_VERSION } = require('../bedrock/constants')
+const { VERSION } = require('../bedrock/constants')
+const { resolveVersion, protocolFor } = require('../bedrock/versions')
 const { createRpc, whenConnected } = require('./rpc')
 const { createTapReader, KIND } = require('./tap')
 
@@ -57,7 +58,7 @@ function beddOptions (options) {
  */
 function createBeddClient (options = {}, { createApi } = {}) {
   const bedd = beddOptions(options)
-  const version = options.version || VERSION
+  const version = resolveVersion(options.version || VERSION)
   const client = new EventEmitter()
   client.setMaxListeners(0)
   client.version = version
@@ -140,7 +141,7 @@ function createBeddClient (options = {}, { createApi } = {}) {
     const onConnect = () => {
       if (closed) return stream.destroy?.()
       connected = true
-      tap = createTapReader(stream, { version, protocol: PROTOCOL_VERSION })
+      tap = createTapReader(stream, { version, protocol: protocolFor(version) })
       tap.on('hello', onHello)
       tap.on('marker', onMarker)
       tap.on('packet', onPacket)

@@ -23,13 +23,20 @@ export { BeddOptions, BeddClientApi, BeddRpc, BeddCap, BeddCaps, BeddLink, BeddS
 export function createBot (options: { client: Client } & Partial<BotOptions>): Bot
 export function createBot (options: BotOptions): Bot
 
-// bedrock-protocol's ClientOptions.viewDistance is `number`; mineflayer's (below) also accepts names.
-export interface BotOptions extends Omit<ClientOptions, 'viewDistance' | 'transport'> {
+// bedrock-protocol's ClientOptions.viewDistance is `number`; mineflayer's (below) also accepts names. `version` also
+// accepts a BDS build and mineflayer's `false`.
+export interface BotOptions extends Omit<ClientOptions, 'viewDistance' | 'transport' | 'version'> {
   /**
    * 'raknet' (default) or 'nethernet' connect to a server; 'bedd' follows a real Minecraft client hosted by
    * Be.D.D. (options under `bedd`)
    */
   transport?: 'raknet' | 'nethernet' | 'bedd'
+  /**
+   * Bedrock version: a tested protocol family ('1.26.51', see `testedVersions`) or one of its BDS builds
+   * ('1.26.52.3'), optionally 'bedrock_'-prefixed; default (also for mineflayer's `false`) '1.26.51'.
+   * `bot.version` is the family.
+   */
+  version?: string | false
   /** Be.D.D. pipes for `transport: 'bedd'` */
   bedd?: BeddOptions
   /** mineflayer auth: 'offline' (default) or 'microsoft' (Xbox Live via prismarine-auth); 'mojang' does not exist on Bedrock */
