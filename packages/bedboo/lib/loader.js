@@ -7,7 +7,8 @@ const pluginLoader = require('mineflayer/lib/plugin_loader')
 const { createRegistry, attachRegistry } = require('./registry')
 const { createClient } = require('./client')
 const { createSupportFeature } = require('./bedrock/features')
-const { testedVersions, latestSupportedVersion, oldestSupportedVersion } = require('./version')
+const { findFamily } = require('./bedrock/versions')
+const { testedVersions, latestSupportedVersion, oldestSupportedVersion, testedFamily, resolveTestedVersion } = require('./version')
 const { VERSION } = require('./bedrock/constants')
 const { createInputQueue } = require('./bedrock/input_queue')
 const { createLifecycle } = require('./bedrock/lifecycle')
@@ -78,16 +79,21 @@ module.exports = {
   supportFeature
 }
 
-// mineflayer's module-level supportFeature(feature, version). The Bedrock feature table does not depend on a
-// registry, so no registry is built per call; other versions are answered by minecraft-data like upstream.
-let tableSupportFeature = null
+// mineflayer's module-level supportFeature(feature, version). The Bedrock feature tables do not depend on a
+// registry, so no registry is built per call: a tested version (family or BDS build, optionally 'bedrock_'-prefixed;
+// none = the default version) answers from its table; a known but untested family from minecraft-data's
+// bedrock_<family> (a bare '1.26.60' would be looked up as a Java version); other versions are answered by
+// minecraft-data like upstream.
+const tableSupportFeatures = new Map() // family → supportFeature
 function supportFeature (feature, version) {
-  const v = typeof version === 'string' ? version.replace(/^bedrock_/, '') : version
-  if (!v || testedVersions.includes(v)) {
-    tableSupportFeature ??= createSupportFeature(null)
-    return tableSupportFeature(feature)
+  const family = version ? testedFamily(version) : VERSION
+  if (family) {
+    let fn = tableSupportFeatures.get(family)
+    if (!fn) tableSupportFeatures.set(family, (fn = createSupportFeature(null, { version: family })))
+    return fn(feature)
   }
-  return require('minecraft-data')(version).supportFeature(feature)
+  const known = findFamily(version)
+  return require('minecraft-data')(known ? 'bedrock_' + known.version : version).supportFeature(feature)
 }
 // internal (tests / conformance tooling); non-enumerable so the export names match mineflayer's
 Object.defineProperty(module.exports, '_plugins', { value: plugins, enumerable: false })
@@ -140,10 +146,10 @@ function endClient (client, reason) {
 
 function createBot (options = {}) {
   options.username = options.username ?? 'Player'
-  options.version = options.version || VERSION // mineflayer's `false` (auto) → the only supported version
-  if (!testedVersions.includes(options.version)) {
-    throw new Error(`Bedrock version '${options.version}' is not supported. Supported versions: ${testedVersions.join(', ')}.`)
-  }
+  // mineflayer's `false` (auto) → the default version (no ping-based discovery). A BDS build ('1.26.52.3') or a
+  // 'bedrock_' key resolves to its protocol family ('1.26.51'): the family is what bedrock-protocol, minecraft-data
+  // and bot.version use.
+  options.version = resolveTestedVersion(options.version || VERSION)
   options.plugins = options.plugins ?? {}
   options.hideErrors = options.hideErrors ?? false
   options.logErrors = options.logErrors ?? true

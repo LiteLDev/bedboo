@@ -197,6 +197,7 @@ describe('bedboo skeleton', () => {
 
   it('rejects unsupported versions like mineflayer', () => {
     assert.throws(() => bedboo.createBot({ client: fakeClient(), version: '1.21.50' }), /not supported/)
+    assert.throws(() => bedboo.createBot({ client: fakeClient(), version: '1.26.53.1' }), /not supported\. Supported versions: .*1\.26\.51\.1/)
   })
 
   it('honours plugins / loadInternalPlugins options like mineflayer', async () => {

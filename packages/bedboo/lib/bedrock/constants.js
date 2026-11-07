@@ -9,11 +9,15 @@
  * EYE level: `wire.y = feet.y + EYE_HEIGHT`. Convert only with {@link toWireY}/{@link fromWireY}.
  */
 
-/** Bedrock version string used for bedrock-protocol and minecraft-data (`bedrock_<VERSION>`). */
+/**
+ * DEFAULT Bedrock version (protocol family) used for bedrock-protocol and minecraft-data (`bedrock_<VERSION>`) when
+ * createBot is given none. Every supported family and its BDS builds: lib/bedrock/versions.js; per-bot code uses
+ * the bot's version (bot.version / bot.registry), not this constant.
+ */
 const VERSION = '1.26.51'
-/** Network protocol number of {@link VERSION}. */
-const PROTOCOL_VERSION = 2193
-/** The BDS build we test against. */
+/** Network protocol number of {@link VERSION} (2193), from lib/bedrock/versions.js. */
+const PROTOCOL_VERSION = require('./versions').findFamily(VERSION).protocol
+/** The default BDS build we test against. */
 const BDS_VERSION = '1.26.51.1'
 
 /** Player eye height above the feet (standing). Wire positions of the local player are at eye level. */

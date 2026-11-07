@@ -64,6 +64,9 @@ console.log(testedVersions, latestSupportedVersion, oldestSupportedVersion, supp
 
 // the createBot({ client }) overload (as in mineflayer)
 createBot({ client: bot._client, username: 'x' })
+// version: a protocol family, a BDS build, or mineflayer's false (auto = the default)
+createBot({ username: 'v', version: '1.26.52.3' })
+createBot({ username: 'v', version: false })
 
 // transports (BotOptions extends bedrock-protocol's ClientOptions, NethernetOptions from the patch)
 createBot({ host: '127.0.0.1', port: 19132, username: 'nn', auth: 'offline', transport: 'nethernet' })

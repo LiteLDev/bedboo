@@ -1,11 +1,12 @@
 'use strict'
 const { VERSION } = require('./bedrock/constants')
+const { testedVersions } = require('./version')
 
 /**
  * Registry setup.
  *
- * ORDER MATTERS: the @bedboo/bedrock-data overlay patches minecraft-data's `bedrock_1.26.51`
- * datasets. minecraft-data caches a version object the first time `require('minecraft-data')(v)`
+ * ORDER MATTERS: the @bedboo/bedrock-data overlay patches minecraft-data's `bedrock_<version>`
+ * datasets (every version it ships). minecraft-data caches a version object the first time `require('minecraft-data')(v)`
  * is called, and bedrock-protocol calls it while creating its (de)serializer, so the overlay must be
  * installed BEFORE bedrock-protocol / prismarine-* resolve any Bedrock data. `index.js` calls
  * `installDataOverlay()` as its very first statement; everything else calls it again (idempotent).
@@ -35,15 +36,20 @@ function installDataOverlay () {
  * mineflayer API: "`require('minecraft-data')(bot.version)` gives you access to it" (mineflayer docs/api.md). bot.version
  * is the bare Bedrock version '1.26.51', which minecraft-data resolves as a Java version (none exists: there is no Java
  * 1.26.51) and answers `null` — breaking upstream code that relies on it, e.g. prismarine-physics' `PlayerState`
- * (built by mineflayer-pathfinder), mineflayer-pvp. Alias it to the `bedrock_1.26.51` data (type 'bedrock').
+ * (built by mineflayer-pathfinder), mineflayer-pvp. Alias every tested version to its `bedrock_<version>` data
+ * (type 'bedrock').
  */
 function aliasBotVersion () {
+  for (const version of testedVersions) aliasVersion(version)
+}
+
+function aliasVersion (version) {
   const data = require('minecraft-data/data.js')
-  if (!data.pc || data.pc[VERSION] || !data.bedrock?.[VERSION]) return
-  data.pc[VERSION] = data.bedrock[VERSION]
+  if (!data.pc || data.pc[version] || !data.bedrock?.[version]) return
+  data.pc[version] = data.bedrock[version]
   const mcData = require('minecraft-data')
-  const aliased = mcData(VERSION)
-  const bedrock = mcData('bedrock_' + VERSION)
+  const aliased = mcData(version)
+  const bedrock = mcData('bedrock_' + version)
   if (!aliased || !bedrock || aliased === bedrock) return
   aliased.type = bedrock.type
   aliased.version = bedrock.version
@@ -76,7 +82,7 @@ function normalizeLanguage (language) {
 }
 
 /**
- * @param {string} [version] Bedrock version, default '1.26.51'
+ * @param {string} [version] Bedrock version family (a tested one, see lib/version.js), default '1.26.51'
  * @returns {object} prismarine-registry instance for `bedrock_<version>` (a fresh one per call: start_game /
  *   item_registry mutate it per connection)
  */

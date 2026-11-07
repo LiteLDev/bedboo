@@ -309,7 +309,7 @@ function inject (bot, options) {
   }
 
   // the command tree for tabComplete (available_commands is re-sent when the permission level changes)
-  const commandTree = createCommandTree()
+  const commandTree = createCommandTree({ version: bot.version })
   bot._client.on('available_commands', (packet) => {
     try {
       commandTree.update(packet)

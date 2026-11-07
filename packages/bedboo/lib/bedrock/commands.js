@@ -3,7 +3,7 @@
  * Client-side command completion for `bot.tabComplete` (Bedrock has no tab-complete packet; the vanilla client
  * completes from the `available_commands` tree it received, and so do we).
  *
- *   const tree = createCommandTree()
+ *   const tree = createCommandTree({ version: bot.version })   // the protocol whose value_type mapper applies
  *   bot._client.on('available_commands', p => tree.update(p))
  *   bot._client.on('update_soft_enum', p => tree.updateSoftEnum(p))
  *   tree.complete('/weather ', { players: ['Steve'] })   // → ['clear', 'query', 'rain', 'thunder']
@@ -24,9 +24,13 @@
  * indices; those are mapped back with the protocol's own table.
  */
 
+const { VERSION } = require('./constants')
+const { findFamily } = require('./versions')
+
 const SELECTORS = ['@a', '@e', '@initiator', '@p', '@r', '@s']
 /**
- * How a 'valid' parameter of BDS 1.26.51 completes, by numeric type id (observed in its available_commands).
+ * How a 'valid' parameter of BDS 1.26.51 completes, by numeric type id (observed in its available_commands; the
+ * ids of the other families in lib/bedrock/versions.js are assumed equal until checked against their servers).
  * bedrock-protocol 3.60.1's `value_type` mapper still carries older ids for some names (position 53, message 55,
  * json 62, command 75, …), so names are mapped back to their numbers first and only the number is trusted.
  * Anything else is a single word without suggestions (int, float, value, string, operators, ranges, block states…).
@@ -42,20 +46,21 @@ const VALUE_TYPE_KINDS = {
   90: 'command' // command (execute … run <command>)
 }
 
-let valueTypeIds = null
-/** name → number of bedrock-protocol's `value_type` mapper (to recover enum indices it renamed) */
-function valueTypeIdTable () {
+const valueTypeIdTables = new Map() // version → { name → number }
+/** name → number of bedrock-protocol's `value_type` mapper for `version` (to recover enum indices it renamed) */
+function valueTypeIdTable (version) {
+  let valueTypeIds = valueTypeIdTables.get(version)
   if (valueTypeIds) return valueTypeIds
   valueTypeIds = {}
   try {
-    const { VERSION } = require('./constants')
-    const types = require('minecraft-data')(`bedrock_${VERSION}`).protocol.types
+    const types = require('minecraft-data')(`bedrock_${version}`).protocol.types
     const found = findMapper(types.packet_available_commands, 'value_type')
     if (found) for (const [num, name] of Object.entries(found)) valueTypeIds[name] = Number(num)
   } catch {}
   if (!Object.keys(valueTypeIds).length) {
     valueTypeIds = { int: 1, float: 3, value: 4, wildcard_int: 5, operator: 6, command_operator: 7, target: 8, wildcard_target: 10, file_path: 17, integer_range: 23, equipment_slots: 43, string: 44, block_position: 52, position: 53, message: 55, raw_text: 58, json: 62, block_states: 71, command: 75 }
   }
+  valueTypeIdTables.set(version, valueTypeIds)
   return valueTypeIds
 }
 function findMapper (node, field) {
@@ -69,9 +74,9 @@ function findMapper (node, field) {
 }
 
 /** the number carried by `value_type` (a number, or a name bedrock-protocol's mapper produced from it) */
-function indexOf (valueType) {
+function indexOf (valueType, version) {
   if (typeof valueType === 'number') return valueType
-  return valueTypeIdTable()[valueType]
+  return valueTypeIdTable(version)[valueType]
 }
 
 function enumKind (enumType) {
@@ -126,7 +131,12 @@ const sortSuggestions = (list) => [...new Set(list)].sort((a, b) => {
   return la < lb ? -1 : la > lb ? 1 : (a < b ? -1 : a > b ? 1 : 0)
 })
 
-function createCommandTree () {
+/**
+ * @param {object} [options]
+ * @param {string} [options.version] Bedrock version family of the connection (bot.version), default '1.26.51'
+ */
+function createCommandTree ({ version = VERSION } = {}) {
+  version = findFamily(version)?.version ?? String(version).replace(/^bedrock_/, '')
   /** name (lower case, aliases included) → { name, overloads: [{ chaining, parameters: [param] }] } */
   const commands = new Map()
   let enums = []
@@ -158,14 +168,14 @@ function createCommandTree () {
     const param = { name: p.parameter_name, optional: Boolean(p.optional), kind: 'token' }
     if (kind === 'enum') {
       param.kind = 'enum'
-      param.enum = enums[indexOf(p.value_type)] ?? { name: '?', values: [] }
+      param.enum = enums[indexOf(p.value_type, version)] ?? { name: '?', values: [] }
     } else if (kind === 'soft_enum') {
       param.kind = 'soft_enum'
-      param.softEnum = softEnumNames[indexOf(p.value_type)]
+      param.softEnum = softEnumNames[indexOf(p.value_type, version)]
     } else if (kind === 'chained') {
       param.kind = 'chained'
     } else if (kind === 'valid') {
-      param.kind = VALUE_TYPE_KINDS[indexOf(p.value_type)] ?? 'token'
+      param.kind = VALUE_TYPE_KINDS[indexOf(p.value_type, version)] ?? 'token'
     }
     return param
   }

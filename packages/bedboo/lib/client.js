@@ -1,6 +1,7 @@
 'use strict'
 const crypto = require('crypto')
 const { VERSION } = require('./bedrock/constants')
+const { findFamily } = require('./bedrock/versions')
 
 /**
  * bedrock-protocol client wrapper used by createBot when `options.client` is not given.
@@ -10,7 +11,10 @@ const { VERSION } = require('./bedrock/constants')
  * - `transport: 'raknet'`        RakNet works on 1.26.51.1 with `transport=raknet` in server.properties
  * - `raknetBackend: 'raknet-native'` (patched to load its bundled prebuild); jsp-raknet is rejected by
  *                                BDS (RakNet protocol 11 vs 10)
- * - `version: '1.26.51'`         mineflayer's `version: false` means "auto" → 1.26.51
+ * - `version: '1.26.51'`         mineflayer's `version: false` means "auto" → 1.26.51; a BDS build
+ *                                ('1.26.52.3') is passed to bedrock-protocol as its family ('1.26.51',
+ *                                lib/bedrock/versions.js): bedrock-protocol only knows family keys; any
+ *                                other version goes to bedrock-protocol unchanged (createBot validates first)
  * - `skipPing: true`             BDS with enable-lan-visibility=false does not answer unconnected
  *                                pings, discovery would only add a 1 s timeout
  * - `host: '127.0.0.1'`, `port: 19132`
@@ -124,7 +128,8 @@ function createClient (options) {
     if (value !== undefined) clientOptions[key] = value
   }
   clientOptions.offline = options.offline ?? offlineFromAuth(options.auth)
-  clientOptions.version = options.version || VERSION
+  const version = options.version || VERSION
+  clientOptions.version = findFamily(version)?.version ?? version
   if (typeof clientOptions.port === 'string') clientOptions.port = parseInt(clientOptions.port, 10)
   if (!TRANSPORTS.includes(clientOptions.transport)) {
     throw new Error(`unsupported transport '${clientOptions.transport}': use 'raknet' (default), 'nethernet' or 'bedd'`)
