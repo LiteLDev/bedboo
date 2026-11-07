@@ -33,13 +33,13 @@ Then add your bot as a workspace package; see [Your first bot](https://docs.levi
 
 ## Usage
 
-Bot code is mineflayer code; only the `require` changes:
+Bot code written for mineflayer runs unchanged; only the `require` changes:
 
 ```js
-const mineflayer = require('mineflayer-bedrock') // instead of require('mineflayer')
+const bedboo = require('bedboo') // instead of require('mineflayer')
 const { pathfinder, Movements, goals } = require('mineflayer-pathfinder')
 
-const bot = mineflayer.createBot({
+const bot = bedboo.createBot({
   host: '127.0.0.1', // your BDS
   port: 19132,
   username: 'Bot',
@@ -68,8 +68,8 @@ bot.on('kicked', console.log)
 bot.on('error', console.log)
 ```
 
-The runnable copy is [`packages/mineflayer-bedrock/examples/readme_quickstart.js`](packages/mineflayer-bedrock/examples/readme_quickstart.js):
-`node packages/mineflayer-bedrock/examples/readme_quickstart.js <host> <port>`. The server needs `transport=raknet`,
+The runnable copy is [`packages/bedboo/examples/readme_quickstart.js`](packages/bedboo/examples/readme_quickstart.js):
+`node packages/bedboo/examples/readme_quickstart.js <host> <port>`. The server needs `transport=raknet`,
 `online-mode=false` and `allow-list=false` in `server.properties` for this bot; see
 [Your first bot](https://docs.levimc.org/bedboo/guide/getting-started#prepare-the-server).
 
@@ -77,7 +77,7 @@ The runnable copy is [`packages/mineflayer-bedrock/examples/readme_quickstart.js
 
 | package | |
 |---|---|
-| [`packages/mineflayer-bedrock`](packages/mineflayer-bedrock) | the bedboo library |
+| [`packages/bedboo`](packages/bedboo) | the bedboo library |
 | [`packages/bedrock-data`](packages/bedrock-data) | `@bedboo/bedrock-data`: the BDS 1.26.51 data overlay for minecraft-data |
 | [`packages/agent`](packages/agent) | `@bedboo/agent`: a scripted survival agent built on bedboo |
 | [`docs`](docs) | the documentation site |

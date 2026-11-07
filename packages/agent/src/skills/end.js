@@ -1,7 +1,7 @@
 'use strict'
 /**
  * End skill: fill the stronghold's end portal frames with eyes of ender, jump in, fight endermen in The End, leave
- * through the exit portal (credits acknowledged by mineflayer-bedrock) back to the overworld. The skill itself is
+ * through the exit portal (credits acknowledged by bedboo) back to the overworld. The skill itself is
  * cheat-free; the cheat-assisted parts of the End milestone are scenario setup steps:
  * locating the stronghold (`/locate`) and teleporting the bot into its portal room, the
  * eyes of ender (`/give`), and killing the ender dragon (`/kill @e[type=ender_dragon]`) so the exit portal opens.
@@ -242,7 +242,7 @@ function exitPortalBlocks (bot) {
 }
 
 /**
- * Walk to the exit portal and step in → credits (acked by mineflayer-bedrock) → overworld.
+ * Walk to the exit portal and step in → credits (acked by bedboo) → overworld.
  * Waits up to `exitTimeout` for the portal to open (the dragon's death). The bot can get there before its own step
  * in — knocked into the portal by an enderman it fights at the fountain: the walk then ends in the overworld (it went
  * on towards (0, 0) there for minutes before), which is the exit too.

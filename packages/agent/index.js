@@ -1,6 +1,6 @@
 'use strict'
 /**
- * @bedboo/agent — scripted (no LLM) survival agent for mineflayer-bedrock. See README.md.
+ * @bedboo/agent — scripted (no LLM) survival agent for bedboo. See README.md.
  *
  *   const { Agent } = require('@bedboo/agent')
  *   const agent = await Agent.create({ host, port, username: 'Agent' })

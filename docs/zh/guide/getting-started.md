@@ -1,7 +1,7 @@
 # 你的第一个机器人
 
 本页将一个 bedboo 机器人连接到你自己运行的基岩版专用服务器（BDS）。如果你以前写过 mineflayer 机器人，那么只有前三步是新内容：
-机器人代码就是 mineflayer 代码。
+机器人代码与 mineflayer 的写法完全相同。
 
 ## 环境要求 {#requirements}
 
@@ -74,7 +74,7 @@ allow-cheats=true
 
 ## 编写机器人 {#write-the-bot}
 
-`packages/my-bot/index.js` 就是普通的 mineflayer 代码：
+`packages/my-bot/index.js` 的写法与 mineflayer 完全相同：
 
 ```js
 const bedboo = require('bedboo') // 替代 require('mineflayer')

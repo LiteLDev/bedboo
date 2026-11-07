@@ -4,7 +4,7 @@
  * Skill interface.
  *
  * A skill is `async (bot, args) => result`:
- * - `bot`    a spawned mineflayer-bedrock bot (only the public mineflayer API + ecosystem plugins
+ * - `bot`    a spawned bedboo bot (only the public mineflayer API + ecosystem plugins
  *            loaded by the runner: pathfinder, pvp, collectblock, tool, armor-manager, auto-eat;
  *            never `bot._client` — skills must work exactly like on Java)
  * - `args`   plain JSON-serialisable object (logged by the runner) + `signal` (AbortSignal, set by the runner)

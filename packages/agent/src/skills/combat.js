@@ -278,7 +278,7 @@ function hazardAhead (bot, controls) {
 }
 
 /**
- * Wait `ticks` physics ticks. mineflayer-bedrock emits no physicsTick while the bot is dead or its column is not
+ * Wait `ticks` physics ticks. bedboo emits no physicsTick while the bot is dead or its column is not
  * loaded (waitForTicks then rejects after 5 s): fall back to wall-clock ticks so the caller's checks keep running.
  */
 function sleepTicks (bot, ticks) {

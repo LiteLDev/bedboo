@@ -1,0 +1,82 @@
+// Compile-only check of index.d.ts (`pnpm typecheck`): mineflayer-style usage must type-check
+// unchanged against bedboo.
+import { Vec3 } from 'vec3'
+import {
+  createBot, Bot, BotOptions, Chest, Furnace, EnchantmentTable, Villager, Anvil,
+  Location, Painting, ScoreBoard, BossBar, Particle, testedVersions, latestSupportedVersion,
+  oldestSupportedVersion, supportFeature, BedrockExtras, BeddClientApi, BeddCaps, BeddCap, BeddExtras, BeddObserved, BeddUnsupportedError
+} from '../..'
+
+const options: BotOptions = {
+  host: '127.0.0.1',
+  port: 19132,
+  username: 'TypeBot',
+  offline: true,
+  version: '1.26.51',
+  viewDistance: 'normal',
+  physicsEnabled: true,
+  plugins: { myPlugin: (bot: Bot) => { bot.chat('hi') } }
+}
+const bot: Bot = createBot(options)
+
+bot.once('spawn', async () => {
+  const pos: Vec3 = bot.entity.position
+  const block = bot.blockAt(pos.offset(0, -1, 0))
+  if (block) await bot.dig(block)
+  bot.setControlState('forward', true)
+  await bot.lookAt(pos.offset(1, 1.62, 0), true)
+  await bot.waitForTicks(2)
+  const held = bot.heldItem
+  if (held) await bot.equip(held, 'hand')
+  await bot.creative.setInventorySlot(36, null)
+  const chest: Chest = await bot.openChest(block!)
+  await chest.close()
+  const furnace: Furnace = await bot.openFurnace(block!)
+  const fuel: number = furnace.fuel
+  const table: EnchantmentTable = await bot.openEnchantmentTable(block!)
+  const anvil: Anvil = await bot.openAnvil(block!)
+  const villager: Villager = await bot.openVillager(bot.nearestEntity()!)
+  console.log(fuel, table.enchantments, anvil, villager.trades, bot.game.dimension, bot.time.timeOfDay)
+})
+bot.on('chat', (username: string, message: string) => { if (username !== bot.username) bot.chat(message) })
+bot.on('physicsTick', () => {})
+bot.on('kicked', (reason: string, loggedIn: boolean) => console.log(reason, loggedIn))
+
+// bedrock-protocol client is exposed as bot._client
+bot._client.queue('text', {})
+const extras: BedrockExtras = bot.bedrock
+const furnaceIds: number[] = bot.bedrock.blockVariants('furnace')
+console.log(bot.findBlock({ matching: furnaceIds }), bot.bedrock.gameRules.doDayLightCycle)
+bot.bedrock.resyncInventory().then((synced: boolean) => console.log(synced))
+// bedd capability surface (only with transport 'bedd')
+if (bot.bedrock.bedd) console.log(bot.bedrock.bedd.supports('dig'), bot.bedrock.bedd.caps.stack === 'present')
+const observedYaw: number | undefined = bot.bedrock.bedd?.observed?.yaw
+console.log(observedYaw)
+const beddExtras: BeddExtras | undefined = bot.bedrock.bedd
+const observed: BeddObserved | null | undefined = beddExtras?.observed
+console.log(observed?.tick, beddExtras?.caps.input)
+bot.dig(bot.blockAt(new Vec3(0, 0, 0))!).catch((err: BeddUnsupportedError) => console.log(err.code === 'ERR_BEDD_UNSUPPORTED', err.missing))
+
+const loc = new Location(new Vec3(1, 2, 3))
+const painting = new Painting(1, new Vec3(0, 0, 0), 'kebab', new Vec3(0, 0, 1))
+console.log(loc.chunkYIndex, painting.name, ScoreBoard, BossBar, Particle, extras)
+console.log(testedVersions, latestSupportedVersion, oldestSupportedVersion, supportFeature('tallWorld', '1.26.51'))
+
+// the createBot({ client }) overload (as in mineflayer)
+createBot({ client: bot._client, username: 'x' })
+
+// transports (BotOptions extends bedrock-protocol's ClientOptions, NethernetOptions from the patch)
+createBot({ host: '127.0.0.1', port: 19132, username: 'nn', auth: 'offline', transport: 'nethernet' })
+createBot({
+  username: 'nn2',
+  transport: 'nethernet',
+  nethernet: { signalling: 'http', serverKey: 'sha256:00', onServerKey: (fingerprint: string, url: string) => fingerprint.length > 0 && url.length > 0 }
+})
+createBot({ username: 'rak', transport: 'raknet', raknetBackend: 'raknet-native' })
+
+// transport 'bedd' (a Be.D.D.-hosted real client) and its client.bedd surface
+const beddBot = createBot({ transport: 'bedd', bedd: { pipe: '\\\\.\\pipe\\BeDD', tapPipe: '\\\\.\\pipe\\BeDD-tap', timeoutMs: 3000, modules: ['router'] } })
+const beddApi = (beddBot._client as unknown as { bedd: BeddClientApi }).bedd
+beddApi.ready.then((caps: BeddCaps) => console.log(caps.look === 'present', beddApi.supports('input'), beddApi.link.state))
+beddApi.rpc.call('look', { yaw: 90, pitch: 0 }).then(reply => console.log(reply.ok))
+beddApi.rpc.probe('stack').then((cap: BeddCap) => console.log(cap))

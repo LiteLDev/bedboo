@@ -19,7 +19,7 @@ const { FEATURES, BEDROCK_FEATURES } = require('./features')
 module.exports = {
   install,
   VERSION,
-  /** Java feature name → Bedrock value (see features.js; used by mineflayer-bedrock lib/bedrock/features.js) */
+  /** Java feature name → Bedrock value (see features.js; used by bedboo lib/bedrock/features.js) */
   features: FEATURES,
   /** minecraft-data's own Bedrock feature names with their 1.26.51 values */
   bedrockFeatures: BEDROCK_FEATURES

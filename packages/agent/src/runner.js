@@ -159,7 +159,7 @@ async function loadPlugins (bot, { autoEat = true, pvp = true, armor = true } = 
 class Agent extends EventEmitter {
   /**
    * @param {object} opts
-   * @param {object} [opts.bot] an existing (spawned) mineflayer bot; else created from host/port/username
+   * @param {object} [opts.bot] an existing (spawned) bedboo bot; else created from host/port/username
    * @param {string} [opts.host]
    * @param {number} [opts.port]
    * @param {string} [opts.username='Agent']
@@ -199,8 +199,8 @@ class Agent extends EventEmitter {
   async start () {
     this.startedAt = Date.now()
     if (!this.bot) {
-      const mineflayer = require('mineflayer-bedrock')
-      this.bot = mineflayer.createBot({ host: this.opts.host, port: this.opts.port, username: this.opts.username, ...this.opts.botOptions })
+      const bedboo = require('bedboo')
+      this.bot = bedboo.createBot({ host: this.opts.host, port: this.opts.port, username: this.opts.username, ...this.opts.botOptions })
       await new Promise((resolve, reject) => {
         const timer = setTimeout(() => reject(new Error('the bot did not spawn within 90 s')), 90000)
         this.bot.once('spawn', () => { clearTimeout(timer); resolve() })
