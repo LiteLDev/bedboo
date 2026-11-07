@@ -10,11 +10,12 @@ const { createFakeBot, replayJoin } = require('../helpers/fake')
 const { serveInventory, inventoryContent, tick } = require('../helpers/inventory_server')
 const inventory = require('../../../lib/bedd/inventory')
 const { createRouteRegistry, ensureDispatch, markDispatch } = require('../../../lib/bedd/routes')
+const { TEST_VERSION } = require('../../version')
 
 let deserializer
 function decode (buf) {
   const { createDeserializer } = require('bedrock-protocol/src/transforms/serializer')
-  deserializer = deserializer ?? createDeserializer('1.26.51')
+  deserializer = deserializer ?? createDeserializer(TEST_VERSION)
   const { name, params } = deserializer.parsePacketBuffer(Buffer.from(buf, 'base64')).data
   assert.strictEqual(name, 'item_stack_request')
   assert.strictEqual(params.requests.length, 1)

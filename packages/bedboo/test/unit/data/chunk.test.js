@@ -6,10 +6,16 @@ const { Vec3 } = require('vec3')
 const fixtures = require('../../fixtures')
 const { createRegistry } = require('../../../lib/registry')
 
-const cap = fixtures.load('join_flat')
-const registry = createRegistry()
-registry.handleStartGame(cap.first('start_game'))
-registry.handleItemRegistry(cap.first('item_registry'))
+const { TEST_VERSION } = require('../../version')
+
+// module-level capture: on a family without one, every suite below skips (fixtures.skipReason)
+const skip = fixtures.skipReason('join_flat')
+const cap = skip ? null : fixtures.load('join_flat')
+const registry = createRegistry(TEST_VERSION)
+if (cap) {
+  registry.handleStartGame(cap.first('start_game'))
+  registry.handleItemRegistry(cap.first('item_registry'))
+}
 const ChunkColumn = require('prismarine-chunk')(registry)
 const SubChunk = require('prismarine-chunk/src/bedrock/1.18/SubChunk')
 const Stream = require('prismarine-chunk/src/bedrock/common/Stream')
@@ -43,7 +49,7 @@ async function decodeCapture () {
   return { columns, subchunks }
 }
 
-describe('prismarine-chunk (bedboo patch) on BDS 1.26.51 chunks', () => {
+describe('prismarine-chunk (bedboo patch) on BDS 1.26.51 chunks', { skip }, () => {
   let decoded
   before(async () => { decoded = await decodeCapture() }, { timeout: 60000 })
 
@@ -147,7 +153,7 @@ describe('prismarine-chunk (bedboo patch) on BDS 1.26.51 chunks', () => {
   })
 
   it('decoding before registry.handleStartGame fails loudly', () => {
-    const fresh = createRegistry()
+    const fresh = createRegistry(TEST_VERSION)
     const section = new SubChunk(fresh, require('prismarine-block')(fresh), { y: 0 })
     const w = new Stream()
     w.writeUInt8(9)

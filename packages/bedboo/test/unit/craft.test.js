@@ -7,6 +7,7 @@ const assert = require('assert')
 const { Vec3 } = require('vec3')
 const { createFakeBot, replayJoin } = require('./helpers/fake')
 const { serveInventory, inventoryContent } = require('./helpers/inventory_server')
+const { TEST_VERSION } = require('../version')
 
 async function joined () {
   const created = await createFakeBot()
@@ -19,8 +20,8 @@ let serializer, deserializer
 /** serialize + parse an item_stack_request like bedrock-protocol does on the wire (a bad action disconnects on BDS) */
 function roundTrip (request) {
   const { createSerializer, createDeserializer } = require('bedrock-protocol/src/transforms/serializer')
-  serializer = serializer ?? createSerializer('1.26.51')
-  deserializer = deserializer ?? createDeserializer('1.26.51')
+  serializer = serializer ?? createSerializer(TEST_VERSION)
+  deserializer = deserializer ?? createDeserializer(TEST_VERSION)
   const buffer = serializer.createPacketBuffer({ name: 'item_stack_request', params: { requests: [request] } })
   return deserializer.parsePacketBuffer(buffer).data.params.requests[0]
 }

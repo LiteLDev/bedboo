@@ -4,6 +4,7 @@ const { describe, it } = require('node:test')
 const assert = require('assert')
 const { EventEmitter } = require('events')
 const { createInputQueue } = require('../../lib/bedrock/input_queue')
+const { TEST_VERSION } = require('../version')
 require('../../lib/registry').installDataOverlay()
 
 function setup ({ maxCatchupTicks, start = 10000 } = {}) {
@@ -127,7 +128,7 @@ describe('input queue (tick clock + player_auth_input)', () => {
     assert.strictEqual(b.predicted_vehicle, undefined)
   })
 
-  it('merges the provider movement fields and serializes with bedrock-protocol 1.26.51', () => {
+  it(`merges the provider movement fields and serializes with bedrock-protocol ${TEST_VERSION}`, () => {
     const { input, packets } = setup()
     input.anchor(57846n)
     let calls = 0
@@ -145,8 +146,8 @@ describe('input queue (tick clock + player_auth_input)', () => {
     assert.strictEqual(p.yaw, 90)
     assert.ok(p.input_data.includes('vertical_collision') && p.input_data.includes('block_breaking_delay_enabled'))
     const { createSerializer, createDeserializer } = require('bedrock-protocol/src/transforms/serializer')
-    const buf = createSerializer('1.26.51').createPacketBuffer({ name: 'player_auth_input', params: p })
-    const back = createDeserializer('1.26.51').parsePacketBuffer(buf).data.params
+    const buf = createSerializer(TEST_VERSION).createPacketBuffer({ name: 'player_auth_input', params: p })
+    const back = createDeserializer(TEST_VERSION).parsePacketBuffer(buf).data.params
     assert.strictEqual(back.tick, 57846n)
     assert.strictEqual(Math.fround(back.position.y), Math.fround(-58.38))
     assert.deepStrictEqual(new Set(back.input_data), new Set(p.input_data))

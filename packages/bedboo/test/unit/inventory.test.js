@@ -7,6 +7,7 @@ const assert = require('assert')
 const { createFakeBot, replayJoin, afterSpawnRecords } = require('./helpers/fake')
 const { serveInventory, wireItem, inventoryContent, tick } = require('./helpers/inventory_server')
 const { toNotchianYaw, toNotchianPitch } = require('mineflayer/lib/conversions')
+const { TEST_VERSION } = require('../version')
 
 async function joined () {
   const created = await createFakeBot()
@@ -19,7 +20,7 @@ async function joined () {
 let serializer
 function serialize (name, params) {
   const { createSerializer } = require('bedrock-protocol/src/transforms/serializer')
-  serializer = serializer ?? createSerializer('1.26.51')
+  serializer = serializer ?? createSerializer(TEST_VERSION)
   return serializer.createPacketBuffer({ name, params })
 }
 

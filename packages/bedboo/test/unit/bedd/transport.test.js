@@ -14,6 +14,7 @@ const { createRpc, probeResult } = require('../../../lib/bedd/rpc')
 const { createTapReader, createFrameParser, encodeFrame, KIND, FLAG } = require('../../../lib/bedd/tap')
 const bedd = require('../../../lib/bedd')
 const { createClient } = require('../../../lib/client')
+const { TEST_VERSION, TEST_PROTOCOL } = require('../../version')
 
 /** resolve once `fn()` is truthy (polls every 10 ms) */
 async function until (fn, { timeout = 10000, what = 'condition' } = {}) {
@@ -409,7 +410,7 @@ describe("transport 'bedd'", () => {
 
     it('a stream that does not start with HELLO is refused', async () => {
       const stream = new PassThrough()
-      const reader = createTapReader(stream, { version: '1.26.51', protocol: 2193, decoder: { decode: () => { throw new Error('unused') } } })
+      const reader = createTapReader(stream, { version: TEST_VERSION, protocol: TEST_PROTOCOL, decoder: { decode: () => { throw new Error('unused') } } })
       const failed = once(reader, 'error')
       stream.write(encodeFrame(KIND.CLIENTBOUND, 0, Buffer.from([1])))
       const [err] = await failed
@@ -418,12 +419,12 @@ describe("transport 'bedd'", () => {
 
     it('decodes join_flat with createDeserializer + ShieldItemID (no decode warnings)', async () => {
       const stream = new PassThrough()
-      const reader = createTapReader(stream, { version: '1.26.51', protocol: 2193 })
+      const reader = createTapReader(stream, { version: TEST_VERSION, protocol: TEST_PROTOCOL })
       const names = []
       const warnings = []
       reader.on('packet', (p) => names.push(p.name))
       reader.on('warning', (w) => warnings.push(w))
-      stream.write(encodeFrame(KIND.MARKER, 0, { m: 'HELLO', tap: 1, protocol: 2193 }))
+      stream.write(encodeFrame(KIND.MARKER, 0, { m: 'HELLO', tap: 1, protocol: TEST_PROTOCOL }))
       const frames = toFrames('join_flat')
       for (const f of frames) stream.write(encodeFrame(f.kind, f.flags, f.payload))
       await until(() => names.length + warnings.length === frames.length)

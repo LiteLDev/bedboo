@@ -8,6 +8,7 @@ const { Vec3 } = require('vec3')
 const { createFakeBot, replayJoin, afterSpawnRecords } = require('./helpers/fake')
 const { createRegistry } = require('../../lib/registry')
 const fixtures = require('../fixtures')
+const { TEST_VERSION } = require('../version')
 
 async function joined () {
   const created = await createFakeBot()
@@ -54,7 +55,7 @@ describe('world core (blocks.js) on the BDS 1.26.51.1 join capture', () => {
       assert.ok(r.requests.every(q => q.x === 0 && q.z === 0))
     }
     const { createSerializer } = require('bedrock-protocol/src/transforms/serializer')
-    assert.ok(createSerializer('1.26.51').createPacketBuffer({ name: 'subchunk_request', params: requests[0] }).length > 0)
+    assert.ok(createSerializer(TEST_VERSION).createPacketBuffer({ name: 'subchunk_request', params: requests[0] }).length > 0)
   })
 
   it('update_block (layer 0) → blockUpdate and blockUpdate:(x, y, z); _updateBlockState', async () => {
@@ -246,7 +247,7 @@ describe('world core (blocks.js) on the BDS 1.26.51.1 join capture', () => {
 })
 
 describe('prismarine-chunk patch', () => {
-  const registry = createRegistry()
+  const registry = createRegistry(TEST_VERSION)
   const cap = fixtures.load('join_flat')
   registry.handleStartGame(cap.first('start_game'))
   const ChunkColumn = require('prismarine-chunk')(registry)

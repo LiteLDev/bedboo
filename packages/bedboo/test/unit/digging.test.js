@@ -8,6 +8,7 @@ const { Vec3 } = require('vec3')
 const { createFakeBot, replayJoin } = require('./helpers/fake')
 const { createRegistry } = require('../../lib/registry')
 const digSpeed = require('../../lib/bedrock/dig_speed')
+const { TEST_VERSION } = require('../version')
 
 const HASTE = 3
 const MINING_FATIGUE = 4
@@ -84,7 +85,7 @@ function inputsOf (registry, c) {
 }
 
 describe('dig speed (lib/bedrock/dig_speed.js)', () => {
-  const registry = createRegistry('1.26.51')
+  const registry = createRegistry(TEST_VERSION)
   const Block = require('prismarine-block')(registry)
 
   it('reproduces every break speed measured on BDS 1.26.51.1 (level_event data)', () => {
@@ -470,7 +471,7 @@ describe('digging plugin: Bedrock server-authoritative block breaking', () => {
     assert.strictEqual(tx.transaction.transaction_data.action_type, 'break_block')
     assert.deepStrictEqual(tx.transaction.transaction_data.block_position, { x: 2, y: -60, z: 0 })
     const { createSerializer } = require('bedrock-protocol/src/transforms/serializer')
-    assert.ok(createSerializer('1.26.51').createPacketBuffer({ name: 'inventory_transaction', params: tx }).length > 0)
+    assert.ok(createSerializer(TEST_VERSION).createPacketBuffer({ name: 'inventory_transaction', params: tx }).length > 0)
   })
 
   it('a dig started while another runs keeps its own face (the stopped dig clears bot.targetDigFace)', async () => {
@@ -582,7 +583,7 @@ describe('digging plugin: Bedrock server-authoritative block breaking', () => {
 })
 
 describe('physics engine: resting on ground needs ground (lib/physics/engine.js)', () => {
-  const registry = createRegistry('1.26.51')
+  const registry = createRegistry(TEST_VERSION)
   const Block = require('prismarine-block')(registry)
   const { Physics } = require('../../lib/physics')
   const grass = Block.fromStateId(registry.blocksByName.grass_block.defaultState, 0)

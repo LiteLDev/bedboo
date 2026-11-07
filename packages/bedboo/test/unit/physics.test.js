@@ -7,6 +7,7 @@ const { Vec3 } = require('vec3')
 const { Physics, PlayerState, defaultPhysicsFields } = require('../../lib/physics')
 const { moveVector, buildFlags } = require('../../lib/physics/input')
 const { createWorld, playerState, YAW } = require('./helpers/physics_world')
+const { TEST_VERSION } = require('../version')
 
 const close = (a, b, eps = 1e-4, msg) => assert.ok(Math.abs(a - b) <= eps, `${msg ?? ''} ${a} ≉ ${b}`)
 
@@ -300,10 +301,10 @@ describe('physics engine: Bedrock movement', () => {
 /** just enough of a bedboo bot for (prismarine-physics) PlayerState */
 function fakeBotForState () {
   const { createRegistry } = require('../../lib/registry')
-  const registry = createRegistry()
+  const registry = createRegistry(TEST_VERSION)
   const windows = require('prismarine-windows')(registry)
   return {
-    version: '1.26.51',
+    version: TEST_VERSION,
     registry,
     entity: {
       position: new Vec3(0.5, -60, 0.5),

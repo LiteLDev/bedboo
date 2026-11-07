@@ -8,13 +8,14 @@ const assert = require('assert')
 const { createFakeBot, replayJoin } = require('./helpers/fake')
 const { serveInventory, wireItem, inventoryContent, tick } = require('./helpers/inventory_server')
 const { pagesOf, pageEdits } = require('../../lib/plugins/book')
+const { TEST_VERSION } = require('../version')
 
 const SELF_RUNTIME = 91n // the recorded join's local player
 
 let serializer
 function serialize (name, params) {
   const { createSerializer } = require('bedrock-protocol/src/transforms/serializer')
-  serializer = serializer ?? createSerializer('1.26.51')
+  serializer = serializer ?? createSerializer(TEST_VERSION)
   return serializer.createPacketBuffer({ name, params })
 }
 

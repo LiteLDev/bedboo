@@ -34,6 +34,7 @@ const { EventEmitter, once } = require('events')
 const fixtures = require('../../fixtures')
 const { encodeFrame, packetIdOf, KIND, FLAG } = require('../../../lib/bedd/tap')
 const { PROTOCOL_VERSION } = require('../../../lib/bedrock/constants')
+const { TEST_VERSION, TEST_PROTOCOL, TEST_BDS_BUILD } = require('../../version')
 
 const NO_REPLY = Symbol('no reply')
 /** ids BeDD never echoes (login, handshakes, request_network_settings) */
@@ -69,12 +70,12 @@ function toFrames (records, { flags = 0 } = {}) {
 }
 
 let serializer = null
-/** bedrock-protocol serializer (ShieldItemID from join_flat's item_registry) */
+/** bedrock-protocol serializer (ShieldItemID from join_flat's item_registry, when the family has that capture) */
 function getSerializer () {
   if (serializer) return serializer
   const { createSerializer } = require('bedrock-protocol/src/transforms/serializer')
-  serializer = createSerializer('1.26.51')
-  const shield = fixtures.load('join_flat').first('item_registry')?.itemstates?.find(s => s.name === 'minecraft:shield')
+  serializer = createSerializer(TEST_VERSION)
+  const shield = fixtures.has('join_flat') && fixtures.load('join_flat').first('item_registry')?.itemstates?.find(s => s.name === 'minecraft:shield')
   if (shield) serializer.proto.setVariable('ShieldItemID', shield.runtime_id)
   return serializer
 }
@@ -274,8 +275,8 @@ async function createFakeBedd (opts = {}) {
     m: 'HELLO',
     tap: 1,
     mod: 'fake',
-    game: '1.26.51.01',
-    protocol: PROTOCOL_VERSION,
+    game: TEST_BDS_BUILD ?? TEST_VERSION + '.01',
+    protocol: TEST_PROTOCOL ?? PROTOCOL_VERSION,
     pid: process.pid,
     link: { state: 'up', type: 'remote', address: '127.0.0.1:19132' },
     journal: { frames: journalFrames.length, bytes: journalFrames.reduce((n, f) => n + f.payload.length, 0), complete: opts.journalComplete !== false },

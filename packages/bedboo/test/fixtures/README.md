@@ -1,6 +1,7 @@
 # Packet fixtures
 
-Raw packet captures recorded from a real Bedrock Dedicated Server, used by unit tests that must not
+Raw packet captures recorded from a real Bedrock Dedicated Server, one directory per protocol family
+(`<family>/`, the one `BEDBOO_VERSION` selects, see `../version.js`), used by unit tests that must not
 need a server (chunk decoding, registry wiring, inventory parsing, …).
 
 | Capture | Server | What happens |

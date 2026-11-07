@@ -7,13 +7,14 @@ const { Vec3 } = require('vec3')
 const { createFakeBot, replayJoin, afterSpawnRecords } = require('./helpers/fake')
 const tx = require('../../lib/bedrock/transactions')
 const item = require('../../lib/bedrock/item')
+const { TEST_VERSION } = require('../version')
 
 let serializer
 function roundTrip (name, params) {
   const { createSerializer, createDeserializer } = require('bedrock-protocol/src/transforms/serializer')
   if (!serializer) {
-    serializer = createSerializer('1.26.51')
-    serializer.deserializer = createDeserializer('1.26.51')
+    serializer = createSerializer(TEST_VERSION)
+    serializer.deserializer = createDeserializer(TEST_VERSION)
   }
   const buf = serializer.createPacketBuffer({ name, params })
   return serializer.deserializer.parsePacketBuffer(buf).data.params

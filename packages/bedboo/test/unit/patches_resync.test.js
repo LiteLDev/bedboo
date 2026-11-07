@@ -14,6 +14,7 @@ const { Vec3 } = require('vec3')
 const { createFakeBot, replayJoin } = require('./helpers/fake')
 const { serveInventory, wireItem, inventoryContent, tick: macrotask } = require('./helpers/inventory_server')
 const { toNetwork } = require('../../lib/bedrock/item')
+const { TEST_VERSION } = require('../version')
 
 const G = -60
 
@@ -265,7 +266,7 @@ describe('inventory resync: inventory_mismatch', () => {
     assert.strictEqual(bot.inventory.slots[36].stackId, 40)
     // the packet serializes
     const { createSerializer } = require('bedrock-protocol/src/transforms/serializer')
-    assert.ok(createSerializer('1.26.51').createPacketBuffer({ name: 'inventory_transaction', params: mismatches()[0] }).length > 0)
+    assert.ok(createSerializer(TEST_VERSION).createPacketBuffer({ name: 'inventory_transaction', params: mismatches()[0] }).length > 0)
     // no answer: resolves false after 2 s, never rejects
     server.ignoreResync = true
     const t0 = Date.now()

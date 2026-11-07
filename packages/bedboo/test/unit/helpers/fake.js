@@ -13,14 +13,15 @@ const { EventEmitter } = require('events')
 const fixtures = require('../../fixtures')
 const bedboo = require('../../..')
 const { createInputQueue } = require('../../../lib/bedrock/input_queue')
+const { TEST_VERSION } = require('../../version')
 
 function fakeClient ({ username = 'U0Bot' } = {}) {
   const client = new EventEmitter()
   client.setMaxListeners(0)
-  client.version = '1.26.51'
+  client.version = TEST_VERSION
   client.username = username
   client.profile = { name: username, uuid: '103594cd-1da0-2ec6-fb7c-32af2c646f85', xuid: 0 }
-  client.options = { version: '1.26.51', username, offline: true }
+  client.options = { version: TEST_VERSION, username, offline: true }
   client.written = []
   client.queue = (name, params) => client.written.push(['queue', name, params])
   client.write = (name, params) => client.written.push(['write', name, params])
@@ -64,7 +65,7 @@ function fakeClock (start = 1000) {
  */
 async function createFakeBot (options = {}, { manualClock = true } = {}) {
   const client = fakeClient({ username: options.username })
-  const bot = bedboo.createBot({ client, username: client.username, logErrors: false, hideErrors: true, ...options })
+  const bot = bedboo.createBot({ client, version: TEST_VERSION, username: client.username, logErrors: false, hideErrors: true, ...options })
   const clock = fakeClock()
   if (manualClock) {
     const timers = { setInterval: () => ({ unref () {} }), clearInterval () {} }

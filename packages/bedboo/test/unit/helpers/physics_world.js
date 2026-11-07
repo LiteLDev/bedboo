@@ -12,11 +12,12 @@
  */
 const { Vec3 } = require('vec3')
 const { createRegistry } = require('../../../lib/registry')
+const { TEST_VERSION } = require('../../version')
 
 let shared = null
 function registryAndBlock () {
   if (!shared) {
-    const registry = createRegistry()
+    const registry = createRegistry(TEST_VERSION)
     shared = { registry, Block: require('prismarine-block')(registry) }
   }
   return shared

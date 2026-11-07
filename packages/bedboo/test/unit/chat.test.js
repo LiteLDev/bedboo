@@ -4,10 +4,11 @@
 const { describe, it } = require('node:test')
 const assert = require('assert')
 const { createFakeBot, replayJoin, afterSpawnRecords } = require('./helpers/fake')
+const { TEST_VERSION } = require('../version')
 
 function serialize (name, params) {
   const { createSerializer } = require('bedrock-protocol/src/transforms/serializer')
-  return createSerializer('1.26.51').createPacketBuffer({ name, params })
+  return createSerializer(TEST_VERSION).createPacketBuffer({ name, params })
 }
 
 async function joined () {
