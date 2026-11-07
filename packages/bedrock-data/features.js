@@ -21,6 +21,9 @@
  *   Values that are not booleans keep the type minecraft-data uses for them (e.g. fishingBiteDelayMaxTicks).
  */
 
+const fs = require('fs')
+const path = require('path')
+
 /** minecraft-data `bedrock/common/features.json`, values for 1.26.51 */
 const BEDROCK = {
   blockHashes: true,
@@ -186,7 +189,41 @@ for (const name of Object.keys(JAVA)) {
   if (name in BEDROCK && BEDROCK[name] !== JAVA[name]) throw new Error(`feature ${name}: Java table disagrees with minecraft-data`)
 }
 
-/** Java feature name → Bedrock value (frozen) */
+/** Java feature name → Bedrock value (frozen); the 1.26.51 table and the base of every other version */
 const FEATURES = Object.freeze({ ...BEDROCK, ...JAVA })
+const BEDROCK_FEATURES = Object.freeze({ ...BEDROCK })
 
-module.exports = { FEATURES, BEDROCK_FEATURES: Object.freeze({ ...BEDROCK }) }
+/**
+ * Per-version tables. Every data version (data/<version>/) starts from the base table above; a version whose
+ * server behaves differently lists only the differing names in `data/<version>/features.js`
+ * (`module.exports = { featureName: value }`, a comment per name with the observed BDS behaviour). An override
+ * of a minecraft-data Bedrock feature name changes that version's `bedrockFeaturesFor()` too.
+ */
+const { versions } = require('./install')
+const tables = new Map()
+
+function tablesFor (version) {
+  const v = String(version).replace(/^(bedrock|pe)_/, '')
+  if (!versions.includes(v)) throw new Error(`@bedboo/bedrock-data has no data for Bedrock ${version} (known: ${versions.join(', ')})`)
+  if (!tables.has(v)) {
+    const file = path.join(__dirname, 'data', v, 'features.js')
+    const overrides = fs.existsSync(file) ? require(file) : {}
+    for (const name of Object.keys(overrides)) {
+      if (!Object.hasOwn(FEATURES, name)) throw new Error(`data/${v}/features.js: unknown feature ${name} (add it to features.js first)`)
+    }
+    const bedrock = {}
+    for (const name of Object.keys(BEDROCK)) if (name in overrides) bedrock[name] = overrides[name]
+    tables.set(v, {
+      features: Object.keys(overrides).length ? Object.freeze({ ...FEATURES, ...overrides }) : FEATURES,
+      bedrock: Object.keys(bedrock).length ? Object.freeze({ ...BEDROCK, ...bedrock }) : BEDROCK_FEATURES
+    })
+  }
+  return tables.get(v)
+}
+
+/** Java feature name → Bedrock value for one data version ('1.26.51' or 'bedrock_1.26.51'); throws for a version without data */
+const featuresFor = version => tablesFor(version).features
+/** minecraft-data's own Bedrock feature names with their values for one data version */
+const bedrockFeaturesFor = version => tablesFor(version).bedrock
+
+module.exports = { FEATURES, BEDROCK_FEATURES, featuresFor, bedrockFeaturesFor }

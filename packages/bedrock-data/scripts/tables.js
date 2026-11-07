@@ -196,4 +196,20 @@ const BLOCK_FIXES = {
   air: { hardness: 0 }
 }
 
-module.exports = { BLOCK_FIXES, BIOME_IDS_ADDED, BIOMES_ADDED, EFFECTS, ENTITY_SIZES, ENCHANTMENTS_ADDED, ATTRIBUTES_JAVA, ATTRIBUTES_BEDROCK_ONLY, ENTITY_JAVA_NAMES, ENTITY_DUPLICATES, ENTITIES_MANUAL }
+const BASE = { BLOCK_FIXES, BIOME_IDS_ADDED, BIOMES_ADDED, EFFECTS, ENTITY_SIZES, ENCHANTMENTS_ADDED, ATTRIBUTES_JAVA, ATTRIBUTES_BEDROCK_ONLY, ENTITY_JAVA_NAMES, ENTITY_DUPLICATES, ENTITIES_MANUAL }
+
+/**
+ * Per data version: the tables above are those of 1.26.51 and the base of every version; a version whose
+ * sources or BDS differ replaces whole tables here (`'<version>': { EFFECTS: [...] }`, each with a comment on
+ * what the server or the sources showed).
+ */
+const VERSION_TABLES = {}
+
+/** The tables of one data version (generate.js). */
+function forVersion (version) {
+  const own = VERSION_TABLES[version] ?? {}
+  for (const name of Object.keys(own)) if (!(name in BASE)) throw new Error(`tables ${version}: unknown table ${name}`)
+  return { ...BASE, ...own }
+}
+
+module.exports = { ...BASE, VERSION_TABLES, forVersion }

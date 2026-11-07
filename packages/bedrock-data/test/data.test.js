@@ -14,7 +14,7 @@ const unique = (array, key) => new Set(array.map(x => x[key])).size === array.le
 
 describe('bedrock_1.26.51 datasets', () => {
   describe('blocks and block states', () => {
-    const cloudburst = JSON.parse(zlib.gunzipSync(fs.readFileSync(path.join(__dirname, 'fixtures', 'cloudburst-block-hashes.json.gz'))))
+    const cloudburst = JSON.parse(zlib.gunzipSync(fs.readFileSync(path.join(__dirname, 'fixtures', '1.26.51', 'cloudburst-block-hashes.json.gz'))))
 
     it('every block state hashes to the CloudburstMC runtime id at the same palette index', () => {
       assert.strictEqual(cloudburst.hashes.length, mcData.blockStates.length)
