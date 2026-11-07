@@ -42,7 +42,7 @@ map onto mineflayer's events. Observed on BDS 1.26.51.1 (protocol 2193) with bed
   A NetherNet server does not open its RakNet ports and vice versa.
 - **bedboo:** `transport: 'raknet'` is the default (raknet-native). `transport: 'nethernet'` joins with HTTP
   signalling on `host:port` unless `nethernet.signalling` says `'lan'` / `'services'`. bedrock-protocol#831 and
-  node-nethernet#32 (unreleased) are backported as `patches/bedrock-protocol@3.60.1.patch` and
+  node-nethernet#32 (unreleased) are backported as `patches/bedrock-protocol@3.61.0.patch` and
   `patches/nethernet@1.1.2.patch` (plus a `packageExtensions` entry for nethernet's new jsonwebtoken dependency).
   The server signs its answer with an identity key; plain HTTP cannot vouch for that key, so it is accepted unless
   `nethernet.serverKey` pins it (`'sha256:<hex of the DER SPKI>'`; a mismatch is refused with

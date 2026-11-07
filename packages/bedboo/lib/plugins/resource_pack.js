@@ -3,7 +3,7 @@
 // Events: 'resourcePack' (url, hash, uuid) — once per pack the server offers
 // Bedrock: the server offers its packs in resource_packs_info during login (before start_game); the client
 //   answers resource_pack_client_response. bedrock-protocol answers 'completed' at once; the bedboo patch
-//   (patches/bedrock-protocol@3.60.1.patch) lets this plugin hold the answer:
+//   (patches/bedrock-protocol@3.61.0.patch) lets this plugin hold the answer:
 //     client.holdResourcePacks = (packet) => boolean   // true: wait for client.respondToResourcePacks(response)
 //   Like mineflayer, packs are accepted automatically when nobody listens to 'resourcePack'; with a listener
 //   the bot waits for acceptResourcePack() / denyResourcePack() (mineflayer leaves an unanswered pack pending

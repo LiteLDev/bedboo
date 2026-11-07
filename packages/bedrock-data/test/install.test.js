@@ -139,6 +139,9 @@ describe('@bedboo/bedrock-data install()', () => {
     assert.strictEqual(mcData.version.minecraftVersion, '1.26.51')
     assert.strictEqual(mcData.blocksArray.length, 1477)
     assert.strictEqual(mcData.blockStates.length, 22091)
+    // the overlay wins over minecraft-data's own bedrock/1.26.51 blocks (3.119.0+), which lack these fields
+    assert.strictEqual(mcData.blocksByName.stone.friction, 0.6)
+    assert.strictEqual(typeof mcData.blockStates[0].hash, 'number')
     assert.strictEqual(mcData.itemsArray.length, 2076)
     assert.strictEqual(mcData.blocksByName.stone.harvestTools[mcData.itemsByName.wooden_pickaxe.id], true)
     assert.strictEqual(mcData.effectsByName.Levitation.id, 24)
@@ -153,15 +156,17 @@ describe('@bedboo/bedrock-data install()', () => {
     const script = `
       const mcData = require('minecraft-data')
       const early = mcData('bedrock_1.26.51')
-      const before = early.blockStates.length
+      const before = { friction: early.blocksByName.stone.friction ?? null, hash: 'hash' in early.blockStates[0] }
       require(${JSON.stringify(path.join(__dirname, '..'))}).install()
       const after = mcData('bedrock_1.26.51')
-      process.stdout.write(JSON.stringify({ same: early === after, before, after: early.blockStates.length, effect: early.effectsByName.SlowFalling.id }))
+      process.stdout.write(JSON.stringify({ same: early === after, before, after: { friction: early.blocksByName.stone.friction, hash: 'hash' in early.blockStates[0], states: early.blockStates.length }, effect: early.effectsByName.SlowFalling.id }))
     `
     const out = JSON.parse(execFileSync(process.execPath, ['-e', script], { cwd: path.join(__dirname, '..') }).toString())
     assert.strictEqual(out.same, true)
-    assert.notStrictEqual(out.before, 22091, 'minecraft-data 3.117.0 inherits 1.26.30 block states')
-    assert.strictEqual(out.after, 22091)
+    // minecraft-data >= 3.119.0 ships its own bedrock/1.26.51 blocks (same 22091 states), but without the overlay's
+    // Cloudburst friction and block-state hashes
+    assert.deepStrictEqual(out.before, { friction: null, hash: false }, 'minecraft-data serves its own 1.26.51 blocks before install()')
+    assert.deepStrictEqual(out.after, { friction: 0.6, hash: true, states: 22091 })
     assert.strictEqual(out.effect, 27)
   })
 })
