@@ -16,6 +16,12 @@ pnpm typecheck   # index.d.ts
 
 A change in behaviour comes with a unit test.
 
+The unit tests target Bedrock 1.26.51 by default. `BEDBOO_VERSION=<family>` (e.g. `1.26.60`) or a BDS build (e.g.
+`1.26.62.1`, mapped to its family) runs them against another version: the fake clients, serializers, registries and
+the packet captures under `packages/bedboo/test/fixtures/<family>/` follow it (`packages/bedboo/test/version.js`).
+Tests that need a capture the family does not have yet are skipped with the reason. CI runs the unit tests once per
+family in its `bedrock` matrix; a manual run of the CI workflow takes a `version` input.
+
 ## Rules
 
 - **mineflayer's API, unchanged.** Keep upstream's names, arguments, return values, events and error messages.

@@ -5,15 +5,21 @@ const assert = require('assert')
 const fixtures = require('../../fixtures')
 const { createRegistry } = require('../../../lib/registry')
 
-const cap = fixtures.load('join_flat')
-const registry = createRegistry()
-registry.handleStartGame(cap.first('start_game'))
-registry.handleItemRegistry(cap.first('item_registry'))
+const { TEST_VERSION } = require('../../version')
+
+// module-level capture: on a family without one, every suite below skips (fixtures.skipReason)
+const skip = fixtures.skipReason('join_flat')
+const cap = skip ? null : fixtures.load('join_flat')
+const registry = createRegistry(TEST_VERSION)
+if (cap) {
+  registry.handleStartGame(cap.first('start_game'))
+  registry.handleItemRegistry(cap.first('item_registry'))
+}
 const Block = require('prismarine-block')(registry)
 const item = name => registry.itemsByName[name].id
 const block = (name, properties) => properties ? Block.fromProperties(name, properties, 0) : Block.fromStateId(registry.blocksByName[name].defaultState, 0)
 
-describe('prismarine-block (bedboo patch) on bedrock_1.26.51', () => {
+describe('prismarine-block (bedboo patch) on bedrock_1.26.51', { skip }, () => {
   it('Block.fromStateId resolves name, type, metadata, shapes and properties', () => {
     const stone = block('stone')
     assert.strictEqual(stone.name, 'stone')
@@ -47,7 +53,7 @@ describe('prismarine-block (bedboo patch) on bedrock_1.26.51', () => {
     // what BDS sent for /setblock stone in the capture
     assert.strictEqual(block('stone').hash, -2144268767)
     // a server without hashed ids: the runtime id is the state index
-    const plain = createRegistry()
+    const plain = createRegistry(TEST_VERSION)
     plain.handleStartGame({ block_network_ids_are_hashes: false })
     const PlainBlock = require('prismarine-block')(plain)
     const stone = PlainBlock.fromStateId(plain.blocksByName.stone.defaultState, 0)

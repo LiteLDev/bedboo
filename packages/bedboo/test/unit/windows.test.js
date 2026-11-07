@@ -9,11 +9,12 @@ const { serveInventory, wireItem, inventoryContent } = require('./helpers/invent
 const { createWindowRegistry, windowKey, CONTAINER_SPECS, slotMapOf, javaTypeOf, containerSize } = require('../../lib/bedrock/windows')
 const slots = require('../../lib/bedrock/slots')
 const { normalizeAction } = require('../../lib/bedrock/stack_request')
+const { TEST_VERSION } = require('../version')
 
 let serializer
 function serialize (name, params) {
   const { createSerializer } = require('bedrock-protocol/src/transforms/serializer')
-  serializer = serializer ?? createSerializer('1.26.51')
+  serializer = serializer ?? createSerializer(TEST_VERSION)
   return serializer.createPacketBuffer({ name, params })
 }
 

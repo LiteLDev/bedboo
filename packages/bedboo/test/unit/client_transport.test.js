@@ -6,6 +6,7 @@ const assert = require('assert')
 const http = require('http')
 const path = require('path')
 const { once } = require('events')
+const { TEST_VERSION, TEST_PROTOCOL } = require('../version')
 
 /** a module as bedrock-protocol's own dependency sees it (nethernet is not a direct dependency of this package) */
 function requireFrom (pkg, request) {
@@ -73,7 +74,7 @@ describe('transport options: raknet default, nethernet over HTTP signalling', ()
     const server = http.createServer((req, res) => {
       if (req.method === 'GET' && req.url === '/v1/join') {
         res.writeHead(200, { 'content-type': 'application/json' })
-        return res.end(JSON.stringify({ name: 'bedboo', protocol: 2193, version: '1.26.51', level: 'w', players: 1, maxPlayers: 10, gameType: 0 }))
+        return res.end(JSON.stringify({ name: 'bedboo', protocol: TEST_PROTOCOL, version: TEST_VERSION, level: 'w', players: 1, maxPlayers: 10, gameType: 0 }))
       }
       res.writeHead(404).end()
     })
@@ -84,7 +85,7 @@ describe('transport options: raknet default, nethernet over HTTP signalling', ()
       assert.strictEqual(ad.transport, 'nethernet')
       assert.strictEqual(ad.signalling, 'http')
       assert.strictEqual(ad.motd, 'bedboo')
-      assert.strictEqual(ad.protocol, 2193)
+      assert.strictEqual(ad.protocol, TEST_PROTOCOL)
       assert.strictEqual(ad.playersMax, 10)
     } finally {
       server.close()

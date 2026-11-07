@@ -5,20 +5,26 @@ const assert = require('assert')
 const fixtures = require('../../fixtures')
 const { createRegistry } = require('../../../lib/registry')
 
-const cap = fixtures.load('join_flat')
-const registry = createRegistry()
-registry.handleStartGame(cap.first('start_game'))
-registry.handleItemRegistry(cap.first('item_registry'))
+const { TEST_VERSION } = require('../../version')
+
+// module-level capture: on a family without one, every suite below skips (fixtures.skipReason)
+const skip = fixtures.skipReason('join_flat')
+const cap = skip ? null : fixtures.load('join_flat')
+const registry = createRegistry(TEST_VERSION)
+if (cap) {
+  registry.handleStartGame(cap.first('start_game'))
+  registry.handleItemRegistry(cap.first('item_registry'))
+}
 const Item = require('prismarine-item')(registry)
 
 function serializer () {
   const { createSerializer } = require('bedrock-protocol/src/transforms/serializer')
-  const s = createSerializer('1.26.51')
+  const s = createSerializer(TEST_VERSION)
   s.proto.setVariable('ShieldItemID', registry.itemsByName.shield.id)
   return s
 }
 
-describe('prismarine-item (bedboo patch) with Bedrock ItemV4', () => {
+describe('prismarine-item (bedboo patch) with Bedrock ItemV4', { skip }, () => {
   const ser = serializer()
   const contents = cap.packets('inventory_content').map(p => p.params)
 

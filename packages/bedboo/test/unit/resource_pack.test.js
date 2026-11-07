@@ -4,6 +4,7 @@
 const { describe, it } = require('node:test')
 const assert = require('assert')
 const { createFakeBot } = require('./helpers/fake')
+const { TEST_VERSION } = require('../version')
 
 const PACK = { uuid: '0f5e9b7c-1111-4a2b-9c3d-2e2f3a4b5c6d', version: '1.0.0', size: 1234n, content_key: '', sub_pack_name: '', content_identity: '', has_scripts: false, addon_pack: false, rtx_enabled: false, cdn_url: '' }
 const info = (packs) => ({ must_accept: false, has_addons: false, has_scripts: false, disable_vibrant_visuals: false, world_template: { uuid: '00000000-0000-0000-0000-000000000000', version: '0.0.0' }, texture_packs: packs })
@@ -46,7 +47,7 @@ describe('resource packs', () => {
       assert.strictEqual(client.respondToResourcePacks(true), false)
       assert.throws(() => client.respondToResourcePacks('maybe'), /unknown resource pack response/)
       const { createSerializer } = require('bedrock-protocol/src/transforms/serializer')
-      assert.ok(createSerializer('1.26.51').createPacketBuffer({ name: 'resource_pack_client_response', params: client.sent[0][2] }).length > 0)
+      assert.ok(createSerializer(TEST_VERSION).createPacketBuffer({ name: 'resource_pack_client_response', params: client.sent[0][2] }).length > 0)
     } finally {
       client.close()
     }

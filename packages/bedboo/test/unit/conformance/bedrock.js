@@ -15,6 +15,7 @@ const { EventEmitter } = require('events')
 const { snapshot, namespace, describeValue, unrefTimers, realSetTimeout } = require('./surface')
 const { probeWindows } = require('./windows')
 const { readDts } = require('./dts')
+const { TEST_VERSION } = require('../../version')
 
 const PKG_DIR = path.join(__dirname, '../../..')
 
@@ -22,9 +23,9 @@ const PKG_DIR = path.join(__dirname, '../../..')
 function fakeBedrockClient ({ username = 'ConformanceBot' } = {}) {
   const client = new EventEmitter()
   client.setMaxListeners(0)
-  client.version = '1.26.51'
+  client.version = TEST_VERSION
   client.username = username
-  client.options = { version: '1.26.51', username, offline: true }
+  client.options = { version: TEST_VERSION, username, offline: true }
   client.written = []
   client.queue = (name, params) => client.written.push(['queue', name, params])
   client.write = (name, params) => client.written.push(['write', name, params])
@@ -48,7 +49,7 @@ async function createInjectedBot (options = {}) {
   const bedboo = require(PKG_DIR)
   const client = fakeBedrockClient(options)
   const errors = []
-  const bot = bedboo.createBot({ client, username: client.username, logErrors: false, hideErrors: true, ...options })
+  const bot = bedboo.createBot({ client, version: TEST_VERSION, username: client.username, logErrors: false, hideErrors: true, ...options })
   bot.on('error', (err) => errors.push(err))
   await waitInjected(bot)
   return { bot, client, errors }

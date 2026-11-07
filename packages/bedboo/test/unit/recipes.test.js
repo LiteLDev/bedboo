@@ -7,10 +7,11 @@ const fixtures = require('../fixtures')
 const { createRegistry } = require('../../lib/registry')
 const recipes = require('../../lib/bedrock/recipes')
 const ITEM_TAGS = require('../../lib/bedrock/item_tags')
+const { TEST_VERSION } = require('../version')
 
 function setup () {
   const cap = fixtures.load('join_flat')
-  const registry = createRegistry()
+  const registry = createRegistry(TEST_VERSION)
   registry.handleStartGame(cap.first('start_game'))
   registry.handleItemRegistry(cap.first('item_registry'))
   return { registry, packet: cap.first('crafting_data'), Item: require('prismarine-item')(registry) }

@@ -6,6 +6,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Bedrock family (1.26.60) or BDS build (1.26.62.1) to test instead of the matrix (BEDBOO_VERSION)'
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -18,9 +23,19 @@ env:
   COREPACK_ENABLE_DOWNLOAD_PROMPT: '0'
 
 jobs:
-  test:
+  unit:
+    name: lint, unit tests, typecheck (${{ matrix.bedrock }})
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        # Bedrock families the unit tests run against (BEDBOO_VERSION, see packages/bedboo/test/version.js). Append
+        # a family to the JSON list once its bedrock-data, FAMILIES entry and test/fixtures/<family>/ have landed.
+        # A manual run (workflow_dispatch) with a `version` input tests that family or BDS build alone.
+        bedrock: ${{ fromJSON(inputs.version && format('["{0}"]', inputs.version) || '["1.26.51"]') }}
+    env:
+      BEDBOO_VERSION: ${{ matrix.bedrock }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
@@ -31,3 +46,11 @@ jobs:
       - run: pnpm lint
       - run: pnpm test
       - run: pnpm typecheck
+
+  # the required status check of main's ruleset: green only when every matrix entry above passed
+  test:
+    if: always()
+    needs: unit
+    runs-on: ubuntu-latest
+    steps:
+      - run: test "${{ needs.unit.result }}" = success

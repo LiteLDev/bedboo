@@ -4,13 +4,16 @@ const { describe, it } = require('node:test')
 const assert = require('assert')
 const fixtures = require('../../fixtures')
 const { createRegistry } = require('../../../lib/registry')
+const { TEST_VERSION } = require('../../version')
 
-const cap = fixtures.load('join_flat')
-const startGame = cap.first('start_game')
-const itemRegistry = cap.first('item_registry')
+// module-level capture: on a family without one, every suite below skips (fixtures.skipReason)
+const skip = fixtures.skipReason('join_flat')
+const cap = skip ? null : fixtures.load('join_flat')
+const startGame = cap?.first('start_game')
+const itemRegistry = cap?.first('item_registry')
 
 function joinedRegistry () {
-  const registry = createRegistry()
+  const registry = createRegistry(TEST_VERSION)
   registry.handleStartGame(startGame)
   registry.handleItemRegistry(itemRegistry)
   return registry
@@ -24,7 +27,7 @@ function capturedRuntimeIds () {
   return ids
 }
 
-describe('prismarine-registry (bedboo patch) from start_game + item_registry', () => {
+describe('prismarine-registry (bedboo patch) from start_game + item_registry', { skip }, () => {
   const registry = joinedRegistry()
 
   it('item_registry: every entry resolves name ↔ id', () => {
@@ -87,15 +90,15 @@ describe('prismarine-registry (bedboo patch) from start_game + item_registry', (
   })
 
   it('without hashes, runtime ids are the palette indexes (same order as BDS)', () => {
-    const r = createRegistry()
+    const r = createRegistry(TEST_VERSION)
     r.handleStartGame({ block_network_ids_are_hashes: false })
     assert.strictEqual(r.blocksByRuntimeId[r.blocksByName.stone.defaultState].name, 'stone')
     assert.strictEqual(r.runtimeIdByStateId[123], 123)
   })
 
   it('re-keys harvestTools, materials, drops and foods when the server item ids differ', () => {
-    const r = createRegistry()
-    const md = require('minecraft-data')('bedrock_1.26.51')
+    const r = createRegistry(TEST_VERSION)
+    const md = require('minecraft-data')('bedrock_' + TEST_VERSION)
     // a server whose palette shifts every non-negative id by 10000
     const shifted = itemRegistry.itemstates.map(s => ({ ...s, runtime_id: s.runtime_id >= 0 ? s.runtime_id + 10000 : s.runtime_id }))
     r.handleStartGame(startGame)
@@ -119,7 +122,7 @@ describe('prismarine-registry (bedboo patch) from start_game + item_registry', (
   })
 
   it('custom items from the palette get component data', () => {
-    const r = createRegistry()
+    const r = createRegistry(TEST_VERSION)
     const nbt = require('prismarine-nbt')
     const custom = {
       name: 'test:widget',

@@ -14,6 +14,7 @@ const { createFakeBedd, NO_REPLY } = require('../helpers/fake_bedd')
 const { inventoryContent } = require('../helpers/inventory_server')
 const { OPTIONAL_MODULES } = require('../../../lib/bedd')
 const { toBedrockYaw, toBedrockPitch } = require('../../../lib/bedrock/conversions')
+const { TEST_VERSION } = require('../../version')
 
 const UP = new Vec3(0, 1, 0)
 
@@ -28,7 +29,7 @@ async function until (fn, { timeout = 10000, what = 'condition' } = {}) {
 let deserializer
 function decode (buf) {
   const { createDeserializer } = require('bedrock-protocol/src/transforms/serializer')
-  deserializer = deserializer ?? createDeserializer('1.26.51')
+  deserializer = deserializer ?? createDeserializer(TEST_VERSION)
   return deserializer.parsePacketBuffer(Buffer.from(buf, 'base64')).data
 }
 

@@ -10,6 +10,10 @@
  *   cap.packets('player_auth_input', { dir: 'out' }) // packets the recording client sent
  *   cap.records                                      // raw records (buffer only, unparsed)
  *
+ * The default version is the family the test run targets (BEDBOO_VERSION, see ../version.js), so the same tests
+ * replay test/fixtures/<family>/. A capture that does not exist for that family throws a FixtureMissingError
+ * (code BEDBOO_FIXTURE_MISSING); ../skip-missing-fixtures.js turns it into a skipped test.
+ *
  * Every record holds the raw decompressed packet buffer exactly as bedrock-protocol's deserializer
  * consumes it, so parsing goes through the same code path (and catches protocol-schema
  * regressions). Item-bearing packets need the `ShieldItemID` protodef variable, which is set from
@@ -19,11 +23,42 @@ const fs = require('fs')
 const path = require('path')
 const zlib = require('zlib')
 
-// Same rule as the library: data overlay before any bedrock_1.26.51 data is loaded.
+// Same rule as the library: data overlay before any bedrock_<version> data is loaded.
 require('@bedboo/bedrock-data').install()
 
-const DEFAULT_VERSION = '1.26.51'
+const { TEST_VERSION, DEFAULT_VERSION: BASELINE_VERSION } = require('../version')
+
+const DEFAULT_VERSION = TEST_VERSION
 const cache = new Map()
+
+class FixtureMissingError extends Error {
+  constructor (name, version, file) {
+    super(`no ${name} capture for Bedrock ${version} (${path.relative(path.join(__dirname, '..', '..'), file)}); capture one against a BDS of that family`)
+    this.name = 'FixtureMissingError'
+    this.code = 'BEDBOO_FIXTURE_MISSING'
+    this.fixture = name
+    this.version = version
+  }
+}
+
+function fileOf (name, version) {
+  return path.join(__dirname, version, name + '.jsonl.gz')
+}
+
+/** @returns {boolean} whether the capture `name` exists for `version` */
+function has (name = 'join_flat', { version = DEFAULT_VERSION } = {}) {
+  return fs.existsSync(fileOf(name, version))
+}
+
+/**
+ * For test files that read a capture at module level: `describe(title, { skip: fixtures.skipReason() }, …)`.
+ * @returns {string|false} why tests needing capture `name` must skip for `version`, or false when it exists. Never
+ *   skips the baseline family (1.26.51): its captures must exist, so load() fails loudly there.
+ */
+function skipReason (name = 'join_flat', { version = DEFAULT_VERSION } = {}) {
+  if (version === BASELINE_VERSION || has(name, { version })) return false
+  return new FixtureMissingError(name, version, fileOf(name, version)).message
+}
 
 /** @returns {string[]} capture names available for `version` */
 function list (version = DEFAULT_VERSION) {
@@ -50,7 +85,8 @@ function readCapture (file) {
 function load (name = 'join_flat', { version = DEFAULT_VERSION } = {}) {
   const key = version + '/' + name
   if (cache.has(key)) return cache.get(key)
-  const file = path.join(__dirname, version, name + '.jsonl.gz')
+  const file = fileOf(name, version)
+  if (!fs.existsSync(file)) throw new FixtureMissingError(name, version, file)
   const { meta, records } = readCapture(file)
 
   let deserializer = null
@@ -92,4 +128,4 @@ function load (name = 'join_flat', { version = DEFAULT_VERSION } = {}) {
   return capture
 }
 
-module.exports = { list, load, DEFAULT_VERSION }
+module.exports = { list, load, has, skipReason, DEFAULT_VERSION, FixtureMissingError }

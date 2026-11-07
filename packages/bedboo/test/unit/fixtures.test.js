@@ -2,18 +2,19 @@
 const { describe, it } = require('node:test')
 const assert = require('assert')
 const fixtures = require('../fixtures')
+const { TEST_VERSION, TEST_PROTOCOL } = require('../version')
 
-describe('packet fixtures (capture of BDS 1.26.51.1)', () => {
+describe(`packet fixtures (capture of Bedrock ${TEST_VERSION})`, () => {
   const cap = fixtures.load('join_flat')
 
   it('lists the join_flat capture with metadata', () => {
     assert.ok(fixtures.list().includes('join_flat'))
-    assert.strictEqual(cap.meta.version, '1.26.51')
-    assert.strictEqual(cap.meta.protocol, 2193)
+    assert.strictEqual(cap.meta.version, TEST_VERSION)
+    assert.strictEqual(cap.meta.protocol, TEST_PROTOCOL)
     for (const m of ['join', 'start_game', 'spawn', 'level_chunk', 'subchunk']) assert.ok(cap.meta.milestones[m] > 0, m)
   })
 
-  it('every recorded packet re-parses with bedrock-protocol 1.26.51', () => {
+  it(`every recorded packet re-parses with bedrock-protocol ${TEST_VERSION}`, () => {
     for (const record of cap.records) cap.parse(record)
   })
 

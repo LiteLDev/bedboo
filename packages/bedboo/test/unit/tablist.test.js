@@ -3,6 +3,7 @@
 const { describe, it } = require('node:test')
 const assert = require('assert')
 const { createFakeBot, replayJoin } = require('./helpers/fake')
+const { TEST_VERSION } = require('../version')
 
 describe('tablist', () => {
   it('internalTest › tablist', async () => {
@@ -13,7 +14,7 @@ describe('tablist', () => {
     assert.strictEqual(bot.tablist.header.constructor.name, 'ChatMessage')
     await replayJoin(bot, client)
     assert.deepStrictEqual([bot.tablist.header.toString(), bot.tablist.footer.toString()], ['', ''])
-    const protocol = require('minecraft-data')('bedrock_1.26.51').protocol.types
+    const protocol = require('minecraft-data')('bedrock_' + TEST_VERSION).protocol.types
     assert.ok(!Object.keys(protocol).some(name => /playerlist_header|tab_list|player_list_header/.test(name)), 'no header/footer packet on Bedrock')
   })
 })

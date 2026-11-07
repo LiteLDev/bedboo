@@ -6,10 +6,16 @@ const { Vec3 } = require('vec3')
 const fixtures = require('../../fixtures')
 const { createRegistry } = require('../../../lib/registry')
 
-const cap = fixtures.load('join_flat')
-const registry = createRegistry()
-registry.handleStartGame(cap.first('start_game'))
-registry.handleItemRegistry(cap.first('item_registry'))
+const { TEST_VERSION } = require('../../version')
+
+// module-level capture: on a family without one, every suite below skips (fixtures.skipReason)
+const skip = fixtures.skipReason('join_flat')
+const cap = skip ? null : fixtures.load('join_flat')
+const registry = createRegistry(TEST_VERSION)
+if (cap) {
+  registry.handleStartGame(cap.first('start_game'))
+  registry.handleItemRegistry(cap.first('item_registry'))
+}
 const ChunkColumn = require('prismarine-chunk')(registry)
 
 /**
@@ -39,7 +45,7 @@ function paletteIds (column) {
   return ids
 }
 
-describe('biomes (vanilla Bedrock ids) on BDS 1.26.51 chunks', () => {
+describe('biomes (vanilla Bedrock ids) on BDS 1.26.51 chunks', { skip }, () => {
   let columns
   before(async () => { columns = await decodeColumns() }, { timeout: 60000 })
 

@@ -41,7 +41,7 @@
     "COPYING.LESSER"
   ],
   "scripts": {
-    "test": "node --test --test-isolation=none --test-timeout=60000 --require ./test/strict-features.js \"test/unit/**/*.test.js\"",
+    "test": "node --test --test-isolation=none --test-timeout=60000 --require ./test/strict-features.js --require ./test/skip-missing-fixtures.js \"test/unit/**/*.test.js\"",
     "typecheck": "node test/types/check.js"
   },
   "dependencies": {

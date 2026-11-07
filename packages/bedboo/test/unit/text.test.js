@@ -6,8 +6,9 @@ const assert = require('assert')
 const { createRegistry } = require('../../lib/registry')
 const text = require('../../lib/bedrock/text')
 const { afterSpawnRecords } = require('./helpers/fake')
+const { TEST_VERSION } = require('../version')
 
-const registry = createRegistry()
+const registry = createRegistry(TEST_VERSION)
 const ChatMessage = require('prismarine-chat')(registry)
 const packet = (fields) => ({ needs_translation: false, category: 'message_only', xuid: '', platform_chat_id: '', has_filtered_message: false, ...fields })
 

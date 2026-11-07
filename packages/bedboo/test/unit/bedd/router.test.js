@@ -12,6 +12,7 @@ const { serveInventory, wireItem } = require('../helpers/inventory_server')
 const { createInputQueue } = require('../../../lib/bedrock/input_queue')
 const authority = require('../../../lib/bedd/authority')
 const routerModule = require('../../../lib/bedd/router')
+const { TEST_VERSION } = require('../../version')
 
 const ALL_OPS = ['world', 'look', 'input', 'slot', 'button', 'action', 'send', 'key', 'text', 'raw', 'mouse']
 
@@ -93,7 +94,7 @@ async function beddBot ({ caps = capsWith(), world = { inLevel: true, mouseGrabb
 }
 
 function decode (buf) {
-  const des = createDeserializer('1.26.51')
+  const des = createDeserializer(TEST_VERSION)
   return des.parsePacketBuffer(Buffer.from(buf, 'base64')).data
 }
 

@@ -9,6 +9,7 @@ const { Vec3 } = require('vec3')
 const { createFakeBot, replayJoin } = require('./helpers/fake')
 const { serveInventory, wireItem, inventoryContent, tick } = require('./helpers/inventory_server')
 const { zigzag32, resultSteps, itemFromNbt, withNbt } = require('../../lib/bedrock/stations')
+const { TEST_VERSION } = require('../version')
 
 async function joined () {
   const created = await createFakeBot()
@@ -28,7 +29,7 @@ async function joined () {
 let serializer
 function serialize (name, params) {
   const { createSerializer } = require('bedrock-protocol/src/transforms/serializer')
-  serializer = serializer ?? createSerializer('1.26.51')
+  serializer = serializer ?? createSerializer(TEST_VERSION)
   return serializer.createPacketBuffer({ name, params })
 }
 
@@ -202,7 +203,7 @@ describe('stations: enchanting table', () => {
 describe('stations: anvil', () => {
   function anvilOf () {
     require('@bedboo/bedrock-data').install()
-    const registry = require('prismarine-registry')('bedrock_1.26.51')
+    const registry = require('prismarine-registry')('bedrock_' + TEST_VERSION)
     const Item = require('prismarine-item')(registry)
     const combine = require('../../lib/bedrock/anvil')(registry)
     const make = (name, { enchants, repairCost, damage, count = 1, customName } = {}) => {
