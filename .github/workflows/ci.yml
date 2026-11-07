@@ -23,7 +23,7 @@ env:
   COREPACK_ENABLE_DOWNLOAD_PROMPT: '0'
 
 jobs:
-  test:
+  unit:
     name: lint, unit tests, typecheck (${{ matrix.bedrock }})
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -46,3 +46,11 @@ jobs:
       - run: pnpm lint
       - run: pnpm test
       - run: pnpm typecheck
+
+  # the required status check of main's ruleset: green only when every matrix entry above passed
+  test:
+    if: always()
+    needs: unit
+    runs-on: ubuntu-latest
+    steps:
+      - run: test "${{ needs.unit.result }}" = success
