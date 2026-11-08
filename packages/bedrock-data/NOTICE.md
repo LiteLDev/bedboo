@@ -8,7 +8,9 @@ version in `scripts/sources.js` `PINS`, sha256 per version in `scripts/sources.l
 `bedrock_<version>` entry. `data/<version>/features.js` (optional, hand-written) lists the feature values in
 which that version differs from `features.js` (`featuresFor(version)`).
 
-The sources and facts below are those of `data/1.26.51`.
+The sources and facts below are those of `data/1.26.51`. Its probe was recorded on BDS 1.26.51.1; BDS 1.26.50.5 and
+1.26.52.3 (same protocol 2193) gave the same probe facts, block palette, item registry, creative content, biome
+definitions and command tree, so `data/1.26.51` serves all three builds.
 
 ## Sources and licenses
 
