@@ -29,8 +29,8 @@ const { findFamily } = require('./versions')
 
 const SELECTORS = ['@a', '@e', '@initiator', '@p', '@r', '@s']
 /**
- * How a 'valid' parameter of BDS 1.26.51 completes, by numeric type id (observed in its available_commands; the
- * ids of the other families in lib/bedrock/versions.js are assumed equal until checked against their servers).
+ * How a 'valid' parameter of BDS 1.26.51 completes, by numeric type id (observed in its available_commands; a family
+ * whose ids differ has its own table in VALUE_TYPE_KINDS_BY_VERSION, the others are assumed equal until checked).
  * bedrock-protocol 3.60.1's `value_type` mapper still carries older ids for some names (position 53, message 55,
  * json 62, command 75, …), so names are mapped back to their numbers first and only the number is trusted.
  * Anything else is a single word without suggestions (int, float, value, string, operators, ranges, block states…).
@@ -44,6 +44,21 @@ const VALUE_TYPE_KINDS = {
   70: 'rest', // raw text
   74: 'rest', // json
   90: 'command' // command (execute … run <command>)
+}
+
+/**
+ * Families whose available_commands number the value types differently (observed on their BDS).
+ * - 1.26.40 (BDS 1.26.44.3): `execute … run <command>` is 88 — 1.26.50 inserted two types below it; target 8,
+ *   wildcard target 10, positions 64 / 65, message 68, raw text 70 and json 74 are the same.
+ */
+const { 90: _command51, ...kinds40 } = VALUE_TYPE_KINDS
+const VALUE_TYPE_KINDS_BY_VERSION = {
+  '1.26.40': Object.freeze({ ...kinds40, 88: 'command' })
+}
+
+/** the VALUE_TYPE_KINDS of a family */
+function valueTypeKinds (version) {
+  return VALUE_TYPE_KINDS_BY_VERSION[version] ?? VALUE_TYPE_KINDS
 }
 
 const valueTypeIdTables = new Map() // version → { name → number }
@@ -137,6 +152,7 @@ const sortSuggestions = (list) => [...new Set(list)].sort((a, b) => {
  */
 function createCommandTree ({ version = VERSION } = {}) {
   version = findFamily(version)?.version ?? String(version).replace(/^bedrock_/, '')
+  const kinds = valueTypeKinds(version)
   /** name (lower case, aliases included) → { name, overloads: [{ chaining, parameters: [param] }] } */
   const commands = new Map()
   let enums = []
@@ -175,7 +191,7 @@ function createCommandTree ({ version = VERSION } = {}) {
     } else if (kind === 'chained') {
       param.kind = 'chained'
     } else if (kind === 'valid') {
-      param.kind = VALUE_TYPE_KINDS[indexOf(p.value_type, version)] ?? 'token'
+      param.kind = kinds[indexOf(p.value_type, version)] ?? 'token'
     }
     return param
   }
@@ -356,4 +372,4 @@ function executedCommandName (data) {
   }
 }
 
-module.exports = { createCommandTree, tokenize, quoteName, quoteTarget, commandName, executedCommandName, SELECTORS }
+module.exports = { createCommandTree, tokenize, quoteName, quoteTarget, commandName, executedCommandName, SELECTORS, valueTypeKinds }

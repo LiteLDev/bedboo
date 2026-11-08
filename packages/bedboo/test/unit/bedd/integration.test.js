@@ -124,7 +124,7 @@ describe('bedd integration: createBot({ transport: \'bedd\' }) with every module
 
   before(async () => {
     game = await fakeGame()
-    bot = bedboo.createBot({ transport: 'bedd', bedd: game.fake.botOptions(), logErrors: false, hideErrors: true })
+    bot = bedboo.createBot({ transport: 'bedd', version: TEST_VERSION, bedd: game.fake.botOptions(), logErrors: false, hideErrors: true })
     game.bot = bot
     let template = null
     bot._client.on('serverbound', (p) => { if (p.name === 'player_auth_input' && !p.replay) template = p.params })
@@ -295,7 +295,7 @@ describe('bedd integration: createBot({ transport: \'bedd\' }) with every module
 describe('bedd integration: no stack op', () => {
   it('clickWindow and craft reject with ERR_BEDD_UNSUPPORTED and nothing reaches the control pipe', async () => {
     const game = await fakeGame({ caps: { stack: 'absent' }, handlers: { stack: () => NO_REPLY } })
-    const bot = bedboo.createBot({ transport: 'bedd', bedd: game.fake.botOptions(), logErrors: false, hideErrors: true })
+    const bot = bedboo.createBot({ transport: 'bedd', version: TEST_VERSION, bedd: game.fake.botOptions(), logErrors: false, hideErrors: true })
     game.bot = bot
     try {
       await once(bot, 'spawn')

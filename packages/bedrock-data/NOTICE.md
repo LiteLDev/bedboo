@@ -26,6 +26,18 @@ The generated files contain material derived from CloudburstMC/Data (filtered, r
 (<https://www.apache.org/licenses/LICENSE-2.0>), and this file is its attribution notice. Everything else in this
 package is LGPL-3.0-only like the rest of the repository.
 
+### `data/1.26.40` (BDS 1.26.42.1 / 1.26.43.1 / 1.26.44.3, protocol 2168)
+
+Same kinds of sources, other commits (`scripts/sources.js` `PINS['1.26.40']`):
+
+| Source | License | Used for |
+|---|---|---|
+| [PrismarineJS/minecraft-data](https://github.com/PrismarineJS/minecraft-data) 3.119.0 (`bd8b5c6048e5af9694374b83f25f5b4aade619cc`, `data/bedrock/1.26.40/`) | MIT (PrismarineJS contributors) | blocks, blockStates, blockCollisionShapes, items, materials (vendored, then fixed as below) |
+| [CloudburstMC/Data](https://github.com/CloudburstMC/Data) `040a6cc9f96d5c3b131467b81a7939f94a5a8432` (the last 26.40 commit; the per-state block dump is `block_properties.json` there, renamed `blocks.json` in 26.50) | Apache License 2.0, Copyright CloudburstMC | as above; `test/fixtures/1.26.40/cloudburst-block-hashes.json.gz` |
+| [Sandertv/gophertunnel](https://github.com/Sandertv/gophertunnel) `4794743244247a9395360bced1f294d4882c4df0` (protocol 2168, 1.26.44) | MIT, Copyright (c) 2019 Sandertv | level sound event identifiers |
+| [pmmp/BedrockData](https://github.com/pmmp/BedrockData) `bdb44a48fb6beffb6e9f6864f06d2232eb62b6a3` | CC0 1.0 | vanilla numeric biome ids |
+| BDS 1.26.44.3 probe (`scripts/probe/1.26.40.json`) | facts observed on a running server | as above (same effect and enchantment ids as 1.26.51; no `dappled_forest`, `tables.VERSION_TABLES['1.26.40']`) |
+
 ## What the generator changes relative to PR #1335
 
 - `blocks[].friction` (new field) from Cloudburst `friction` (constant per block).

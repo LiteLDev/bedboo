@@ -36,7 +36,7 @@ async function createBeddBot (caps = present(...ALL), { clientOptions = {} } = {
   const client = fakeClient()
   Object.assign(client.options, clientOptions)
   client.bedd = beddStub(client, caps)
-  const bot = bedboo.createBot({ client, username: client.username, logErrors: false, hideErrors: true })
+  const bot = bedboo.createBot({ client, version: client.version, username: client.username, logErrors: false, hideErrors: true })
   bot._bedrock.mode = 'bedd'
   const warnings = []
   bot._warn = (...message) => warnings.push(message.join(' '))
@@ -261,7 +261,7 @@ describe('bedd: lifecycle, capability surface and BeddUnsupportedError', () => {
       Object.assign(client.options, { host: '1.2.3.4', port: 19133, viewDistance: 'far', auth: 'microsoft' })
       // attached by hand below (after bot._warn is recorded), not by lib/loader.js inside createBot
       client.bedd = { ...beddStub(client, present(...ALL)), attach () {} }
-      const bot = bedboo.createBot({ client, username: client.username, logErrors: false, hideErrors: true })
+      const bot = bedboo.createBot({ client, version: client.version, username: client.username, logErrors: false, hideErrors: true })
       const warnings = []
       bot._warn = (...m) => warnings.push(m.join(' '))
       bot.bedrock.bedd = { observed: { yaw: 0, pitch: 0, tick: 0 } }

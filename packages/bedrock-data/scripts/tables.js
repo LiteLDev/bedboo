@@ -196,6 +196,12 @@ const BLOCK_FIXES = {
   air: { hardness: 0 }
 }
 
+/** a copy of `table` without the given keys (a version that lacks entries of a base table) */
+function without (table, ...names) {
+  for (const name of names) if (!(name in table)) throw new Error(`tables: no ${name} to leave out`)
+  return Object.fromEntries(Object.entries(table).filter(([name]) => !names.includes(name)))
+}
+
 const BASE = { BLOCK_FIXES, BIOME_IDS_ADDED, BIOMES_ADDED, EFFECTS, ENTITY_SIZES, ENCHANTMENTS_ADDED, ATTRIBUTES_JAVA, ATTRIBUTES_BEDROCK_ONLY, ENTITY_JAVA_NAMES, ENTITY_DUPLICATES, ENTITIES_MANUAL }
 
 /**
@@ -203,7 +209,13 @@ const BASE = { BLOCK_FIXES, BIOME_IDS_ADDED, BIOMES_ADDED, EFFECTS, ENTITY_SIZES
  * sources or BDS differ replaces whole tables here (`'<version>': { EFFECTS: [...] }`, each with a comment on
  * what the server or the sources showed).
  */
-const VERSION_TABLES = {}
+const VERSION_TABLES = {
+  // BDS 1.26.44.3 (probe/1.26.40.json): its biome_definition_list ends at sulfur_caves; dappled_forest came with 26.50
+  '1.26.40': {
+    BIOME_IDS_ADDED: without(BIOME_IDS_ADDED, 'dappled_forest'),
+    BIOMES_ADDED: without(BIOMES_ADDED, 'dappled_forest')
+  }
+}
 
 /** The tables of one data version (generate.js). */
 function forVersion (version) {

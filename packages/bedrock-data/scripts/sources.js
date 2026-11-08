@@ -24,11 +24,22 @@ const DEFAULT_VERSION = '1.26.51'
  * version → { bds, mcdata, cloudburst, gophertunnel, pmmp }:
  *   bds          the BDS build whose facts probe/<version>.json records
  *   mcdata       minecraft-data commit (and directory) with blocks, blockStates, blockCollisionShapes, items, materials
- *   cloudburst   CloudburstMC/Data commit with the BDS dumps of that version
+ *   cloudburst   CloudburstMC/Data commit with the BDS dumps of that version (`files`: upstream file names that
+ *                differ from the current ones, e.g. { 'blocks.json': 'block_properties.json' } before 26.50)
  *   gophertunnel commit with the level sound event identifiers of that protocol
  *   pmmp         pmmp/BedrockData commit with the vanilla numeric biome ids
  */
 const PINS = {
+  '1.26.40': {
+    bds: '1.26.44.3',
+    // minecraft-data 3.119.0 (the npm dependency): data/bedrock/1.26.40 (also what bedrock_1.26.45 inherits)
+    mcdata: { repo: 'PrismarineJS/minecraft-data', sha: 'bd8b5c6048e5af9694374b83f25f5b4aade619cc', dir: 'data/bedrock/1.26.40', license: 'MIT' },
+    // last commit before 26.50 ("Add missing recipe data" on top of "Add missing data from 1.26.40 (2168)"); the
+    // per-state block dump was still called block_properties.json (same schema and palette order as blocks.json)
+    cloudburst: { repo: 'CloudburstMC/Data', sha: '040a6cc9f96d5c3b131467b81a7939f94a5a8432', license: 'Apache-2.0', files: { 'blocks.json': 'block_properties.json' } },
+    gophertunnel: { repo: 'Sandertv/gophertunnel', sha: '4794743244247a9395360bced1f294d4882c4df0', license: 'MIT' }, // CurrentProtocol 2168 / 1.26.44
+    pmmp: { repo: 'pmmp/BedrockData', sha: 'bdb44a48fb6beffb6e9f6864f06d2232eb62b6a3', license: 'CC0-1.0' } // "Updated from 1.26.30" (latest before BDS 1.26.4x)
+  },
   '1.26.51': {
     bds: '1.26.51.1',
     mcdata: {
@@ -63,6 +74,8 @@ function sourcesFor (version = DEFAULT_VERSION) {
   if (cache.has(version)) return cache.get(version)
   const { mcdata, cloudburst, gophertunnel, pmmp } = pinsFor(version)
   const pr = file => ({ ...mcdata, file: `${mcdata.dir}/${file}` })
+  const { files: renamed = {}, ...cloudburstPin } = cloudburst
+  const cloudburstFile = file => ({ ...cloudburstPin, file: renamed[file] ?? file })
   const sources = {
     // minecraft-data (PR #1335 for 1.26.51) — data/bedrock/<version>
     'pr1335/blocks.json': pr('blocks.json'),
@@ -71,13 +84,13 @@ function sourcesFor (version = DEFAULT_VERSION) {
     'pr1335/items.json': pr('items.json'),
     'pr1335/materials.json': pr('materials.json'),
     // CloudburstMC/Data — BDS dumps
-    'cloudburst/blocks.json': { ...cloudburst, file: 'blocks.json' },
-    'cloudburst/runtime_item_states.json': { ...cloudburst, file: 'runtime_item_states.json' },
-    'cloudburst/item_components.nbt': { ...cloudburst, file: 'item_components.nbt' },
-    'cloudburst/entity_identifiers.dat': { ...cloudburst, file: 'entity_identifiers.dat' },
-    'cloudburst/creative_items.json': { ...cloudburst, file: 'creative_items.json' },
+    'cloudburst/blocks.json': cloudburstFile('blocks.json'),
+    'cloudburst/runtime_item_states.json': cloudburstFile('runtime_item_states.json'),
+    'cloudburst/item_components.nbt': cloudburstFile('item_components.nbt'),
+    'cloudburst/entity_identifiers.dat': cloudburstFile('entity_identifiers.dat'),
+    'cloudburst/creative_items.json': cloudburstFile('creative_items.json'),
     // BDS biome definitions (climate, tags, water colour; no numeric ids: `id` is null for vanilla biomes)
-    'cloudburst/stripped_biome_definitions.json': { ...cloudburst, file: 'stripped_biome_definitions.json' },
+    'cloudburst/stripped_biome_definitions.json': cloudburstFile('stripped_biome_definitions.json'),
     // gophertunnel — level sound event identifiers (strings on the wire since 1.26.40)
     'gophertunnel/level_sound_event.go': { ...gophertunnel, file: 'minecraft/protocol/packet/level_sound_event.go' },
     // pmmp/BedrockData — vanilla numeric biome ids (what chunk biome palettes carry)

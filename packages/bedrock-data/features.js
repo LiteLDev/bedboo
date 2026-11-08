@@ -185,12 +185,25 @@ const JAVA = {
   usetraderlist: false
 }
 
+/**
+ * Bedrock wire / server facts that differ between the supported families (bedboo's own names: neither minecraft-data
+ * nor Java has them). The values here are the default version's; a family that differs overrides the name in
+ * data/<version>/features.js.
+ */
+const PROTOCOL = {
+  // 1.26.40 (protocol 2168) writes some optionals as double optionals (an extra outer presence bool in
+  // player_auth_input, transaction actions, item_stack_response): bedboo lib/bedrock/presence.js
+  optionalsHavePresenceFlag: false
+}
+for (const name of Object.keys(PROTOCOL)) {
+  if (name in BEDROCK || name in JAVA) throw new Error(`feature ${name}: a bedboo protocol feature must not reuse a minecraft-data or Java name`)
+}
 for (const name of Object.keys(JAVA)) {
   if (name in BEDROCK && BEDROCK[name] !== JAVA[name]) throw new Error(`feature ${name}: Java table disagrees with minecraft-data`)
 }
 
 /** Java feature name → Bedrock value (frozen); the 1.26.51 table and the base of every other version */
-const FEATURES = Object.freeze({ ...BEDROCK, ...JAVA })
+const FEATURES = Object.freeze({ ...BEDROCK, ...JAVA, ...PROTOCOL })
 const BEDROCK_FEATURES = Object.freeze({ ...BEDROCK })
 
 /**

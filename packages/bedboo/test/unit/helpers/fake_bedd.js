@@ -102,6 +102,11 @@ function listen (server, where) {
  * @param {object} [opts] see the module comment
  */
 async function createFakeBedd (opts = {}) {
+  // load named captures now: a capture missing for this family (FixtureMissingError) then rejects here, where the
+  // test or hook awaiting createFakeBedd is skipped, instead of later inside the tap connection (an unhandled error
+  // and a bot that never spawns)
+  opts = { ...opts }
+  for (const key of ['journal', 'duringReplay', 'live']) if (typeof opts[key] === 'string') opts[key] = fixtures.load(opts[key]).records
   const fake = new EventEmitter()
   const controlPath = opts.path ?? uniquePath()
   const tapPath = opts.tapPath ?? `${controlPath}-tap`

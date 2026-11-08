@@ -17,6 +17,7 @@ const { createWindowRegistry } = require('./bedrock/windows')
 const { createIds } = require('./bedrock/ids')
 const { createHeldItemProvider } = require('./bedrock/transactions')
 const { stubSync } = require('./bedrock/errors')
+const { installPresenceFlags } = require('./bedrock/presence')
 
 // Every mineflayer 4.39.0 plugin name (41) + `abilities` (mineflayer master) + `sign` (Bedrock
 // sign editing split out of blocks.js). Keep the upstream order; `abilities` and `sign` last.
@@ -241,6 +242,9 @@ function createBot (options = {}) {
   bot.version = registry.version.minecraftVersion
   options.version = bot.version
   bot.supportFeature = createSupportFeature(registry)
+  // the family's wire quirks in bedrock-protocol's serializer (1.26.40 double optionals, lib/bedrock/presence.js), also
+  // for a client given as options.client; nothing has been written yet (bedrock-protocol connects asynchronously)
+  installPresenceFlags(bot._client, bot.supportFeature)
   setTimeout(() => bot.emit('inject_allowed'), 0)
   return bot
 }
