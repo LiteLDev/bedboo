@@ -100,7 +100,7 @@ describe('core runtime: client, exports, registry', () => {
     const { versions } = require('@bedboo/bedrock-data')
     assert.deepStrictEqual(bedboo.testedVersions, FAMILIES.map(f => f.version).filter(v => versions.includes(v)))
     assert.ok(bedboo.testedVersions.includes(VERSION))
-    for (const version of ['1.26.51.1', '1.26.52.3', 'bedrock_1.26.51']) {
+    for (const version of ['1.26.50.5', '1.26.51.1', '1.26.52.3', 'bedrock_1.26.51']) {
       const { bot } = await createFakeBot({ version })
       assert.strictEqual(bot.version, '1.26.51', version)
       assert.strictEqual(bot.protocolVersion, 2193, version)
