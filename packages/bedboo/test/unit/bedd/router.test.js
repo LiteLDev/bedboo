@@ -58,7 +58,7 @@ async function beddBot ({ caps = capsWith(), world = { inLevel: true, mouseGrabb
   }
   client.queue = record('queue')
   client.write = record('write')
-  const bot = bedboo.createBot({ client, username: client.username, logErrors: false, hideErrors: true })
+  const bot = bedboo.createBot({ client, version: client.version, username: client.username, logErrors: false, hideErrors: true })
   bot._bedrock.input = createInputQueue(bot, { now: () => clock.now, timers: { setInterval: () => ({ unref () {} }), clearInterval () {} } })
   const errors = []
   bot.on('error', (err) => errors.push(err))

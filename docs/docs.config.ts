@@ -30,6 +30,7 @@ const root = {
   pluginPatches: 'Ecosystem plugin patches',
   beddMode: 'BeDD mode',
   bdsNotes: 'BDS notes',
+  v12640: 'Bedrock 1.26.40',
 };
 type Labels = typeof root;
 
@@ -59,6 +60,7 @@ const zh: Labels = {
   pluginPatches: '生态插件补丁',
   beddMode: 'BeDD 模式',
   bdsNotes: 'BDS 备忘',
+  v12640: 'Bedrock 1.26.40',
 };
 
 // The LeviMC navigation model (kit/README.md "Navigation model"): every top-level entry is a section, i.e. a header
@@ -92,6 +94,7 @@ const nav = (p: string, t: Labels): NavEntry[] => {
       items: [
         { text: t.api, link: `${p}reference/api` },
         { text: t.bdsNotes, link: `${p}reference/bds` },
+        { text: t.v12640, link: `${p}reference/versions/1.26.40` },
         {
           text: t.differences,
           items: [

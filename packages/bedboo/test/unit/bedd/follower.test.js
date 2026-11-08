@@ -45,7 +45,7 @@ async function beddBot ({ mode = 'bedd' } = {}) {
     capabilities: { ownsLogin: true, ownsLoadingScreen: true, ownsChunkRequests: true, ownsMovement: true },
     attach () {}
   }
-  const bot = bedboo.createBot({ client, username: client.username, logErrors: false, hideErrors: true })
+  const bot = bedboo.createBot({ client, version: client.version, username: client.username, logErrors: false, hideErrors: true })
   if (mode) bot._bedrock.mode = bot._bedrock.mode ?? mode
   const clock = fakeClock()
   const timers = recordingTimers()

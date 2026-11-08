@@ -54,9 +54,9 @@ describe('bedboo skeleton', () => {
   it('exports the same names as mineflayer 4.39.0', () => {
     const upstream = require('mineflayer')
     assert.deepStrictEqual(Object.keys(bedboo).sort(), Object.keys(upstream).sort())
-    assert.deepStrictEqual(bedboo.testedVersions, ['1.26.51'])
-    assert.strictEqual(bedboo.latestSupportedVersion, '1.26.51')
-    assert.strictEqual(bedboo.oldestSupportedVersion, '1.26.51')
+    assert.ok(bedboo.testedVersions.includes('1.26.51'))
+    assert.strictEqual(bedboo.latestSupportedVersion, bedboo.testedVersions.at(-1))
+    assert.strictEqual(bedboo.oldestSupportedVersion, bedboo.testedVersions[0])
     assert.strictEqual(typeof bedboo.supportFeature('itemRegistryPacket', '1.26.51'), 'boolean')
   })
 

@@ -8,6 +8,10 @@ const { offlineFromAuth } = require('../../lib/client')
 const { normalizeFormat } = require('../../lib/registry')
 const { FAMILIES, resolveVersion, protocolFor, findFamily } = require('../../lib/bedrock/versions')
 const { VERSION, PROTOCOL_VERSION, BDS_VERSION } = require('../../lib/bedrock/constants')
+const { TEST_VERSION, TEST_PROTOCOL } = require('../version')
+
+/** the families @bedboo/bedrock-data ships data for, oldest first (what testedVersions must be) */
+const shippedFamilies = () => FAMILIES.map(f => f.version).filter(v => require('@bedboo/bedrock-data').versions.includes(v))
 
 describe('core runtime: client, exports, registry', () => {
   it('createClient maps mineflayer options onto bedrock-protocol (auth, defaults, mineflayer-only options dropped)', () => {
@@ -46,9 +50,11 @@ describe('core runtime: client, exports, registry', () => {
   })
 
   it('module exports: versions, supportFeature(feature, version) without a registry per call, classes', () => {
-    assert.strictEqual(bedboo.latestSupportedVersion, '1.26.51')
-    assert.strictEqual(bedboo.oldestSupportedVersion, '1.26.51')
-    assert.deepStrictEqual(bedboo.testedVersions, ['1.26.51'])
+    const shipped = shippedFamilies()
+    assert.ok(shipped.includes('1.26.40') && shipped.includes('1.26.51'), shipped.join())
+    assert.strictEqual(bedboo.latestSupportedVersion, shipped.at(-1))
+    assert.strictEqual(bedboo.oldestSupportedVersion, shipped[0])
+    assert.deepStrictEqual(bedboo.testedVersions, shipped)
     assert.strictEqual(bedboo.supportFeature('itemRegistryPacket'), true)
     assert.strictEqual(bedboo.supportFeature('blockHashes', '1.26.51'), true)
     assert.strictEqual(bedboo.supportFeature('blockHashes', 'bedrock_1.26.51'), true)
@@ -100,12 +106,18 @@ describe('core runtime: client, exports, registry', () => {
       assert.strictEqual(bot.protocolVersion, 2193, version)
       assert.strictEqual(bedboo.supportFeature('blockHashes', version), true, version)
     }
+    for (const version of ['1.26.40', '1.26.42.1', '1.26.43.1', '1.26.44.3', 'bedrock_1.26.40']) {
+      const { bot } = await createFakeBot({ version })
+      assert.strictEqual(bot.version, '1.26.40', version)
+      assert.strictEqual(bot.protocolVersion, 2168, version)
+      assert.strictEqual(bedboo.supportFeature('optionalsHavePresenceFlag', version), true, version)
+    }
     const untested = FAMILIES.find(f => !bedboo.testedVersions.includes(f.version))
     if (untested) {
       for (const version of [untested.version, untested.bds[0]]) {
         assert.throws(() => bedboo.createBot({ client: new (require('events'))(), version }),
           (err) => err.code === 'ERR_BEDBOO_VERSION' && err.message.includes(`${untested.version} (protocol ${untested.protocol}) is known but not tested yet`) &&
-            err.message.includes('Supported versions: 1.26.51 (BDS'), version)
+            err.message.includes('Supported versions: ') && err.message.includes('1.26.51 (BDS 1.26.50.5, 1.26.51.1, 1.26.52.3)'), version)
       }
     }
     // known but untested: answered by minecraft-data's bedrock_<family>, not looked up as a Java version
@@ -136,9 +148,9 @@ describe('core runtime: client, exports, registry', () => {
 
   it('bot.version / majorVersion / protocolVersion / supportFeature', async () => {
     const { bot } = await createFakeBot()
-    assert.strictEqual(bot.version, '1.26.51')
+    assert.strictEqual(bot.version, TEST_VERSION)
     assert.strictEqual(bot.majorVersion, '1.26')
-    assert.strictEqual(bot.protocolVersion, 2193)
+    assert.strictEqual(bot.protocolVersion, TEST_PROTOCOL)
     assert.strictEqual(bot.supportFeature('blockHashes'), true)
     assert.strictEqual(bot.registry.type, 'bedrock')
   })

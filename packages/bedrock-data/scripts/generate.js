@@ -533,7 +533,7 @@ async function generate (version, check) {
   // hash without the 18 MB source.
   const cloudburst = readJson('cloudburst/blocks.json')
   files[path.join(FIXTURE_DIR, 'cloudburst-block-hashes.json.gz')] = encode('x.json.gz', {
-    source: `${SOURCES['cloudburst/blocks.json'].repo}@${SOURCES['cloudburst/blocks.json'].sha} blocks.json (Apache-2.0), blockStateHash in palette order`,
+    source: `${SOURCES['cloudburst/blocks.json'].repo}@${SOURCES['cloudburst/blocks.json'].sha} ${SOURCES['cloudburst/blocks.json'].file} (Apache-2.0), blockStateHash in palette order`,
     hashes: cloudburst.map(e => e.blockStateHash >>> 0)
   })
   if (hashes.length !== cloudburst.length) throw new Error('hash count')

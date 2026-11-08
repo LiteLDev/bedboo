@@ -33,6 +33,7 @@ function format (findings) {
 
 describe(`conformance with mineflayer 4.39.0 (${STRICT ? 'strict' : 'non-strict'} mode)`, () => {
   let ref, findings
+  let missingCapture = null // the FixtureMissingError of a family without a join capture (its join checks are skipped)
 
   before(async () => {
     ref = await buildReference()
@@ -41,6 +42,7 @@ describe(`conformance with mineflayer 4.39.0 (${STRICT ? 'strict' : 'non-strict'
     try {
       post = await postJoinSurface()
     } catch (err) {
+      if (err?.code === 'BEDBOO_FIXTURE_MISSING') missingCapture = err
       post = { failed: err }
     }
     findings = compare(ref, { ...inject, post, dts: dtsSurface() })
@@ -74,14 +76,18 @@ describe(`conformance with mineflayer 4.39.0 (${STRICT ? 'strict' : 'non-strict'
 
   it('no top-level members beyond mineflayer\'s (Bedrock extras live under bot.bedrock)', () => check(['extras']))
 
-  it('members created on join (bot.entity, bot.game.*, …) after replaying the recorded BDS join', () => check(['join']))
+  it('members created on join (bot.entity, bot.game.*, …) after replaying the recorded BDS join', () => {
+    if (missingCapture) throw missingCapture // skipped (test/skip-missing-fixtures.js) on a family without a capture
+    check(['join'])
+  })
 
   it('window classes (Chest/Dispenser/Furnace/EnchantmentTable/Anvil/Villager) members', () => check(['windows']))
 
   it('index.d.ts declares the mineflayer 4.39.0 types', () => check(['dts']))
 
   it('pending items', (t) => {
-    const pending = findings.filter(f => f.severity === 'pending')
+    // without a join capture the join items are skipped above, not pending
+    const pending = findings.filter(f => f.severity === 'pending' && !(missingCapture && f.area === 'join'))
     if (process.env.BEDBOO_CONFORMANCE_REPORT) console.log(format(pending))
     if (STRICT) assert.ok(pending.length === 0, `${pending.length} pending item(s) in strict mode:\n${format(pending)}`)
     else if (pending.length) t.skip(`pending: ${pending.length} item(s)`)

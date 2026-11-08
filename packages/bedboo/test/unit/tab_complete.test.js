@@ -6,6 +6,7 @@ const assert = require('assert')
 const fixtures = require('../fixtures')
 const { createFakeBot, replayJoin } = require('./helpers/fake')
 const { createCommandTree, tokenize } = require('../../lib/bedrock/commands')
+const { TEST_VERSION } = require('../version')
 
 const availableCommands = () => fixtures.load('join_flat').first('available_commands')
 const names = (matches) => matches.map(m => m.match)
@@ -13,7 +14,7 @@ const names = (matches) => matches.map(m => m.match)
 describe('tabComplete from available_commands', () => {
   let tree
   before(() => {
-    tree = createCommandTree()
+    tree = createCommandTree({ version: TEST_VERSION }) // value type ids are per family
     tree.update(availableCommands())
   })
   const players = ['U0Bot', 'Steve Builder']

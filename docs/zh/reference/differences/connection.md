@@ -8,11 +8,13 @@ BDS 1.26.51.1（protocol 2193）与 bedrock-protocol 3.60.1。
 - **影响：** `bot.version`、`bot.majorVersion`、`bot.protocolVersion`，导出项 `testedVersions`、
   `latestSupportedVersion`、`oldestSupportedVersion`、`supportFeature(feature, version)`。
 - **Java：** Java 版本号（'1.21.4'，protocol 769），同时支持多个版本。
-- **Bedrock：** Bedrock 版本号；bedboo 只支持最新的一个。
-- **bedboo：** `bot.version = '1.26.51'`、`majorVersion = '1.26'`、`protocolVersion = 2193`；
-  `testedVersions = ['1.26.51']`。`createBot({ version })` 接受 `'1.26.51'` 或 `false`（自动），其他值会像 mineflayer
-  一样抛出异常。模块级的 `supportFeature(feature, version)` 在版本为 1.26.51、'bedrock_1.26.51' 或未指定时，直接查
-  Bedrock [特性表](data.md#feature-table)，无需构建 registry；其他版本则与上游一样查 minecraft-data。
+- **Bedrock：** Bedrock 协议族（minecraft-data 版本键，如 '1.26.51'，对应一个协议号和多个 BDS 版本）；bedboo 支持近期的稳定版本。
+- **bedboo：** `bot.version` 为协议族（`'1.26.51'`），`majorVersion = '1.26'`，`protocolVersion` 为其协议号（2193）；
+  `testedVersions` 列出 `@bedboo/bedrock-data` 提供数据的所有协议族（`'1.26.40'`、`'1.26.51'`……；1.26.40 的差异见
+  [Bedrock 1.26.40](../versions/1.26.40.md)）。`createBot({ version })` 接受已测试的协议族、其任一 BDS 版本（`'1.26.44.3'`）
+  或 `false`（自动 = 1.26.51），其他值会像 mineflayer 一样抛出异常。模块级的 `supportFeature(feature, version)` 对已测试的
+  协议族 / BDS 版本 / 'bedrock_' 键 / 未指定版本（1.26.51）直接查 Bedrock [特性表](data.md#feature-table)，无需构建
+  registry；其他版本则与上游一样查 minecraft-data。
 
 ## 协议客户端与 `connect`  {#client}
 

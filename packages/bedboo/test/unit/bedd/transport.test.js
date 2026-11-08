@@ -28,6 +28,7 @@ async function until (fn, { timeout = 10000, what = 'condition' } = {}) {
 function botOn (fake, extra = {}, beddExtra = {}) {
   return bedboo.createBot({
     transport: 'bedd',
+    version: TEST_VERSION,
     bedd: fake.botOptions({ modules: [], ...beddExtra }),
     logErrors: false,
     hideErrors: true,
@@ -223,7 +224,7 @@ describe("transport 'bedd'", () => {
 
     it('a control pipe that closes mid-session turns every cap absent (with a warning); a stuck probe stops probing', async () => {
       const fake = await fakeBedd({ handlers: { input: () => fake.NO_REPLY } })
-      const client = bedd.createBeddClient({ bedd: fake.botOptions() })
+      const client = bedd.createBeddClient({ version: TEST_VERSION, bedd: fake.botOptions() })
       const caps = await client.bedd.ready
       assert.deepStrictEqual(bedd.PROBE_OPS.map(op => caps[op]), ['present', 'present', 'present', 'absent', 'absent', 'absent', 'absent', 'absent', 'absent'])
       assert.deepStrictEqual(fake.calls.map(c => c.op), ['ping', 'tap', 'world', 'look', 'input'], 'no probe after the stuck one')
@@ -252,7 +253,7 @@ describe("transport 'bedd'", () => {
   describe('client.bedd route and modules', () => {
     it('queue/write go to client.bedd.route; the default drops and counts; a module may replace it', async () => {
       const fake = await fakeBedd({})
-      const client = bedd.createBeddClient({ bedd: fake.botOptions() })
+      const client = bedd.createBeddClient({ version: TEST_VERSION, bedd: fake.botOptions() })
       client.queue('player_auth_input', { tick: 1n })
       client.write('text', { message: 'hi' })
       client.queue('player_auth_input', { tick: 2n })
@@ -270,7 +271,7 @@ describe("transport 'bedd'", () => {
 
     it('rpc.call sends { id, op, ...args } and returns the reply; errors carry the BeDD code', async () => {
       const fake = await fakeBedd({ handlers: { slot: (args) => { if (args.slot > 8) throw Object.assign(new Error('slot out of range'), { code: 'bad_args' }); return { slot: args.slot } } } })
-      const client = bedd.createBeddClient({ bedd: fake.botOptions() })
+      const client = bedd.createBeddClient({ version: TEST_VERSION, bedd: fake.botOptions() })
       await client.bedd.ready
       const reply = await client.bedd.rpc.call('slot', { slot: 3 })
       assert.strictEqual(reply.slot, 3)
