@@ -4,7 +4,8 @@
 const { describe, it } = require('node:test')
 const assert = require('assert')
 const { createFakeBot } = require('./helpers/fake')
-const { createStackRequestManager, normalizeAction, StackRequestError, LEGACY_ACTION_IDS } = require('../../lib/bedrock/stack_request')
+const { createStackRequestManager, normalizeAction, legacyActionIds, StackRequestError, LEGACY_ACTION_IDS, LEGACY_ACTION_IDS_1_26_60 } = require('../../lib/bedrock/stack_request')
+const { createSupportFeature } = require('../../lib/bedrock/features')
 const slots = require('../../lib/bedrock/slots')
 const { TEST_VERSION } = require('../version')
 
@@ -55,6 +56,34 @@ describe('item stack requests', () => {
       assert.strictEqual(normalizeAction(action).legacy_type_id, LEGACY_ACTION_IDS[action.type_id], action.type_id)
     }
     assert.strictEqual(normalizeAction({ ...EVERY_ACTION[0], legacy_type_id: 0 }).legacy_type_id, 0, 'an explicit value is kept')
+  })
+
+  it('1.26.60 legacy ids: craft_reserved 18, non_implemented 19, results_deprecated 20 (stackRequestHasCraftReserved)', async () => {
+    assert.strictEqual(legacyActionIds(createSupportFeature(null, { version: '1.26.60' })), LEGACY_ACTION_IDS_1_26_60)
+    assert.strictEqual(legacyActionIds(createSupportFeature(null, { version: '1.26.63.1' })), LEGACY_ACTION_IDS_1_26_60)
+    assert.strictEqual(legacyActionIds(createSupportFeature(null, { version: '1.26.51' })), LEGACY_ACTION_IDS)
+    assert.strictEqual(legacyActionIds(createSupportFeature(null, { version: '1.26.40' })), LEGACY_ACTION_IDS)
+    assert.strictEqual(legacyActionIds(undefined), LEGACY_ACTION_IDS)
+    assert.deepStrictEqual([LEGACY_ACTION_IDS_1_26_60.craft_reserved, LEGACY_ACTION_IDS_1_26_60.non_implemented, LEGACY_ACTION_IDS_1_26_60.results_deprecated], [18, 19, 20])
+    for (const [name, id] of Object.entries(LEGACY_ACTION_IDS)) {
+      if (!['non_implemented', 'results_deprecated'].includes(name)) assert.strictEqual(LEGACY_ACTION_IDS_1_26_60[name], id, name)
+    }
+    assert.strictEqual(LEGACY_ACTION_IDS.craft_reserved, undefined)
+    // the bot's manager numbers with its family's table; 1.26.60's own serializer writes every action, craft_reserved too
+    const { createSerializer, createDeserializer } = require('bedrock-protocol/src/transforms/serializer')
+    for (const [version, table] of [['1.26.60', LEGACY_ACTION_IDS_1_26_60], ['1.26.51', LEGACY_ACTION_IDS]]) {
+      const { bot } = await createFakeBot({ version })
+      const mgr = bot._bedrock.stackRequests
+      assert.strictEqual(mgr.LEGACY_ACTION_IDS, table, version)
+      assert.strictEqual(mgr.normalizeAction({ type_id: 'results_deprecated', result_items: [], times_crafted: 1 }).legacy_type_id, table.results_deprecated, version)
+      const actions = version === '1.26.60' ? [...EVERY_ACTION, { type_id: 'craft_reserved', reserved_id: 'x', times_crafted: 1 }] : EVERY_ACTION
+      const { request } = mgr.create(actions)
+      const buf = createSerializer(version).createPacketBuffer({ name: 'item_stack_request', params: { requests: [request] } })
+      const back = createDeserializer(version).parsePacketBuffer(buf).data.params.requests[0].actions
+      assert.deepStrictEqual(back.map(a => [a.type_id, a.legacy_type_id]), actions.map(a => [a.type_id, table[a.type_id]]), version)
+      bot.end?.()
+    }
+    assert.throws(() => normalizeAction({ type_id: 'craft_reserved', reserved_id: 'x', times_crafted: 1 }), /unknown action type craft_reserved/, 'not a 1.26.51 action')
   })
 
   it('validation: what BDS would answer with a disconnect throws before sending', () => {

@@ -193,7 +193,13 @@ const JAVA = {
 const PROTOCOL = {
   // 1.26.40 / 1.26.45 (protocols 2168 / 2169) write some optionals as double optionals (an extra outer presence bool in
   // player_auth_input, transaction actions, item_stack_response): bedboo lib/bedrock/presence.js
-  optionalsHavePresenceFlag: false
+  optionalsHavePresenceFlag: false,
+  // 1.26.60 (protocol 2225) added the hand ('main_hand' | 'off_hand', u8) to animate and to the item_use_on_entity
+  // and item_release transactions (item_use has had it all along): bedboo lib/bedrock/transactions.js, entities plugin
+  actionPacketsHaveHand: false,
+  // 1.26.60 inserted the item stack request action craft_reserved (legacy id 18) before non_implemented and
+  // results_deprecated (legacy 19 / 20 instead of 18 / 19): bedboo lib/bedrock/stack_request.js
+  stackRequestHasCraftReserved: false
 }
 for (const name of Object.keys(PROTOCOL)) {
   if (name in BEDROCK || name in JAVA) throw new Error(`feature ${name}: a bedboo protocol feature must not reuse a minecraft-data or Java name`)

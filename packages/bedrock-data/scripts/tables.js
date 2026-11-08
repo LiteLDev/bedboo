@@ -147,7 +147,9 @@ const ENTITY_DUPLICATES = {
 const ENTITIES_MANUAL = {
   cushion: { displayName: 'Cushion', type: 'other', category: 'Immobile' },
   sulfur_cube: { displayName: 'Sulfur Cube', type: 'hostile', category: 'Hostile mobs' },
-  elder_guardian_ghost: { displayName: 'Elder Guardian Ghost', type: 'other', category: 'UNKNOWN' }
+  elder_guardian_ghost: { displayName: 'Elder Guardian Ghost', type: 'other', category: 'UNKNOWN' },
+  // 1.26.60: the thrown ice ball (the experimental frostbite's ranged attack; a projectile like snowball)
+  ice_ball: { displayName: 'Ice Ball', type: 'projectile', category: 'Projectiles' }
 }
 
 /**

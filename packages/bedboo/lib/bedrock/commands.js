@@ -50,6 +50,8 @@ const VALUE_TYPE_KINDS = {
  * Families whose available_commands number the value types differently (observed on their BDS).
  * - 1.26.40 (BDS 1.26.44.3) and 1.26.45 (BDS 1.26.45.1): `execute … run <command>` is 88 — 1.26.50 inserted two types below it; target 8,
  *   wildcard target 10, positions 64 / 65, message 68, raw text 70 and json 74 are the same.
+ * - 1.26.60 (BDS 1.26.60.6 – 1.26.63.1) numbers every type 1.26.51 uses like 1.26.51 (its only new one, 86, is
+ *   `/time … <timeMarkerName>`, a plain word), so it has no table of its own.
  */
 const { 90: _command51, ...kinds40 } = VALUE_TYPE_KINDS
 const VALUE_TYPE_KINDS_BY_VERSION = {

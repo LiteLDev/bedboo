@@ -43,5 +43,20 @@
     "cloudburst/creative_items.json": "ebbb851dbaa18bbf89f0a1b3e0c4e2b0f6f47bd631076f60552b3eec2d2fa832",
     "cloudburst/stripped_biome_definitions.json": "743f56178045cd79744a77494006c76fce8819ed15b8c366efe285e2fdbef7da",
     "pmmp/biome_id_map.json": "4f27df3f1e58476fc65e337f7cf3e275f65a98b6c40ea46c31b24016b85e0052"
+  },
+  "1.26.60": {
+    "pr1335/blocks.json": "4591c34c981b1a4f4845e1d06959cf40e6499c7504f6c0e23fb800fd9d66d3e9",
+    "pr1335/blockStates.json": "a6acb5c821e1ba543afa5758b91d8c8c69a40f3f9f4e0d624d03a8765311a0bd",
+    "pr1335/blockCollisionShapes.json": "8b94a7215ba0e8964f6c67f16ba2db956a315235e5ada0e650cbbdb9baedede8",
+    "pr1335/items.json": "9f9754125015a95a48b97cc82fb7e642f6b1c492fe406c1722a08c6fa541a243",
+    "pr1335/materials.json": "cb9a1998ce1b8b67bd722b69c63b30550656ff73a3c602ed936f7492a2fc93f5",
+    "cloudburst/blocks.json": "559c723407303f4adc03dc76048a5a02000a26feed787623ba6112b94c986064",
+    "cloudburst/runtime_item_states.json": "1dca3a7482201b7c2609cd2b03fa96c7406ed14af79b27e3e5ea8ce540df68ec",
+    "cloudburst/item_components.nbt": "4af00111861dfb90a03e087053e8b6d9d3e581efe51ca75daad03d31fbff5717",
+    "cloudburst/entity_identifiers.dat": "5f01f36caa4ea927e62a544b9e887415bdc43c3d4a7a3e994299871d589036bb",
+    "cloudburst/creative_items.json": "2e45424df8c1b0f6bd7dadc62f96eecb503059e1d09caee663638356103ddc19",
+    "cloudburst/stripped_biome_definitions.json": "743f56178045cd79744a77494006c76fce8819ed15b8c366efe285e2fdbef7da",
+    "gophertunnel/level_sound_event.go": "6358c2f103b9d2e8f20b944678b4ddc01e4cc975c3e6615cd54498e556e54b1a",
+    "pmmp/biome_id_map.json": "4f27df3f1e58476fc65e337f7cf3e275f65a98b6c40ea46c31b24016b85e0052"
   }
 }

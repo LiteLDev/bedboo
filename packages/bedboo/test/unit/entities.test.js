@@ -13,6 +13,8 @@ const { POSITION_OFFSETS, armorTotals } = require('../../lib/plugins/entities')
 const EMPTY_ITEM = { network_id: 0, count: 0, metadata: 0, has_stack_id: false, block_runtime_id: 0 }
 const flags = (on = {}) => ({ _value: 0n, onfire: false, sneaking: false, sprinting: false, gliding: false, swimming: false, ...on })
 const SELF_RUNTIME = 91n
+// the test family's animate hand (1.26.60: actionPacketsHaveHand)
+const HAND = require('../../lib/bedrock/transactions').actionHand({ supportFeature: require('../../lib/bedrock/features').createSupportFeature(null, { version: require('../version').TEST_VERSION }) })
 const SELF_UNIQUE = -12884901851n
 
 async function joined () {
@@ -542,7 +544,7 @@ describe('entities & players', () => {
     bot.attack(zombie)
     const sent = client.written.map(([, name, params]) => [name, params])
     assert.deepStrictEqual(sent.map(s => s[0]), ['animate', 'interact', 'inventory_transaction'])
-    assert.deepStrictEqual(sent[0][1], { action_id: 'swing_arm', runtime_entity_id: SELF_RUNTIME, data: 0, has_swing_source: true, swing_source: 'attack' })
+    assert.deepStrictEqual(sent[0][1], { action_id: 'swing_arm', runtime_entity_id: SELF_RUNTIME, data: 0, has_swing_source: true, swing_source: 'attack', ...HAND })
     assert.strictEqual(sent[1][1].action_id, 'mouse_over_entity')
     assert.strictEqual(sent[1][1].target_entity_id, 1050n)
     const tx = sent[2][1].transaction
@@ -577,8 +579,8 @@ describe('entities & players', () => {
     bot.swingArm()
     bot.swingArm('left', false)
     assert.deepStrictEqual(client.sent('animate'), [
-      { action_id: 'swing_arm', runtime_entity_id: SELF_RUNTIME, data: 0, has_swing_source: false },
-      { action_id: 'swing_arm', runtime_entity_id: SELF_RUNTIME, data: 0, has_swing_source: false }
+      { action_id: 'swing_arm', runtime_entity_id: SELF_RUNTIME, data: 0, has_swing_source: false, ...HAND },
+      { action_id: 'swing_arm', runtime_entity_id: SELF_RUNTIME, data: 0, has_swing_source: false, ...(HAND.hand ? { hand: 'off_hand' } : {}) }
     ])
     // dismount
     const errors = []

@@ -20,7 +20,8 @@ const { feetToWire, FACE_VECTORS } = require('./conversions')
  *     front of the face). `lifecycle: false` sends the bare click (container/button activation).
  *     `blockRuntimeId` defaults to the network runtime id of the clicked block in `bot.world`.
  * - `useItem(bot, { hotbarSlot?, hand? })`        `click_air` (eat/drink/throw/bow draw)
- * - `release(bot, { hotbarSlot? })`                `item_release` `release` (bow shoot, stop eating)
+ * - `release(bot, { hotbarSlot?, hand? })`         `item_release` `release` (bow shoot, stop eating; `hand` only where
+ *     the family's schema has it, feature `actionPacketsHaveHand`)
  * - `useOnEntity(bot, entity, { action: 'interact'|'attack', position?, hotbarSlot? })`  `item_use_on_entity`
  * - `mouseOver(bot, entity, position?)`             interact packet `mouse_over_entity` (sync)
  * The builders (`buildUseItemOn`, `buildUseItem`, `buildRelease`, `buildUseOnEntity`, `buildMouseOver`) return
@@ -56,6 +57,17 @@ function heldItem (bot) {
   const provider = bot._bedrock?.heldNetworkItem
   if (typeof provider !== 'function' || provider.notImplemented) return { ...EMPTY_NETWORK_ITEM }
   return provider() ?? { ...EMPTY_NETWORK_ITEM }
+}
+
+/**
+ * The hand of animate / item_use_on_entity / item_release: on a family with `actionPacketsHaveHand` (1.26.60) those
+ * packets carry it; older schemas have no such field (and the packets stay exactly as before).
+ * @param {object} bot
+ * @param {'main_hand'|'off_hand'} [hand]
+ * @returns {object} `{ hand }` or `{}`
+ */
+function actionHand (bot, hand = 'main_hand') {
+  return typeof bot?.supportFeature === 'function' && bot.supportFeature('actionPacketsHaveHand') === true ? { hand } : {}
 }
 
 function hotbarSlot (bot, slot) {
@@ -133,7 +145,7 @@ function buildUseItem (bot, { hotbarSlot: slot, hand = 'main_hand' } = {}) {
   }
 }
 
-function buildRelease (bot, { hotbarSlot: slot, action = 'release' } = {}) {
+function buildRelease (bot, { hotbarSlot: slot, action = 'release', hand = 'main_hand' } = {}) {
   return {
     transaction: {
       legacy: { legacy_request_id: 0 },
@@ -143,7 +155,8 @@ function buildRelease (bot, { hotbarSlot: slot, action = 'release' } = {}) {
         action_type: action,
         hotbar_slot: hotbarSlot(bot, slot),
         held_item: heldItem(bot),
-        head_pos: eyePosition(bot)
+        head_pos: eyePosition(bot),
+        ...actionHand(bot, hand)
       }
     }
   }
@@ -166,6 +179,7 @@ function buildUseOnEntity (bot, entity, { action = 'interact', position, hotbarS
         entity_runtime_id: entityRuntimeId(entity),
         action_type: action,
         hotbar_slot: hotbarSlot(bot, slot),
+        ...actionHand(bot),
         held_item: heldItem(bot),
         player_pos: eyePosition(bot),
         click_pos: position ? { x: position.x, y: position.y, z: position.z } : { ...ZERO }
@@ -274,6 +288,7 @@ function createHeldItemProvider (bot) {
 
 module.exports = {
   isBedd,
+  actionHand,
   pendingControls,
   useItemOn,
   useItem,

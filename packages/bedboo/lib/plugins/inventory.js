@@ -224,6 +224,7 @@ function inject (bot) {
     else bot._bedrock.input.hold('sneaking', on)
   }
 
+  let activeHand = 'main_hand' // the hand of the last activateItem (its item_release names it on 1.26.60)
   function activateItem (offHand = false) {
     bot.usingHeldItem = true
     // a use from the inventory screen is not possible: close it (queued before the transaction)
@@ -238,6 +239,7 @@ function inject (bot) {
     if (bot._bedrock.placement?.useOnLookedAtBlock(item, offHand)) return
     const packet = tx.buildUseItem(bot, { hand: offHand ? 'off_hand' : 'main_hand' })
     if (offHand) packet.transaction.transaction_data.held_item = heldNetworkItem.offhand()
+    activeHand = offHand ? 'off_hand' : 'main_hand'
     bot._client.queue('inventory_transaction', packet)
   }
 
@@ -245,8 +247,12 @@ function inject (bot) {
     if (shieldRaised) {
       raiseShield(false)
     } else {
-      bot._client.queue('inventory_transaction', tx.buildRelease(bot))
+      // 1.26.60 (actionPacketsHaveHand): the release names the hand of the use it ends
+      const packet = tx.buildRelease(bot, { hand: activeHand })
+      if (activeHand === 'off_hand' && packet.transaction.transaction_data.hand === 'off_hand') packet.transaction.transaction_data.held_item = heldNetworkItem.offhand()
+      bot._client.queue('inventory_transaction', packet)
     }
+    activeHand = 'main_hand'
 
     bot.usingHeldItem = false
   }

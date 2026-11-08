@@ -50,6 +50,23 @@ for 1.26.45", protocol 2169; MIT) for the level sound event identifiers, and the
 `dappled_forest`, `tables.VERSION_TABLES['1.26.45']`). `test/fixtures/1.26.45/cloudburst-block-hashes.json.gz` comes
 from CloudburstMC/Data (Apache License 2.0).
 
+### `data/1.26.60` (BDS 1.26.60.6 / 1.26.61.1 / 1.26.62.1 / 1.26.63.1, protocol 2225)
+
+Same kinds of sources, other commits (`scripts/sources.js` `PINS['1.26.60']`):
+
+| Source | License | Used for |
+|---|---|---|
+| [PrismarineJS/minecraft-data](https://github.com/PrismarineJS/minecraft-data) 3.119.0 (`bd8b5c6048e5af9694374b83f25f5b4aade619cc`, `data/bedrock/1.26.60/`; `materials.json` from `data/bedrock/1.26.51/`, as its dataPaths) | MIT (PrismarineJS contributors) | blocks, blockStates, blockCollisionShapes, items, materials (vendored, then fixed as below) |
+| [CloudburstMC/Data](https://github.com/CloudburstMC/Data) `0021592b1a4253528bad1e1d8b537e306e097557` ("More 26.60 data"; `blocks.json` describes collision as `geometry.collision`) | Apache License 2.0, Copyright CloudburstMC | as above; `test/fixtures/1.26.60/cloudburst-block-hashes.json.gz` |
+| [Sandertv/gophertunnel](https://github.com/Sandertv/gophertunnel) `d4836105abdc5de0496cf62b69413a591af5f8fb` (protocol 2225, 1.26.60) | MIT, Copyright (c) 2019 Sandertv | level sound event identifiers |
+| [pmmp/BedrockData](https://github.com/pmmp/BedrockData) `bdb44a48fb6beffb6e9f6864f06d2232eb62b6a3` | CC0 1.0 | vanilla numeric biome ids |
+| BDS 1.26.63.1 probe (`scripts/probe/1.26.60.json`) | facts observed on a running server | as above (effect, enchantment ids and biome order as 1.26.51; new entity `ice_ball`, `tables.ENTITIES_MANUAL`; 1.26.60.6 – 1.26.62.1 probed identical) |
+
+From 26.60 on, Cloudburst's `blocks.json` gives each state's collision as `geometry.collision` (`space: 'sampled'`:
+the boxes as before; `space: 'model_base'` with `translation: 'native_result'`: the model boxes of a block BDS offsets
+per position — bamboo, pointed_dripstone, sulfur_spike). For those, the generator keeps minecraft-data's boxes only
+if they are exactly the model boxes moved by one horizontal offset, and fails otherwise.
+
 ## What the generator changes relative to PR #1335
 
 - `blocks[].friction` (new field) from Cloudburst `friction` (constant per block).
