@@ -57,6 +57,8 @@ describe('lifecycle (join, dimension change, respawn hooks)', () => {
     assert.throws(() => lifecycle.markSpawned('nope'), /reason must be one of/)
     assert.throws(() => lifecycle.setState('nope'), /unknown lifecycle state/)
     const waiting = lifecycle.waitFor('spawned', { timeout: 5000 })
+    // handled below; when replayJoin throws (a family without a capture: the test is skipped) it must not reject unobserved
+    waiting.catch(() => {})
     await replayJoin(bot, client)
     await waiting
     let spawns = 0
