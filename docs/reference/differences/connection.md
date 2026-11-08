@@ -11,8 +11,10 @@ map onto mineflayer's events. Observed on BDS 1.26.51.1 (protocol 2193) with bed
 - **Bedrock:** Bedrock protocol families (a minecraft-data version key such as '1.26.51', one protocol number,
   several BDS builds); bedboo supports the recent stable ones.
 - **bedboo:** `bot.version` is the family (`'1.26.51'`), `majorVersion = '1.26'`, `protocolVersion` its protocol
-  (2193); `testedVersions` lists every family `@bedboo/bedrock-data` ships data for (`'1.26.40'`, `'1.26.45'`, `'1.26.51'`, `'1.26.60'`, …;
-  see [Bedrock 1.26.40](../versions/1.26.40.md), [Bedrock 1.26.45](../versions/1.26.45.md) and [Bedrock 1.26.60](../versions/1.26.60.md) for what differs there, and [Bedrock 1.26.51](../versions/1.26.51.md) for the default family's builds). `createBot({ version })` accepts a tested
+  (2193); `testedVersions` lists every family `@bedboo/bedrock-data` ships data for (`'1.26.40'`, `'1.26.45'`,
+  `'1.26.51'`, `'1.26.60'`; the builds of each are in [Supported versions](../versions/index.md), and
+  [Bedrock 1.26.40](../versions/1.26.40.md), [Bedrock 1.26.45](../versions/1.26.45.md) and
+  [Bedrock 1.26.60](../versions/1.26.60.md) list what differs there). `createBot({ version })` accepts a tested
   family, one of its BDS builds (`'1.26.44.3'`) or `false` (auto = 1.26.51) and, like mineflayer, throws for anything
   else. The module-level `supportFeature(feature, version)` answers from the Bedrock
   [feature table](data.md#feature-table) of a tested family / build / 'bedrock_' key / no version (1.26.51), without
@@ -40,7 +42,8 @@ map onto mineflayer's events. Observed on BDS 1.26.51.1 (protocol 2193) with bed
     (`POST /v1/join/<network id>` with the SDP offer, answered with the signed SDP answer), over LAN discovery on
     UDP 7551, or through Xbox services.
   - **RakNet** (`transport=raknet`): the transport of every Bedrock version so far. BDS prints a
-    `TRANSPORT TYPE ERROR` banner when it is selected, and Mojang announced its removal, possibly in BDS 26.60.
+    `TRANSPORT TYPE ERROR` banner when it is selected, and Mojang announced its removal (BDS 1.26.60 to 1.26.63.1
+    still offer it).
 
   A NetherNet server does not open its RakNet ports and vice versa.
 - **bedboo:** `transport: 'raknet'` is the default (raknet-native). `transport: 'nethernet'` joins with HTTP

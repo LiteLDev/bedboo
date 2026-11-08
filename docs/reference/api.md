@@ -16,8 +16,8 @@ is different or extra. Behaviour that differs because Bedrock differs is in the
 | `createBot(options)` | see [below](#createbot-options) |
 | `Location`, `Painting`, `ScoreBoard`, `BossBar` | mineflayer's classes, unchanged |
 | `Particle` | mineflayer's class, extended for Bedrock particle packets ([particles](differences/chat.md#particles)) |
-| `latestSupportedVersion`, `oldestSupportedVersion` | `'1.26.51'` |
-| `testedVersions` | `['1.26.51']` |
+| `latestSupportedVersion`, `oldestSupportedVersion` | `'1.26.60'`, `'1.26.40'` |
+| `testedVersions` | `['1.26.40', '1.26.45', '1.26.51', '1.26.60']`, the tested protocol families, oldest first ([supported versions](versions/index.md)) |
 | `supportFeature(feature, version)` | answers from the Bedrock feature table ([feature table](differences/data.md#feature-table)) |
 
 ## createBot options {#createbot-options}
@@ -32,7 +32,7 @@ them in `index.d.ts`). Defaults differ where Bedrock needs it:
 | `port` | `19132` | BDS `server-port` (UDP for RakNet, TCP + UDP for NetherNet) |
 | `username` | `'Player'` | offline: the player name; microsoft: the token-cache key (the in-game name is the gamertag) |
 | `auth` | `'offline'` | `'offline'` (no Xbox Live; the server needs `online-mode=false`) or `'microsoft'` (Xbox Live through prismarine-auth: `profilesFolder`, `onMsaCode`, `authTitle`, `flow`, `deviceType` as in mineflayer). `'mojang'` throws. |
-| `version` | `'1.26.51'` | `false` (auto) means 1.26.51; anything else throws: only the latest Bedrock is supported ([versions](differences/connection.md#versions)) |
+| `version` | `'1.26.51'` | a tested family (`'1.26.60'`) or one of its BDS builds (`'1.26.62.1'`); `false` (auto) means 1.26.51 (the server's version is not detected); anything else throws `ERR_BEDBOO_VERSION` ([supported versions](versions/index.md#choosing)) |
 | `transport` | `'raknet'` | `'nethernet'` for NetherNet ([transports](differences/connection.md#transport)); `'bedd'` drives a real client ([BeDD](../guide/bedd.md#options)) |
 | `nethernet` | `{ signalling: 'http' }` | NetherNet only: `signalling` (`'http'` = HTTP on the server port, `'lan'` = UDP 7551 discovery, `'services'` = Xbox), `url` (signalling origin, default `http://host:port`), `serverKey` (`'sha256:<hex>'` pin of the server's identity key), `onServerKey(fingerprint, url) → boolean` (approve an unpinned key; by default any key is accepted), `networkId`, `webrtcBackend`, `signallingConnectTimeout` |
 | `bedd` | | `transport: 'bedd'` only: `pipe`, `tapPipe`, `connect`, `timeoutMs`, `modules` ([BeDD options](../guide/bedd.md#options)) |

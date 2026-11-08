@@ -3,7 +3,8 @@
 bedboo behaves like mineflayer. The only deviations are inherent Java/Bedrock differences: things the Bedrock
 protocol, data or game rules make impossible or different. Each of them is documented in the topic pages of this
 section, entry by entry (what mineflayer does on Java, what Bedrock does instead, what bedboo does). Facts were
-observed on BDS 1.26.51.1 (protocol 2193).
+observed on BDS 1.26.51.1 (protocol 2193), the default version; what differs on the other supported versions is on
+their [version pages](../versions/index.md).
 
 | page | covers |
 |---|---|
@@ -25,8 +26,9 @@ observed on BDS 1.26.51.1 (protocol 2193).
 What a bot author may notice. Everything not listed behaves like mineflayer on Java.
 
 **Connection and versions**
-- Only BDS 1.26.51.x / 1.26.52.x (protocol 2193): `bot.version` `'1.26.51'`, `bot.protocolVersion` 2193
-  ([versions](connection.md#versions)). RakNet by default, NetherNet on request ([transports](connection.md#transport)).
+- Bedrock versions are protocol families: `bot.version` is `'1.26.40'`, `'1.26.45'`, `'1.26.51'` (default) or
+  `'1.26.60'`, with BDS 1.26.42.1 to 1.26.63.1 ([supported versions](../versions/index.md),
+  [versions](connection.md#versions)). RakNet by default, NetherNet on request ([transports](connection.md#transport)).
 - No `connect` before login: it fires when the login packet is sent ([client](connection.md#client)); `kicked`
   reasons are Bedrock disconnect messages or reason codes ([kick reason](connection.md#kick-reason)).
 - `bot.game.serverBrand` is `'vanilla'` ([server brand](connection.md#server-brand)); `bot.game.maxPlayers` is
@@ -34,8 +36,8 @@ What a bot author may notice. Everything not listed behaves like mineflayer on J
   ([settings](connection.md#settings)).
 
 **Names, ids and data**
-- `bot.registry` is the Bedrock 1.26.51 registry: Bedrock block, item, entity, effect, biome and enchantment names and
-  ids (`grass_block`, `oak_log`, `villager_v2`, …) ([registry](data.md#registry)). Recipes come from the server
+- `bot.registry` is the Bedrock registry of the bot's version: Bedrock block, item, entity, effect, biome and
+  enchantment names and ids (`grass_block`, `oak_log`, `villager_v2`, …) ([registry](data.md#registry)). Recipes come from the server
   ([recipes](crafting.md#recipes)); item tags from pmmp/BedrockData ([item tags](data.md#item-tags)).
 - `block.stateId` is the index into `registry.blockStates`, not the network runtime id (a hash on Bedrock)
   ([state ids](data.md#state-ids)).

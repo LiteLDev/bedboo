@@ -19,7 +19,10 @@ inventory and block breaking, and so on. Each of them is listed in the
 
 ## What is supported
 
-- **Server:** BDS 1.26.51.x (protocol 2193; 1.26.52.x speaks the same protocol). `bot.version` is `'1.26.51'`.
+- **Servers:** every stable BDS from 1.26.42.1 (August 7, 2026) to 1.26.63.1 (November 6, 2026), in four protocol
+  families: 1.26.40 (protocol 2168), 1.26.45 (2169), 1.26.51 (2193, the default) and 1.26.60 (2225).
+  `createBot({ version })` takes the family or the BDS build; `bot.version` is the family. See
+  [Supported versions](../reference/versions/index.md).
 - **Transports:** RakNet by default; NetherNet (BDS's default transport) with `transport: 'nethernet'`.
 - **Auth:** `auth: 'offline'` (default) for `online-mode=false` servers, `auth: 'microsoft'` for Xbox Live.
 - **Real client:** `transport: 'bedd'` drives a real Bedrock client hosted by [Be.D.D.](bedd.md) instead.
@@ -32,8 +35,8 @@ inventory and block breaking, and so on. Each of them is listed in the
   raknet-native, NetherNet through [node-nethernet](https://github.com/PrismarineJS/node-nethernet)) and
   prismarine-auth for Xbox Live sign-in;
 - the prismarine-* libraries (block, chat, chunk, entity, item, nbt, recipe, registry, windows, world) and
-  [minecraft-data](https://github.com/PrismarineJS/minecraft-data), with `@bedboo/bedrock-data` as the BDS 1.26.51
-  data overlay;
+  [minecraft-data](https://github.com/PrismarineJS/minecraft-data), with `@bedboo/bedrock-data` as the Bedrock data
+  overlay (one per protocol family);
 - a Bedrock movement engine forked from prismarine-physics;
 - mineflayer's own plugins, adapted one file per plugin, each keeping its attribution header.
 
@@ -45,7 +48,7 @@ from its monorepo for now (see [Your first bot](getting-started.md#get-the-code)
 | package | |
 |---|---|
 | `bedboo` | the library |
-| `@bedboo/bedrock-data` | the BDS 1.26.51 data overlay for minecraft-data |
+| `@bedboo/bedrock-data` | the Bedrock data overlays for minecraft-data, one per supported family |
 | `@bedboo/agent` | a scripted survival agent built on bedboo ([Survival agent](agent.md)) |
 
 ## Next

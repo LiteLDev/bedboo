@@ -17,7 +17,9 @@ bedboo 在不发明新 API 的前提下弥合了这一差距：mineflayer 的文
 
 ## 支持范围
 
-- **服务器：** BDS 1.26.51.x（protocol 2193；1.26.52.x 使用相同协议）。`bot.version` 为 `'1.26.51'`。
+- **服务器：** 从 1.26.42.1（2026 年 8 月 7 日）到 1.26.63.1（2026 年 11 月 6 日）的所有稳定版 BDS，分属 4 个协议族：
+  1.26.40（protocol 2168）、1.26.45（2169）、1.26.51（2193，默认）和 1.26.60（2225）。`createBot({ version })` 接受协议族
+  或 BDS 版本；`bot.version` 为协议族。见[支持的版本](../reference/versions/index.md)。
 - **传输层：** 默认 RakNet；使用 `transport: 'nethernet'` 时为 NetherNet（BDS 的默认传输层）。
 - **认证：** `auth: 'offline'`（默认）用于 `online-mode=false` 的服务器，`auth: 'microsoft'` 用于 Xbox Live。
 - **真实客户端：** `transport: 'bedd'` 改为驱动由 [Be.D.D.](bedd.md) 托管的真实基岩版客户端。
@@ -30,8 +32,8 @@ bedboo 在不发明新 API 的前提下弥合了这一差距：mineflayer 的文
   raknet-native，NetherNet 基于 [node-nethernet](https://github.com/PrismarineJS/node-nethernet)），使用
   prismarine-auth 登录 Xbox Live；
 - prismarine-* 系列库（block、chat、chunk、entity、item、nbt、recipe、registry、windows、world）和
-  [minecraft-data](https://github.com/PrismarineJS/minecraft-data)，并以 `@bedboo/bedrock-data` 作为 BDS 1.26.51
-  的数据补充层；
+  [minecraft-data](https://github.com/PrismarineJS/minecraft-data)，并以 `@bedboo/bedrock-data` 作为基岩版
+  数据补充层（每个协议族一份）；
 - 一个从 prismarine-physics 分叉而来的基岩版移动引擎；
 - mineflayer 自身的插件，每个插件对应一个改编文件，各自保留原有的署名头。
 
@@ -43,7 +45,7 @@ bedboo 在不发明新 API 的前提下弥合了这一差距：mineflayer 的文
 | 包 | |
 |---|---|
 | `bedboo` | 库本体 |
-| `@bedboo/bedrock-data` | minecraft-data 的 BDS 1.26.51 数据补充层 |
+| `@bedboo/bedrock-data` | minecraft-data 的基岩版数据补充层，每个支持的协议族一份 |
 | `@bedboo/agent` | 基于 bedboo 的脚本化生存智能体（[生存智能体](agent.md)） |
 
 ## 下一步

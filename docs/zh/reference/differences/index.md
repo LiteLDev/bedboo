@@ -2,7 +2,7 @@
 
 bedboo 的行为与 mineflayer 一致。唯一的偏差是 Java 版与基岩版之间的固有差异：基岩版的协议、数据或游戏规则使之无法实现或表现不同
 的地方。每一项都在本节的各主题页中逐条记录（mineflayer 在 Java 版上怎么做、基岩版改为怎么做、bedboo 怎么做）。所有事实均在
-BDS 1.26.51.1（protocol 2193）上观察得出。
+BDS 1.26.51.1（protocol 2193，默认版本）上观察得出；其他受支持版本的不同之处见各[版本页面](../versions/index.md)。
 
 | 页面 | 涵盖内容 |
 |---|---|
@@ -24,8 +24,8 @@ BDS 1.26.51.1（protocol 2193）上观察得出。
 机器人作者可能会注意到的地方。未列出的一切都与 mineflayer 在 Java 版上的行为相同。
 
 **连接与版本**
-- 仅支持 BDS 1.26.51.x / 1.26.52.x（protocol 2193）：`bot.version` 为 `'1.26.51'`，`bot.protocolVersion` 为 2193
-  （[版本](connection.md#versions)）。默认 RakNet，按需使用 NetherNet（[传输层](connection.md#transport)）。
+- 基岩版版本以协议族区分：`bot.version` 为 `'1.26.40'`、`'1.26.45'`、`'1.26.51'`（默认）或 `'1.26.60'`，对应
+  BDS 1.26.42.1 至 1.26.63.1（[支持的版本](../versions/index.md)、[版本](connection.md#versions)）。默认 RakNet，按需使用 NetherNet（[传输层](connection.md#transport)）。
 - 登录之前没有 `connect`：它在发送登录数据包时触发（[客户端](connection.md#client)）；`kicked` 的原因是基岩版的断开消息或
   原因代码（[踢出原因](connection.md#kick-reason)）。
 - `bot.game.serverBrand` 为 `'vanilla'`（[服务器品牌](connection.md#server-brand)）；`bot.game.maxPlayers` 为
@@ -33,7 +33,7 @@ BDS 1.26.51.1（protocol 2193）上观察得出。
   （[设置](connection.md#settings)）。
 
 **名称、ID 与数据**
-- `bot.registry` 是基岩版 1.26.51 的注册表：基岩版的方块、物品、实体、状态效果、生物群系和附魔的名称与 ID
+- `bot.registry` 是机器人所用版本的基岩版注册表：基岩版的方块、物品、实体、状态效果、生物群系和附魔的名称与 ID
   （`grass_block`、`oak_log`、`villager_v2`……）（[注册表](data.md#registry)）。配方来自服务器
   （[配方](crafting.md#recipes)）；物品标签来自 pmmp/BedrockData（[物品标签](data.md#item-tags)）。
 - `block.stateId` 是 `registry.blockStates` 中的索引，而不是网络运行时 ID（在基岩版上是一个哈希值）
