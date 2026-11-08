@@ -1,7 +1,7 @@
 {
   "name": "bedboo",
   "version": "0.0.0",
-  "description": "Minecraft Bedrock Edition bot library with a mineflayer-compatible API (createBot, bot.*, events, plugins, typings) for Bedrock Dedicated Server 1.26.51",
+  "description": "Minecraft Bedrock Edition bot library with a mineflayer-compatible API (createBot, bot.*, events, plugins, typings) for Bedrock Dedicated Server 1.26.40 – 1.26.60 (BDS 1.26.42.1 – 1.26.63.1)",
   "license": "LGPL-3.0-only",
   "main": "index.js",
   "types": "index.d.ts",

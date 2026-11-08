@@ -15,8 +15,8 @@
 | `createBot(options)` | 见[下文](#createbot-options) |
 | `Location`、`Painting`、`ScoreBoard`、`BossBar` | mineflayer 的类，未作修改 |
 | `Particle` | mineflayer 的类，针对基岩版粒子数据包做了扩展（[粒子](differences/chat.md#particles)） |
-| `latestSupportedVersion`、`oldestSupportedVersion` | `'1.26.51'` |
-| `testedVersions` | `['1.26.51']` |
+| `latestSupportedVersion`、`oldestSupportedVersion` | `'1.26.60'`、`'1.26.40'` |
+| `testedVersions` | `['1.26.40', '1.26.45', '1.26.51', '1.26.60']`，已测试的协议族，从旧到新（[支持的版本](versions/index.md)） |
 | `supportFeature(feature, version)` | 依据基岩版特性表作答（[特性表](differences/data.md#feature-table)） |
 
 ## createBot 选项 {#createbot-options}
@@ -31,7 +31,7 @@
 | `port` | `19132` | BDS 的 `server-port`（RakNet 用 UDP，NetherNet 用 TCP + UDP） |
 | `username` | `'Player'` | 离线模式：玩家名；microsoft：令牌缓存的键（游戏内名称为玩家代号 gamertag） |
 | `auth` | `'offline'` | `'offline'`（无 Xbox Live；服务器需设置 `online-mode=false`）或 `'microsoft'`（通过 prismarine-auth 登录 Xbox Live：`profilesFolder`、`onMsaCode`、`authTitle`、`flow`、`deviceType` 与 mineflayer 相同）。`'mojang'` 会抛出错误。 |
-| `version` | `'1.26.51'` | `false`（自动）即 1.26.51；其他任何值都会抛出错误：只支持最新的基岩版（[版本](differences/connection.md#versions)） |
+| `version` | `'1.26.51'` | 已测试的协议族（`'1.26.60'`）或其任一 BDS 版本（`'1.26.62.1'`）；`false`（自动）即 1.26.51（不检测服务器版本）；其他任何值都会抛出 `ERR_BEDBOO_VERSION`（[支持的版本](versions/index.md#choosing)） |
 | `transport` | `'raknet'` | `'nethernet'` 表示使用 NetherNet（[传输层](differences/connection.md#transport)）；`'bedd'` 驱动真实客户端（[BeDD](../guide/bedd.md#options)） |
 | `nethernet` | `{ signalling: 'http' }` | 仅限 NetherNet：`signalling`（`'http'` = 服务器端口上的 HTTP，`'lan'` = UDP 7551 发现，`'services'` = Xbox）、`url`（信令源，默认 `http://host:port`）、`serverKey`（服务器身份密钥的 `'sha256:<hex>'` 固定值）、`onServerKey(fingerprint, url) → boolean`（批准一个未固定的密钥；默认接受任意密钥）、`networkId`、`webrtcBackend`、`signallingConnectTimeout` |
 | `bedd` | | 仅限 `transport: 'bedd'`：`pipe`、`tapPipe`、`connect`、`timeoutMs`、`modules`（[BeDD 选项](../guide/bedd.md#options)） |

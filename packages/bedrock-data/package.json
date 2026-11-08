@@ -1,7 +1,7 @@
 {
   "name": "@bedboo/bedrock-data",
   "version": "0.0.0",
-  "description": "Bedrock data overlays (one per data version, default 1.26.51) injected into minecraft-data (bedrock_<version>)",
+  "description": "Bedrock data overlays (one per protocol family: 1.26.40, 1.26.45, 1.26.51, 1.26.60) injected into minecraft-data (bedrock_<version>)",
   "license": "LGPL-3.0-only",
   "main": "index.js",
   "repository": {

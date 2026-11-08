@@ -12,7 +12,18 @@ through [bedrock-protocol](https://github.com/PrismarineJS/bedrock-protocol). Bo
 mineflayer plugins such as mineflayer-pathfinder, run against BDS. The only differences are inherent Java/Bedrock
 ones, and each of them is documented.
 
-- Supported server: **BDS 1.26.51.x** (protocol 2193; 1.26.52.x is wire-identical).
+- Supported servers: every stable BDS from 1.26.42.1 (August 7, 2026) to 1.26.63.1 (November 6, 2026), in four
+  protocol families ([supported versions](https://docs.levimc.org/bedboo/reference/versions/)):
+
+  | family (`bot.version`) | protocol | BDS builds |
+  |---|---|---|
+  | `1.26.40` | 2168 | 1.26.42.1, 1.26.43.1, 1.26.44.3 |
+  | `1.26.45` | 2169 | 1.26.45.1 |
+  | `1.26.51` (default) | 2193 | 1.26.50.5, 1.26.51.1, 1.26.52.3 |
+  | `1.26.60` | 2225 | 1.26.60.6, 1.26.61.1, 1.26.62.1, 1.26.63.1 |
+
+  `createBot({ version })` takes the family or the BDS build (`'1.26.62.1'`); without it the bot speaks 1.26.51.
+  `bot.version` is the family.
 - Transport: **RakNet** by default; **NetherNet** with `transport: 'nethernet'`; a real client hosted by
   [Be.D.D.](https://docs.levimc.org/BeDD/) with `transport: 'bedd'`.
 - Auth: `auth: 'offline'` (default) or `auth: 'microsoft'` (Xbox Live).
@@ -78,7 +89,7 @@ The runnable copy is [`packages/bedboo/examples/readme_quickstart.js`](packages/
 | package | |
 |---|---|
 | [`packages/bedboo`](packages/bedboo) | the bedboo library |
-| [`packages/bedrock-data`](packages/bedrock-data) | `@bedboo/bedrock-data`: the BDS 1.26.51 data overlay for minecraft-data |
+| [`packages/bedrock-data`](packages/bedrock-data) | `@bedboo/bedrock-data`: the Bedrock data overlays for minecraft-data, one per supported family |
 | [`packages/agent`](packages/agent) | `@bedboo/agent`: a scripted survival agent built on bedboo |
 | [`docs`](docs) | the documentation site |
 
@@ -97,7 +108,8 @@ bedboo builds on, and partly adapts, the work of others:
   prismarine-auth, -block, -chat, -chunk, -entity, -item, -nbt, -physics (forked in `lib/physics/`), -recipe,
   -registry, -windows, -world, [minecraft-data](https://github.com/PrismarineJS/minecraft-data) — MIT, PrismarineJS
   contributors. The Bedrock 1.26.51 blocks, block states and items come from minecraft-data
-  [PR #1335](https://github.com/PrismarineJS/minecraft-data/pull/1335) (MIT).
+  [PR #1335](https://github.com/PrismarineJS/minecraft-data/pull/1335), those of 1.26.40, 1.26.45 and 1.26.60 from
+  minecraft-data 3.119.0 (MIT).
 - [CloudburstMC/Data](https://github.com/CloudburstMC/Data) — Apache License 2.0, Copyright CloudburstMC: block
   runtime ids, collision boxes, friction, foods, creative items, biomes (see
   [packages/bedrock-data/NOTICE.md](packages/bedrock-data/NOTICE.md)).

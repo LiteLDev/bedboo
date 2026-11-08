@@ -7,7 +7,8 @@
 
 - Node.js **24** 或更高版本。RakNet 后端（raknet-native）只提供 **x64** 预编译包（Linux、Windows、Intel 版 macOS）；
   NetherNet 是纯 JavaScript 实现，能运行 Node 的地方都能用。
-- BDS **1.26.51.x**（或 1.26.52.x，使用相同的 protocol 2193）。其他版本会在登录时被拒绝。
+- **1.26.42.1** 至 **1.26.63.1** 之间的稳定版 BDS（[支持的版本](../reference/versions/index.md)）。除非传入 `version`，
+  机器人使用 1.26.51（BDS 1.26.50.5、1.26.51.1、1.26.52.3）；其他协议的服务器会拒绝登录。
 
 ## 获取代码 {#get-the-code}
 
@@ -43,11 +44,11 @@ pnpm install
 
 ## 准备服务器 {#prepare-the-server}
 
-从 [minecraft.net](https://www.minecraft.net/download/server/bedrock) 安装 BDS 1.26.51.x，并在
-`server.properties` 中设置：
+从 [minecraft.net](https://www.minecraft.net/download/server/bedrock) 安装一个受支持的 BDS（本页使用默认版本
+1.26.51.1），并在 `server.properties` 中设置：
 
 ```properties
-# 机器人默认通过 RakNet 加入（BDS 1.26.51 默认使用 nethernet；见下文“传输层”）
+# 机器人默认通过 RakNet 加入（BDS 1.26.51 及更新版本默认使用 nethernet；见下文“传输层”）
 transport=raknet
 # 离线机器人（auth: 'offline'）没有 Xbox Live 身份
 online-mode=false
@@ -84,6 +85,7 @@ const bot = bedboo.createBot({
   host: process.argv[2] ?? '127.0.0.1',
   port: parseInt(process.argv[3] ?? '19132'),
   username: 'Bot',
+  // version: '1.26.62.1', // 服务器不是 1.26.51 时：填其 BDS 版本或协议族（见下文“其他版本”）
   auth: 'offline'
 })
 bot.loadPlugin(pathfinder)
@@ -117,7 +119,8 @@ bot.on('error', (err) => console.log('error:', err))
 bot.on('end', (reason) => console.log('disconnected:', reason))
 ```
 
-名称使用基岩版的：`bot.registry` 是基岩版 1.26.51 的注册表（`grass_block`、`oak_log`、`stone_bricks`……），因此
+名称使用基岩版的：`bot.registry` 是机器人所用基岩版版本的注册表，此处为 1.26.51（`grass_block`、`oak_log`、
+`stone_bricks`……），因此
 `bot.registry.blocksByName.oak_log` 和 `bot.inventory.items()[0].name` 得到的都是基岩版名称。其余一切（事件、
 `bot.dig`、`bot.placeBlock`、`bot.craft`、窗口、`bot.attack`、物理）都是 mineflayer 的 API。不同之处列在
 [基岩版差异](../reference/differences/index.md)中。
@@ -133,6 +136,18 @@ node packages/my-bot/index.js 127.0.0.1 19132
 
 库的 `examples/` 目录收录了移植到基岩版的 mineflayer 示例（`node examples/<name>.js <host> <port> [<name>]`），
 放在其中的脚本无需任何配置即可解析到本库和 mineflayer-pathfinder。
+
+## 其他版本 {#versions}
+
+服务器不是 1.26.51 时，把它的 BDS 版本或协议族传给 `createBot`：
+
+```js
+const bot = bedboo.createBot({ host: '127.0.0.1', port: 19132, username: 'Bot', version: '1.26.62.1' })
+// bot.version === '1.26.60'，bot.protocolVersion === 2225
+```
+
+各协议族、其 BDS 版本以及每个 BDS 默认的传输层列在[支持的版本](../reference/versions/index.md#matrix)中。bedboo
+不认识的版本会抛出 `ERR_BEDBOO_VERSION`，并列出支持的版本。机器人的代码在所有版本上都相同。
 
 ## 权限、作弊与命令 {#commands}
 
@@ -160,8 +175,8 @@ const bot = bedboo.createBot({
 
 ## 传输层：RakNet 或 NetherNet {#transports}
 
-BDS 1.26.51 默认使用 **NetherNet**（WebRTC 数据通道），RakNet 需通过 `transport=raknet` 启用。Mojang 已表示将移除
-RakNet，最早可能在 BDS 26.60。除非另行指定，bedboo 都通过 RakNet 连接，因为 bedrock-protocol 支持它已有多年。要使用
+BDS 1.26.51 及更新版本默认使用 **NetherNet**（WebRTC 数据通道），RakNet 需通过 `transport=raknet` 启用；1.26.40 和
+1.26.45 仍默认 RakNet。Mojang 已表示将移除 RakNet；BDS 1.26.60 至 1.26.63.1 仍提供它。除非另行指定，bedboo 都通过 RakNet 连接，因为 bedrock-protocol 支持它已有多年。要使用
 NetherNet，请以 `transport=nethernet` 启动 BDS，并将传输层传给 `createBot`：
 
 ```js
@@ -185,7 +200,7 @@ const bot = bedboo.createBot({ host: '127.0.0.1', port: 19132, username: 'Bot', 
 |---|---|
 | `Connect timed out` | 主机或端口错误、服务器的 `transport` 与机器人不一致，或防火墙丢弃了 UDP（RakNet）/ TCP（NetherNet 信令） |
 | 登录后立即 `kicked` | `allow-list=true` 但机器人不在 `allowlist.json` 中，或 `online-mode=true` 却使用 `auth: 'offline'`（`reason` 会说明是哪一种） |
-| 以客户端 / 服务器版本过旧为由被踢出 | 服务器不是 1.26.51.x / 1.26.52.x |
+| 以客户端 / 服务器版本过旧为由被踢出 | 服务器的协议族与机器人的 `version` 不同（[其他版本](#versions)） |
 | RakNet 后端加载失败 | 不是 x64，或依赖是在工作区之外安装的（缺少 raknet-native 补丁） |
 | 命令被拒绝 | 在控制台给机器人 op，并开启作弊（`allow-cheats=true`） |
 | NetherNet：`Untrusted Nethernet server key` | `serverKey` 固定值与服务器的密钥不匹配（或 `onServerKey` 返回了 false） |

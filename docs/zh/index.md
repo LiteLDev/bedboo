@@ -24,7 +24,7 @@ features:
     details: mineflayer-pathfinder、-pvp、-collectblock、-tool、-armor-manager 和 -auto-eat 通过 bot.loadPlugin() 加载，在基岩版上照常工作。
     link: /zh/guide/plugins
   - title: RakNet 与 NetherNet
-    details: 默认通过 RakNet 加入 BDS 1.26.51，也可使用 NetherNet；支持离线模式或 Microsoft 账号。
+    details: 可加入 1.26.42.1 至 1.26.63.1 的所有稳定版 BDS（4 个协议族），通过 RakNet 或 NetherNet，支持离线模式或 Microsoft 账号。
     link: /zh/guide/getting-started
   - title: 差异逐条记录
     details: 基岩版方块名称、服务端权威的物品栏、挖掘和移动。每一处 Java 版与基岩版之间的固有差异都有文档说明。

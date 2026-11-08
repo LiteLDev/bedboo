@@ -10,8 +10,9 @@ BDS 1.26.51.1（protocol 2193）与 bedrock-protocol 3.60.1。
 - **Java：** Java 版本号（'1.21.4'，protocol 769），同时支持多个版本。
 - **Bedrock：** Bedrock 协议族（minecraft-data 版本键，如 '1.26.51'，对应一个协议号和多个 BDS 版本）；bedboo 支持近期的稳定版本。
 - **bedboo：** `bot.version` 为协议族（`'1.26.51'`），`majorVersion = '1.26'`，`protocolVersion` 为其协议号（2193）；
-  `testedVersions` 列出 `@bedboo/bedrock-data` 提供数据的所有协议族（`'1.26.40'`、`'1.26.45'`、`'1.26.51'`、`'1.26.60'`……；1.26.40、1.26.45 与 1.26.60 的差异见
-  [Bedrock 1.26.40](../versions/1.26.40.md)、[Bedrock 1.26.45](../versions/1.26.45.md) 与 [Bedrock 1.26.60](../versions/1.26.60.md)，默认协议族的各 BDS 版本见 [Bedrock 1.26.51](../versions/1.26.51.md)）。`createBot({ version })` 接受已测试的协议族、其任一 BDS 版本（`'1.26.44.3'`）
+  `testedVersions` 列出 `@bedboo/bedrock-data` 提供数据的所有协议族（`'1.26.40'`、`'1.26.45'`、`'1.26.51'`、`'1.26.60'`；各协议族的 BDS 版本见[支持的版本](../versions/index.md)，
+  1.26.40、1.26.45 与 1.26.60 的差异见 [Bedrock 1.26.40](../versions/1.26.40.md)、[Bedrock 1.26.45](../versions/1.26.45.md) 与
+  [Bedrock 1.26.60](../versions/1.26.60.md)）。`createBot({ version })` 接受已测试的协议族、其任一 BDS 版本（`'1.26.44.3'`）
   或 `false`（自动 = 1.26.51），其他值会像 mineflayer 一样抛出异常。模块级的 `supportFeature(feature, version)` 对已测试的
   协议族 / BDS 版本 / 'bedrock_' 键 / 未指定版本（1.26.51）直接查 Bedrock [特性表](data.md#feature-table)，无需构建
   registry；其他版本则与上游一样查 minecraft-data。
@@ -36,7 +37,7 @@ BDS 1.26.51.1（protocol 2193）与 bedrock-protocol 3.60.1。
   - **NetherNet**（BDS 默认）：WebRTC data channel，信令可走 `server-port` TCP 上的 HTTP
     （`POST /v1/join/<network id>` 携带 SDP offer，返回签名的 SDP answer）、UDP 7551 上的局域网发现，或 Xbox 服务。
   - **RakNet**（`transport=raknet`）：迄今所有 Bedrock 版本使用的传输层。选用它时 BDS 会打印
-    `TRANSPORT TYPE ERROR` 横幅，Mojang 已宣布将移除它，可能在 BDS 26.60。
+    `TRANSPORT TYPE ERROR` 横幅，Mojang 已宣布将移除它（BDS 1.26.60 至 1.26.63.1 仍提供）。
 
   NetherNet 服务器不会打开 RakNet 端口，反之亦然。
 - **bedboo：** 默认 `transport: 'raknet'`（raknet-native）。`transport: 'nethernet'` 通过 `host:port` 上的 HTTP 信令加入，

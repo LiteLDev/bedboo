@@ -22,6 +22,10 @@ the packet captures under `packages/bedboo/test/fixtures/<family>/` follow it (`
 Tests that need a capture the family does not have yet are skipped with the reason. CI runs the unit tests once per
 family in its `bedrock` matrix; a manual run of the CI workflow takes a `version` input.
 
+The supported versions and the steps to add one (bedrock-data pins, probe and generation, the `FAMILIES` entry, the
+CI matrix, the docs) are in
+[Supported versions](https://docs.levimc.org/bedboo/reference/versions/#adding) (`docs/reference/versions/index.md`).
+
 ## Rules
 
 - **mineflayer's API, unchanged.** Keep upstream's names, arguments, return values, events and error messages.

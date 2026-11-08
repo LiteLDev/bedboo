@@ -30,6 +30,7 @@ const root = {
   pluginPatches: 'Ecosystem plugin patches',
   beddMode: 'BeDD mode',
   bdsNotes: 'BDS notes',
+  versions: 'Supported versions',
   v12640: 'Bedrock 1.26.40',
   v12645: 'Bedrock 1.26.45',
   v12651: 'Bedrock 1.26.51',
@@ -63,6 +64,7 @@ const zh: Labels = {
   pluginPatches: '生态插件补丁',
   beddMode: 'BeDD 模式',
   bdsNotes: 'BDS 备忘',
+  versions: '支持的版本',
   v12640: 'Bedrock 1.26.40',
   v12645: 'Bedrock 1.26.45',
   v12651: 'Bedrock 1.26.51',
@@ -74,6 +76,7 @@ const zh: Labels = {
 // zh-Hant is converted from zh by the kit.
 const nav = (p: string, t: Labels): NavEntry[] => {
   const d = `${p}reference/differences/`;
+  const v = `${p}reference/versions/`;
   return [
     {
       text: t.guide,
@@ -100,10 +103,16 @@ const nav = (p: string, t: Labels): NavEntry[] => {
       items: [
         { text: t.api, link: `${p}reference/api` },
         { text: t.bdsNotes, link: `${p}reference/bds` },
-        { text: t.v12640, link: `${p}reference/versions/1.26.40` },
-        { text: t.v12645, link: `${p}reference/versions/1.26.45` },
-        { text: t.v12651, link: `${p}reference/versions/1.26.51` },
-        { text: t.v12660, link: `${p}reference/versions/1.26.60` },
+        {
+          text: t.versions,
+          items: [
+            { text: t.overview, link: v },
+            { text: t.v12640, link: `${v}1.26.40` },
+            { text: t.v12645, link: `${v}1.26.45` },
+            { text: t.v12651, link: `${v}1.26.51` },
+            { text: t.v12660, link: `${v}1.26.60` },
+          ],
+        },
         {
           text: t.differences,
           items: [

@@ -24,7 +24,7 @@ features:
     details: mineflayer-pathfinder, -pvp, -collectblock, -tool, -armor-manager and -auto-eat load with bot.loadPlugin() and work on Bedrock.
     link: /guide/plugins
   - title: RakNet and NetherNet
-    details: Joins BDS 1.26.51 over RakNet by default or over NetherNet, offline or with a Microsoft account.
+    details: Joins every stable BDS from 1.26.42.1 to 1.26.63.1 (four protocol families) over RakNet or NetherNet, offline or with a Microsoft account.
     link: /guide/getting-started
   - title: Every difference documented
     details: Bedrock block names, server-authoritative inventory, digging and movement. Each inherent Java/Bedrock difference is written down.

@@ -7,7 +7,9 @@ bot before, only the first three steps are new: the bot code is the same as for 
 
 - Node.js **24** or newer. The RakNet backend (raknet-native) ships **x64** prebuilds only (Linux, Windows, macOS on
   Intel); NetherNet is pure JavaScript and works anywhere Node does.
-- A BDS **1.26.51.x** (or 1.26.52.x, which speaks the same protocol 2193). Other versions are refused at login.
+- A stable BDS from **1.26.42.1** to **1.26.63.1** (the [supported versions](../reference/versions/index.md)). The bot
+  speaks 1.26.51 (BDS 1.26.50.5, 1.26.51.1, 1.26.52.3) unless you pass `version`; a server of another protocol
+  refuses the login.
 
 ## Get the code {#get-the-code}
 
@@ -44,11 +46,11 @@ dependencies a bot cannot join a server.
 
 ## Prepare the server {#prepare-the-server}
 
-Install BDS 1.26.51.x from [minecraft.net](https://www.minecraft.net/download/server/bedrock) and set in
-`server.properties`:
+Install a supported BDS from [minecraft.net](https://www.minecraft.net/download/server/bedrock) (this page uses
+1.26.51.1, the default version) and set in `server.properties`:
 
 ```properties
-# the bot joins over RakNet by default (BDS 1.26.51 defaults to nethernet; see "Transports" below)
+# the bot joins over RakNet by default (BDS 1.26.51 and newer default to nethernet; see "Transports" below)
 transport=raknet
 # offline bots (auth: 'offline') have no Xbox Live identity
 online-mode=false
@@ -85,6 +87,7 @@ const bot = bedboo.createBot({
   host: process.argv[2] ?? '127.0.0.1',
   port: parseInt(process.argv[3] ?? '19132'),
   username: 'Bot',
+  // version: '1.26.62.1', // for a server other than 1.26.51: its BDS build or family (see "Other versions")
   auth: 'offline'
 })
 bot.loadPlugin(pathfinder)
@@ -118,7 +121,8 @@ bot.on('error', (err) => console.log('error:', err))
 bot.on('end', (reason) => console.log('disconnected:', reason))
 ```
 
-Names are Bedrock's: `bot.registry` is the Bedrock 1.26.51 registry (`grass_block`, `oak_log`, `stone_bricks`, …), so
+Names are Bedrock's: `bot.registry` is the registry of the bot's Bedrock version, here 1.26.51 (`grass_block`,
+`oak_log`, `stone_bricks`, …), so
 `bot.registry.blocksByName.oak_log` and `bot.inventory.items()[0].name` give Bedrock names. Everything else (events,
 `bot.dig`, `bot.placeBlock`, `bot.craft`, windows, `bot.attack`, physics) is mineflayer's API. What differs is listed
 in the [Bedrock differences](../reference/differences/index.md).
@@ -135,6 +139,19 @@ works with `require('mineflayer')` against a Java server, minus the Bedrock bloc
 The library's `examples/` folder holds mineflayer's examples ported to Bedrock
 (`node examples/<name>.js <host> <port> [<name>]`), and a script you drop there resolves the library and
 mineflayer-pathfinder without any setup.
+
+## Other versions {#versions}
+
+For a server other than 1.26.51, pass its BDS build or protocol family to `createBot`:
+
+```js
+const bot = bedboo.createBot({ host: '127.0.0.1', port: 19132, username: 'Bot', version: '1.26.62.1' })
+// bot.version === '1.26.60', bot.protocolVersion === 2225
+```
+
+The families, their BDS builds and the transport each BDS defaults to are listed in
+[Supported versions](../reference/versions/index.md#matrix). A version bedboo does not know throws
+`ERR_BEDBOO_VERSION`, listing the supported ones. The bot's code stays the same on every version.
 
 ## Permissions, cheats and commands {#commands}
 
@@ -163,8 +180,9 @@ in-game name is the account's gamertag. `auth: 'mojang'` does not exist on Bedro
 
 ## Transports: RakNet or NetherNet {#transports}
 
-BDS 1.26.51 uses **NetherNet** (WebRTC data channels) by default and keeps RakNet behind `transport=raknet`. Mojang
-has said RakNet will be removed, possibly as soon as BDS 26.60. bedboo connects over RakNet unless told otherwise,
+BDS 1.26.51 and newer use **NetherNet** (WebRTC data channels) by default and keep RakNet behind `transport=raknet`;
+1.26.40 and 1.26.45 still default to RakNet. Mojang has said RakNet will be removed; BDS 1.26.60 to 1.26.63.1 still
+offer it. bedboo connects over RakNet unless told otherwise,
 because bedrock-protocol has supported it for years. To use NetherNet, start BDS with `transport=nethernet` and pass
 the transport to `createBot`:
 
@@ -190,7 +208,7 @@ const bot = bedboo.createBot({ host: '127.0.0.1', port: 19132, username: 'Bot', 
 |---|---|
 | `Connect timed out` | wrong host/port, the server's `transport` differs from the bot's, or a firewall drops UDP (RakNet) / TCP (NetherNet signalling) |
 | `kicked` right after login | `allow-list=true` without the bot in `allowlist.json`, or `online-mode=true` with `auth: 'offline'` (the `reason` says which) |
-| kicked as outdated client / server | the server is not 1.26.51.x / 1.26.52.x |
+| kicked as outdated client / server | the server's family differs from the bot's `version` ([other versions](#versions)) |
 | the RakNet backend fails to load | not on x64, or dependencies installed outside the workspace (the raknet-native patch is missing) |
 | commands are refused | op the bot from the console, enable cheats (`allow-cheats=true`) |
 | NetherNet: `Untrusted Nethernet server key` | a `serverKey` pin does not match the server's key (or `onServerKey` returned false) |
