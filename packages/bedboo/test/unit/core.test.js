@@ -119,6 +119,14 @@ describe('core runtime: client, exports, registry', () => {
       assert.strictEqual(bedboo.supportFeature('optionalsHavePresenceFlag', version), true, version)
       assert.strictEqual(bedboo.supportFeature('defaultTransportIsNethernet', version), false, version)
     }
+    assert.ok(bedboo.testedVersions.includes('1.26.60'))
+    for (const version of ['1.26.60', '1.26.60.6', '1.26.61.1', '1.26.62.1', '1.26.63.1', 'bedrock_1.26.60']) {
+      const { bot } = await createFakeBot({ version })
+      assert.strictEqual(bot.version, '1.26.60', version)
+      assert.strictEqual(bot.protocolVersion, 2225, version)
+      assert.strictEqual(bot.supportFeature('actionPacketsHaveHand'), true, version)
+      assert.ok(bot.registry.blocksByName.disc_press, version + ': the 1.26.60 data (a block new in 1.26.60)')
+    }
     const untested = FAMILIES.find(f => !bedboo.testedVersions.includes(f.version))
     if (untested) {
       for (const version of [untested.version, untested.bds[0]]) {

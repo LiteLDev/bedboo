@@ -24,6 +24,7 @@ const DEFAULT_VERSION = '1.26.51'
  * version → { bds, mcdata, cloudburst, gophertunnel, pmmp }:
  *   bds          the BDS build whose facts probe/<version>.json records
  *   mcdata       minecraft-data commit (and directory) with blocks, blockStates, blockCollisionShapes, items, materials
+ *                (`files`: datasets taken from another path of that commit, as minecraft-data's dataPaths does)
  *   cloudburst   CloudburstMC/Data commit with the BDS dumps of that version (`files`: upstream file names that
  *                differ from the current ones, e.g. { 'blocks.json': 'block_properties.json' } before 26.50)
  *   gophertunnel commit with the level sound event identifiers of that protocol
@@ -63,6 +64,16 @@ const PINS = {
     cloudburst: { repo: 'CloudburstMC/Data', sha: '659ce1e2eee3a67045693f4fd5515c6ccf571953', license: 'Apache-2.0' },
     gophertunnel: { repo: 'Sandertv/gophertunnel', sha: '80c811b6186016b3860c358368cfa47e507f26e9', license: 'MIT' }, // CurrentProtocol 2193 / 1.26.50
     pmmp: { repo: 'pmmp/BedrockData', sha: 'bdb44a48fb6beffb6e9f6864f06d2232eb62b6a3', license: 'CC0-1.0' } // "Updated from 1.26.30" (latest before BDS 1.26.51)
+  },
+  '1.26.60': {
+    bds: '1.26.63.1',
+    // minecraft-data 3.119.0 (the npm dependency): data/bedrock/1.26.60; it has no materials.json of its own
+    // (dataPaths: materials → bedrock/1.26.51), so materials come from that directory of the same commit
+    mcdata: { repo: 'PrismarineJS/minecraft-data', sha: 'bd8b5c6048e5af9694374b83f25f5b4aade619cc', dir: 'data/bedrock/1.26.60', license: 'MIT', files: { 'materials.json': 'data/bedrock/1.26.51/materials.json' } },
+    // "More 26.60 data" (latest 26.60 commit)
+    cloudburst: { repo: 'CloudburstMC/Data', sha: '0021592b1a4253528bad1e1d8b537e306e097557', license: 'Apache-2.0' },
+    gophertunnel: { repo: 'Sandertv/gophertunnel', sha: 'd4836105abdc5de0496cf62b69413a591af5f8fb', license: 'MIT' }, // CurrentProtocol 2225 / 1.26.60 (+ layout fixes, #545)
+    pmmp: { repo: 'pmmp/BedrockData', sha: 'bdb44a48fb6beffb6e9f6864f06d2232eb62b6a3', license: 'CC0-1.0' } // "Updated from 1.26.30" (latest; no 1.26.60 update yet)
   }
 }
 
@@ -83,7 +94,8 @@ const cache = new Map()
 function sourcesFor (version = DEFAULT_VERSION) {
   if (cache.has(version)) return cache.get(version)
   const { mcdata, cloudburst, gophertunnel, pmmp } = pinsFor(version)
-  const pr = file => ({ ...mcdata, file: `${mcdata.dir}/${file}` })
+  const { files: mcdataFiles = {}, ...mcdataPin } = mcdata
+  const pr = file => ({ ...mcdataPin, file: mcdataFiles[file] ?? `${mcdata.dir}/${file}` })
   const { files: renamed = {}, ...cloudburstPin } = cloudburst
   const cloudburstFile = file => ({ ...cloudburstPin, file: renamed[file] ?? file })
   const sources = {

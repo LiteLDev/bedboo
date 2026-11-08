@@ -33,6 +33,7 @@ const root = {
   v12640: 'Bedrock 1.26.40',
   v12645: 'Bedrock 1.26.45',
   v12651: 'Bedrock 1.26.51',
+  v12660: 'Bedrock 1.26.60',
 };
 type Labels = typeof root;
 
@@ -65,6 +66,7 @@ const zh: Labels = {
   v12640: 'Bedrock 1.26.40',
   v12645: 'Bedrock 1.26.45',
   v12651: 'Bedrock 1.26.51',
+  v12660: 'Bedrock 1.26.60',
 };
 
 // The LeviMC navigation model (kit/README.md "Navigation model"): every top-level entry is a section, i.e. a header
@@ -101,6 +103,7 @@ const nav = (p: string, t: Labels): NavEntry[] => {
         { text: t.v12640, link: `${p}reference/versions/1.26.40` },
         { text: t.v12645, link: `${p}reference/versions/1.26.45` },
         { text: t.v12651, link: `${p}reference/versions/1.26.51` },
+        { text: t.v12660, link: `${p}reference/versions/1.26.60` },
         {
           text: t.differences,
           items: [

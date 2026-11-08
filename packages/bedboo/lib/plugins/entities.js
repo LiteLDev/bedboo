@@ -49,7 +49,7 @@ const conv = require('../bedrock/conversions')
 const entityData = require('../bedrock/entity_data')
 const { fromNetwork } = require('../bedrock/item')
 const { fromAddPainting } = require('../bedrock/paintings')
-const { buildUseOnEntity, buildMouseOver } = require('../bedrock/transactions')
+const { buildUseOnEntity, buildMouseOver, actionHand } = require('../bedrock/transactions')
 const { EYE_HEIGHT, PLAYER_HEIGHT, PLAYER_WIDTH, SNEAK_HEIGHT, SNEAK_EYE_HEIGHT, gameModeName } = require('../bedrock/constants')
 
 module.exports = inject
@@ -969,19 +969,23 @@ function inject (bot) {
     return ids()?.selfRuntimeId() ?? BigInt(bot.entity?.id ?? 0)
   }
 
-  /** animate swing_arm; `source` is the vanilla client's swing source ('attack', 'interact') when it has one */
-  function sendSwing (source) {
+  /**
+   * animate swing_arm; `source` is the vanilla client's swing source ('attack', 'interact') when it has one. 1.26.60
+   * (feature actionPacketsHaveHand) names the hand; older families have no such field.
+   */
+  function sendSwing (source, hand = 'main_hand') {
     const packet = { action_id: 'swing_arm', runtime_entity_id: selfRuntimeId(), data: 0, has_swing_source: !!source }
     if (source) packet.swing_source = source
+    Object.assign(packet, actionHand(bot, hand))
     bot._client.queue('animate', packet)
   }
 
   /**
-   * Bedrock has a single arm swing animation (no off-hand swing, no hidden hand): `arm` and `showHand` are
-   * accepted for compatibility.
+   * Up to 1.26.51 Bedrock has a single arm swing animation (no off-hand swing, no hidden hand): `arm` and `showHand`
+   * are accepted for compatibility. On 1.26.60 animate names the hand: `arm` 'left' swings the off hand.
    */
   function swingArm (arm = 'right', showHand = true) {
-    sendSwing()
+    sendSwing(undefined, arm === 'left' ? 'off_hand' : 'main_hand')
   }
 
   /** Center of the target's hitbox (absolute), where the bot "clicks". */

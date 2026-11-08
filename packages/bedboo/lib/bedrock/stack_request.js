@@ -41,7 +41,8 @@ const { BeddUnsupportedError } = require('../bedd/errors')
  * - `write(request, { viaInput })`, `nextRequestId()`, `observe(fn) → unsubscribe` (fn({ request, response,
  *   outcome: 'ok'|'error'|'timeout'|'closed', meta }) runs synchronously for every settled request, before its
  *   promise settles; an answer to a request that already timed out is reported once more as 'late-ok' /
- *   'late-error' — the promise stays rejected), `pending` (Map requestId → entry), `normalizeAction(action)`.
+ *   'late-error' — the promise stays rejected), `pending` (Map requestId → entry), `normalizeAction(action)` (with the
+ *   bot's family's legacy action ids, `LEGACY_ACTION_IDS`).
  *   opts: `{ customNames = [], cause = -1, timeout, meta, requestId, viaInput }`.
  * - bedd mode (lib/bedd/inventory.js): `bedd` is null unless that module sets `{ responseId(response) }`,
  *   which maps the request id of an item_stack_response (the real client's) to bedboo's, or to undefined for a
@@ -79,6 +80,27 @@ const LEGACY_ACTION_IDS = Object.freeze({
   results_deprecated: 19
 })
 
+/**
+ * 1.26.60 (feature `stackRequestHasCraftReserved`, BDS 1.26.60.6 – 1.26.63.1): `craft_reserved` (wire type 16, legacy
+ * 18) was inserted before non_implemented and results_deprecated, which moved to legacy 19 / 20 (gophertunnel
+ * d483610 item_stack.go; wire 17 / 18 in bedrock-protocol's 1.26.60 mapper). BDS 1.26.60.6 drops the connection on a
+ * craft whose results_deprecated still says 19.
+ */
+const LEGACY_ACTION_IDS_1_26_60 = Object.freeze({
+  ...LEGACY_ACTION_IDS,
+  craft_reserved: 18,
+  non_implemented: 19,
+  results_deprecated: 20
+})
+
+/**
+ * @param {(name: string) => any} [supportFeature] the family's feature table (`bot.supportFeature`)
+ * @returns {Readonly<Record<string, number>>} the legacy action ids of that family (the 1.26.51 table without one)
+ */
+function legacyActionIds (supportFeature) {
+  return typeof supportFeature === 'function' && supportFeature('stackRequestHasCraftReserved') === true ? LEGACY_ACTION_IDS_1_26_60 : LEGACY_ACTION_IDS
+}
+
 const COUNTED = new Set(['take', 'place', 'drop', 'destroy', 'consume'])
 const WITH_SOURCE = new Set(['take', 'place', 'swap', 'drop', 'destroy', 'consume'])
 const WITH_DESTINATION = new Set(['take', 'place', 'swap'])
@@ -114,12 +136,12 @@ function normalizeSlotInfo (info, what) {
 }
 
 /**
- * Validate an action and fill in `legacy_type_id` (and the defaults BDS needs). Throws a TypeError for anything
- * BDS would answer with a disconnect.
+ * Validate an action and fill in `legacy_type_id` (from `legacyIds`, the family's table: {@link legacyActionIds}) and
+ * the defaults BDS needs. Throws a TypeError for anything BDS would answer with a disconnect.
  */
-function normalizeAction (action) {
+function normalizeAction (action, legacyIds = LEGACY_ACTION_IDS) {
   if (!action || typeof action.type_id !== 'string') throw new TypeError('item stack request: action needs a type_id')
-  const legacy = action.legacy_type_id ?? LEGACY_ACTION_IDS[action.type_id]
+  const legacy = action.legacy_type_id ?? legacyIds[action.type_id]
   if (!Number.isInteger(legacy)) throw new TypeError(`item stack request: unknown action type ${action.type_id}`)
   const out = { ...action, legacy_type_id: legacy }
   if (COUNTED.has(action.type_id) && (!Number.isInteger(action.count) || action.count < 1 || action.count > 255)) {
@@ -145,6 +167,15 @@ function createStackRequestManager (bot, { timeout: defaultTimeout = DEFAULT_TIM
   const expired = new Map()
   const MAX_EXPIRED = 64
   let bedd = null // bedd-mode hook, see the module comment
+  // the family's legacy action ids, resolved on first use (the loader assigns bot.supportFeature after this manager)
+  let legacyIds = null
+  const familyLegacyIds = () => {
+    if (legacyIds) return legacyIds
+    const ids = legacyActionIds(bot.supportFeature)
+    if (typeof bot.supportFeature === 'function') legacyIds = ids
+    return ids
+  }
+  const normalize = (action) => normalizeAction(action, familyLegacyIds())
 
   function notify (event) {
     for (const fn of [...observers]) {
@@ -203,7 +234,7 @@ function createStackRequestManager (bot, { timeout: defaultTimeout = DEFAULT_TIM
     if (!Array.isArray(list) || list.length === 0) throw new TypeError('item stack request: at least one action is needed')
     const request = {
       request_id: requestId,
-      actions: list.map(normalizeAction),
+      actions: list.map(normalize),
       custom_names: opts.customNames ?? [],
       cause: opts.cause ?? -1
     }
@@ -276,7 +307,7 @@ function createStackRequestManager (bot, { timeout: defaultTimeout = DEFAULT_TIM
     abort,
     receive: onResponse,
     nextRequestId,
-    normalizeAction,
+    normalizeAction: normalize,
     observe (fn) {
       observers.add(fn)
       return () => observers.delete(fn)
@@ -284,8 +315,8 @@ function createStackRequestManager (bot, { timeout: defaultTimeout = DEFAULT_TIM
     get pending () { return pending },
     get bedd () { return bedd },
     set bedd (hook) { bedd = hook ?? null },
-    LEGACY_ACTION_IDS
+    get LEGACY_ACTION_IDS () { return familyLegacyIds() }
   }
 }
 
-module.exports = { createStackRequestManager, normalizeAction, StackRequestError, LEGACY_ACTION_IDS, DEFAULT_TIMEOUT_MS }
+module.exports = { createStackRequestManager, normalizeAction, legacyActionIds, StackRequestError, LEGACY_ACTION_IDS, LEGACY_ACTION_IDS_1_26_60, DEFAULT_TIMEOUT_MS }

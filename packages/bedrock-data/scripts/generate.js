@@ -100,6 +100,35 @@ const shapeKey = boxes => JSON.stringify((boxes || []).map(b => b.map(v => round
 /** collision equality: BDS dumps float32 values (0.817499 vs 0.8175), so compare at 1e-4 */
 const sameShape = (a, b) => JSON.stringify((a || []).map(x => x.map(v => round(v, 4)))) === JSON.stringify((b || []).map(x => x.map(v => round(v, 4))))
 
+/**
+ * The collision of one Cloudburst `blocks.json` state: `{ boxes, offset }`. Dumps up to 26.50 have `collisionShape`
+ * (boxes as BDS returned them at the dump position). 26.60 dumps have `geometry.collision`: `space: 'sampled'` boxes
+ * are the same thing; `space: 'model_base'` with `translation: 'native_result'` (bamboo, pointed_dripstone,
+ * sulfur_spike: the blocks BDS offsets per position) are the model boxes before that per-position XZ offset
+ * (`offset: true`).
+ */
+function cloudburstCollision (cb) {
+  if (cb.collisionShape !== undefined) return { boxes: cb.collisionShape, offset: false }
+  const c = cb.geometry?.collision
+  if (!c) throw new Error(`Cloudburst ${cb.name}: no collisionShape / geometry.collision`)
+  if (c.space === 'sampled' && c.translation === undefined) return { boxes: c.boxes ?? [], offset: false }
+  if (c.space === 'model_base' && c.translation === 'native_result') return { boxes: c.boxes ?? [], offset: true }
+  throw new Error(`Cloudburst ${cb.name}: unknown collision geometry ${JSON.stringify(c)}`)
+}
+
+/**
+ * Whether `prBoxes` are the model boxes `modelBoxes` moved by one horizontal offset (what minecraft-data samples for
+ * a block BDS offsets per position, within the block's own cell); same box count, sizes and heights, at 1e-4.
+ */
+function isOffsetShape (prBoxes, modelBoxes) {
+  if (!prBoxes?.length || prBoxes.length !== modelBoxes?.length) return false
+  const dx = prBoxes[0][0] - modelBoxes[0][0]
+  const dz = prBoxes[0][2] - modelBoxes[0][2]
+  if (Math.abs(dx) >= 0.5 || Math.abs(dz) >= 0.5) return false
+  const moved = modelBoxes.map(([x0, y0, z0, x1, y1, z1]) => [x0 + dx, y0, z0 + dz, x1 + dx, y1, z1 + dz])
+  return sameShape(prBoxes, moved)
+}
+
 // ---------------------------------------------------------------------------------------------------------
 // Blocks: blocks, blockStates, blockCollisionShapes (+ Cloudburst friction / collision / hash fixes)
 // ---------------------------------------------------------------------------------------------------------
@@ -145,6 +174,7 @@ function buildBlocks (report) {
   }
   const outCollisionBlocks = {}
   const overridden = {}
+  const offsetChecked = {}
   for (const block of blocks) {
     const frictions = new Set()
     const ids = collision.blocks[block.name]
@@ -156,20 +186,29 @@ function buildBlocks (report) {
       const prId = Array.isArray(ids) ? ids[meta] : ids
       const prBoxes = collision.shapes[prId]
       if (prBoxes === undefined) throw new Error(`${block.name}: no PR #1335 collision shape for state ${meta}`)
-      if (sameShape(prBoxes, cb.collisionShape)) {
+      const cbCollision = cloudburstCollision(cb)
+      if (sameShape(prBoxes, cbCollision.boxes)) {
+        stateIds.push(prId)
+        continue
+      }
+      if (cbCollision.offset && isOffsetShape(prBoxes, cbCollision.boxes)) {
+        // a per-position offset block: PR #1335's boxes are the BDS model boxes at one sampled offset (kept as is)
+        offsetChecked[block.name] = (offsetChecked[block.name] || 0) + 1
         stateIds.push(prId)
         continue
       }
       const rule = COLLISION_FROM_CLOUDBURST.find(r => r.match.test(block.name))
-      if (!rule) throw new Error(`${block.name} state ${meta}: collision ${JSON.stringify(prBoxes)} vs Cloudburst ${JSON.stringify(cb.collisionShape)} (not allowlisted)`)
+      if (!rule) throw new Error(`${block.name} state ${meta}: collision ${JSON.stringify(prBoxes)} vs Cloudburst ${JSON.stringify(cbCollision.boxes)} (not allowlisted)`)
+      if (cbCollision.offset) throw new Error(`${block.name} state ${meta}: Cloudburst has only the unoffset model boxes, which cannot replace a per-position collision`)
       overridden[block.name] = (overridden[block.name] || 0) + 1
-      stateIds.push(shapeId(cb.collisionShape))
+      stateIds.push(shapeId(cbCollision.boxes))
     }
     outCollisionBlocks[block.name] = stateIds.every(id => id === stateIds[0]) ? stateIds[0] : stateIds
     if (frictions.size !== 1) throw new Error(`${block.name}: friction varies per state ${[...frictions]}`)
     block.friction = [...frictions][0]
   }
   for (const [name, n] of Object.entries(overridden)) report.push(`blockCollisionShapes: ${name} ${n} state(s) from Cloudburst`)
+  for (const [name, n] of Object.entries(offsetChecked)) report.push(`blockCollisionShapes: ${name} ${n} state(s) = the Cloudburst model boxes at one per-position offset`)
 
   // 3. documented field fixes (tables.BLOCK_FIXES)
   for (const [name, fix] of Object.entries(tables.BLOCK_FIXES)) {
