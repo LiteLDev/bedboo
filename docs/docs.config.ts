@@ -61,27 +61,30 @@ const zh: Labels = {
   bdsNotes: 'BDS 备忘',
 };
 
-const nav = (p: string, t: Labels): NavEntry[] => [
-  { text: t.guide, link: `${p}guide/introduction` },
-  { text: t.reference, link: `${p}reference/api` },
-];
-
-const sidebar = (p: string, t: Labels): Record<string, NavEntry[]> => {
+// The LeviMC navigation model (kit/README.md "Navigation model"): every top-level entry is a section, i.e. a header
+// tab and the sidebar tree of its pages; the brand links the home page. `p` is the locale's URL prefix ('/' or '/zh/');
+// zh-Hant is converted from zh by the kit.
+const nav = (p: string, t: Labels): NavEntry[] => {
   const d = `${p}reference/differences/`;
-  const all: NavEntry[] = [
+  return [
     {
-      text: t.start,
+      text: t.guide,
       items: [
-        { text: t.introduction, link: `${p}guide/introduction` },
-        { text: t.gettingStarted, link: `${p}guide/getting-started` },
-      ],
-    },
-    {
-      text: t.using,
-      items: [
-        { text: t.plugins, link: `${p}guide/plugins` },
-        { text: t.bedd, link: `${p}guide/bedd` },
-        { text: t.agent, link: `${p}guide/agent` },
+        {
+          text: t.start,
+          items: [
+            { text: t.introduction, link: `${p}guide/introduction` },
+            { text: t.gettingStarted, link: `${p}guide/getting-started` },
+          ],
+        },
+        {
+          text: t.using,
+          items: [
+            { text: t.plugins, link: `${p}guide/plugins` },
+            { text: t.bedd, link: `${p}guide/bedd` },
+            { text: t.agent, link: `${p}guide/agent` },
+          ],
+        },
       ],
     },
     {
@@ -89,28 +92,27 @@ const sidebar = (p: string, t: Labels): Record<string, NavEntry[]> => {
       items: [
         { text: t.api, link: `${p}reference/api` },
         { text: t.bdsNotes, link: `${p}reference/bds` },
-      ],
-    },
-    {
-      text: t.differences,
-      items: [
-        { text: t.overview, link: d },
-        { text: t.connection, link: `${d}connection` },
-        { text: t.data, link: `${d}data` },
-        { text: t.world, link: `${d}world` },
-        { text: t.survival, link: `${d}survival` },
-        { text: t.chat, link: `${d}chat` },
-        { text: t.entities, link: `${d}entities` },
-        { text: t.movement, link: `${d}movement` },
-        { text: t.inventory, link: `${d}inventory` },
-        { text: t.crafting, link: `${d}crafting` },
-        { text: t.digging, link: `${d}digging` },
-        { text: t.pluginPatches, link: `${d}plugins` },
-        { text: t.beddMode, link: `${d}bedd` },
+        {
+          text: t.differences,
+          items: [
+            { text: t.overview, link: d },
+            { text: t.connection, link: `${d}connection` },
+            { text: t.data, link: `${d}data` },
+            { text: t.world, link: `${d}world` },
+            { text: t.survival, link: `${d}survival` },
+            { text: t.chat, link: `${d}chat` },
+            { text: t.entities, link: `${d}entities` },
+            { text: t.movement, link: `${d}movement` },
+            { text: t.inventory, link: `${d}inventory` },
+            { text: t.crafting, link: `${d}crafting` },
+            { text: t.digging, link: `${d}digging` },
+            { text: t.pluginPatches, link: `${d}plugins` },
+            { text: t.beddMode, link: `${d}bedd` },
+          ],
+        },
       ],
     },
   ];
-  return { [`${p}guide/`]: all, [`${p}reference/`]: all };
 };
 
 export default defineDocsConfig({
@@ -140,7 +142,6 @@ export default defineDocsConfig({
   markdown: { compat: 'commonmark', containers: { vitepress: true } },
   outline: [2, 3],
   exclude: ['scripts/**', 'README.md'],
+  sidebar: 'tabs',
   nav: { root: nav('/', root), zh: nav('/zh/', zh) },
-  sidebar: { root: sidebar('/', root), zh: sidebar('/zh/', zh) },
-  social: [{ icon: 'github', link: repo, label: 'GitHub' }],
 });

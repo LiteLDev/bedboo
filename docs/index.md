@@ -15,9 +15,6 @@ hero:
     - theme: alt
       text: API
       link: /reference/api
-    - theme: alt
-      text: GitHub
-      link: https://github.com/LiteLDev/bedboo
 
 features:
   - title: The mineflayer API
