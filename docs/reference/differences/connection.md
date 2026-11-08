@@ -11,8 +11,8 @@ map onto mineflayer's events. Observed on BDS 1.26.51.1 (protocol 2193) with bed
 - **Bedrock:** Bedrock protocol families (a minecraft-data version key such as '1.26.51', one protocol number,
   several BDS builds); bedboo supports the recent stable ones.
 - **bedboo:** `bot.version` is the family (`'1.26.51'`), `majorVersion = '1.26'`, `protocolVersion` its protocol
-  (2193); `testedVersions` lists every family `@bedboo/bedrock-data` ships data for (`'1.26.40'`, `'1.26.51'`, …;
-  see [Bedrock 1.26.40](../versions/1.26.40.md) for what differs there). `createBot({ version })` accepts a tested
+  (2193); `testedVersions` lists every family `@bedboo/bedrock-data` ships data for (`'1.26.40'`, `'1.26.45'`, `'1.26.51'`, …;
+  see [Bedrock 1.26.40](../versions/1.26.40.md) and [Bedrock 1.26.45](../versions/1.26.45.md) for what differs there). `createBot({ version })` accepts a tested
   family, one of its BDS builds (`'1.26.44.3'`) or `false` (auto = 1.26.51) and, like mineflayer, throws for anything
   else. The module-level `supportFeature(feature, version)` answers from the Bedrock
   [feature table](data.md#feature-table) of a tested family / build / 'bedrock_' key / no version (1.26.51), without

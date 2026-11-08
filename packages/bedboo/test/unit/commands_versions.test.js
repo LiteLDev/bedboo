@@ -39,18 +39,21 @@ describe('command value types per family', () => {
     assert.strictEqual(v40[88], 'command')
     assert.strictEqual(v40[90], undefined)
     for (const id of [8, 10, 64, 65, 68, 70, 74]) assert.strictEqual(v40[id], base[id], String(id))
+    assert.deepStrictEqual(valueTypeKinds('1.26.45'), v40, '1.26.45 (BDS 1.26.45.1) numbers them like 1.26.40')
     assert.strictEqual(valueTypeKinds('1.26.60'), base, 'unchecked families use the 1.26.51 table')
   })
 
   it('/execute run <command> recurses with the family\'s id', () => {
-    for (const [version, id] of [['1.26.40', 88], ['1.26.44.3', 88], ['1.26.51', 90]]) {
+    for (const [version, id] of [['1.26.40', 88], ['1.26.44.3', 88], ['1.26.45', 88], ['1.26.45.1', 88], ['1.26.51', 90]]) {
       const tree = createCommandTree({ version })
       tree.update(availableCommands(id))
       assert.deepStrictEqual(tree.complete('/execute run s'), ['say'], version)
     }
     // the other family's id is not a command there (no recursion)
-    const tree = createCommandTree({ version: '1.26.40' })
-    tree.update(availableCommands(90))
-    assert.deepStrictEqual(tree.complete('/execute run s'), [])
+    for (const [version, id] of [['1.26.40', 90], ['1.26.45', 90], ['1.26.51', 88]]) {
+      const tree = createCommandTree({ version })
+      tree.update(availableCommands(id))
+      assert.deepStrictEqual(tree.complete('/execute run s'), [], version)
+    }
   })
 })

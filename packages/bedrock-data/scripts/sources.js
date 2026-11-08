@@ -40,6 +40,16 @@ const PINS = {
     gophertunnel: { repo: 'Sandertv/gophertunnel', sha: '4794743244247a9395360bced1f294d4882c4df0', license: 'MIT' }, // CurrentProtocol 2168 / 1.26.44
     pmmp: { repo: 'pmmp/BedrockData', sha: 'bdb44a48fb6beffb6e9f6864f06d2232eb62b6a3', license: 'CC0-1.0' } // "Updated from 1.26.30" (latest before BDS 1.26.4x)
   },
+  // 1.26.45 (protocol 2169) is a hotfix of 1.26.40: minecraft-data 3.119.0 points its blocks / items / materials at
+  // data/bedrock/1.26.40 (its protocol.json equals 1.26.40's) and CloudburstMC has no separate 2169 dump; every fact the
+  // generator keeps was checked against a live BDS 1.26.45.1 (probe/1.26.45.json).
+  '1.26.45': {
+    bds: '1.26.45.1',
+    mcdata: { repo: 'PrismarineJS/minecraft-data', sha: 'bd8b5c6048e5af9694374b83f25f5b4aade619cc', dir: 'data/bedrock/1.26.40', license: 'MIT' },
+    cloudburst: { repo: 'CloudburstMC/Data', sha: '040a6cc9f96d5c3b131467b81a7939f94a5a8432', license: 'Apache-2.0', files: { 'blocks.json': 'block_properties.json' } },
+    gophertunnel: { repo: 'Sandertv/gophertunnel', sha: '7f058e5ddc393eaa0480dae338c5eee2feb323e6', license: 'MIT' }, // "Updated for 1.26.45" (CurrentProtocol 2169)
+    pmmp: { repo: 'pmmp/BedrockData', sha: 'bdb44a48fb6beffb6e9f6864f06d2232eb62b6a3', license: 'CC0-1.0' } // "Updated from 1.26.30" (latest before BDS 1.26.45)
+  },
   '1.26.51': {
     bds: '1.26.51.1',
     mcdata: {

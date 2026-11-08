@@ -38,6 +38,16 @@ Same kinds of sources, other commits (`scripts/sources.js` `PINS['1.26.40']`):
 | [pmmp/BedrockData](https://github.com/pmmp/BedrockData) `bdb44a48fb6beffb6e9f6864f06d2232eb62b6a3` | CC0 1.0 | vanilla numeric biome ids |
 | BDS 1.26.44.3 probe (`scripts/probe/1.26.40.json`) | facts observed on a running server | as above (same effect and enchantment ids as 1.26.51; no `dappled_forest`, `tables.VERSION_TABLES['1.26.40']`) |
 
+### `data/1.26.45` (BDS 1.26.45.1, protocol 2169)
+
+`scripts/sources.js` `PINS['1.26.45']`: the minecraft-data, CloudburstMC/Data and pmmp/BedrockData commits of
+`data/1.26.40` (minecraft-data's 1.26.45 also reads `data/bedrock/1.26.40/`; CloudburstMC has no separate 2169 dump),
+[Sandertv/gophertunnel](https://github.com/Sandertv/gophertunnel) `7f058e5ddc393eaa0480dae338c5eee2feb323e6` ("Updated
+for 1.26.45", protocol 2169; MIT) for the level sound event identifiers, and the BDS 1.26.45.1 probe
+(`scripts/probe/1.26.45.json`: same effect, enchantment and entity facts as 1.26.51 except no `cushion`; no
+`dappled_forest`, `tables.VERSION_TABLES['1.26.45']`). `test/fixtures/1.26.45/cloudburst-block-hashes.json.gz` comes
+from CloudburstMC/Data (Apache License 2.0).
+
 ## What the generator changes relative to PR #1335
 
 - `blocks[].friction` (new field) from Cloudburst `friction` (constant per block).

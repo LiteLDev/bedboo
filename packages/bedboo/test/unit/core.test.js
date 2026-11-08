@@ -51,7 +51,7 @@ describe('core runtime: client, exports, registry', () => {
 
   it('module exports: versions, supportFeature(feature, version) without a registry per call, classes', () => {
     const shipped = shippedFamilies()
-    assert.ok(shipped.includes('1.26.40') && shipped.includes('1.26.51'), shipped.join())
+    assert.ok(['1.26.40', '1.26.45', '1.26.51'].every(v => shipped.includes(v)), shipped.join())
     assert.strictEqual(bedboo.latestSupportedVersion, shipped.at(-1))
     assert.strictEqual(bedboo.oldestSupportedVersion, shipped[0])
     assert.deepStrictEqual(bedboo.testedVersions, shipped)
@@ -111,6 +111,13 @@ describe('core runtime: client, exports, registry', () => {
       assert.strictEqual(bot.version, '1.26.40', version)
       assert.strictEqual(bot.protocolVersion, 2168, version)
       assert.strictEqual(bedboo.supportFeature('optionalsHavePresenceFlag', version), true, version)
+    }
+    for (const version of ['1.26.45', '1.26.45.1', 'bedrock_1.26.45']) {
+      const { bot } = await createFakeBot({ version })
+      assert.strictEqual(bot.version, '1.26.45', version)
+      assert.strictEqual(bot.protocolVersion, 2169, version)
+      assert.strictEqual(bedboo.supportFeature('optionalsHavePresenceFlag', version), true, version)
+      assert.strictEqual(bedboo.supportFeature('defaultTransportIsNethernet', version), false, version)
     }
     const untested = FAMILIES.find(f => !bedboo.testedVersions.includes(f.version))
     if (untested) {

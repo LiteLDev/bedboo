@@ -34,6 +34,8 @@ describe('1.26.40 double optionals (optionalsHavePresenceFlag)', () => {
   it('is a 1.26.40 feature only', () => {
     assert.strictEqual(createSupportFeature(null, { version: '1.26.40' })('optionalsHavePresenceFlag'), true)
     assert.strictEqual(createSupportFeature(null, { version: '1.26.44.3' })('optionalsHavePresenceFlag'), true)
+    assert.strictEqual(createSupportFeature(null, { version: '1.26.45' })('optionalsHavePresenceFlag'), true)
+    assert.strictEqual(createSupportFeature(null, { version: '1.26.45.1' })('optionalsHavePresenceFlag'), true)
     assert.strictEqual(createSupportFeature(null, { version: '1.26.51' })('optionalsHavePresenceFlag'), false)
   })
 
@@ -106,6 +108,25 @@ describe('1.26.40 double optionals (optionalsHavePresenceFlag)', () => {
     client.init()
     const out = createDeserializer('1.26.40').parsePacketBuffer(client.serializer.createPacketBuffer({ name: 'player_auth_input', params: idleInput() })).data.params
     assert.strictEqual(out.predicted_vehicle_presence, true)
+    bot.end()
+  })
+
+  it('1.26.45 (protocol 2169) has the same double optionals: a 1.26.45.1 bot writes them on the 1.26.45 wire', async () => {
+    const bedboo = require('../..')
+    const { EventEmitter } = require('events')
+    const client = Object.assign(new EventEmitter(), { init () { this.serializer = createSerializer('1.26.45') } })
+    const bot = bedboo.createBot({ client, version: '1.26.45.1', logErrors: false, hideErrors: true })
+    client.init()
+    const params = idleInput()
+    const b45 = client.serializer.createPacketBuffer({ name: 'player_auth_input', params })
+    const b51 = createSerializer('1.26.51').createPacketBuffer({ name: 'player_auth_input', params })
+    assert.strictEqual(b45.length, b51.length + AUTH_INPUT_PRESENCE.length + 1)
+    // the five optional parts just before analogue_move_vector (8 bytes), camera_orientation (12), raw_move_vector (8):
+    // (outer presence true, inner presence false) each
+    assert.deepStrictEqual([...b45.subarray(b45.length - 28 - 10, b45.length - 28)], [1, 0, 1, 0, 1, 0, 1, 0, 1, 0])
+    const out = createDeserializer('1.26.45').parsePacketBuffer(b45).data.params
+    for (const field of AUTH_INPUT_PRESENCE) assert.strictEqual(out[field + '_presence'], true, field)
+    assert.deepStrictEqual(out.raw_move_vector, params.raw_move_vector)
     bot.end()
   })
 })

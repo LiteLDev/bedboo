@@ -1,0 +1,322 @@
+[
+  {
+    "id": 1,
+    "name": "bubble"
+  },
+  {
+    "id": 2,
+    "name": "bubble_manual"
+  },
+  {
+    "id": 3,
+    "name": "critical"
+  },
+  {
+    "id": 4,
+    "name": "block_force_field"
+  },
+  {
+    "id": 5,
+    "name": "smoke"
+  },
+  {
+    "id": 6,
+    "name": "explode"
+  },
+  {
+    "id": 7,
+    "name": "evaporation"
+  },
+  {
+    "id": 8,
+    "name": "flame"
+  },
+  {
+    "id": 9,
+    "name": "candle_flame"
+  },
+  {
+    "id": 10,
+    "name": "lava"
+  },
+  {
+    "id": 11,
+    "name": "large_smoke"
+  },
+  {
+    "id": 12,
+    "name": "redstone"
+  },
+  {
+    "id": 13,
+    "name": "rising_red_dust"
+  },
+  {
+    "id": 14,
+    "name": "item_break"
+  },
+  {
+    "id": 15,
+    "name": "snowball_poof"
+  },
+  {
+    "id": 16,
+    "name": "huge_explode"
+  },
+  {
+    "id": 17,
+    "name": "huge_explode_seed"
+  },
+  {
+    "id": 18,
+    "name": "mob_flame"
+  },
+  {
+    "id": 19,
+    "name": "heart"
+  },
+  {
+    "id": 20,
+    "name": "terrain"
+  },
+  {
+    "id": 21,
+    "name": "town_aura"
+  },
+  {
+    "id": 22,
+    "name": "portal"
+  },
+  {
+    "id": 24,
+    "name": "water_splash"
+  },
+  {
+    "id": 25,
+    "name": "water_splash_manual"
+  },
+  {
+    "id": 26,
+    "name": "water_wake"
+  },
+  {
+    "id": 27,
+    "name": "drip_water"
+  },
+  {
+    "id": 28,
+    "name": "drip_lava"
+  },
+  {
+    "id": 29,
+    "name": "drip_honey"
+  },
+  {
+    "id": 30,
+    "name": "stalactite_drip_water"
+  },
+  {
+    "id": 31,
+    "name": "stalactite_drip_lava"
+  },
+  {
+    "id": 32,
+    "name": "falling_dust"
+  },
+  {
+    "id": 33,
+    "name": "mob_spell"
+  },
+  {
+    "id": 34,
+    "name": "mob_spell_ambient"
+  },
+  {
+    "id": 35,
+    "name": "mob_spell_instantaneous"
+  },
+  {
+    "id": 36,
+    "name": "ink"
+  },
+  {
+    "id": 37,
+    "name": "slime"
+  },
+  {
+    "id": 38,
+    "name": "rain_splash"
+  },
+  {
+    "id": 39,
+    "name": "villager_angry"
+  },
+  {
+    "id": 40,
+    "name": "villager_happy"
+  },
+  {
+    "id": 41,
+    "name": "enchantment_table"
+  },
+  {
+    "id": 42,
+    "name": "tracking_emitter"
+  },
+  {
+    "id": 43,
+    "name": "note"
+  },
+  {
+    "id": 44,
+    "name": "witch_spell"
+  },
+  {
+    "id": 45,
+    "name": "carrot"
+  },
+  {
+    "id": 46,
+    "name": "mob_appearance"
+  },
+  {
+    "id": 47,
+    "name": "end_rod"
+  },
+  {
+    "id": 48,
+    "name": "dragons_breath"
+  },
+  {
+    "id": 49,
+    "name": "spit"
+  },
+  {
+    "id": 50,
+    "name": "totem"
+  },
+  {
+    "id": 51,
+    "name": "food"
+  },
+  {
+    "id": 52,
+    "name": "fireworks_starter"
+  },
+  {
+    "id": 53,
+    "name": "fireworks_spark"
+  },
+  {
+    "id": 54,
+    "name": "fireworks_overlay"
+  },
+  {
+    "id": 55,
+    "name": "balloon_gas"
+  },
+  {
+    "id": 56,
+    "name": "colored_flame"
+  },
+  {
+    "id": 57,
+    "name": "sparkler"
+  },
+  {
+    "id": 58,
+    "name": "conduit"
+  },
+  {
+    "id": 59,
+    "name": "bubble_column_up"
+  },
+  {
+    "id": 60,
+    "name": "bubble_column_down"
+  },
+  {
+    "id": 61,
+    "name": "sneeze"
+  },
+  {
+    "id": 62,
+    "name": "shulker_bullet"
+  },
+  {
+    "id": 63,
+    "name": "bleach"
+  },
+  {
+    "id": 64,
+    "name": "dragon_destroy_block"
+  },
+  {
+    "id": 65,
+    "name": "mycelium_dust"
+  },
+  {
+    "id": 66,
+    "name": "falling_red_dust"
+  },
+  {
+    "id": 67,
+    "name": "campfire_smoke"
+  },
+  {
+    "id": 68,
+    "name": "tall_campfire_smoke"
+  },
+  {
+    "id": 69,
+    "name": "dragon_breath_fire"
+  },
+  {
+    "id": 70,
+    "name": "dragon_breath_trail"
+  },
+  {
+    "id": 71,
+    "name": "blue_flame"
+  },
+  {
+    "id": 72,
+    "name": "soul"
+  },
+  {
+    "id": 73,
+    "name": "obsidian_tear"
+  },
+  {
+    "id": 74,
+    "name": "portal_reverse"
+  },
+  {
+    "id": 75,
+    "name": "snowflake"
+  },
+  {
+    "id": 76,
+    "name": "vibration_signal"
+  },
+  {
+    "id": 77,
+    "name": "sculk_sensor_redstone"
+  },
+  {
+    "id": 78,
+    "name": "spore_blossom_shower"
+  },
+  {
+    "id": 79,
+    "name": "spore_blossom_ambient"
+  },
+  {
+    "id": 80,
+    "name": "wax"
+  },
+  {
+    "id": 81,
+    "name": "electric_spark"
+  }
+]

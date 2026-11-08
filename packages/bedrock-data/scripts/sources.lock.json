@@ -14,6 +14,21 @@
     "gophertunnel/level_sound_event.go": "6358c2f103b9d2e8f20b944678b4ddc01e4cc975c3e6615cd54498e556e54b1a",
     "pmmp/biome_id_map.json": "4f27df3f1e58476fc65e337f7cf3e275f65a98b6c40ea46c31b24016b85e0052"
   },
+  "1.26.45": {
+    "pr1335/blocks.json": "f57b420bd89bf1d4d4a8d6cd372fa967c621090890f413b0adc0a804c575f0da",
+    "pr1335/blockStates.json": "15e5f7e35c9bbda1992b5351b1b3535b58b5d213faeae96c625ec7afba0aa2bb",
+    "pr1335/blockCollisionShapes.json": "9918bfc23550f880948cc0afa88d86fa1a36791f3f2c2d9ecb73426b02da4c77",
+    "pr1335/items.json": "299e0885a38efab89f21eb7e75ff9592fb4d7c6de5eb9f138b35a189578a671c",
+    "pr1335/materials.json": "6a3148970ab501d5610ce3d846f03ef5761b90032025ce9f7bc0f73415ff0511",
+    "cloudburst/blocks.json": "d8d64e738c4ce74ff3e5cfec6710fe94eb4ab771deaf5d430bc81b5bb2205fc5",
+    "cloudburst/runtime_item_states.json": "c0903bb5bbff4a66ff1a272e624d45ea148a51a5f11ba1e6b350e090165916bf",
+    "cloudburst/item_components.nbt": "41f9dd6f3d8f8e61782008b9c75de5cab2f716d03cfb7c470a84ad1ee0b1e93a",
+    "cloudburst/entity_identifiers.dat": "21adc04beec0d58ecde86542da8d6729948191858fe3a2dbe6d7e8d327197ad2",
+    "cloudburst/creative_items.json": "b25c6983c4aa3d54db8f3c8685db81958b4bac35ba9c0578c799a67955e9e02c",
+    "cloudburst/stripped_biome_definitions.json": "e683c5a9ca6a01bfb1c1d5fbe176cc3fb93fdff1a95915a730be627019345e8a",
+    "gophertunnel/level_sound_event.go": "6358c2f103b9d2e8f20b944678b4ddc01e4cc975c3e6615cd54498e556e54b1a",
+    "pmmp/biome_id_map.json": "4f27df3f1e58476fc65e337f7cf3e275f65a98b6c40ea46c31b24016b85e0052"
+  },
   "1.26.51": {
     "pr1335/blocks.json": "36bd369cdcfc5b037750f8bc769c9d290d7b11954d304fc791e0d982ae774cca",
     "pr1335/blockStates.json": "cdc3f47b768f8dff629b12731bea98f333e74d563422c48202bc055a572fdbf0",
