@@ -214,6 +214,11 @@ const VERSION_TABLES = {
   '1.26.40': {
     BIOME_IDS_ADDED: without(BIOME_IDS_ADDED, 'dappled_forest'),
     BIOMES_ADDED: without(BIOMES_ADDED, 'dappled_forest')
+  },
+  // BDS 1.26.45.1 (probe/1.26.45.json): the same, its biome_definition_list ends at sulfur_caves
+  '1.26.45': {
+    BIOME_IDS_ADDED: without(BIOME_IDS_ADDED, 'dappled_forest'),
+    BIOMES_ADDED: without(BIOMES_ADDED, 'dappled_forest')
   }
 }
 

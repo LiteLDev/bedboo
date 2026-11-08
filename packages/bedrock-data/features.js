@@ -191,7 +191,7 @@ const JAVA = {
  * data/<version>/features.js.
  */
 const PROTOCOL = {
-  // 1.26.40 (protocol 2168) writes some optionals as double optionals (an extra outer presence bool in
+  // 1.26.40 / 1.26.45 (protocols 2168 / 2169) write some optionals as double optionals (an extra outer presence bool in
   // player_auth_input, transaction actions, item_stack_response): bedboo lib/bedrock/presence.js
   optionalsHavePresenceFlag: false
 }

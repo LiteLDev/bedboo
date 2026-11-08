@@ -48,12 +48,14 @@ const VALUE_TYPE_KINDS = {
 
 /**
  * Families whose available_commands number the value types differently (observed on their BDS).
- * - 1.26.40 (BDS 1.26.44.3): `execute … run <command>` is 88 — 1.26.50 inserted two types below it; target 8,
+ * - 1.26.40 (BDS 1.26.44.3) and 1.26.45 (BDS 1.26.45.1): `execute … run <command>` is 88 — 1.26.50 inserted two types below it; target 8,
  *   wildcard target 10, positions 64 / 65, message 68, raw text 70 and json 74 are the same.
  */
 const { 90: _command51, ...kinds40 } = VALUE_TYPE_KINDS
 const VALUE_TYPE_KINDS_BY_VERSION = {
-  '1.26.40': Object.freeze({ ...kinds40, 88: 'command' })
+  '1.26.40': Object.freeze({ ...kinds40, 88: 'command' }),
+  // BDS 1.26.45.1: the same ids as 1.26.40 (every 'valid' id of its available_commands diffed against BDS 1.26.51.1)
+  '1.26.45': Object.freeze({ ...kinds40, 88: 'command' })
 }
 
 /** the VALUE_TYPE_KINDS of a family */

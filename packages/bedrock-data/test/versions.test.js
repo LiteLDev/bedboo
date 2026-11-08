@@ -44,6 +44,11 @@ describe('@bedboo/bedrock-data per-version features', () => {
           assert.deepStrictEqual(data.featuresFor(version)[name], mcData.supportFeature(name), name)
         }
       })
+
+      it('optionalsHavePresenceFlag matches the player_auth_input layout of its minecraft-data protocol', () => {
+        const fields = require('minecraft-data')('bedrock_' + version).protocol.types.packet_player_auth_input[1].map(f => f.name)
+        assert.strictEqual(data.featuresFor(version).optionalsHavePresenceFlag, fields.includes('transaction_presence'))
+      })
     })
   }
 })

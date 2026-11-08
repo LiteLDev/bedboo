@@ -1,7 +1,8 @@
 'use strict'
 
 /**
- * Bedrock 1.26.40 (protocol 2168, BDS 1.26.42.1 – 1.26.44.3) writes some optional fields as a *double* optional: an
+ * Bedrock 1.26.40 (protocol 2168, BDS 1.26.42.1 – 1.26.44.3) and 1.26.45 (protocol 2169, BDS 1.26.45.1, the same schema;
+ * gophertunnel 7f058e5d) write some optional fields as a *double* optional: an
  * outer presence bool, then the usual optional (its own bool + value) — gophertunnel `DoubleOptionalFunc` at
  * 4794743 (1.26.44). bedrock-protocol's 1.26.40 schema spells the outer bool as a separate field (`<x>_presence`);
  * 1.26.50 dropped it again. The library builds every packet in the 1.26.51 shape, so for a family with the feature
