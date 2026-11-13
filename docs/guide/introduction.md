@@ -51,6 +51,11 @@ from its monorepo for now (see [Your first bot](getting-started.md#get-the-code)
 | `@bedboo/bedrock-data` | the Bedrock data overlays for minecraft-data, one per supported family |
 | `@bedboo/agent` | a scripted survival agent built on bedboo ([Survival agent](agent.md)) |
 
+## The name
+
+bedboo (Bedrock + Bangboo) is named after the Bangboo of Zenless Zone Zero: a Bangboo goes into the Hollows on a
+Proxy's behalf, your bot goes into a Bedrock server on yours.
+
 ## Next
 
 - [Your first bot](getting-started.md): server settings, install, a bot that walks to you.

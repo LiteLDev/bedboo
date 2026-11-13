@@ -37,6 +37,9 @@ features:
     link: /guide/agent
 ---
 
+bedboo (Bedrock + Bangboo) is named after the Bangboo of Zenless Zone Zero: a Bangboo goes into the Hollows on a
+Proxy's behalf, your bot goes into a Bedrock server on yours.
+
 ```js
 const bedboo = require('bedboo') // instead of require('mineflayer')
 

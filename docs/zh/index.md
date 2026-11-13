@@ -37,6 +37,8 @@ features:
     link: /zh/guide/agent
 ---
 
+bedboo（Bedrock + Bangboo）得名自《绝区零》的邦布：邦布替绳匠深入空洞，你的机器人替你进入基岩版服务器。
+
 ```js
 const bedboo = require('bedboo') // 替代 require('mineflayer')
 
