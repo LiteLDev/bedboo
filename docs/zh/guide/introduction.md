@@ -48,6 +48,10 @@ bedboo 在不发明新 API 的前提下弥合了这一差距：mineflayer 的文
 | `@bedboo/bedrock-data` | minecraft-data 的基岩版数据补充层，每个支持的协议族一份 |
 | `@bedboo/agent` | 基于 bedboo 的脚本化生存智能体（[生存智能体](agent.md)） |
 
+## 名字
+
+bedboo（Bedrock + Bangboo）得名自《绝区零》的邦布：邦布替绳匠深入空洞，你的机器人替你进入基岩版服务器。
+
 ## 下一步
 
 - [你的第一个机器人](getting-started.md)：服务器设置、安装、一个会走到你身边的机器人。

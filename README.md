@@ -4,6 +4,9 @@
 [![Docs](https://img.shields.io/badge/docs-docs.levimc.org%2Fbedboo-blue.svg?style=flat-square)](https://docs.levimc.org/bedboo/)
 [![license: LGPL-3.0-only](https://img.shields.io/badge/license-LGPL--3.0--only-blue.svg?style=flat-square)](COPYING.LESSER)
 
+bedboo (Bedrock + Bangboo) is named after the Bangboo of Zenless Zone Zero: a Bangboo goes into the Hollows on a
+Proxy's behalf, your bot goes into a Bedrock server on yours.
+
 A Minecraft Bedrock Edition bot library with a mineflayer-compatible API.
 
 bedboo offers the same `createBot()`, `bot.*` properties, methods and events, TypeScript types and plugin system as
