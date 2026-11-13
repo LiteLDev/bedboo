@@ -1,6 +1,11 @@
 'use strict'
 /**
- * Be.D.D. tap pipe reader (docs: bedd-bedboo spec, wire protocol A).
+ * Be.D.D. tap reader (docs: bedd-bedboo spec, wire protocol A).
+ *
+ * BeDD v2 serves the tap on its WebSocket: a connection sends `{ id, op: 'tap', action: 'subscribe' }`, gets
+ * `{ ok: true }` (or `code: 'busy'` while another subscriber holds the tap, `code: 'disabled'` with config
+ * tap:false), then receives one binary message per frame. subscribeTap() does that handshake and returns a stream
+ * (`'data'` per frame, `'close'`, `destroy()`) for createTapReader.
  *
  * Frame (little-endian): `u32 len | u8 kind | u8 flags | u16 reserved | u64 seq | u64 tUs | payload`, where `len`
  * counts the bytes after itself (20 header bytes + payload). Kinds: 1 CLIENTBOUND and 2 SERVERBOUND_ECHO carry one
@@ -19,6 +24,7 @@
  *   reader.on('close', () => …)
  */
 const { EventEmitter } = require('events')
+const { socketUrl, redactUrl, webSocketClass, eventMessage, toBuffer } = require('./ws')
 
 const KIND = Object.freeze({ CLIENTBOUND: 1, SERVERBOUND_ECHO: 2, MARKER: 4 })
 const FLAG = Object.freeze({ REPLAY: 1, RESERIALIZED: 2, LOCAL: 4, SUPPRESSED: 8 })
@@ -131,7 +137,7 @@ function encodeFrame (kind, flags, payload, { seq = 0n, tUs = 0n } = {}) {
 }
 
 /**
- * @param {import('stream').Duplex} stream the connected tap pipe
+ * @param {import('events').EventEmitter & { destroy?(): void }} stream the tap stream (subscribeTap): 'data' (Buffer), 'close'
  * @param {object} opts
  * @param {string} opts.version bedrock-protocol version for the deserializer
  * @param {number} opts.protocol expected HELLO.protocol (the registry's protocol version, 2193)
@@ -278,4 +284,88 @@ function createTapReader (stream, { version, protocol, decoder } = {}) {
   return reader
 }
 
-module.exports = { createTapReader, createFrameParser, createPacketDecoder, encodeFrame, packetIdOf, KIND, FLAG, HEADER_BYTES, MAX_LEN, TAP_VERSION }
+/**
+ * Open a WebSocket to BeDD and subscribe to the tap. Resolves with a stream once BeDD answered `{ ok: true }`:
+ * it emits 'data' (one Buffer per binary message, i.e. per frame), 'error' and 'close'; `destroy()` closes the
+ * WebSocket. Rejects with an Error whose `code` is BeDD's ('busy', 'disabled', …) or 'ERR_BEDD_CONNECT'.
+ * @param {{ url: string, token: string, WebSocket?: typeof WebSocket, timeoutMs?: number }} opts
+ */
+function subscribeTap ({ url, token, WebSocket, timeoutMs = 5000 }) {
+  return new Promise((resolve, reject) => {
+    const where = redactUrl(url)
+    const stream = new EventEmitter()
+    let ws
+    let state = 'connecting' // → 'subscribing' → 'open' → 'closed'
+    let early = [] // binary messages that came before the reply
+    let timer = null
+    const fail = (err) => {
+      if (state === 'open' || state === 'closed') return
+      state = 'closed'
+      clearTimeout(timer)
+      try { ws?.close() } catch {}
+      reject(err)
+    }
+    try {
+      const WS = webSocketClass(WebSocket)
+      ws = new WS(socketUrl(url, token))
+      ws.binaryType = 'arraybuffer'
+    } catch (err) {
+      return fail(tapError(`BeDD tap ${where}: ${err.message}`, 'ERR_BEDD_CONNECT', { cause: err }))
+    }
+    timer = setTimeout(() => fail(tapError(`BeDD tap ${where}: no subscription after ${timeoutMs} ms`, 'ERR_BEDD_CONNECT')), timeoutMs)
+    timer.unref?.()
+    ws.addEventListener('open', () => {
+      if (state !== 'connecting') return
+      state = 'subscribing'
+      ws.send(JSON.stringify({ id: 1, op: 'tap', action: 'subscribe' }))
+    })
+    ws.addEventListener('message', (ev) => {
+      if (typeof ev.data === 'string') {
+        if (state !== 'subscribing') return
+        let reply
+        try {
+          reply = JSON.parse(ev.data)
+        } catch {
+          return fail(tapError(`BeDD tap ${where}: bad subscribe reply`, 'ERR_BEDD_CONNECT'))
+        }
+        if (!reply?.ok) {
+          const why = reply?.code === 'busy' ? ' (another client holds the tap)' : reply?.code === 'disabled' ? ' (the game runs with config tap:false)' : ''
+          return fail(tapError(`BeDD tap ${where}: ${reply?.error ?? 'subscribe refused'}${why}`, reply?.code ?? 'ERR_BEDD_CONNECT', { reply }))
+        }
+        state = 'open'
+        clearTimeout(timer)
+        resolve(stream)
+        // frames from now on wait until the reader listens (next turn), behind any that raced the reply
+        setImmediate(flush)
+        return
+      }
+      const buf = toBuffer(ev.data)
+      if (early) early.push(buf)
+      else if (state === 'open') stream.emit('data', buf)
+    })
+    function flush () {
+      const backlog = early
+      early = null
+      for (const b of backlog ?? []) stream.emit('data', b)
+    }
+    ws.addEventListener('error', (ev) => {
+      if (state === 'open') stream.emit('error', tapError(`BeDD tap: ${eventMessage(ev)}`, 'ERR_BEDD_TAP_CLOSED', { cause: ev?.error }))
+      else fail(tapError(`BeDD tap ${where}: ${eventMessage(ev)} (is the game running, is the token right?)`, 'ERR_BEDD_CONNECT'))
+    })
+    ws.addEventListener('close', (ev) => {
+      if (state === 'open') {
+        flush()
+        state = 'closed'
+        stream.emit('end')
+        stream.emit('close')
+      } else {
+        fail(tapError(`BeDD tap ${where}: closed before the subscription (code ${ev?.code})`, 'ERR_BEDD_CONNECT'))
+      }
+    })
+    stream.destroy = () => {
+      try { ws.close(1000) } catch {}
+    }
+  })
+}
+
+module.exports = { createTapReader, subscribeTap, createFrameParser, createPacketDecoder, encodeFrame, packetIdOf, KIND, FLAG, HEADER_BYTES, MAX_LEN, TAP_VERSION }

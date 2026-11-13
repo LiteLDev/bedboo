@@ -45,13 +45,22 @@ export interface BeddUnsupportedError extends Error {
 
 // transport 'bedd': `createBot({ transport: 'bedd', bedd })` and the bot's `_client.bedd`
 // (lib/bedd/index.js).
+// The endpoint: `{ url, token }`, or `{ pid }` / `{ instance }` looked up in BeDD's run files
+// (`%LOCALAPPDATA%\BeDD\run\<pid>.json`, $BEDD_HOME moves the folder), or `{}` for the only running game.
+// BeDD v2 has no named pipes: `pipe`, `tapPipe` and `connect` throw.
 export interface BeddOptions {
-  /** control pipe path (default `\\.\pipe\BeDD`, or $BEDBOO_BEDD_PIPE) */
-  pipe?: string
-  /** tap pipe path (default `<pipe>-tap`) */
-  tapPipe?: string
-  /** stream factory for both pipes (default `net.connect`); tests pass a unix socket */
-  connect?: (path: string) => import('stream').Duplex
+  /** the game's WebSocket endpoint (`ws://127.0.0.1:<port>/v1`, the `url` of its run file); needs `token` */
+  url?: string
+  /** the endpoint's token (the `token` of its run file) */
+  token?: string
+  /** the pid of the BeDD game to drive */
+  pid?: number
+  /** the instance folder name of the BeDD game to drive (e.g. '1.26.60.05-2') */
+  instance?: string
+  /** BeDD's home folder (default $BEDD_HOME, else %LOCALAPPDATA%\BeDD) */
+  home?: string
+  /** WebSocket class (default Node's global WebSocket) */
+  WebSocket?: any
   /** control request timeout in ms (default 5000; ops with a `timeoutMs` argument get that + 2000) */
   timeoutMs?: number
   /** optional lib/bedd modules to attach (default: authority, router, router_actions, follower, surface, inventory) */
@@ -97,18 +106,20 @@ export interface BeddServerboundPacket {
 
 /** `bot._client.bedd` when `transport: 'bedd'` */
 export interface BeddClientApi {
-  pipe: string
-  tapPipe: string
+  /** the game's WebSocket endpoint (without its token); undefined when no game was found */
+  url: string | undefined
+  endpoint: { url: string, pid?: number, instance?: string, label?: string } | null
   rpc: BeddRpc
   caps: BeddCaps
   supports (op: string): boolean
-  /** resolves with the caps once the control pipe was negotiated (never rejects) */
+  /** resolves with the caps once the control connection was negotiated (never rejects) */
   ready: Promise<BeddCaps>
   link: BeddLink
   hello: { m: 'HELLO', tap: number, mod: string, game: string, protocol: number, pid: number, link: BeddLink, journal: { frames: number, bytes: number, complete: boolean } } | null
   journal: { frames: number, bytes: number, complete: boolean } | null
   replayed: { complete: boolean } | null
-  control: { protocol: number, pid: number } | null
+  /** `ping`: protocol 2, the game's pid, its operation modes (`modes.bedboo`, `modes.input`, `modes.ui`: op names) */
+  control: { protocol: number, pid: number, defaultMode?: string, modes?: { [mode: string]: string[] } } | null
   capabilities: BeddCapabilities
   /** what the bot would have sent; the default drops and counts (`dropped`), the router module replaces it */
   route (name: string, params: any): any

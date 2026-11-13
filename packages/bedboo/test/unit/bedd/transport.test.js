@@ -1,5 +1,5 @@
 'use strict'
-const { describe, it, before, after, afterEach } = require('node:test')
+const { describe, it, before, after, beforeEach, afterEach } = require('node:test')
 const assert = require('assert')
 const fs = require('fs')
 const os = require('os')
@@ -95,7 +95,7 @@ describe("transport 'bedd'", () => {
       const dropped = bot._client.bedd.dropped
       assert.strictEqual(dropped.subchunk_request, undefined, 'no subchunk_request in bedd mode')
       assert.strictEqual(dropped.set_local_player_as_initialized, undefined, 'the transport never writes the spawn ack')
-      assert.ok(!fake.calls.some(c => Object.keys(c.args).length > 0), 'no action op reached the control pipe')
+      assert.ok(!fake.calls.some(c => Object.keys(c.args).length > 0), 'no action op reached the control connection')
 
       // caps: ping + every spec op probed without arguments
       assert.deepStrictEqual(fake.calls.slice(0, 1 + bedd.PROBE_OPS.length).map(c => c.op), ['ping', ...bedd.PROBE_OPS])
@@ -120,7 +120,7 @@ describe("transport 'bedd'", () => {
       assert.strictEqual(kicked.reason, 'bedd_link_down')
       assert.match(await ended, /bedd_link_down: the player left the world/)
       assert.strictEqual(bot._client.bedd.link.state, 'down')
-      await until(() => fake.controlClients.size === 0, { what: 'control pipe detached' })
+      await until(() => fake.controlClients.size === 0, { what: 'control connection detached' })
     })
 
     it('DROPPED ends the bot', async () => {
@@ -156,13 +156,65 @@ describe("transport 'bedd'", () => {
       assert.strictEqual(err.code, 'ERR_BEDD_HELLO')
     })
 
-    it('errors and ends when the tap pipe is missing', async () => {
+    it('errors and ends when the tap is disabled', async () => {
       const fake = await fakeBedd({ tap: false })
       const bot = botOn(fake)
       bots.push(bot)
       const [err] = await once(bot, 'error')
-      assert.strictEqual(err.code, 'ERR_BEDD_CONNECT')
+      assert.strictEqual(err.code, 'disabled')
+      assert.match(err.message, /tap:false/)
+      assert.strictEqual(bot._client.bedd.caps.tap, 'disabled', 'the tap status read says enabled: false')
       await endOf(bot)
+    })
+
+    it('errors with code busy when another client holds the tap', async () => {
+      const fake = await fakeBedd({ live: 'join_flat' })
+      const first = botOn(fake)
+      bots.push(first)
+      await once(first, 'spawn')
+      const second = botOn(fake)
+      bots.push(second)
+      const [err] = await once(second, 'error')
+      assert.strictEqual(err.code, 'busy')
+      assert.match(err.message, /another client holds the tap/)
+      await endOf(second)
+      assert.strictEqual(fake.tapConnections, 1)
+    })
+
+    it('connects over WebSocket with ?token= and no Origin header; a wrong token is refused', async () => {
+      const fake = await fakeBedd({ live: 'join_flat' })
+      const bot = botOn(fake)
+      bots.push(bot)
+      await once(bot, 'spawn')
+      assert.ok(fake.handshakes.length >= 2, 'control + tap connections')
+      for (const h of fake.handshakes) {
+        assert.strictEqual(h.path, '/v1')
+        assert.strictEqual(h.token, fake.token)
+        assert.strictEqual(h.origin, undefined, 'BeDD refuses any request carrying Origin')
+      }
+      assert.strictEqual(bot._client.bedd.url, fake.url)
+      assert.deepStrictEqual(bot._client.bedd.control.modes.ui, ['ui'])
+      assert.strictEqual(bot._client.bedd.control.defaultMode, 'bedboo')
+
+      const wrong = botOn(fake, {}, { token: 'nope' })
+      bots.push(wrong)
+      const warnings = []
+      wrong._client.on('warning', (w) => warnings.push(w))
+      const [err] = await once(wrong, 'error')
+      assert.strictEqual(err.code, 'ERR_BEDD_CONNECT')
+      assert.match(err.message, /token/)
+      assert.ok(warnings.some(w => /observation only/.test(w.message)))
+    })
+
+    it('a BeDD v1 (ping protocol 1) is refused with an upgrade hint', async () => {
+      const fake = await fakeBedd({ protocol: 1, live: 'join_flat' })
+      const bot = botOn(fake)
+      bots.push(bot)
+      const [err] = await once(bot, 'error')
+      assert.strictEqual(err.code, 'ERR_BEDD_PROTOCOL')
+      assert.match(err.message, /BeDD v1 uses named pipes; upgrade BeDD/)
+      await endOf(bot)
+      assert.strictEqual(fake.tapConnections, 0)
     })
 
     it('late attach: the journal replay spawns the bot, live frames racing the replay come after REPLAY_END', async () => {
@@ -197,9 +249,9 @@ describe("transport 'bedd'", () => {
       assert.strictEqual(warnings.find(w => w.code === 'ERR_BEDD_TAP_DECODE').packetId, 11)
     })
 
-    it('without a control pipe every op is absent and the tap still works (observation only)', async () => {
-      const fake = await fakeBedd({ live: 'join_flat' })
-      const bot = botOn(fake, {}, { pipe: fake.path + '-missing', tapPipe: fake.tapPath })
+    it('when ping does not answer every op is absent and the tap still works (observation only)', async () => {
+      const fake = await fakeBedd({ live: 'join_flat', caps: { ping: 'absent' } })
+      const bot = botOn(fake)
       bots.push(bot)
       const warnings = []
       bot._client.on('warning', (w) => warnings.push(w))
@@ -219,10 +271,13 @@ describe("transport 'bedd'", () => {
         ['tap:present', 'world:present', 'look:disabled', 'input:present', 'slot:present', 'button:present', 'action:present', 'send:disabled', 'stack:absent']
       )
       assert.strictEqual(bot._client.bedd.supports('look'), false)
-      assert.strictEqual(caps.key, 'present', 'protocol-1 ops are present once ping answers')
+      assert.strictEqual(caps.key, 'present', 'base ops are present once ping answers')
+      assert.strictEqual(caps.screenshot, 'present', 'ops of ping.modes are present')
+      assert.strictEqual(caps.ui, 'present')
+      assert.strictEqual(fake.callsOf('stack').length, 0, 'an op ping.modes does not list is absent without a probe')
     })
 
-    it('a control pipe that closes mid-session turns every cap absent (with a warning); a stuck probe stops probing', async () => {
+    it('a control connection that closes mid-session turns every cap absent (with a warning); a stuck probe stops probing', async () => {
       const fake = await fakeBedd({ handlers: { input: () => fake.NO_REPLY } })
       const client = bedd.createBeddClient({ version: TEST_VERSION, bedd: fake.botOptions() })
       const caps = await client.bedd.ready
@@ -236,7 +291,7 @@ describe("transport 'bedd'", () => {
       client.close()
     })
 
-    it('bot.end() / quit() only detach (no disconnect packet, both pipes closed)', async () => {
+    it('bot.end() / quit() only detach (no disconnect packet, both WebSockets closed)', async () => {
       const fake = await fakeBedd({ live: 'join_flat' })
       const bot = botOn(fake)
       await once(bot, 'spawn')
@@ -245,7 +300,7 @@ describe("transport 'bedd'", () => {
       bot.quit()
       assert.strictEqual(await ended, 'disconnect.quitting')
       await tapClosed
-      await until(() => fake.controlClients.size === 0, { what: 'control pipe detached' })
+      await until(() => fake.controlClients.size === 0, { what: 'control connection detached' })
       assert.strictEqual(bot._client.bedd.dropped.disconnect, undefined)
     })
   })
@@ -284,9 +339,12 @@ describe("transport 'bedd'", () => {
 
     it('createClient dispatches transport bedd; raknet/nethernet bots keep their mode', async () => {
       const fake = await fakeBedd({})
-      const client = createClient({ transport: 'bedd', bedd: fake.botOptions(), username: 'x' })
+      const client = createClient({ transport: 'bedd', version: TEST_VERSION, bedd: fake.botOptions(), username: 'x' })
       assert.ok(client.bedd)
       assert.strictEqual(client.options.transport, 'bedd')
+      const defaulted = createClient({ transport: 'bedd', bedd: fake.botOptions({ modules: [] }) })
+      defaulted.close() // before it starts
+      assert.strictEqual(defaulted.version, '1.26.60', 'bedd defaults to the game BeDD v2 runs')
       await client.bedd.ready
       client.close()
       const { bot } = await createFakeBot()
@@ -330,28 +388,40 @@ describe("transport 'bedd'", () => {
   })
 
   describe('control RPC', () => {
-    /** a Duplex pair: what the rpc writes comes out of `server`, what `server` gets written reaches the rpc */
+    /** an injected WebSocket class: what the rpc sends lands in `lines`, `reply(obj)` answers */
     function pair () {
-      const toServer = new PassThrough()
-      const toClient = new PassThrough()
-      const clientSide = new (require('stream').Duplex)({
-        read () {},
-        write (chunk, enc, cb) { toServer.write(chunk); cb() }
-      })
-      toClient.on('data', (d) => clientSide.push(d))
       const lines = []
-      let buf = ''
-      toServer.on('data', (d) => {
-        buf += d
-        let nl
-        while ((nl = buf.indexOf('\n')) !== -1) { lines.push(JSON.parse(buf.slice(0, nl))); buf = buf.slice(nl + 1) }
-      })
-      return { clientSide, lines, reply: (obj) => toClient.write(JSON.stringify(obj) + '\n') }
+      const p = { lines, urls: [] }
+      p.WebSocket = class extends EventTarget {
+        constructor (url) {
+          super()
+          p.urls.push(url)
+          p.socket = this
+          setImmediate(() => this.dispatchEvent(new Event('open')))
+        }
+
+        send (text) { lines.push(JSON.parse(text)) }
+        close () { setImmediate(() => this.dispatchEvent(Object.assign(new Event('close'), { code: 1000 }))) }
+      }
+      p.reply = (obj) => p.socket.dispatchEvent(Object.assign(new Event('message'), { data: JSON.stringify(obj) }))
+      return p
     }
+
+    it('sends the token as ?token= and each request as one text message', async () => {
+      const p = pair()
+      const rpc = createRpc({ url: 'ws://127.0.0.1:1/v1', token: 'ab12', WebSocket: p.WebSocket })
+      const ping = rpc.call('ping')
+      await until(() => p.lines.length === 1)
+      assert.strictEqual(p.urls[0], 'ws://127.0.0.1:1/v1?token=ab12')
+      assert.strictEqual(rpc.url, 'ws://127.0.0.1:1/v1', 'no token in rpc.url')
+      p.reply({ ok: true, id: p.lines[0].id, protocol: 2 })
+      assert.strictEqual((await ping).protocol, 2)
+      rpc.close()
+    })
 
     it('keeps one request in flight (FIFO) and drops a late reply to a timed-out request', async () => {
       const p = pair()
-      const rpc = createRpc({ path: 'x', connect: () => p.clientSide, timeoutMs: 100 })
+      const rpc = createRpc({ url: 'ws://x/v1', token: 't', WebSocket: p.WebSocket, timeoutMs: 100 })
       const a = rpc.call('look', {})
       const b = rpc.call('slot', { slot: 2 })
       await until(() => p.lines.length === 1)
@@ -368,7 +438,7 @@ describe("transport 'bedd'", () => {
 
     it('an op timeoutMs argument extends the transport timeout', async () => {
       const p = pair()
-      const rpc = createRpc({ path: 'x', connect: () => p.clientSide, timeoutMs: 50 })
+      const rpc = createRpc({ url: 'ws://x/v1', token: 't', WebSocket: p.WebSocket, timeoutMs: 50 })
       const look = rpc.call('look', { yaw: 1, pitch: 2, timeoutMs: 100 })
       await new Promise(resolve => setTimeout(resolve, 120))
       await until(() => p.lines.length === 1)
@@ -385,9 +455,96 @@ describe("transport 'bedd'", () => {
     })
 
     it('a failed connection rejects the queued calls', async () => {
-      const rpc = createRpc({ path: path.join(os.tmpdir(), `bedboo-no-such-pipe-${process.pid}`) })
+      const server = require('net').createServer()
+      await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+      const port = server.address().port
+      await new Promise(resolve => server.close(resolve)) // a port nobody listens on
+      const rpc = createRpc({ url: `ws://127.0.0.1:${port}/v1`, token: 't' })
       await assert.rejects(rpc.call('ping'), { code: 'ERR_BEDD_RPC_CLOSED' })
       assert.strictEqual(await rpc.probe('look'), 'absent')
+    })
+  })
+
+  describe('endpoint discovery', () => {
+    let home
+    const dead = 0x7ffffff0 // no such pid
+    beforeEach(() => { home = fs.mkdtempSync(path.join(os.tmpdir(), 'bedboo-bedd-home-')) })
+    afterEach(() => fs.rmSync(home, { recursive: true, force: true }))
+
+    function runFile (ep) {
+      fs.mkdirSync(path.join(home, 'run'), { recursive: true })
+      fs.writeFileSync(path.join(home, 'run', `${ep.pid}.json`), JSON.stringify({ protocol: 2, kind: 'client', url: `ws://127.0.0.1:${1000 + (ep.pid % 1000)}/v1`, token: `t${ep.pid}`, ...ep }))
+    }
+
+    it('home is $BEDD_HOME, else %LOCALAPPDATA%\\BeDD', () => {
+      assert.strictEqual(bedd.beddHome({ BEDD_HOME: home }), path.resolve(home))
+      assert.strictEqual(bedd.beddHome({ LOCALAPPDATA: path.join(home, 'Local') }), path.join(home, 'Local', 'BeDD'))
+    })
+
+    it('{} picks the only running client; dead pids, servers and bad files are skipped', () => {
+      runFile({ pid: process.pid, instance: 'base-2', label: 'me' })
+      runFile({ pid: dead, instance: 'base-3' })
+      runFile({ pid: process.ppid, kind: 'server', instance: 'bds' })
+      fs.writeFileSync(path.join(home, 'run', 'garbage.json'), '{ not json')
+      const ep = bedd.resolveEndpoint({ home })
+      assert.deepStrictEqual([ep.pid, ep.instance, ep.token], [process.pid, 'base-2', `t${process.pid}`])
+      assert.deepStrictEqual(bedd.listEndpoints({ home }).map(e => e.pid).sort(), [process.pid, process.ppid].sort())
+      assert.strictEqual(bedd.resolveEndpoint({ home, instance: 'BASE-2' }).pid, process.pid, 'instance names match case-insensitively')
+      assert.strictEqual(bedd.resolveEndpoint({ home, pid: process.pid }).url, `ws://127.0.0.1:${1000 + (process.pid % 1000)}/v1`)
+      assert.throws(() => bedd.resolveEndpoint({ home, pid: dead }), { code: 'ERR_BEDD_DISCOVERY' })
+      assert.throws(() => bedd.resolveEndpoint({ home, pid: process.ppid }), /is a server, not a game client/)
+      assert.throws(() => bedd.resolveEndpoint({ home, instance: 'base-3' }), /no running BeDD game of instance 'base-3'; running: pid/)
+    })
+
+    it('no game, or several, is an error naming what to pass', () => {
+      assert.throws(() => bedd.resolveEndpoint({ home }), /no BeDD game is running .*BeDD.exe launch --slot 2/)
+      runFile({ pid: process.pid, instance: 'a' })
+      runFile({ pid: process.ppid, instance: 'b' })
+      assert.throws(() => bedd.resolveEndpoint({ home }), /2 BeDD games are running .*pass bedd.pid or bedd.instance/)
+      assert.strictEqual(bedd.resolveEndpoint({ home, instance: 'b' }).pid, process.ppid)
+    })
+
+    it('url + token are used as given; the v1 pipe options throw', () => {
+      assert.deepStrictEqual(bedd.resolveEndpoint({ url: 'ws://127.0.0.1:5/v1', token: 'x' }), { url: 'ws://127.0.0.1:5/v1', token: 'x' })
+      assert.throws(() => bedd.resolveEndpoint({ url: 'ws://127.0.0.1:5/v1' }), /needs bedd.token/)
+      assert.throws(() => bedd.resolveEndpoint({ url: 'http://x', token: 'x' }), /ws:\/\/ URL/)
+      assert.throws(() => bedboo.createBot({ transport: 'bedd', bedd: { url: 'ws://127.0.0.1:5/v1' } }), /needs bedd.token/, 'malformed options throw from createBot')
+      const bot = bedboo.createBot({ transport: 'bedd', bedd: { url: 'ws://127.0.0.1:1/v1?token=SECRET', token: 'SECRET', modules: [] }, logErrors: false, hideErrors: true })
+      bot.on('error', () => {})
+      assert.ok(!bot._client.bedd.url.includes('SECRET'), bot._client.bedd.url)
+      assert.strictEqual(bot.version, '1.26.60')
+      bot.end()
+      for (const key of ['pipe', 'tapPipe', 'connect']) {
+        assert.throws(() => bedboo.createBot({ transport: 'bedd', bedd: { [key]: '\\\\.\\pipe\\BeDD' } }), new RegExp(`bedd.${key} was removed: BeDD v2 has no named pipes`))
+      }
+    })
+
+    it('createBot finds the game through its run file (bedd: {} and bedd: { pid })', async () => {
+      const fake = await createFakeBedd({ live: 'join_flat' })
+      try {
+        fake.writeRunFile(home)
+        for (const given of [{}, { pid: process.pid }, { instance: 'fake-1' }]) {
+          const bot = bedboo.createBot({ transport: 'bedd', version: TEST_VERSION, bedd: { home, modules: [], ...given }, logErrors: false, hideErrors: true })
+          await once(bot, 'spawn')
+          assert.strictEqual(bot._client.bedd.endpoint.pid, process.pid)
+          assert.strictEqual(bot._client.bedd.url, fake.url)
+          const ended = endOf(bot)
+          const tapClosed = once(fake, 'tapClose')
+          bot.end()
+          await ended
+          await tapClosed // the next bot can subscribe
+        }
+      } finally {
+        await fake.close()
+      }
+    })
+
+    it('without a running game the bot errors (ERR_BEDD_DISCOVERY) and ends', async () => {
+      const bot = bedboo.createBot({ transport: 'bedd', version: TEST_VERSION, bedd: { home, modules: [] }, logErrors: false, hideErrors: true })
+      const [err] = await once(bot, 'error')
+      assert.strictEqual(err.code, 'ERR_BEDD_DISCOVERY')
+      assert.match(err.message, /no BeDD game is running/)
+      await endOf(bot)
     })
   })
 

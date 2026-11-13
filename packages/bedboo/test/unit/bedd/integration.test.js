@@ -98,7 +98,7 @@ async function fakeGame (opts = {}) {
           setTimeout(respond, 10) // BD9 replies right after submitting, ~10 ms before the server's answer
           return reply
         }
-        // the tap may deliver the answer before the reply (two pipes, no ordering between them)
+        // the tap may deliver the answer before the reply (two connections, no ordering between them)
         respond()
         return new Promise(resolve => setTimeout(() => resolve(reply), 100))
       },
@@ -293,7 +293,7 @@ describe('bedd integration: createBot({ transport: \'bedd\' }) with every module
 })
 
 describe('bedd integration: no stack op', () => {
-  it('clickWindow and craft reject with ERR_BEDD_UNSUPPORTED and nothing reaches the control pipe', async () => {
+  it('clickWindow and craft reject with ERR_BEDD_UNSUPPORTED and nothing reaches the control connection', async () => {
     const game = await fakeGame({ caps: { stack: 'absent' }, handlers: { stack: () => NO_REPLY } })
     const bot = bedboo.createBot({ transport: 'bedd', version: TEST_VERSION, bedd: game.fake.botOptions(), logErrors: false, hideErrors: true })
     game.bot = bot

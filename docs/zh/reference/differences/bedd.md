@@ -56,4 +56,6 @@
 - **Java：** 由 mineflayer 负责连接、认证和断开。
 - **Bedrock（bedd）：** 客户端已经登录并处于某个世界中。
 - **bedboo：** 这些选项会被忽略，每个各输出一次警告；`holdResourcePacks` 不起作用；`bot.end` / `quit` 只会断开挂接
-  （客户端仍留在它的世界中）。客户端切换世界（`LINK_DOWN`）会结束 bot。
+  （客户端仍留在它的世界中）。客户端切换世界（`LINK_DOWN`）会结束 bot。bot 改为连接游戏：`bedd: { url, token }`、
+  `{ pid }`、`{ instance }` 或 `{}`（唯一一个正在运行的游戏）通过 WebSocket 端点指定一个 BeDD v2 游戏，端点公布在 BeDD 的
+  run 文件中（`%LOCALAPPDATA%\BeDD\run\<pid>.json`）；见[选项](../../guide/bedd.md#options)。
