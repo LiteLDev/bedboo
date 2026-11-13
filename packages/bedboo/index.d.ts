@@ -33,11 +33,12 @@ export interface BotOptions extends Omit<ClientOptions, 'viewDistance' | 'transp
   transport?: 'raknet' | 'nethernet' | 'bedd'
   /**
    * Bedrock version: a tested protocol family ('1.26.51', see `testedVersions`) or one of its BDS builds
-   * ('1.26.52.3'), optionally 'bedrock_'-prefixed; default (also for mineflayer's `false`) '1.26.51'.
+   * ('1.26.52.3'), optionally 'bedrock_'-prefixed; default (also for mineflayer's `false`) '1.26.51' ('1.26.60' with
+   * transport 'bedd').
    * `bot.version` is the family.
    */
   version?: string | false
-  /** Be.D.D. pipes for `transport: 'bedd'` */
+  /** Be.D.D. endpoint for `transport: 'bedd'` (WebSocket) */
   bedd?: BeddOptions
   /** mineflayer auth: 'offline' (default) or 'microsoft' (Xbox Live via prismarine-auth); 'mojang' does not exist on Bedrock */
   auth?: 'microsoft' | 'offline'

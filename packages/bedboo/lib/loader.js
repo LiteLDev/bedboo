@@ -149,8 +149,8 @@ function createBot (options = {}) {
   options.username = options.username ?? 'Player'
   // mineflayer's `false` (auto) → the default version (no ping-based discovery). A BDS build ('1.26.52.3') or a
   // 'bedrock_' key resolves to its protocol family ('1.26.51'): the family is what bedrock-protocol, minecraft-data
-  // and bot.version use.
-  options.version = resolveTestedVersion(options.version || VERSION)
+  // and bot.version use. `transport: 'bedd'` defaults to the game BeDD v2 runs (1.26.60).
+  options.version = resolveTestedVersion(options.version || (options.transport === 'bedd' ? require('./bedd/discovery').BEDD_VERSION : VERSION))
   options.plugins = options.plugins ?? {}
   options.hideErrors = options.hideErrors ?? false
   options.logErrors = options.logErrors ?? true

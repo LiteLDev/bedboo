@@ -33,9 +33,10 @@ const { findFamily } = require('./bedrock/versions')
  *   `webrtcBackend`, `signallingConnectTimeout`. Without `serverKey`/`onServerKey` an unpinned plain-HTTP key
  *   is accepted (the server is no more authenticated than over RakNet); pin it to reject anything else.
  * - `transport: 'bedd'` — no connection of its own: a real Minecraft client hosted by Be.D.D. is in the
- *   world, bedboo follows it through Be.D.D.'s tap pipe and acts through its control pipe (lib/bedd/). Options
- *   under `bedd`: `pipe` (control pipe, default `\\.\pipe\BeDD` or $BEDBOO_BEDD_PIPE), `tapPipe` (default
- *   `<pipe>-tap`), `connect(path) → Duplex` (default `net.connect`), `timeoutMs`, `modules`.
+ *   world, bedboo follows it through Be.D.D.'s tap and acts through its control ops, over the game's BeDD v2
+ *   WebSocket (lib/bedd/). Options under `bedd`: `url` + `token` (the endpoint), or `pid` / `instance` (looked
+ *   up in `%LOCALAPPDATA%\BeDD\run\*.json`, $BEDD_HOME moves it; `{}` = the only running game), `timeoutMs`,
+ *   `modules`.
  *
  * Authentication follows mineflayer's options:
  * - `auth: 'offline'` (default) — no Xbox Live; `username` is the player name
@@ -128,7 +129,7 @@ function createClient (options) {
     if (value !== undefined) clientOptions[key] = value
   }
   clientOptions.offline = options.offline ?? offlineFromAuth(options.auth)
-  const version = options.version || VERSION
+  const version = options.version || (clientOptions.transport === 'bedd' ? require('./bedd/discovery').BEDD_VERSION : VERSION)
   clientOptions.version = findFamily(version)?.version ?? version
   if (typeof clientOptions.port === 'string') clientOptions.port = parseInt(clientOptions.port, 10)
   if (!TRANSPORTS.includes(clientOptions.transport)) {

@@ -78,7 +78,9 @@ createBot({
 createBot({ username: 'rak', transport: 'raknet', raknetBackend: 'raknet-native' })
 
 // transport 'bedd' (a Be.D.D.-hosted real client) and its client.bedd surface
-const beddBot = createBot({ transport: 'bedd', bedd: { pipe: '\\\\.\\pipe\\BeDD', tapPipe: '\\\\.\\pipe\\BeDD-tap', timeoutMs: 3000, modules: ['router'] } })
+const beddBot = createBot({ transport: 'bedd', bedd: { url: 'ws://127.0.0.1:53021/v1', token: 'ab12', timeoutMs: 3000, modules: ['router'] } })
+createBot({ transport: 'bedd', bedd: { instance: '1.26.60.05-2' } })
+createBot({ transport: 'bedd', bedd: { pid: 1234 } })
 const beddApi = (beddBot._client as unknown as { bedd: BeddClientApi }).bedd
 beddApi.ready.then((caps: BeddCaps) => console.log(caps.look === 'present', beddApi.supports('input'), beddApi.link.state))
 beddApi.rpc.call('look', { yaw: 90, pitch: 0 }).then(reply => console.log(reply.ok))

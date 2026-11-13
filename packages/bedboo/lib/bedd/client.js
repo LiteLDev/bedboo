@@ -1,8 +1,8 @@
 'use strict'
 /**
  * createBeddClient: the bot's `_client` for `transport: 'bedd'` — a real Minecraft client hosted by Be.D.D. is
- * the one connected to the server; bedboo watches it through the tap pipe and asks it to act through the control
- * pipe. The object meets the same contract as bedrock-protocol's Client (and test/unit/helpers/fake.js):
+ * the one connected to the server; bedboo watches it through the tap and asks it to act through the control
+ * connection, two WebSockets to the game's BeDD endpoint (lib/bedd/discovery.js finds it). The object meets the same contract as bedrock-protocol's Client (and test/unit/helpers/fake.js):
  * `version`, `username`, `profile`, `options`, `startGameData`, `queue`, `write`, `disconnect`, `close`,
  * `setMaxListeners`, and the events below.
  *
@@ -16,49 +16,45 @@
  * - 'spawn' — on play_status player_spawn, before the play_status event (as bedrock-protocol). Nothing is
  *   written: the real client sends set_local_player_as_initialized itself.
  * - 'serverbound' ({ name, params, reserialized, replay, local, seq, tUs }) — a packet the real client sent.
- * - 'warning' (Error) — a tap packet that did not decode (skipped), control pipe trouble, …
+ * - 'warning' (Error) — a tap packet that did not decode (skipped), control connection trouble, …
  * - 'kick' ({ reason, message }) + 'end' (reason) + 'close' — LINK_DOWN (the real client left the world) or
- *   DROPPED (bedboo fell too far behind); also 'error' + 'close' when the tap refuses HELLO or cannot connect.
+ *   DROPPED (bedboo fell too far behind); also 'error' + 'close' when no BeDD game is found, the tap refuses HELLO
+ *   or cannot be subscribed (code 'busy': another client holds it).
  * - 'bedd_marker' (marker) — every tap marker (HELLO, LINK_UP, LINK_DOWN, REPLAY_BEGIN, REPLAY_END, DROPPED).
  *
  * `queue(name, params)` / `write(name, params)` hand what the bot would have sent to `client.bedd.route(name,
  * params)` (lib/bedd/index.js: drop + count until the router module replaces it). `disconnect()` / `close()` only
- * detach the pipes: the real client stays connected.
+ * detach the WebSockets: the real client stays connected.
  */
-const net = require('net')
 const { EventEmitter } = require('events')
-const { VERSION } = require('../bedrock/constants')
 const { resolveVersion, protocolFor } = require('../bedrock/versions')
-const { createRpc, whenConnected } = require('./rpc')
-const { createTapReader, KIND } = require('./tap')
-
-const DEFAULT_PIPE = '\\\\.\\pipe\\BeDD'
+const { createRpc } = require('./rpc')
+const { createTapReader, subscribeTap, KIND } = require('./tap')
+const { beddOptions, resolveEndpoint, BEDD_VERSION } = require('./discovery')
+const { redactUrl } = require('./ws')
 
 function beddError (message, code, extra) {
   return Object.assign(new Error(message), { code }, extra)
 }
 
-/** resolved `bedd` options: pipe paths and the stream factory */
-function beddOptions (options) {
-  const given = options.bedd ?? {}
-  if (typeof given !== 'object') throw new TypeError('bedd options must be an object')
-  const pipe = given.pipe ?? process.env.BEDBOO_BEDD_PIPE ?? DEFAULT_PIPE
-  return {
-    ...given,
-    pipe,
-    tapPipe: given.tapPipe ?? `${pipe}-tap`,
-    connect: given.connect ?? ((path) => net.connect(path))
-  }
-}
-
 /**
- * @param {object} options createBot options (`bedd: { pipe, tapPipe?, connect?, timeoutMs?, modules? }`, `version`,
+ * @param {object} options createBot options (`bedd: { url, token } | { pid } | { instance } | {}`, plus
+ *   `timeoutMs?`, `modules?`, `home?`, `WebSocket?`; `version`,
  *   `username` — the fallback name until the game's player_list names the local player)
  * @param {{ createApi: (client, ctx) => object }} hooks builds `client.bedd` (lib/bedd/index.js)
  */
 function createBeddClient (options = {}, { createApi } = {}) {
   const bedd = beddOptions(options)
-  const version = resolveVersion(options.version || VERSION)
+  // the endpoint: as given, or from BeDD's run files; a failure is reported by start() ('error' + 'close')
+  let endpoint = null
+  let discoveryError = null
+  try {
+    endpoint = resolveEndpoint(bedd)
+  } catch (err) {
+    discoveryError = err
+  }
+  bedd.endpoint = endpoint && { url: redactUrl(endpoint.url), pid: endpoint.pid, instance: endpoint.instance, label: endpoint.label }
+  const version = resolveVersion(options.version || BEDD_VERSION)
   const client = new EventEmitter()
   client.setMaxListeners(0)
   client.version = version
@@ -69,7 +65,7 @@ function createBeddClient (options = {}, { createApi } = {}) {
   client.entityId = undefined
   client.status = 'idle'
 
-  const rpc = createRpc({ path: bedd.pipe, connect: bedd.connect, timeoutMs: bedd.timeoutMs })
+  const rpc = createRpc({ url: endpoint?.url, token: endpoint?.token, error: discoveryError, WebSocket: bedd.WebSocket, timeoutMs: bedd.timeoutMs })
   rpc.on('warning', (err) => client.emit('warning', err))
   let tap = null
   let started = false
@@ -117,30 +113,25 @@ function createBeddClient (options = {}, { createApi } = {}) {
     client.close()
   }
 
-  /** Probe the control pipe, then connect the tap (idempotent; called by attach() or on the next turn). */
+  /** Probe the control connection, then subscribe to the tap (idempotent; called by attach() or on the next turn). */
   client.start = function start () {
     if (started || closed) return client.bedd.ready
     started = true
     client.status = 'connecting'
+    if (discoveryError) {
+      fail(discoveryError)
+      return client.bedd.ready
+    }
     client.bedd.negotiate().then(() => { if (!closed) connectTap() }, (err) => fail(err))
     return client.bedd.ready
   }
 
   function connectTap () {
-    let stream
-    try {
-      stream = bedd.connect(bedd.tapPipe)
-    } catch (err) {
-      return fail(beddError(`BeDD tap pipe ${bedd.tapPipe}: ${err.message}`, 'ERR_BEDD_CONNECT', { cause: err }))
-    }
-    let connected = false
-    stream.on('error', (err) => {
-      // after the connect, the tap reader reports errors (and the close that follows ends the client)
-      if (!connected) fail(beddError(`BeDD tap pipe ${bedd.tapPipe}: ${err.message} (is the game running with config tap:true?)`, 'ERR_BEDD_CONNECT', { cause: err }))
+    subscribeTap({ url: endpoint.url, token: endpoint.token, WebSocket: bedd.WebSocket, timeoutMs: bedd.timeoutMs }).then(onSubscribed, (err) => {
+      fail(err.code === 'busy' || err.code === 'disabled' ? err : beddError(err.message, 'ERR_BEDD_CONNECT', { cause: err }))
     })
-    const onConnect = () => {
-      if (closed) return stream.destroy?.()
-      connected = true
+    function onSubscribed (stream) {
+      if (closed) return stream.destroy()
       tap = createTapReader(stream, { version, protocol: protocolFor(version) })
       tap.on('hello', onHello)
       tap.on('marker', onMarker)
@@ -149,7 +140,6 @@ function createBeddClient (options = {}, { createApi } = {}) {
       tap.on('error', (err) => fail(err))
       tap.on('close', () => end('bedd_tap_closed'))
     }
-    whenConnected(stream, onConnect)
   }
 
   function onHello (hello) {
@@ -247,4 +237,4 @@ function createBeddClient (options = {}, { createApi } = {}) {
   return client
 }
 
-module.exports = { createBeddClient, beddOptions, DEFAULT_PIPE }
+module.exports = { createBeddClient, beddOptions }

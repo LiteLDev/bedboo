@@ -62,7 +62,7 @@ function attach (bot, client = bot?._client) {
     attached.delete(bot)
   }
   client.on('serverbound', onServerbound)
-  // the bedd client emits 'close' whenever the session ends (bot.end(), LINK_DOWN, a dropped pipe) and the bot's 'end'
+  // the bedd client emits 'close' whenever the session ends (bot.end(), LINK_DOWN, a dropped connection) and the bot's 'end'
   // follows it. Listening on the client (no listener cap) instead of the bot keeps the bot's 'end' listeners at
   // mineflayer's default limit of 10 (MaxListenersExceededWarning otherwise).
   client.on('close', detach)

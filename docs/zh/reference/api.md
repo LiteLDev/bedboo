@@ -34,7 +34,7 @@
 | `version` | `'1.26.51'` | 已测试的协议族（`'1.26.60'`）或其任一 BDS 版本（`'1.26.62.1'`）；`false`（自动）即 1.26.51（不检测服务器版本）；其他任何值都会抛出 `ERR_BEDBOO_VERSION`（[支持的版本](versions/index.md#choosing)） |
 | `transport` | `'raknet'` | `'nethernet'` 表示使用 NetherNet（[传输层](differences/connection.md#transport)）；`'bedd'` 驱动真实客户端（[BeDD](../guide/bedd.md#options)） |
 | `nethernet` | `{ signalling: 'http' }` | 仅限 NetherNet：`signalling`（`'http'` = 服务器端口上的 HTTP，`'lan'` = UDP 7551 发现，`'services'` = Xbox）、`url`（信令源，默认 `http://host:port`）、`serverKey`（服务器身份密钥的 `'sha256:<hex>'` 固定值）、`onServerKey(fingerprint, url) → boolean`（批准一个未固定的密钥；默认接受任意密钥）、`networkId`、`webrtcBackend`、`signallingConnectTimeout` |
-| `bedd` | | 仅限 `transport: 'bedd'`：`pipe`、`tapPipe`、`connect`、`timeoutMs`、`modules`（[BeDD 选项](../guide/bedd.md#options)） |
+| `bedd` | | 仅限 `transport: 'bedd'`：`url` + `token`、`pid` 或 `instance`（BeDD v2 游戏；`{}` = 唯一一个正在运行的游戏）、`home`、`timeoutMs`、`modules`（[BeDD 选项](../guide/bedd.md#options)） |
 | `raknetBackend` | `'raknet-native'` | `'jsp-raknet'` 会被 BDS 拒绝（RakNet 协议 10 与 11 不兼容） |
 | `skipPing` | `true` | 关闭局域网可见性的 BDS 不响应 ping |
 | `conLog` | `null` | bedrock-protocol 的控制台日志（设为 `console.log` 可查看连接消息） |

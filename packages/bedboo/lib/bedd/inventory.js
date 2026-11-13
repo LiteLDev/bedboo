@@ -23,7 +23,7 @@
  * Registered as the `item_stack_request` route in the shared registry (./routes.js): the router dispatches a
  * standalone item_stack_request and the one embedded in player_auth_input under that name; handlers are called as
  * `handler(params, ctx)` with params = `{ requests }`.
- * All `stack` calls run one after another (the control pipe answers one request at a time, and a later request's
+ * All `stack` calls run one after another (the control connection answers one request at a time, and a later request's
  * stack ids can name an earlier one, whose client id must be known first).
  */
 

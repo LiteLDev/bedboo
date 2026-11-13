@@ -2,7 +2,7 @@
 /**
  * bedd-mode intent router. In `transport: 'bedd'` every serverbound packet bedboo would send goes to
  * `client.bedd.route(name, params)` instead of the wire; this module classifies it with the authority table
- * (./authority.js) and turns what bedboo meant into Be.D.D. control-pipe ops on the real client:
+ * (./authority.js) and turns what bedboo meant into Be.D.D. control ops on the real client:
  *
  * | packet                         | op (caps present)                      | fallback (cap absent/disabled)            |
  * |--------------------------------|----------------------------------------|-------------------------------------------|

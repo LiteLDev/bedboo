@@ -1,13 +1,13 @@
 # Driving a real client (BeDD)
 
 bedboo normally *is* the client: it logs in to Bedrock Dedicated Server over RakNet or NetherNet and sends every
-packet itself. With `transport: 'bedd'` it drives a **real Minecraft Bedrock 1.26.51.01 client** instead, hosted by
+packet itself. With `transport: 'bedd'` it drives a **real Minecraft Bedrock client** instead, hosted by
 [Be.D.D.](https://docs.levimc.org/BeDD/) (Bedrock Deep Dive, a LeviLamina client mod). The same script then runs
-against the game window on your desk: you watch the local player walk, look, dig, place and chat as the script says.
+against a real game: you watch the local player walk, look, dig, place and chat as the script says.
 
 ```js
 const bedboo = require('bedboo')
-const bot = bedboo.createBot({ transport: 'bedd', bedd: { pipe: '\\\\.\\pipe\\BeDD' } })
+const bot = bedboo.createBot({ transport: 'bedd', version: '1.26.60', bedd: {} }) // the only running BeDD game
 bot.once('spawn', () => bot.chat('hello from bedboo'))
 ```
 
@@ -16,44 +16,52 @@ of this mode, entry by entry: [BeDD mode](../reference/differences/bedd.md).
 
 ## Setup {#setup}
 
-Windows only (BeDD's pipes are Windows named pipes); Node 24 or later.
+Windows only (BeDD is a Windows client mod); Node 24 or later. bedboo needs **BeDD v2**, which serves every game over
+a local WebSocket; BeDD v1 (named pipes `\\.\pipe\BeDD`) is no longer supported.
 
-1. Install BeDD into a Minecraft Bedrock 1.26.51.01 instance (see the [BeDD docs](https://docs.levimc.org/BeDD/);
-   `clone-instance.ps1` makes a separate instance, `Start-BeDDGame.ps1 -Instance <name>` starts it).
-2. Turn the bedboo features on in the instance's `mods\BeDD\config\config.json`. Every one of them is **off by
-   default**:
+1. Install BeDD v2 (see the [BeDD docs](https://docs.levimc.org/BeDD/)) and start a game with it:
 
-   | key | default | what it enables | bedboo needs it for |
-   |---|---|---|---|
-   | `pipeName` | `BeDD` | the control pipe `\\.\pipe\<pipeName>`; the tap pipe is `\\.\pipe\<pipeName>-tap` | `bedd.pipe` (the tap name is derived) |
-   | `tap` | `false` | the tap pipe: every clientbound packet, an echo of every serverbound packet, markers, a join journal | everything (without it bedboo cannot attach) |
-   | `tapLoopback` | `true` | tapping singleplayer / LAN-host worlds (loopback link, re-serialized packets) | [singleplayer](#singleplayer) |
-   | `tapJournalMiB` | `128` | size cap of the join journal replayed to a late attach | attaching mid-session (`complete:false` past the cap) |
-   | `gameHooks` | `false` | the `world`, `look` and `input` ops (hooks in the game's own input pipeline) | precise movement and looking (without it: virtual keys and mouse) |
-   | `allowSend` | `false` | the `send` op for the allowlisted packet ids (`sendAllow`, default `[9, 77]` = text, command_request) | `bot.chat`, whispers, commands |
-   | `allowStack` | `false` | the `stack` op: item_stack_request submitted through the client's own ItemStackNetManager | inventory: clickWindow, transfer, craft, deposit/withdraw, equip from the main inventory, creative |
-   | `pipeInstances` | `4` | how many control-pipe clients may be connected at once | bedboo next to BeDD.psm1 and other harnesses |
-
-   A config for bedboo:
-
-   ```json
-   { "pipeName": "BeDD-1.26.51.01-hi20", "tap": true, "tapLoopback": true, "gameHooks": true,
-     "allowSend": true, "allowStack": true, "pipeInstances": 4, "loopbackOnly": true }
+   ```sh
+   BeDD.exe launch --slot 2
    ```
 
-   `loopbackOnly` (BeDD's own key) keeps the client on servers of the same PC (127.0.0.1). The client joins
-   BDS 1.26.51 over NetherNet, so start the server with `transport=nethernet`; NetherNet joins go through Minecraft's
-   online signalling service, so no other Minecraft game on the PC may start while the client joins and plays (a later
-   sign-in knocks the session out: "Multiplayer Connection Failed … NetherNet").
-3. Start the game and get the player into a world (a server, a LAN world or singleplayer): bedboo attaches to a client
-   that is already playing, it does not log in.
-4. `createBot({ transport: 'bedd', bedd: { pipe: '\\\\.\\pipe\\BeDD-1.26.51.01-hi20' } })`. `spawn` fires once the join
-   journal has been replayed; from then on `bot.*` is the client's state.
+   BeDD runs each game in its own copy of your LeviLauncher instance (`%LOCALAPPDATA%\BeDD\instances\<base>-<slot>`)
+   and announces it in `%LOCALAPPDATA%\BeDD\run\<pid>.json` (`$BEDD_HOME` moves that folder) while it listens:
+   `{ "protocol": 2, "kind": "client", "pid", "url": "ws://127.0.0.1:<port>/v1", "token", "instance", "label", … }`.
+   bedboo reads this file to connect; the token is the only credential.
+2. Everything bedboo uses is **on by default** in BeDD v2 (the token is the boundary). The keys of the game's
+   `mods\BeDD\config\config.json` that matter to bedboo:
+
+   | key | default | what it does | bedboo needs it for |
+   |---|---|---|---|
+   | `tap` | `true` | the tap: every clientbound packet, an echo of every serverbound packet, markers, a join journal | everything (without it bedboo cannot attach) |
+   | `tapLoopback` | `true` | tapping singleplayer / LAN-host worlds (loopback link, re-serialized packets) | [singleplayer](#singleplayer) |
+   | `tapJournalMiB` | `128` | size cap of the join journal replayed to a late attach | attaching mid-session (`complete:false` past the cap) |
+   | `gameHooks` | `true` | the `world`, `look` and `input` ops (hooks in the game's own input pipeline) | precise movement and looking (without it: virtual keys and mouse) |
+   | `allowSend` | `true` | the `send` op for the allowlisted packet ids (`sendAllow`, default `[9, 77]` = text, command_request) | `bot.chat`, whispers, commands |
+   | `allowStack` | `true` | the `stack` op: item_stack_request submitted through the client's own ItemStackNetManager | inventory: clickWindow, transfer, craft, deposit/withdraw, equip from the main inventory, creative |
+   | `wsPort` | `0` | the WebSocket port (0: any free port, read it from the run file) | `bedd.url` |
+   | `wsMaxClients` | `8` | how many WebSocket connections may be open at once (bedboo uses two) | bedboo next to the BeDD manager and other harnesses |
+
+   A key set to `false` turns that op off: bedboo then sees it as `disabled` and falls back (see the
+   [coverage table](#coverage)). `pipeName` and `pipeInstances` are gone with the pipes.
+
+   `loopbackOnly` (BeDD's own key) keeps the client on servers of the same PC (127.0.0.1). The client joins BDS over
+   NetherNet, so start the server with `transport=nethernet`; NetherNet joins go through Minecraft's online signalling
+   service, so no other Minecraft game on the PC may start while the client joins and plays (a later sign-in knocks the
+   session out: "Multiplayer Connection Failed … NetherNet").
+3. Get the player into a world (a server, a LAN world or singleplayer): bedboo attaches to a client that is already
+   playing, it does not log in.
+4. `createBot({ transport: 'bedd', version: '1.26.60', bedd: {} })`, with `version` the game's protocol family (the
+   tap's HELLO is refused otherwise; in this mode it defaults to `1.26.60`, the game BeDD v2 runs). `bedd: {}` picks the only running BeDD game; with several, name one (see
+   [options](#options)). `spawn` fires once the join journal has been replayed; from then on `bot.*` is the client's
+   state.
 
 The `bedd_follow.js` example makes the client follow the nearest other player:
 
 ```sh
-node examples/bedd_follow.js --pipe \\.\pipe\BeDD-1.26.51.01-hi20
+node examples/bedd_follow.js                       # the only running BeDD game
+node examples/bedd_follow.js --instance <instance>  # or --pid <pid>
 ```
 
 ## How it works {#how-it-works}
@@ -61,30 +69,34 @@ node examples/bedd_follow.js --pipe \\.\pipe\BeDD-1.26.51.01-hi20
 The real client stays authoritative for everything it sends: login, resource packs, the loading screen, chunk
 requests, `player_auth_input` every tick (physics included), block actions, inventory transactions and item stack
 requests. bedboo never forges those packets. Its whole stack still runs, and what it *would* have sent becomes an
-**intent** for the client:
+**intent** for the client. Both directions go over the game's BeDD WebSocket (`ws://127.0.0.1:<port>/v1?token=…`),
+on two connections:
 
 ```text
-script → mineflayer API → plugins → _client.queue → router ──(JSON ops)──────→ \\.\pipe\<pipeName>     → the game's input pipeline
-bot.* state ← plugins ← decoder ← tap reader ←──(binary frames)──── \\.\pipe\<pipeName>-tap ← every packet the client gets / sends
+script → mineflayer API → plugins → _client.queue → router ──(JSON text frames)───→ WebSocket 1 (control) → the game's input pipeline
+bot.* state ← plugins ← decoder ← tap reader ←──(binary frames)──────── WebSocket 2 (tap subscribe) ← every packet the client gets / sends
 ```
 
-- **State in:** the tap pipe carries every clientbound packet the client receives, an echo of every serverbound packet
-  it sends, and JSON markers (`HELLO`, `LINK_UP`/`LINK_DOWN`, `REPLAY_BEGIN`/`REPLAY_END`, `DROPPED`). bedboo decodes
-  them with bedrock-protocol exactly as in direct mode, so `bot.entities`, the world, inventory, chat and every event
-  come from the real session. A **join journal** (since `start_game`, compacted: the latest chunk per position, the
-  latest attributes per entity, removed entities pruned) is replayed to every new tap client, so bedboo can attach
-  mid-session. If bedboo falls more than 32 MiB behind, BeDD sends `DROPPED` and closes; bedboo reconnects and gets a
-  full replay.
+- **State in:** the second connection sends `{ op: 'tap', action: 'subscribe' }` and then receives one binary message
+  per tap frame: every clientbound packet the client receives, an echo of every serverbound packet it sends, and JSON
+  markers (`HELLO`, `LINK_UP`/`LINK_DOWN`, `REPLAY_BEGIN`/`REPLAY_END`, `DROPPED`). bedboo decodes them with
+  bedrock-protocol exactly as in direct mode, so `bot.entities`, the world, inventory, chat and every event come from
+  the real session. A **join journal** (since `start_game`, compacted: the latest chunk per position, the latest
+  attributes per entity, removed entities pruned) is replayed to every new subscriber, so bedboo can attach
+  mid-session. The tap has one subscriber at a time (a second one gets `code: 'busy'`). If bedboo falls more than
+  32 MiB behind, BeDD sends `DROPPED` and closes the connection; the bot ends with `bedd_dropped`, and a new bot gets
+  a full replay.
 - **Self state:** `bot.entity` position, velocity, yaw, pitch and onGround follow the echoed `player_auth_input`
   (eye − 1.62). `physicsTick` and `move` fire once per client tick; bedboo's own physics engine does not step.
 - **Intents out:** a router diffs what bedboo would have sent and calls BeDD's control ops: `input` (move vector,
   jump, sneak, sprint, with a dead-man TTL), `look` (absolute yaw/pitch), `slot`, `button` (attack/use/pick, released
   on block change for digging), `action` (drop, inventory, …), `send` (allowlisted text/command_request bytes) and
   `stack` (item_stack_request through the client's ItemStackNetManager). Input is applied only while the game has the
-  mouse and shows no menu.
-- **Negotiation:** at attach, bedboo pings the control pipe and probes each op with no arguments: `unknown op` →
-  absent, `code:'disabled'` → present but turned off in config.json, `ok` → present. `bot.bedrock.bedd.caps` holds the
-  result and `bot.bedrock.bedd.supports(name)` answers per mineflayer API.
+  mouse and shows no menu. Requests are `{ id, op, … }` text frames, answered in order, one in flight.
+- **Negotiation:** at attach, bedboo pings the control connection (BeDD v2 answers `protocol: 2`, `defaultMode:
+  'bedboo'` and `modes`, the ops of each operation mode) and probes each op with no arguments: `unknown op` (or not
+  listed in `modes`) → absent, `code:'disabled'` → present but turned off in config.json, `ok` → present.
+  `bot.bedrock.bedd.caps` holds the result and `bot.bedrock.bedd.supports(name)` answers per mineflayer API.
 
 ## Authority table {#authority-table}
 
@@ -141,41 +153,64 @@ LAN world. Those packets never hit the network, so BeDD re-serializes them (`Pac
 
 ## Security {#security}
 
-- **The tap exposes the session.** A tap client reads everything the logged-in player sees and does: chat, positions,
-  inventory, the world. The tap pipe accepts one local client of the current Windows user (`PIPE_REJECT_REMOTE_CLIENTS`,
-  current-user DACL), and it only exists when `tap` is on.
+- **The token is the boundary.** BeDD v2 listens on 127.0.0.1 only and refuses a connection without the game's token
+  (HTTP 401) or with an `Origin` header (403, so a web page cannot reach it). The token sits in the run file under
+  your `%LOCALAPPDATA%`: anything running as your Windows user can read it and drive the game. bedboo sends it as
+  `?token=` and never sends `Origin`.
+- **The tap exposes the session.** A subscriber reads everything the logged-in player sees and does: chat, positions,
+  inventory, the world.
 - **`send` and `stack` act as the account.** `send` posts chat and commands as the logged-in player, `stack` moves its
-  items. Both are **off by default** (`allowSend`, `allowStack`); `send` is limited to the `sendAllow` ids
-  (`[9, 77]`), and login, `player_auth_input`, item stack and similar ids (1, 30, 144, 147) are always refused.
-- Turn these on only in instances you use for automation, and never let a manager or remote tool toggle them.
+  items. `send` is limited to the `sendAllow` ids (`[9, 77]`), and login, `player_auth_input`, item stack and similar
+  ids (1, 30, 144, 147) are always refused. Set `allowSend` / `allowStack` to `false` in instances that should not
+  allow them.
+- Run BeDD games for automation in their own instances (`BeDD.exe launch --slot <n>` does), not with your main
+  account's world.
 
 ## Options and `bot.bedrock.bedd` {#options}
 
-`createBot({ transport: 'bedd', bedd: { pipe, tapPipe?, connect?, timeoutMs?, modules? } })`:
+`createBot({ transport: 'bedd', version, bedd })`, `bedd` being one of:
+
+| `bedd` | connects to |
+|---|---|
+| `{}` | the only running BeDD game client (an error lists them when there are several) |
+| `{ pid }` | the BeDD game with that process id |
+| `{ instance }` | the BeDD game of that instance folder (e.g. `'1.26.60.05-2'`, the run file's `instance`) |
+| `{ url, token }` | that endpoint, as given (e.g. read from a run file yourself) |
+
+plus, in any form:
 
 | option | |
 |---|---|
-| `bedd.pipe` | the control pipe, `\\.\pipe\<pipeName>` (default `$BEDBOO_BEDD_PIPE`, else `\\.\pipe\BeDD`) |
-| `bedd.tapPipe` | the tap pipe (default `<pipe>-tap`) |
-| `bedd.connect` | `(path) => Duplex`, to connect over something else (e.g. a unix socket) |
-| `bedd.timeoutMs` | control request timeout (default 5000 ms; an op's own `timeoutMs` gets 2 s more) |
+| `bedd.home` | BeDD's home folder for the lookup (default `$BEDD_HOME`, else `%LOCALAPPDATA%\BeDD`) |
+| `bedd.timeoutMs` | control request timeout, also the connect timeout (default 5000 ms; an op's own `timeoutMs` gets 2 s more) |
 | `bedd.modules` | the `lib/bedd` modules to attach (default, in this order: `authority`, `router`, `router_actions`, `follower`, `surface`, `inventory`) |
+| `bedd.WebSocket` | the WebSocket class (default Node's global `WebSocket`) |
+
+Run files of processes that are gone (a crashed game) are skipped. When no game matches, the bot emits `'error'`
+(`code: 'ERR_BEDD_DISCOVERY'`) and ends. `bedd.pipe`, `bedd.tapPipe` and `bedd.connect` (BeDD v1) throw, naming these
+options; a BeDD v1 that answers anyway is refused with `ERR_BEDD_PROTOCOL` ("BeDD v1 uses named pipes; upgrade BeDD").
 
 - `bot._bedrock.mode === 'bedd'`.
+- `bot.bedrock.bedd.url` / `endpoint`: the WebSocket in use (without its token) and the game's `pid`, `instance`,
+  `label` when it came from a run file.
+- `bot.bedrock.bedd.control`: `ping`'s `protocol` (2), `pid`, `defaultMode` and `modes`
+  (`{ bedboo: [...], input: [...], ui: [...] }`).
 - `bot.bedrock.bedd.caps`: `{ [op]: 'present' | 'disabled' | 'absent' }` for `tap`, `world`, `look`, `input`, `slot`,
-  `button`, `action`, `send`, `stack` (and the protocol-1 ops `key`, `text`, `mouse`, `raw`, … once `ping` answers).
-  Without a control pipe every op is `absent` and the bot only observes.
+  `button`, `action`, `send`, `stack` (probed), and the other ops `ping.modes` lists (`key`, `text`, `mouse`, `raw`,
+  `screenshot`, `ui`, …). Without a control connection every op is `absent` and the bot only observes.
 - `bot.bedrock.bedd.supports(name)`: whether a mineflayer API (`'dig'`, `'craft'`, `'creative.setInventorySlot'`) or
   a BeDD op works with these caps.
 - `bot.bedrock.bedd.observed`: `{ yaw, pitch, tick }` of the last echoed `player_auth_input`, `null` before the first.
 - Errors: `BeddUnsupportedError` (`code: 'ERR_BEDD_UNSUPPORTED'`, `bedd: true`, `feature`, `missing`); an unsupported
-  packet also emits `'bedd_unsupported_packet'` `{ name, feature }` on `bot`, once per name.
+  packet also emits `'bedd_unsupported_packet'` `{ name, feature }` on `bot`, once per name. Connection errors on the
+  bot's `'error'`: `ERR_BEDD_DISCOVERY`, `ERR_BEDD_CONNECT` (refused, wrong token, gone), `busy` (another client holds
+  the tap), `disabled` (`tap: false`), `ERR_BEDD_PROTOCOL` / `ERR_BEDD_HELLO` (another BeDD or game version).
 - Client events besides the usual ones: `'serverbound'` `{ name, params, reserialized }` (what the client sent),
   `'bedd_marker'` (tap markers) and `'warning'` (a packet that did not decode; the stream goes on).
 
 ## Roadmap {#roadmap}
 
 - A drive / puppet mode (suppress, inject and pin the pose), once pinning is shown to survive client reconciliation.
-- Screen-level ops: the respawn button, signs and books.
+- Screen-level ops: the respawn button, signs and books (BeDD v2's `ui` mode reads the screens' UI tree).
 - A `connect` op so bedboo can make the client join a given server.
 - A second split-screen subclient.

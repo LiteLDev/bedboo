@@ -58,4 +58,7 @@ authority table and the coverage matrix are in the [BeDD guide](../../guide/bedd
 - **Java:** mineflayer connects, authenticates and disconnects.
 - **Bedrock (bedd):** the client is already logged in and in a world.
 - **bedboo:** those options are ignored with one warning each, `holdResourcePacks` is a no-op, and `bot.end` / `quit`
-  only detach (the client stays in its world). A world change on the client (`LINK_DOWN`) ends the bot.
+  only detach (the client stays in its world). A world change on the client (`LINK_DOWN`) ends the bot. The bot
+  connects to the game instead: `bedd: { url, token }`, `{ pid }`, `{ instance }` or `{}` (the only running game)
+  names a BeDD v2 game by its WebSocket endpoint, announced in BeDD's run files
+  (`%LOCALAPPDATA%\BeDD\run\<pid>.json`); see [options](../../guide/bedd.md#options).

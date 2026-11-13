@@ -32,7 +32,7 @@ describe('examples (mineflayer 4.39.0 examples ported to bedboo)', () => {
   const files = exampleFiles()
 
   it('the upstream examples are ported (Java-only ones excepted)', () => {
-    const names = files.map(f => path.relative(EXAMPLES, f))
+    const names = files.map(f => path.relative(EXAMPLES, f).split(path.sep).join('/')) // the list below uses /
     for (const name of ['bee.js', 'blockfinder.js', 'digger.js', 'inventory.js', 'chatterbox.js', 'guard.js', 'jumper.js',
       'trader.js', 'collectblock.js', 'auto-eat.js', 'pathfinder/gps.js', 'place_end_crystal/index.js', 'plugins/afk.js',
       'cli/readline.js', 'modular/index.js']) {
