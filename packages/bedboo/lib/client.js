@@ -66,7 +66,7 @@ const TRANSPORTS = ['raknet', 'nethernet', 'bedd']
 const SIGNALLING = ['http', 'lan', 'services']
 
 /** mineflayer-only options that must not reach bedrock-protocol (they mean something else there or nothing). */
-const MINEFLAYER_ONLY = new Set(['client', 'plugins', 'auth', 'viewDistance', 'brand', 'respawn', 'chat', 'physicsEnabled', 'maxCatchupTicks', 'bedd'])
+const MINEFLAYER_ONLY = new Set(['client', 'plugins', 'auth', 'viewDistance', 'brand', 'respawn', 'chat', 'physicsEnabled', 'maxCatchupTicks', 'bedd', 'spawnOnStartGame'])
 
 /**
  * @param {string|undefined} auth mineflayer `auth` option
@@ -129,6 +129,7 @@ function createClient (options) {
     if (value !== undefined) clientOptions[key] = value
   }
   clientOptions.offline = options.offline ?? offlineFromAuth(options.auth)
+  if (options.spawnOnStartGame && options.autoInitPlayer === undefined) clientOptions.autoInitPlayer = false
   const version = options.version || (clientOptions.transport === 'bedd' ? require('./bedd/discovery').BEDD_VERSION : VERSION)
   clientOptions.version = findFamily(version)?.version ?? version
   if (typeof clientOptions.port === 'string') clientOptions.port = parseInt(clientOptions.port, 10)
