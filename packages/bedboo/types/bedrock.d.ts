@@ -16,16 +16,61 @@ export interface BedrockExtras {
   bedd?: BeddExtras
 }
 
-// `bot.bedrock.bedd`, one interface for every bedd module: caps/supports (lib/bedd/surface.js), observed
-// (lib/bedd/follower.js)
+// `bot.bedrock.bedd`, one interface for every bedd module: caps/supports/sendAllow (lib/bedd/surface.js), observed
+// (lib/bedd/follower.js), screens (lib/bedd/screens.js)
 export interface BeddExtras {
   // the BeDD control ops by name (`look`, `input`, `button`, `stack`, …) and whether this instance offers them (a live
   // view of `bot._client.bedd.caps`)
   readonly caps: BeddCaps
   // whether a bot API (`'dig'`, `'craft'`, `'creative.setInventorySlot'`) or a BeDD op works with these caps
   supports: (name: string) => boolean
+  // the packet ids BeDD's `send` accepts (config `sendAllow`); null before the probe or without `send`
+  readonly sendAllow: number[] | null
   // the last player_auth_input the real client echoed; null until the client's first echo
   observed: BeddObserved | null
+  // the client's screens through BeDD's `ui` op
+  screens?: BeddScreens
+}
+
+// a node of a BeDD `ui` snapshot
+export interface BeddUiNode {
+  role?: string
+  name?: string
+  text?: string
+  value?: any
+  state?: { [flag: string]: boolean }
+  bounds?: { x: number, y: number, w: number, h: number }
+  actions?: Array<'click' | 'setText' | 'scroll'>
+  children?: string[]
+  [key: string]: any
+}
+
+// a BeDD `ui` read
+export interface BeddUiSnapshot {
+  snapshot: string
+  screens: string[]
+  active: string
+  roots: string[]
+  nodes: { [ref: string]: BeddUiNode }
+  truncated?: boolean
+}
+
+export type BeddUiMatcher = (node: BeddUiNode, ctx: { ref: string, screen: string, snapshot: BeddUiSnapshot }) => boolean
+
+// `bot.bedrock.bedd.screens` (lib/bedd/screens.js): act on the real client's screens by node (role, name, text)
+export interface BeddScreens {
+  read (args?: { depth?: number, scope?: string, includeInvisible?: boolean, maxNodes?: number }): Promise<BeddUiSnapshot>
+  find (snapshot: BeddUiSnapshot, matcher: BeddUiMatcher): { ref: string, node: BeddUiNode, screen: string } | null
+  click (matcher: BeddUiMatcher, opts?: { timeoutMs?: number, what?: string }): Promise<{ ref: string, node: BeddUiNode, screen: string, reply: any }>
+  setText (matcher: BeddUiMatcher, text: string, opts?: { timeoutMs?: number, what?: string }): Promise<{ ref: string, node: BeddUiNode, screen: string, reply: any }>
+  /** click the death screen's Respawn button */
+  respawn (): Promise<any>
+  /** click the bed screen's wake-up button */
+  wake (): Promise<any>
+  /** type into the sign editor of the sign at `position` (opened with a use click when it is not showing) */
+  editSign (position: { x: number, y: number, z: number }, text: string, opts?: { back?: boolean }): Promise<void>
+  /** settles once every screen step queued so far is done */
+  idle (): Promise<void>
 }
 
 // the last player_auth_input the real client echoed (yaw/pitch in Bedrock degrees, as on the wire)
@@ -63,8 +108,10 @@ export interface BeddOptions {
   WebSocket?: any
   /** control request timeout in ms (default 5000; ops with a `timeoutMs` argument get that + 2000) */
   timeoutMs?: number
-  /** optional lib/bedd modules to attach (default: authority, router, router_actions, follower, surface, inventory) */
+  /** optional lib/bedd modules to attach (default: authority, router, router_actions, follower, surface, inventory, screens) */
   modules?: string[]
+  /** how long createBot's `host` / `port` may take to join (BeDD `join` op; default 60000 ms) */
+  joinTimeoutMs?: number
 }
 
 export type BeddCap = 'present' | 'disabled' | 'absent'
@@ -111,6 +158,10 @@ export interface BeddClientApi {
   endpoint: { url: string, pid?: number, instance?: string, label?: string } | null
   rpc: BeddRpc
   caps: BeddCaps
+  /** the packet ids BeDD's `send` accepts (its probe's `allow`); null without `send` */
+  sendAllow: number[] | null
+  /** the `join` reply when createBot's `host` made the client join that server first */
+  joined: { joined?: boolean, already?: boolean, host?: string, port?: number, [key: string]: any } | null
   supports (op: string): boolean
   /** resolves with the caps once the control connection was negotiated (never rejects) */
   ready: Promise<BeddCaps>

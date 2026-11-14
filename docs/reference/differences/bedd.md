@@ -32,13 +32,29 @@ authority table and the coverage matrix are in the [BeDD guide](../../guide/bedd
 - **bedboo:** look, wait for convergence, then `button`; the result is read from `update_block` and entity events, so
   a click that lands on a neighbour is visible as such.
 
-## Screen-level actions are unsupported  {#screen-actions}
+## Screen-level actions go through the client's screens  {#screen-actions}
 
-- **Affects:** `bot.writeBook`, `bot.updateSign`, `bot.respawn`, sleeping / waking through the bed UI
+- **Affects:** `bot.respawn` (and the `respawn` option), `bot.wake`, `bot.updateSign`, `bot.writeBook`, `bot.signBook`
 - **Java:** packets bedboo can send itself.
-- **Bedrock (bedd):** they are screens of the real client; BeDD has no op for them yet (planned for v2).
-- **bedboo:** they throw or reject with `BeddUnsupportedError` (`code: 'ERR_BEDD_UNSUPPORTED'`, `bedd: true`,
-  `feature`, `missing`); the user clicks Respawn on the client.
+- **Bedrock (bedd):** they are screens of the real client: the death screen, the bed screen, the sign editor, the book.
+- **bedboo:** through BeDD's `ui` op it clicks Respawn and Leave Bed and types into the sign editor (opening it with a
+  use click; it edits the side the client faces) and presses Done. A book has no text-box path yet: `writeBook` /
+  `signBook` need book_edit (97) in BeDD's `sendAllow`, and the book screen is closed with ESC. With the packet's id
+  in `sendAllow` (56 block_entity_data, 36 player_action) `updateSign` / `wake` send it as is instead. Without either
+  they throw or reject with `BeddUnsupportedError` (`code: 'ERR_BEDD_UNSUPPORTED'`, `missing` e.g.
+  `['send:56', 'ui']`); without `ui` `bot.respawn()` only warns (the user clicks Respawn). See
+  [Screens](../../guide/bedd.md#screens) and [sendAllow](../../guide/bedd.md#send-allow).
+
+## Packets nothing translates need `sendAllow`  {#send-allow}
+
+- **Affects:** `bot._client.write` / `queue` of packets bedboo has no translation for (a plugin's own packets,
+  set_default_game_type, crafting_event, …)
+- **Java:** mineflayer writes any packet.
+- **Bedrock (bedd):** the real client sends its own packets; BeDD's `send` sends others only when their id is in
+  `sendAllow`.
+- **bedboo:** such a packet goes out through `send` when its id is listed (`bot.bedrock.bedd.sendAllow`), otherwise it
+  throws `BeddUnsupportedError` naming the id to add. block_pick_request is translated (look, then the pick button).
+  Client-owned packets are dropped whatever the list says.
 
 ## Inventory needs the `stack` op  {#inventory-stack}
 
@@ -56,9 +72,10 @@ authority table and the coverage matrix are in the [BeDD guide](../../guide/bedd
 - **Affects:** `createBot` options `auth`, `username`, `host`, `port`, `viewDistance`, `skipPing`;
   `holdResourcePacks`; `bot.end`, `bot.quit`
 - **Java:** mineflayer connects, authenticates and disconnects.
-- **Bedrock (bedd):** the client is already logged in and in a world.
-- **bedboo:** those options are ignored with one warning each, `holdResourcePacks` is a no-op, and `bot.end` / `quit`
-  only detach (the client stays in its world). A world change on the client (`LINK_DOWN`) ends the bot. The bot
+- **Bedrock (bedd):** the client is already logged in (its own account) and in a world.
+- **bedboo:** `host` / `port` make the client join that server first (BeDD's `join` op; `ERR_BEDD_JOIN` when it
+  cannot); `auth`, `username` and `viewDistance` are ignored with one warning each, `holdResourcePacks` is a no-op,
+  and `bot.end` / `quit` only detach (the client stays in its world). A world change on the client (`LINK_DOWN`) ends the bot. The bot
   connects to the game instead: `bedd: { url, token }`, `{ pid }`, `{ instance }` or `{}` (the only running game)
   names a BeDD v2 game by its WebSocket endpoint, announced in BeDD's run files
   (`%LOCALAPPDATA%\BeDD\run\<pid>.json`); see [options](../../guide/bedd.md#options).

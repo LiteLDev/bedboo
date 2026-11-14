@@ -6,6 +6,8 @@
  *     rpc: { call(op, args?, opts?), probe(op), supports(op) },   // control connection (lib/bedd/rpc.js)
  *     url, endpoint: { url, pid?, instance?, label? },             // the BeDD WebSocket (lib/bedd/discovery.js)
  *     caps: { [op]: 'present' | 'disabled' | 'absent' },           // filled by negotiate() before the tap opens
+ *     sendAllow: number[] | null,                                  // the packet ids `send` accepts (its probe's `allow`)
+ *     joined: object | null,                                       // the `join` reply when createBot's host made the client join
  *     supports(op),                                                // caps[op] === 'present'
  *     ready,                                                       // Promise<caps> (never rejects)
  *     link: { state: 'unknown' | 'up' | 'down', type?, address?, reason? },
@@ -30,9 +32,11 @@ const { resolveEndpoint, listEndpoints, beddHome } = require('./discovery')
 const { CONTROL_PROTOCOL, probeResult } = require('./rpc')
 
 /** optional modules, in attach order (bedd-bedboo spec OVERRIDES) */
-const OPTIONAL_MODULES = Object.freeze(['authority', 'router', 'router_actions', 'follower', 'surface', 'inventory'])
-/** ops negotiated with a no-argument call (wire protocol B "New ops" + BD9 `stack`) */
-const PROBE_OPS = Object.freeze(['tap', 'world', 'look', 'input', 'slot', 'button', 'action', 'send', 'stack'])
+const OPTIONAL_MODULES = Object.freeze(['authority', 'router', 'router_actions', 'follower', 'surface', 'inventory', 'screens'])
+/** ops negotiated with a no-argument call (wire protocol B "New ops" + BD9 `stack`; `join` and `ui` of BeDD v2) */
+const PROBE_OPS = Object.freeze(['tap', 'world', 'look', 'input', 'slot', 'button', 'action', 'send', 'stack', 'join', 'ui'])
+/** probe arguments of ops whose read form would be expensive (`ui` reads the whole UI tree) */
+const PROBE_ARGS = Object.freeze({ ui: { depth: 1, maxNodes: 1 } })
 /** ops every BeDD build has (present once `ping` answers, unless `ping.modes` leaves one out) */
 const BASE_OPS = Object.freeze(['ping', 'state', 'window', 'focus', 'key', 'text', 'mouse', 'raw', 'release', 'flush'])
 /** per-probe timeout: an op that does not answer counts as absent */
@@ -74,6 +78,8 @@ function createBeddApi (client, { rpc, bedd: opts }) {
       supports: (op) => caps[op] === 'present'
     },
     caps,
+    sendAllow: null,
+    joined: null,
     supports: (op) => caps[op] === 'present',
     ready: null,
     link: { state: 'unknown' },
@@ -130,9 +136,10 @@ function createBeddApi (client, { rpc, bedd: opts }) {
         continue
       }
       try {
-        const reply = await rpc.call(op, {}, { timeoutMs: PROBE_TIMEOUT_MS })
+        const reply = await rpc.call(op, { ...PROBE_ARGS[op] }, { timeoutMs: PROBE_TIMEOUT_MS })
         // the `tap` status read answers even with config tap:false (then a subscribe gets code 'disabled')
         caps[op] = op === 'tap' && reply.enabled === false ? 'disabled' : 'present'
+        if (op === 'send' && Array.isArray(reply.allow)) bedd.sendAllow = reply.allow.filter(Number.isInteger)
       } catch (err) {
         caps[op] = probeResult(err)
         if (err.code === 'ERR_BEDD_RPC_TIMEOUT' || err.code === 'ERR_BEDD_RPC_CLOSED') stuck = true
@@ -199,6 +206,7 @@ module.exports = {
   beddHome,
   OPTIONAL_MODULES,
   PROBE_OPS,
+  PROBE_ARGS,
   BASE_OPS,
   CAPABILITIES
 }

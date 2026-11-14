@@ -13,6 +13,7 @@
  * | container_close                | `key ESC`                               |                                           |
  * | interact open_inventory        | `action {name:'inventory'}`             | `key E`                                   |
  * | clientOwned                    | dropped, counted                        |                                           |
+ * | any other packet whose id is in BeDD's `sendAllow` | `send {buf}` as is (book_edit, block_entity_data, …) |  |
  * | unsupported / unhandled        | 'bedd_unsupported_packet' once per name, throws BeddUnsupportedError |               |
  *
  * Input ops (input, look, slot, open_inventory and the key fallbacks) only go out while the client's mouse is grabbed and
@@ -64,6 +65,9 @@ function clamp (v, lo, hi) {
   return Math.min(hi, Math.max(lo, v))
 }
 
+/** packet ids BeDD's `send` refuses whatever `sendAllow` says (login, inventory_transaction, player_auth_input, item_stack_request) */
+const NEVER_SENT = new Set([1, 30, 144, 147])
+
 const serializers = new Map()
 /** bedrock-protocol bytes (varint header + body) of a serverbound packet, exactly what BeDD's `send` reads. */
 function serializePacket (name, params, version = VERSION) {
@@ -76,8 +80,20 @@ function serializePacket (name, params, version = VERSION) {
   return serializer.createPacketBuffer({ name, params })
 }
 
+/** the packet id of bedrock-protocol bytes (low 10 bits of the varint header) */
+function packetIdOf (buf) {
+  let value = 0
+  let shift = 0
+  for (let i = 0; i < buf.length && i < 5; i++) {
+    value |= (buf[i] & 0x7f) << shift
+    if (!(buf[i] & 0x80)) break
+    shift += 7
+  }
+  return value & 0x3ff
+}
+
 /** BeddUnsupportedError from lib/bedd/errors.js when it is installed, otherwise an equivalent Error. */
-function unsupportedError (feature) {
+function unsupportedError (feature, opts) {
   let ErrorClass = null
   try {
     ErrorClass = require('./errors').BeddUnsupportedError
@@ -87,7 +103,7 @@ function unsupportedError (feature) {
   let err = null
   if (typeof ErrorClass === 'function') {
     try {
-      err = new ErrorClass(feature)
+      err = new ErrorClass(feature, opts)
     } catch {}
   }
   if (!(err instanceof Error)) err = new Error(`${feature} is not supported in bedd mode: the real client owns it`)
@@ -137,6 +153,7 @@ function sameInput (a, b) {
  * @param {() => number} [opts.now]
  * @param {{ setInterval: Function, clearInterval: Function, setTimeout: Function }} [opts.timers]
  * @param {string} [opts.version] bedrock-protocol version for `send`
+ * @param {number[]|(() => number[])} [opts.sendAllow] the packet ids BeDD's `send` accepts (its probe's `allow`)
  * @param {number} [opts.lookGain] raw mouse counts per degree of the look fallback
  */
 function createRouter (opts = {}) {
@@ -483,10 +500,44 @@ function createRouter (opts = {}) {
     if (bot && typeof bot.emit === 'function') bot.emit('bedd_unsupported_packet', { name, feature })
   }
 
+  function allowList () {
+    const allow = typeof opts.sendAllow === 'function' ? opts.sendAllow() : opts.sendAllow
+    return Array.isArray(allow) ? allow : null
+  }
+
+  /**
+   * Bytes of `name` when BeDD's `send` would take them (the op is present and the id is in its `sendAllow`), else
+   * null. A packet that does not serialize is null too (the unsupported error says why).
+   */
+  function sendable (name, params) {
+    if (!present('send')) return null
+    const allow = allowList()
+    if (!allow) return null
+    let buf
+    try {
+      buf = serializePacket(name, params, version)
+    } catch {
+      return null
+    }
+    const id = packetIdOf(buf)
+    return !NEVER_SENT.has(id) && allow.includes(id) ? buf : null
+  }
+
   function rejectUnsupported (name, params) {
     const feature = authority.describe(name, params)
+    // whatever the table says, a packet BeDD is configured to send goes out as is (sendAllow is the user's call)
+    const buf = sendable(name, params)
+    if (buf) {
+      count(counters.shared, name)
+      return track(call('send', { buf: buf.toString('base64') }))
+    }
     noteUnsupported(name, feature)
-    throw unsupportedError(feature)
+    let reason
+    try {
+      const id = packetIdOf(serializePacket(name, params, version))
+      if (!NEVER_SENT.has(id)) reason = `the real client owns it; add its packet id ${id} to sendAllow in BeDD's config.json to send it as is`
+    } catch {}
+    throw unsupportedError(feature, reason ? { missing: ['send'], reason } : undefined)
   }
 
   function routePlayerAuthInput (params) {
@@ -586,6 +637,7 @@ function createRouter (opts = {}) {
     idle,
     refreshWorld,
     inputAllowed,
+    sendable,
     get world () { return world },
     get heldKeys () { return [...heldKeys] }
   }
@@ -609,7 +661,8 @@ function attach (bot, client = bot?._client) {
     bot,
     client,
     routes,
-    version: client.options?.version ?? client.version ?? VERSION
+    version: client.options?.version ?? client.version ?? VERSION,
+    sendAllow: () => bedd.sendAllow
   })
   bedd.router = router
   bedd.route = markDispatch(router.route)
@@ -627,6 +680,7 @@ module.exports = {
   handlersFor,
   inputIntent,
   serializePacket,
+  packetIdOf,
   angleDiff,
   INPUT_TTL_MS,
   INPUT_RESEND_MS,

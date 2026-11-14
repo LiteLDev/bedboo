@@ -33,13 +33,17 @@ const { createTapReader, subscribeTap, KIND } = require('./tap')
 const { beddOptions, resolveEndpoint, BEDD_VERSION } = require('./discovery')
 const { redactUrl } = require('./ws')
 
+/** how long createBot's `host` may take to join (BeDD's own `join` default) */
+const JOIN_TIMEOUT_MS = 60000
+
 function beddError (message, code, extra) {
   return Object.assign(new Error(message), { code }, extra)
 }
 
 /**
  * @param {object} options createBot options (`bedd: { url, token } | { pid } | { instance } | {}`, plus
- *   `timeoutMs?`, `modules?`, `home?`, `WebSocket?`; `version`,
+ *   `timeoutMs?`, `joinTimeoutMs?`, `modules?`, `home?`, `WebSocket?`; `version`, `host` / `port` — the server the
+ *   real client joins first (BeDD `join` op),
  *   `username` — the fallback name until the game's player_list names the local player)
  * @param {{ createApi: (client, ctx) => object }} hooks builds `client.bedd` (lib/bedd/index.js)
  */
@@ -122,8 +126,34 @@ function createBeddClient (options = {}, { createApi } = {}) {
       fail(discoveryError)
       return client.bedd.ready
     }
-    client.bedd.negotiate().then(() => { if (!closed) connectTap() }, (err) => fail(err))
+    client.bedd.negotiate().then(() => closed ? null : joinServer()).then(() => { if (!closed) connectTap() }, (err) => fail(err))
     return client.bedd.ready
+  }
+
+  /**
+   * createBot's `host` / `port`: make the real client join that server with BeDD's `join` op (it leaves its world
+   * first, answers the "Trust this server?" prompt and replies once it is in the level), then attach. A client that
+   * already plays there is left alone.
+   */
+  async function joinServer () {
+    const host = options.host
+    if (host === undefined || host === null || host === '') return
+    const port = Number(options.port ?? 19132)
+    if (client.bedd.caps.join !== 'present') {
+      throw beddError(`createBot host '${host}': the BeDD op 'join' is ${client.bedd.caps.join ?? 'absent'}, so the real client cannot be sent to another server`, 'ERR_BEDD_JOIN')
+    }
+    const status = await rpc.call('join', {}).catch(() => null)
+    if (status?.inLevel && status.host === host && Number(status.port ?? 19132) === port) {
+      client.bedd.joined = { ...status, joined: true, already: true }
+      return
+    }
+    const timeoutMs = bedd.joinTimeoutMs ?? JOIN_TIMEOUT_MS
+    try {
+      // (rpc waits the op's own timeoutMs plus a margin for the reply)
+      client.bedd.joined = await rpc.call('join', { host, port, wait: true, timeoutMs })
+    } catch (err) {
+      throw beddError(`the real client could not join ${host}:${port}: ${err.message}`, 'ERR_BEDD_JOIN', { cause: err, reason: err.code })
+    }
   }
 
   function connectTap () {
@@ -237,4 +267,4 @@ function createBeddClient (options = {}, { createApi } = {}) {
   return client
 }
 
-module.exports = { createBeddClient, beddOptions }
+module.exports = { createBeddClient, beddOptions, JOIN_TIMEOUT_MS }

@@ -18,7 +18,7 @@ import { IndexedData } from 'minecraft-data'
 import { BedrockExtras, BeddOptions } from './types/bedrock'
 
 export { BedrockExtras } from './types/bedrock'
-export { BeddOptions, BeddClientApi, BeddRpc, BeddCap, BeddCaps, BeddLink, BeddServerboundPacket, BeddCapabilities, BeddExtras, BeddObserved, BeddUnsupportedError } from './types/bedrock'
+export { BeddOptions, BeddClientApi, BeddRpc, BeddCap, BeddCaps, BeddLink, BeddServerboundPacket, BeddCapabilities, BeddExtras, BeddObserved, BeddUnsupportedError, BeddScreens, BeddUiNode, BeddUiSnapshot, BeddUiMatcher } from './types/bedrock'
 
 export function createBot (options: { client: Client } & Partial<BotOptions>): Bot
 export function createBot (options: BotOptions): Bot

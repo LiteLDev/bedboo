@@ -148,10 +148,12 @@ describe('bedd integration: createBot({ transport: \'bedd\' }) with every module
     assert.deepStrictEqual(Object.keys(bot._client.bedd.modules), [...OPTIONAL_MODULES])
     assert.strictEqual(bot._client.bedd.route, bot._client.bedd.router.route)
     const routes = bot._client.bedd.routes
-    for (const name of ['block_action', 'inventory_transaction', 'item_stack_request']) assert.strictEqual(routes.get(name).length, 1, name)
+    // inventory_transaction: router_actions translates it, screens closes the book screen on item_release
+    const expected = { block_action: 1, inventory_transaction: 2, item_stack_request: 1, block_pick_request: 1, player_action: 1, block_entity_data: 1 }
+    for (const [name, n] of Object.entries(expected)) assert.strictEqual(routes.get(name).length, n, name)
     // attach is idempotent: the loader's call, a second call and the modules' own guards
     bot._client.bedd.attach(bot)
-    for (const name of ['block_action', 'inventory_transaction', 'item_stack_request']) assert.strictEqual(routes.get(name).length, 1, name)
+    for (const name of Object.keys(expected)) assert.strictEqual(routes.get(name).length, expected[name], name)
     assert.strictEqual(bot._bedrock.mode, 'bedd')
     assert.strictEqual(bot._bedrock.input.isExternalClock(), true, 'the follower drives the input clock')
     assert.deepStrictEqual(bot._client.bedd.caps.stack, 'present')

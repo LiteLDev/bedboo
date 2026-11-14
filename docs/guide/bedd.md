@@ -38,8 +38,9 @@ a local WebSocket; BeDD v1 (named pipes `\\.\pipe\BeDD`) is no longer supported.
    | `tapLoopback` | `true` | tapping singleplayer / LAN-host worlds (loopback link, re-serialized packets) | [singleplayer](#singleplayer) |
    | `tapJournalMiB` | `128` | size cap of the join journal replayed to a late attach | attaching mid-session (`complete:false` past the cap) |
    | `gameHooks` | `true` | the `world`, `look` and `input` ops (hooks in the game's own input pipeline) | precise movement and looking (without it: virtual keys and mouse) |
-   | `allowSend` | `true` | the `send` op for the allowlisted packet ids (`sendAllow`, default `[9, 77]` = text, command_request) | `bot.chat`, whispers, commands |
+   | `allowSend` | `true` | the `send` op for the allowlisted packet ids (`sendAllow`, default `[9, 77]` = text, command_request) | `bot.chat`, whispers, commands; any other packet whose id you add (see [sendAllow](#send-allow)) |
    | `allowStack` | `true` | the `stack` op: item_stack_request submitted through the client's own ItemStackNetManager | inventory: clickWindow, transfer, craft, deposit/withdraw, equip from the main inventory, creative |
+   | `ui` | `true` | the `ui` op: the game's screens as a tree of nodes, clicked and typed into by ref | `respawn`, `wake`, `updateSign`, closing the book screen ([screens](#screens)) |
    | `wsPort` | `0` | the WebSocket port (0: any free port, read it from the run file) | `bedd.url` |
    | `wsMaxClients` | `8` | how many WebSocket connections may be open at once (bedboo uses two) | bedboo next to the BeDD manager and other harnesses |
 
@@ -51,7 +52,9 @@ a local WebSocket; BeDD v1 (named pipes `\\.\pipe\BeDD`) is no longer supported.
    service, so no other Minecraft game on the PC may start while the client joins and plays (a later sign-in knocks the
    session out: "Multiplayer Connection Failed … NetherNet").
 3. Get the player into a world (a server, a LAN world or singleplayer): bedboo attaches to a client that is already
-   playing, it does not log in.
+   playing, it does not log in. Or pass `host` (and `port`) to `createBot`: bedboo then makes the client join that
+   server first with BeDD's `join` op (leaving its world, answering "Trust this server?") and attaches once it is in
+   the level.
 4. `createBot({ transport: 'bedd', version: '1.26.60', bedd: {} })`, with `version` the game's protocol family (the
    tap's HELLO is refused otherwise; in this mode it defaults to `1.26.60`, the game BeDD v2 runs). `bedd: {}` picks the only running BeDD game; with several, name one (see
    [options](#options)). `spawn` fires once the join journal has been replayed; from then on `bot.*` is the client's
@@ -90,8 +93,9 @@ bot.* state ← plugins ← decoder ← tap reader ←──(binary frames)─�
   (eye − 1.62). `physicsTick` and `move` fire once per client tick; bedboo's own physics engine does not step.
 - **Intents out:** a router diffs what bedboo would have sent and calls BeDD's control ops: `input` (move vector,
   jump, sneak, sprint, with a dead-man TTL), `look` (absolute yaw/pitch), `slot`, `button` (attack/use/pick, released
-  on block change for digging), `action` (drop, inventory, …), `send` (allowlisted text/command_request bytes) and
-  `stack` (item_stack_request through the client's ItemStackNetManager). Input is applied only while the game has the
+  on block change for digging), `action` (drop, inventory, …), `send` (allowlisted packet bytes: text/command_request,
+  and any id you add to `sendAllow`), `stack` (item_stack_request through the client's ItemStackNetManager), `ui` (the
+  client's screens: Respawn, Leave Bed, the sign editor) and `join` (createBot's `host`). Input is applied only while the game has the
   mouse and shows no menu. Requests are `{ id, op, … }` text frames, answered in order, one in flight.
 - **Negotiation:** at attach, bedboo pings the control connection (BeDD v2 answers `protocol: 2`, `defaultMode:
   'bedboo'` and `modes`, the ops of each operation mode) and probes each op with no arguments: `unknown op` (or not
@@ -103,9 +107,12 @@ bot.* state ← plugins ← decoder ← tap reader ←──(binary frames)─�
 | class | packets | handling |
 |---|---|---|
 | clientOwned | login, client_to_server_handshake, request_network_settings, resource_pack_client_response, client_cache_status, client_cache_blob_status, request_chunk_radius, subchunk_request, serverbound_loading_screen, set_local_player_as_initialized, network_stack_latency, tick_sync, player_skin, emote_list, respawn, player_action (dimension_change_ack / start_item_use_on / stop_item_use_on), animate, interact mouse_over_entity | dropped by the router (the client sends its own); counted |
-| translated | player_auth_input (move_vector and flags → `input`; yaw/pitch → `look`; block_actions start_break / abort_break / stop_break → `button attack`), mob_equipment (→ `slot`), inventory_transaction (item_use click_block / click_air, item_release, item_use_on_entity → `look` + `button`), interact open_inventory (→ `action inventory`), container_close (→ ESC), item_stack_request (→ `stack`) | translated into control ops |
+| translated | player_auth_input (move_vector and flags → `input`; yaw/pitch → `look`; block_actions start_break / abort_break / stop_break → `button attack`), mob_equipment (→ `slot`), inventory_transaction (item_use click_block / click_air, item_release, item_use_on_entity → `look` + `button`), interact open_inventory (→ `action inventory`), container_close (→ ESC), item_stack_request (→ `stack`), block_pick_request (→ `look` + `button pick`), player_action stop_sleeping (→ `ui` Leave Bed), block_entity_data of a sign (→ `ui` sign editor) | translated into control ops |
 | shared | text, command_request | sent as bytes through `send` (the command uuid is kept, so `command_output` correlates); fallback: T / SLASH key, `text`, ENTER |
-| unsupported | book_edit, block_pick_request, crafting_event, set_default_game_type, everything else | `BeddUnsupportedError` (`code: 'ERR_BEDD_UNSUPPORTED'`) |
+| unsupported | book_edit, crafting_event, set_default_game_type, everything else | sent as bytes through `send` when its id is in BeDD's `sendAllow` ([below](#send-allow)); otherwise `BeddUnsupportedError` (`code: 'ERR_BEDD_UNSUPPORTED'`), whose message names the id to add |
+
+The bot's own `respawn` / `player_action respawn` stay client-owned: `bot.respawn()` clicks the death screen's
+Respawn button instead and the client sends them itself.
 
 ## Coverage {#coverage}
 
@@ -130,19 +137,59 @@ or rejects with `ERR_BEDD_UNSUPPORTED` (or uses the stated fallback).
 | `toss` of the held item | yes | `action` (drop / dropAll) |
 | `openContainer`, `openChest`, `openFurnace`, `closeWindow` | yes (close = ESC) | `look`, `button` |
 | `clickWindow`, `moveSlotItem`, `transfer`, `deposit`, `withdraw`, `putAway`, `craft`, `equip` from the main inventory / armor / off-hand, `unequip`, `tossStack`, `creative.setInventorySlot`, anvil / enchanting / villager / smithing | yes, through the client's ItemStackNetManager | `stack` (none: `ERR_BEDD_UNSUPPORTED`) |
-| `writeBook`, `updateSign`, `respawn`, bed UI sleep / wake | no (screen-level) | — |
+| `respawn` (and the `respawn` option) | yes: clicks the death screen's Respawn button | `ui` (none: a no-op with a warning) |
+| `sleep`, `wake` | yes: sleep is a use click on the bed, wake clicks the bed screen's Leave Bed | `look`, `button`; wake: `ui` or `send` with 36 in `sendAllow` |
+| `updateSign` | yes: types into the client's sign editor (opened with a use click when it is not showing) and presses Done | `ui` or `send` with 56 in `sendAllow` |
+| `writeBook`, `signBook` | yes, once book_edit is allowed: the book is opened with a use click, its pages are sent as book_edit, the book screen is closed with ESC | `button`, and `send` with 97 in `sendAllow` |
+| `block_pick_request` (a plugin's own `_client.write`) | yes: looks at the block and presses pick | `look`, `button` |
+| any other `_client.write` / `queue` of a plugin | yes when its packet id is in `sendAllow` | `send` |
+| `host`, `port` options | the client joins that server first | `join` |
 | `bot.end`, `quit` | detach only; the client stays in its world | — |
-| `auth`, `username`, `host`, `port`, `viewDistance` options | ignored with a warning (the client owns them) | — |
+| `auth`, `username`, `viewDistance` options | ignored with a warning (the client owns them) | — |
 
 Notes: `activateItem(true)` (off-hand) uses the main hand, the client has no off-hand use button; `activateItem` of an
-item that is not used by holding (throwables, a fishing rod) is one click; `bot.respawn()` is a no-op with a warning
-(the user clicks Respawn, so `respawn: true` never throws from the health listener); `bot.craft` keeps upstream's
-`new Error(err)` wrapping, so check `err.message` there when the surface did not refuse it first.
+item that is not used by holding (throwables, a fishing rod) is one click; without `ui`, `bot.respawn()` is a no-op
+with a warning (so `respawn: true` never throws from the health listener); the sign editor edits the side the client
+faces, so `updateSign(block, text, true)` (the back) warns when the editor shows the front; `bot.craft` keeps
+upstream's `new Error(err)` wrapping, so check `err.message` there when the surface did not refuse it first.
 
 Degraded: pathfinder sees 1-2 ticks of lag (prediction is overwritten by the echo); the client's own raycast decides
 what a click hits, so an action can land on an adjacent block or entity (bedboo sees it on `update_block` / entity
 events); flight via a double-tap jump; input pauses while a screen is open; a late attach depends on the journal
 (`complete:false` → chunks missing until re-entered); a world change on the client ends the bot (`LINK_DOWN`).
+
+## Screens {#screens}
+
+BeDD v2's `ui` op reads the game's JSON UI screens as a tree of nodes (`role`, `name`, `text`, `state`) with refs and
+clicks or types into a node by its ref. `lib/bedd/screens.js` uses it for what the client only does when its user
+acts on a screen:
+
+| API | node |
+|---|---|
+| `bot.respawn()` (the `respawn` option calls it on death) | a button whose name or text says "respawn" (`respawn_button` of the death screen) |
+| `bot.wake()` | a button saying "wake", "leave bed" or "stop sleeping" (`wake_up_button` "Leave Bed" of the bed screen) |
+| `bot.updateSign(block, text)` | the text box of the sign screen, then its Done button (else ESC) |
+| `bot.writeBook` / `signBook` | ESC on the book screen when bedboo releases the book |
+
+Each action reads the tree again until the node shows up (10 s), and again after `stale_snapshot`, `stale_ref` or
+`occluded`. The same helpers drive any other screen: `bot.bedrock.bedd.screens.click(node => node.role === 'button' &&
+/play/i.test(node.text ?? ''))`, `screens.setText(matcher, text)`, `screens.read()` for the raw snapshot.
+
+## sendAllow {#send-allow}
+
+`send` only sends the packet ids in the game's `sendAllow` (config.json, default `[9, 77]`); 1, 30, 144 and 147
+(login, inventory_transaction, player_auth_input, item_stack_request) are always refused. bedboo reads the list from
+the `send` probe (`bot.bedrock.bedd.sendAllow`), and every packet it would send that no op translates goes out as
+is when its id is listed. Add ids for a server you control:
+
+| id | packet | what then works |
+|---|---|---|
+| 97 | book_edit | `bot.writeBook`, `bot.signBook` |
+| 56 | block_entity_data | `bot.updateSign` as the packet (any side, no editor) instead of through the sign editor |
+| 36 | player_action | `bot.wake` as the packet instead of the Leave Bed button (and any player_action a plugin sends) |
+| 105 | set_default_game_type | a plugin's own `_client.write('set_default_game_type', …)` |
+
+Client-owned packets (the authority table) are still dropped whatever `sendAllow` says.
 
 ## Singleplayer and LAN worlds {#singleplayer}
 
@@ -159,10 +206,10 @@ LAN world. Those packets never hit the network, so BeDD re-serializes them (`Pac
   `?token=` and never sends `Origin`.
 - **The tap exposes the session.** A subscriber reads everything the logged-in player sees and does: chat, positions,
   inventory, the world.
-- **`send` and `stack` act as the account.** `send` posts chat and commands as the logged-in player, `stack` moves its
-  items. `send` is limited to the `sendAllow` ids (`[9, 77]`), and login, `player_auth_input`, item stack and similar
-  ids (1, 30, 144, 147) are always refused. Set `allowSend` / `allowStack` to `false` in instances that should not
-  allow them.
+- **`send`, `stack` and `ui` act as the account.** `send` posts chat and commands as the logged-in player (and any
+  packet you add to `sendAllow`), `stack` moves its items, `ui` clicks its screens. `send` is limited to the
+  `sendAllow` ids (`[9, 77]`), and login, `player_auth_input`, item stack and similar ids (1, 30, 144, 147) are always
+  refused. Set `allowSend` / `allowStack` / `ui` to `false` in instances that should not allow them.
 - Run BeDD games for automation in their own instances (`BeDD.exe launch --slot <n>` does), not with your main
   account's world.
 
@@ -183,8 +230,14 @@ plus, in any form:
 |---|---|
 | `bedd.home` | BeDD's home folder for the lookup (default `$BEDD_HOME`, else `%LOCALAPPDATA%\BeDD`) |
 | `bedd.timeoutMs` | control request timeout, also the connect timeout (default 5000 ms; an op's own `timeoutMs` gets 2 s more) |
-| `bedd.modules` | the `lib/bedd` modules to attach (default, in this order: `authority`, `router`, `router_actions`, `follower`, `surface`, `inventory`) |
+| `bedd.modules` | the `lib/bedd` modules to attach (default, in this order: `authority`, `router`, `router_actions`, `follower`, `surface`, `inventory`, `screens`) |
+| `bedd.joinTimeoutMs` | how long `host` may take to join (default 60000 ms) |
 | `bedd.WebSocket` | the WebSocket class (default Node's global `WebSocket`) |
+
+`host` / `port` (createBot options, `port` default 19132) make the client join that server before bedboo attaches
+(BeDD's `join` op with `wait`); a client already playing there is left alone. Without the `join` op, or when the
+client gives up (`join_failed`, `not_allowed` for a host off this PC that `loopbackOnly` keeps it from), the bot emits
+`'error'` with `code: 'ERR_BEDD_JOIN'` (`reason`: BeDD's code) and ends. `bot._client.bedd.joined` holds the reply.
 
 Run files of processes that are gone (a crashed game) are skipped. When no game matches, the bot emits `'error'`
 (`code: 'ERR_BEDD_DISCOVERY'`) and ends. `bedd.pipe`, `bedd.tapPipe` and `bedd.connect` (BeDD v1) throw, naming these
@@ -196,21 +249,27 @@ options; a BeDD v1 that answers anyway is refused with `ERR_BEDD_PROTOCOL` ("BeD
 - `bot.bedrock.bedd.control`: `ping`'s `protocol` (2), `pid`, `defaultMode` and `modes`
   (`{ bedboo: [...], input: [...], ui: [...] }`).
 - `bot.bedrock.bedd.caps`: `{ [op]: 'present' | 'disabled' | 'absent' }` for `tap`, `world`, `look`, `input`, `slot`,
-  `button`, `action`, `send`, `stack` (probed), and the other ops `ping.modes` lists (`key`, `text`, `mouse`, `raw`,
-  `screenshot`, `ui`, …). Without a control connection every op is `absent` and the bot only observes.
+  `button`, `action`, `send`, `stack`, `join`, `ui` (probed; `ui` with a one-node read), and the other ops `ping.modes`
+  lists (`key`, `text`, `mouse`, `raw`, `screenshot`, …). Without a control connection every op is `absent` and the
+  bot only observes.
+- `bot.bedrock.bedd.sendAllow`: the packet ids `send` accepts (the probe's `allow`), `null` without `send`.
+- `bot.bedrock.bedd.screens`: the [screen helpers](#screens) (`read`, `find`, `click`, `setText`, `respawn`, `wake`,
+  `editSign`, `idle`).
 - `bot.bedrock.bedd.supports(name)`: whether a mineflayer API (`'dig'`, `'craft'`, `'creative.setInventorySlot'`) or
   a BeDD op works with these caps.
 - `bot.bedrock.bedd.observed`: `{ yaw, pitch, tick }` of the last echoed `player_auth_input`, `null` before the first.
-- Errors: `BeddUnsupportedError` (`code: 'ERR_BEDD_UNSUPPORTED'`, `bedd: true`, `feature`, `missing`); an unsupported
+- Errors: `BeddUnsupportedError` (`code: 'ERR_BEDD_UNSUPPORTED'`, `bedd: true`, `feature`, `missing`; `'send:97'` in
+  `missing` means `send` with packet id 97 in `sendAllow`); an unsupported
   packet also emits `'bedd_unsupported_packet'` `{ name, feature }` on `bot`, once per name. Connection errors on the
   bot's `'error'`: `ERR_BEDD_DISCOVERY`, `ERR_BEDD_CONNECT` (refused, wrong token, gone), `busy` (another client holds
-  the tap), `disabled` (`tap: false`), `ERR_BEDD_PROTOCOL` / `ERR_BEDD_HELLO` (another BeDD or game version).
+  the tap), `disabled` (`tap: false`), `ERR_BEDD_PROTOCOL` / `ERR_BEDD_HELLO` (another BeDD or game version),
+  `ERR_BEDD_JOIN` (`host` could not be joined).
 - Client events besides the usual ones: `'serverbound'` `{ name, params, reserialized }` (what the client sent),
   `'bedd_marker'` (tap markers) and `'warning'` (a packet that did not decode; the stream goes on).
 
 ## Roadmap {#roadmap}
 
 - A drive / puppet mode (suppress, inject and pin the pose), once pinning is shown to survive client reconciliation.
-- Screen-level ops: the respawn button, signs and books (BeDD v2's `ui` mode reads the screens' UI tree).
-- A `connect` op so bedboo can make the client join a given server.
+- Typing a book through the book screen's text boxes, so `writeBook` needs no `sendAllow` change.
+- Following the client across a world change (`LINK_DOWN` → `LINK_UP`) instead of ending the bot.
 - A second split-screen subclient.

@@ -95,11 +95,13 @@ describe("transport 'bedd'", () => {
       const dropped = bot._client.bedd.dropped
       assert.strictEqual(dropped.subchunk_request, undefined, 'no subchunk_request in bedd mode')
       assert.strictEqual(dropped.set_local_player_as_initialized, undefined, 'the transport never writes the spawn ack')
-      assert.ok(!fake.calls.some(c => Object.keys(c.args).length > 0), 'no action op reached the control connection')
+      const probeArgs = (c) => JSON.stringify(c.args) === JSON.stringify(bedd.PROBE_ARGS[c.op] ?? {})
+      assert.ok(fake.calls.every(probeArgs), 'no action op reached the control connection')
 
-      // caps: ping + every spec op probed without arguments
+      // caps: ping + every spec op probed without arguments (`ui` with a one-node read)
       assert.deepStrictEqual(fake.calls.slice(0, 1 + bedd.PROBE_OPS.length).map(c => c.op), ['ping', ...bedd.PROBE_OPS])
-      assert.ok(fake.calls.slice(0, 1 + bedd.PROBE_OPS.length).every(c => Object.keys(c.args).length === 0), 'probes carry no arguments')
+      assert.ok(fake.calls.slice(0, 1 + bedd.PROBE_OPS.length).every(probeArgs), 'probes carry no arguments')
+      assert.deepStrictEqual(bot._client.bedd.sendAllow, [9, 77], 'the send probe tells the allowed ids')
       for (const op of bedd.PROBE_OPS) assert.strictEqual(bot._client.bedd.caps[op], 'present', op)
       assert.strictEqual(bot._client.bedd.supports('look'), true)
       assert.strictEqual(bot._client.bedd.rpc.supports('stack'), true)
@@ -268,7 +270,7 @@ describe("transport 'bedd'", () => {
       const caps = await bot._client.bedd.ready
       assert.deepStrictEqual(
         bedd.PROBE_OPS.map(op => `${op}:${caps[op]}`),
-        ['tap:present', 'world:present', 'look:disabled', 'input:present', 'slot:present', 'button:present', 'action:present', 'send:disabled', 'stack:absent']
+        ['tap:present', 'world:present', 'look:disabled', 'input:present', 'slot:present', 'button:present', 'action:present', 'send:disabled', 'stack:absent', 'join:present', 'ui:present']
       )
       assert.strictEqual(bot._client.bedd.supports('look'), false)
       assert.strictEqual(caps.key, 'present', 'base ops are present once ping answers')
@@ -281,7 +283,7 @@ describe("transport 'bedd'", () => {
       const fake = await fakeBedd({ handlers: { input: () => fake.NO_REPLY } })
       const client = bedd.createBeddClient({ version: TEST_VERSION, bedd: fake.botOptions() })
       const caps = await client.bedd.ready
-      assert.deepStrictEqual(bedd.PROBE_OPS.map(op => caps[op]), ['present', 'present', 'present', 'absent', 'absent', 'absent', 'absent', 'absent', 'absent'])
+      assert.deepStrictEqual(bedd.PROBE_OPS.map(op => caps[op]), ['present', 'present', 'present', 'absent', 'absent', 'absent', 'absent', 'absent', 'absent', 'absent', 'absent'])
       assert.deepStrictEqual(fake.calls.map(c => c.op), ['ping', 'tap', 'world', 'look', 'input'], 'no probe after the stuck one')
       const warned = once(client, 'warning')
       for (const socket of fake.controlClients) socket.destroy()
@@ -372,7 +374,7 @@ describe("transport 'bedd'", () => {
       })
 
       it('the manifest is the spec list; attach() loads present lib/bedd modules after the plugins', async () => {
-        assert.deepStrictEqual([...bedd.OPTIONAL_MODULES], ['authority', 'router', 'router_actions', 'follower', 'surface', 'inventory'])
+        assert.deepStrictEqual([...bedd.OPTIONAL_MODULES], ['authority', 'router', 'router_actions', 'follower', 'surface', 'inventory', 'screens'])
         for (const name of bedd.OPTIONAL_MODULES) {
           const mod = bedd.loadOptionalModule(name)
           if (mod) assert.ok(typeof mod === 'object' || typeof mod === 'function', name)

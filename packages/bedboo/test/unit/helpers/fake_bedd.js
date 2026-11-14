@@ -49,7 +49,7 @@ const NO_REPLY = Symbol('no reply')
 const NEVER_ECHOED = new Set([1, 3, 4, 193])
 /** ids `send` always refuses */
 const ALWAYS_REFUSED = new Set([1, 30, 144, 147])
-const SPEC_OPS = ['tap', 'world', 'look', 'input', 'slot', 'button', 'action', 'send', 'stack']
+const SPEC_OPS = ['tap', 'world', 'look', 'input', 'slot', 'button', 'action', 'send', 'stack', 'join', 'ui']
 const BASE_OPS = ['ping', 'state', 'window', 'focus', 'key', 'text', 'mouse', 'raw', 'release', 'flush']
 /** BeDD v2 `ping.modes` */
 const MODES = Object.freeze({
@@ -266,7 +266,18 @@ async function createFakeBedd (opts = {}) {
     input: null,
     sendAllow: [9, 77],
     sent: [],
-    stacks: []
+    stacks: [],
+    /** `join`: where the client plays; join requests with a host are recorded in `joins` */
+    server: { host: '127.0.0.1', port: 19132 },
+    joins: [],
+    /**
+     * `ui`: the screens the read form returns, top last: `[{ name, nodes: [{ role, name, text?, state?, actions? }] }]`
+     * (refs are made up per read; `uiActions` records `{ action, screen, node, text? }`; an action on a node runs
+     * `node.onAction?.(action, args, fake)`).
+     */
+    ui: [{ name: 'hud_screen', nodes: [] }],
+    uiActions: [],
+    uiSnapshot: 0
   }
   fake.framesWritten = 0
   fake.tapConnections = 0
@@ -332,10 +343,51 @@ async function createFakeBedd (opts = {}) {
         if (!action) return { enabled: true }
         s.stacks.push(args.buf)
         return { requestIds: [], map: {} }
+      case 'join':
+        if (args.host === undefined) return { connection: s.inLevel ? 'remote' : 'none', host: s.server.host, port: s.server.port, inLevel: s.inLevel }
+        s.joins.push({ ...args })
+        s.server = { host: args.host, port: args.port ?? 19132 }
+        s.inLevel = true
+        return { started: true, joined: !!args.wait, connection: 'remote', host: s.server.host, port: s.server.port, inLevel: true }
+      case 'ui': return uiOp(args)
       default:
         if (BASE_OPS.includes(op)) return {}
         return undefined
     }
+  }
+
+  /** the `ui` op over `fake.state.ui` */
+  let uiRefs = new Map() // ref → { screen, node } of the last read
+  function uiOp (args) {
+    const s = fake.state
+    if (args.action === undefined) {
+      const snapshot = `s${++s.uiSnapshot}`
+      const nodes = {}
+      const roots = []
+      uiRefs = new Map()
+      let n = 0
+      for (const screen of s.ui) {
+        const root = `n${++n}`
+        const children = []
+        for (const node of screen.nodes) {
+          const ref = `n${++n}`
+          const { onAction, ...shown } = node
+          nodes[ref] = { state: { visible: true, enabled: true }, actions: node.role === 'textbox' ? ['setText'] : ['click'], children: [], ...shown }
+          uiRefs.set(ref, { screen, node })
+          children.push(ref)
+        }
+        nodes[root] = { role: 'screen', name: screen.name, children, actions: [] }
+        roots.push(root)
+      }
+      const limited = args.maxNodes !== undefined
+      return { snapshot, screens: s.ui.map(x => x.name), active: s.ui.at(-1)?.name, roots, nodes: limited ? {} : nodes, truncated: limited }
+    }
+    if (args.snapshot !== `s${s.uiSnapshot}`) throw Object.assign(new Error('the screens changed'), { code: 'stale_snapshot' })
+    const hit = uiRefs.get(args.ref)
+    if (!hit) throw Object.assign(new Error(`no node ${args.ref}`), { code: 'stale_ref' })
+    s.uiActions.push({ action: args.action, screen: hit.screen.name, node: hit.node.name, ...(args.text !== undefined ? { text: args.text } : {}) })
+    hit.node.onAction?.(args.action, args, fake)
+    return {}
   }
 
   async function answer (req, conn) {

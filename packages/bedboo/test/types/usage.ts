@@ -55,6 +55,9 @@ console.log(observedYaw)
 const beddExtras: BeddExtras | undefined = bot.bedrock.bedd
 const observed: BeddObserved | null | undefined = beddExtras?.observed
 console.log(observed?.tick, beddExtras?.caps.input)
+const allowed: number[] | null | undefined = beddExtras?.sendAllow
+console.log(allowed)
+beddExtras?.screens?.click((node) => node.role === 'button' && /respawn/i.test(node.name ?? '')).then(r => console.log(r.ref))
 bot.dig(bot.blockAt(new Vec3(0, 0, 0))!).catch((err: BeddUnsupportedError) => console.log(err.code === 'ERR_BEDD_UNSUPPORTED', err.missing))
 
 const loc = new Location(new Vec3(1, 2, 3))
@@ -81,6 +84,7 @@ createBot({ username: 'rak', transport: 'raknet', raknetBackend: 'raknet-native'
 const beddBot = createBot({ transport: 'bedd', bedd: { url: 'ws://127.0.0.1:53021/v1', token: 'ab12', timeoutMs: 3000, modules: ['router'] } })
 createBot({ transport: 'bedd', bedd: { instance: '1.26.60.05-2' } })
 createBot({ transport: 'bedd', bedd: { pid: 1234 } })
+createBot({ transport: 'bedd', host: '127.0.0.1', port: 19140, bedd: { joinTimeoutMs: 30000 } })
 const beddApi = (beddBot._client as unknown as { bedd: BeddClientApi }).bedd
 beddApi.ready.then((caps: BeddCaps) => console.log(caps.look === 'present', beddApi.supports('input'), beddApi.link.state))
 beddApi.rpc.call('look', { yaw: 90, pitch: 0 }).then(reply => console.log(reply.ok))

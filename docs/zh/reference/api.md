@@ -34,7 +34,7 @@
 | `version` | `'1.26.51'` | 已测试的协议族（`'1.26.60'`）或其任一 BDS 版本（`'1.26.62.1'`）；`false`（自动）即 1.26.51（不检测服务器版本）；其他任何值都会抛出 `ERR_BEDBOO_VERSION`（[支持的版本](versions/index.md#choosing)） |
 | `transport` | `'raknet'` | `'nethernet'` 表示使用 NetherNet（[传输层](differences/connection.md#transport)）；`'bedd'` 驱动真实客户端（[BeDD](../guide/bedd.md#options)） |
 | `nethernet` | `{ signalling: 'http' }` | 仅限 NetherNet：`signalling`（`'http'` = 服务器端口上的 HTTP，`'lan'` = UDP 7551 发现，`'services'` = Xbox）、`url`（信令源，默认 `http://host:port`）、`serverKey`（服务器身份密钥的 `'sha256:<hex>'` 固定值）、`onServerKey(fingerprint, url) → boolean`（批准一个未固定的密钥；默认接受任意密钥）、`networkId`、`webrtcBackend`、`signallingConnectTimeout` |
-| `bedd` | | 仅限 `transport: 'bedd'`：`url` + `token`、`pid` 或 `instance`（BeDD v2 游戏；`{}` = 唯一一个正在运行的游戏）、`home`、`timeoutMs`、`modules`（[BeDD 选项](../guide/bedd.md#options)） |
+| `bedd` | | 仅限 `transport: 'bedd'`：`url` + `token`、`pid` 或 `instance`（BeDD v2 游戏；`{}` = 唯一一个正在运行的游戏）、`home`、`timeoutMs`、`joinTimeoutMs`、`modules`（[BeDD 选项](../guide/bedd.md#options)）；此时 `host` / `port` 会让真实客户端先加入该服务器 |
 | `raknetBackend` | `'raknet-native'` | `'jsp-raknet'` 会被 BDS 拒绝（RakNet 协议 10 与 11 不兼容） |
 | `skipPing` | `true` | 关闭局域网可见性的 BDS 不响应 ping |
 | `conLog` | `null` | bedrock-protocol 的控制台日志（设为 `console.log` 可查看连接消息） |
@@ -52,7 +52,7 @@
 | `bot.bedrock.gameRules` | `{ [name: string]: boolean \| number }` | 服务器的游戏规则，按基岩版名称索引（`doDayLightCycle`、`keepInventory`、`randomTickSpeed`……），来自 `start_game` 和 `game_rules_changed`（[游戏规则](differences/world.md#game-rules)） |
 | `bot.bedrock.blockVariants(block)` | `(block: string \| number) => number[]` | Java 版建模为“一个方块 + 状态”的那些基岩版方块的 ID。燃烧中的熔炉是 `lit_furnace`：`bot.findBlock({ matching: bot.bedrock.blockVariants('furnace') })` 也能找到它（[方块变体](differences/world.md#block-variants)） |
 | `bot.bedrock.resyncInventory()` | `() => Promise<boolean>` | 向服务器请求玩家物品栏（物品栏、盔甲、光标、副手）的服务端副本；应用完成后解析为 `true`，2 秒内无应答则为 `false`。机器人发现某个槽位过时时会自动执行此操作（[物品栏重新同步](differences/inventory.md#inventory-resync)） |
-| `bot.bedrock.bedd` | `{ caps, supports(name), observed } \| undefined` | 仅在 `transport: 'bedd'`（由 Be.D.D. 托管的真实客户端）时存在：`caps` 将每个 BeDD 操作映射为 `'present'`、`'disabled'` 或 `'absent'`；`supports(name)` 表示某个机器人 API（`'dig'`、`'craft'`……）在这些操作下是否可用。所需操作缺失的物品堆叠或界面层面 API（`clickWindow`、`craft`、从快捷栏以外 `equip`、`creative`、`writeBook`、`updateSign`……）会抛出 / 拒绝 `BeddUnsupportedError`（`code: 'ERR_BEDD_UNSUPPORTED'`、`feature`、`missing`）（[BeDD](../guide/bedd.md#options)） |
+| `bot.bedrock.bedd` | `{ caps, supports(name), sendAllow, screens, observed } \| undefined` | 仅在 `transport: 'bedd'`（由 Be.D.D. 托管的真实客户端）时存在：`caps` 将每个 BeDD 操作映射为 `'present'`、`'disabled'` 或 `'absent'`；`supports(name)` 表示某个机器人 API（`'dig'`、`'craft'`……）在这些操作下是否可用。所需操作缺失的物品堆叠或界面层面 API（`clickWindow`、`craft`、从快捷栏以外 `equip`、`creative`、`writeBook`、`updateSign`……）会抛出 / 拒绝 `BeddUnsupportedError`（`code: 'ERR_BEDD_UNSUPPORTED'`、`feature`、`missing`）。`sendAllow`：BeDD 的 `send` 接受的数据包 ID；`screens`：通过 BeDD 的 `ui` 操作点击客户端界面或向其输入文字（[BeDD](../guide/bedd.md#screens)） |
 | `bot.bedrock.bedd.observed` | `{ yaw: number, pitch: number, tick: number \| null } \| null` | 仅限 transport `'bedd'`：真实客户端最近一次发送的 `player_auth_input` 中的朝向（基岩版角度）和 tick；在第一次之前为 `null`。`bot.entity` 跟随同一回显（[自身状态](differences/bedd.md#self-state-from-echo)） |
 
 ## 内部实现 {#internals}
