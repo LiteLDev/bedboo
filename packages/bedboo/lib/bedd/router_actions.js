@@ -23,6 +23,8 @@ const { ensureDispatch } = require('./routes')
  *   - item_release           → `button use up`
  *   - item_use_on_entity     → `look` at the clicked point of the entity (its centre for attacks), then `button attack
  *                              click` / `button use click`
+ * - interact leave_vehicle   → a sneak tap (`input sneak` for SNEAK_TAP_MS, falling back to the SHIFT key): how the
+ *                              client leaves a vehicle
  * - block_pick_request       → `look` at the block's centre, then `button pick click` (the client picks what its
  *                              crosshair is on; with `add_user_data` it keeps the block's data only in creative,
  *                              when the user holds CTRL, which bedboo cannot ask for)
@@ -40,6 +42,8 @@ const { ensureDispatch } = require('./routes')
  */
 
 const ACTION_LOOK_TIMEOUT_MS = 1000
+/** how long a dismount holds sneak (the client leaves its vehicle on the press) */
+const SNEAK_TAP_MS = 200
 /** blocks closer than this along the view ray would catch a click_air use (survival reach plus a margin) */
 const AIR_USE_REACH = 6
 const MOUSE_BUTTONS = { attack: 'left', use: 'right', pick: 'middle' }
@@ -274,6 +278,19 @@ function attach (bot, client) {
   })
   // true: translated; false: declined (not ours), the router takes the unsupported path
   routes.register('inventory_transaction', (params) => isBedd(bot) && onTransaction(params))
+  routes.register('interact', (params) => {
+    if (!isBedd(bot) || params?.action_id !== 'leave_vehicle') return false
+    enqueue(async () => {
+      if (present('input')) {
+        await call('input', { move: { x: 0, z: 0 }, jump: false, sneak: true, sprint: false, ttlMs: SNEAK_TAP_MS })
+        return
+      }
+      await call('key', { key: 'LSHIFT', action: 'down' })
+      await new Promise(resolve => setTimeout(resolve, SNEAK_TAP_MS))
+      await call('key', { key: 'LSHIFT', action: 'up' })
+    })
+    return true
+  })
   routes.register('block_pick_request', (params) => {
     if (!isBedd(bot)) return false
     const p = params?.position ?? params

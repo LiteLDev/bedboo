@@ -189,6 +189,37 @@ describe('bedd screens: ui op (default sendAllow)', () => {
     assert.deepStrictEqual(fake.callsOf('button').at(-1).args, { button: 'pick', action: 'click' })
   })
 
+  it('bot.dismount() is a sneak tap', async () => {
+    fake.calls.length = 0
+    const vehicle = Object.values(bot.entities).find(e => e !== bot.entity)
+    assert.ok(vehicle, 'some entity to ride')
+    bot.vehicle = vehicle
+    try {
+      bot.dismount()
+      await until(() => fake.callsOf('input').some(c => c.args.sneak === true), { what: 'the sneak tap' })
+      assert.deepStrictEqual(fake.callsOf('input').find(c => c.args.sneak).args, { move: { x: 0, z: 0 }, jump: false, sneak: true, sprint: false, ttlMs: 200 })
+    } finally {
+      bot.vehicle = null
+    }
+  })
+
+  it('show_credits after the End exit skips the credits screen with ESC', async () => {
+    fake.calls.length = 0
+    fake.state.showingMenu = true
+    fake.state.topScreen = 'win_screen'
+    try {
+      fake.sendPacket('show_credits', { runtime_entity_id: bot.entity.runtimeId ?? 1n, status: 0 })
+      await until(() => fake.callsOf('key').some(c => c.args.key === 'ESC'), { what: 'ESC' })
+    } finally {
+      fake.state.showingMenu = false
+      fake.state.topScreen = 'hud_screen'
+    }
+  })
+
+  it('an inventory resync is a no-op (the client owns its inventory)', async () => {
+    assert.strictEqual(await bot._bedrock.inventoryModel.resync('test'), false)
+  })
+
   it('a packet nobody translates names the sendAllow id that would send it', () => {
     assert.throws(() => bot._client.queue('set_default_game_type', { gamemode: 1 }), (err) => {
       assert.strictEqual(err.code, 'ERR_BEDD_UNSUPPORTED')

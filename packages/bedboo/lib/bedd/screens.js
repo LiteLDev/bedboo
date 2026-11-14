@@ -15,6 +15,7 @@ const { ensureDispatch } = require('./routes')
  * | bot.wake()                   | player_action stop_sleeping       | the bed screen's wake-up button                 | 36                       |
  * | bot.updateSign(block, text)  | block_entity_data                 | the sign editor's text box (opened with a use click when it is not showing), then Done / ESC | 56 |
  * | bot.writeBook / signBook     | book_edit                         | the book screen is closed with ESC on release   | 97 (needed)              |
+ * | (credits after the End exit) | show_credits end                  | ESC on the credits screen (the client then sends its own) | — |
  *
  * A node is found by role and by its name or shown text (`RESPAWN`, `WAKE`, `SIGN_TEXT`, `DONE` below; Bedrock's
  * own screens: `respawn_button` on the death screen, `wake_up_button` "Leave Bed" on the bed screen, the text box of
@@ -272,6 +273,20 @@ function attach (bot, client) {
     if (world?.showingMenu && /book/i.test(String(world.topScreen ?? ''))) await key('ESC')
   }
 
+  // --- credits ----------------------------------------------------------------------------------------------------
+
+  /** headless bedboo answers show_credits at once: skip the client's credits screen the same way (ESC) */
+  async function skipCredits () {
+    for (let tries = 0; tries < 20; tries++) {
+      const world = present('world') ? await call('world').catch(() => null) : null
+      if (!world || (world.showingMenu && /credit|win|end_?poem/i.test(String(world.topScreen ?? '')))) {
+        await key('ESC')
+        return
+      }
+      await sleep(pollMs * 5)
+    }
+  }
+
   // --- routes -----------------------------------------------------------------------------------------------------
 
   const sendable = (name, params) => !!bedd.router?.sendable?.(name, params)
@@ -287,6 +302,11 @@ function attach (bot, client) {
     const edit = signEdit(params)
     if (!edit) return false
     return editSign(edit.position, edit.text, { back: edit.back })
+  })
+  routes.register('show_credits', () => {
+    if (!isBedd(bot)) return false
+    enqueue(skipCredits).catch(warn)
+    return true
   })
   routes.register('inventory_transaction', (params) => {
     if (isBedd(bot) && params?.transaction?.transaction_type === 'item_release') enqueue(closeBookScreen).catch(warn)
