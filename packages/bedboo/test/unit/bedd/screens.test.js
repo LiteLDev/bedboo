@@ -189,6 +189,69 @@ describe('bedd screens: ui op (default sendAllow)', () => {
     assert.deepStrictEqual(fake.callsOf('button').at(-1).args, { button: 'pick', action: 'click' })
   })
 
+  it('bot.dismount() is a sneak tap', async () => {
+    fake.calls.length = 0
+    const vehicle = Object.values(bot.entities).find(e => e !== bot.entity)
+    assert.ok(vehicle, 'some entity to ride')
+    bot.vehicle = vehicle
+    try {
+      bot.dismount()
+      await until(() => fake.callsOf('input').some(c => c.args.sneak === true), { what: 'the sneak tap' })
+      assert.deepStrictEqual(fake.callsOf('input').find(c => c.args.sneak).args, { move: { x: 0, z: 0 }, jump: false, sneak: true, sprint: false, ttlMs: 200 })
+    } finally {
+      bot.vehicle = null
+    }
+  })
+
+  it('show_credits after the End exit: ESC while credits_screen shows, never once more', async () => {
+    fake.calls.length = 0
+    fake.state.showingMenu = true
+    fake.state.topScreen = 'credits_screen'
+    let escs = 0
+    // the first ESC shows the Skip button, the second exits
+    const onCall = ({ op, args }) => {
+      if (op !== 'key' || args.key !== 'ESC') return
+      if (++escs === 2) {
+        fake.state.showingMenu = false
+        fake.state.topScreen = 'hud_screen'
+      }
+    }
+    fake.on('call', onCall)
+    try {
+      fake.sendPacket('show_credits', { runtime_entity_id: bot.entity.runtimeId ?? 1n, status: 0 })
+      await until(() => escs === 2, { what: 'two ESCs' })
+      await bot._client.bedd.screens.idle()
+      assert.strictEqual(escs, 2, 'no ESC once the credits are gone (it would open the pause screen)')
+      // bedboo's own show_credits answer is client-owned: dropped
+      assert.strictEqual(bot._client.bedd.router.counters.dropped.show_credits, 1)
+    } finally {
+      fake.off('call', onCall)
+      fake.state.showingMenu = false
+      fake.state.topScreen = 'hud_screen'
+    }
+  })
+
+  it('bot.swingArm() is `action swing` (attack swings stay the client\'s own)', async () => {
+    fake.calls.length = 0
+    bot.swingArm()
+    bot.swingArm('left')
+    await until(() => fake.callsOf('action').filter(c => c.args.name === 'swing').length === 2, { what: 'two swings' })
+    const swings = fake.callsOf('action').map(c => c.args)
+    assert.deepStrictEqual(swings.filter(a => a.name === 'swing'), [{ name: 'swing' }, { name: 'swing', hand: 'off' }])
+  })
+
+  it('bot.setSettings({ viewDistance }) sets the client\'s render distance with `settings`', async () => {
+    fake.calls.length = 0
+    bot.setSettings({ viewDistance: 6 })
+    await bot._client.bedd.router.idle()
+    assert.deepStrictEqual(fake.callsOf('settings').map(c => c.args), [{ renderDistance: 6 }])
+    assert.strictEqual(fake.state.renderDistance, 6)
+  })
+
+  it('an inventory resync is a no-op (the client owns its inventory)', async () => {
+    assert.strictEqual(await bot._bedrock.inventoryModel.resync('test'), false)
+  })
+
   it('a packet nobody translates names the sendAllow id that would send it', () => {
     assert.throws(() => bot._client.queue('set_default_game_type', { gamemode: 1 }), (err) => {
       assert.strictEqual(err.code, 'ERR_BEDD_UNSUPPORTED')
@@ -250,6 +313,42 @@ describe('bedd screens: packets in sendAllow go out as is', () => {
     bot._client.queue('player_action', { runtime_entity_id: 1n, action: 'respawn', position: { x: 0, y: 0, z: 0 }, result_position: { x: 0, y: 0, z: 0 }, face: 0 })
     await bot._client.bedd.router.idle()
     assert.deepStrictEqual(fake.state.sent, [])
+  })
+})
+
+describe('bedd screens: quit and viewDistance', () => {
+  it('bot.quit() makes the client leave its world (join host:null), then detaches; bot.end() only detaches', async () => {
+    const { fake, bot } = await beddBot()
+    try {
+      const ended = once(bot, 'end')
+      bot.quit()
+      const [reason] = await ended
+      assert.strictEqual(reason, 'disconnect.quitting')
+      assert.deepStrictEqual(fake.callsOf('join').filter(c => 'host' in c.args).map(c => c.args), [{ host: null }])
+      assert.strictEqual(fake.state.leaves, 1)
+    } finally {
+      await fake.close()
+    }
+    const second = await beddBot()
+    try {
+      const ended = once(second.bot, 'end')
+      second.bot.end()
+      await ended
+      assert.strictEqual(second.fake.state.leaves, 0, 'end() leaves the client where it is')
+    } finally {
+      await second.fake.close()
+    }
+  })
+
+  it('createBot viewDistance is applied to the client once it spawns', async () => {
+    const { fake, bot } = await beddBot({}, { viewDistance: 'tiny' })
+    try {
+      await until(() => fake.callsOf('settings').some(c => c.args.renderDistance), { what: 'settings' })
+      assert.deepStrictEqual(fake.callsOf('settings').filter(c => c.args.renderDistance).map(c => c.args), [{ renderDistance: 6 }])
+    } finally {
+      bot.end()
+      await fake.close()
+    }
   })
 })
 

@@ -160,6 +160,8 @@ export interface BeddClientApi {
   caps: BeddCaps
   /** the packet ids BeDD's `send` accepts (its probe's `allow`); null without `send` */
   sendAllow: number[] | null
+  /** the `action` names (its probe's `names`: drop, dropAll, inventory, perspective, pause, swing) */
+  actions: string[] | null
   /** the `join` reply when createBot's `host` made the client join that server first */
   joined: { joined?: boolean, already?: boolean, host?: string, port?: number, [key: string]: any } | null
   supports (op: string): boolean

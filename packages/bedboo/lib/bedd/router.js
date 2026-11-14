@@ -11,6 +11,7 @@
  * | mob_equipment                  | `slot {slot}`                           | `key` 1–9                                 |
  * | text, command_request          | `send {buf}` (bedrock-protocol bytes)   | T / SLASH, `text`, ENTER (uuid lost)      |
  * | container_close                | `key ESC`                               |                                           |
+ * | request_chunk_radius           | `settings {renderDistance}`             | dropped, one warning                      |
  * | interact open_inventory        | `action {name:'inventory'}`             | `key E`                                   |
  * | clientOwned                    | dropped, counted                        |                                           |
  * | any other packet whose id is in BeDD's `sendAllow` | `send {buf}` as is (book_edit, block_entity_data, …) |  |
@@ -470,6 +471,22 @@ function createRouter (opts = {}) {
     return track(key('E'))
   }
 
+  // --- render distance ------------------------------------------------------------------------------------
+
+  /** bot.setSettings({ viewDistance }): `settings { renderDistance }` (the client then asks the server itself) */
+  function routeRenderDistance (name, params) {
+    const chunks = Math.round(Number(params.chunk_radius))
+    if (!present('settings')) {
+      // the client keeps its own render distance: nothing to throw from setSettings, warn once
+      count(counters.dropped, name)
+      warnOnce('settings', "bedd: no 'settings' op, the client keeps its render distance (viewDistance ignored)")
+      return
+    }
+    if (!Number.isFinite(chunks) || chunks < 1) return
+    count(counters.translated, name)
+    return track(call('settings', { renderDistance: Math.min(255, chunks) }))
+  }
+
   // --- dispatch ---------------------------------------------------------------------------------------------------
 
   function count (table, name) {
@@ -597,6 +614,7 @@ function createRouter (opts = {}) {
         count(counters.translated, name)
         return routeOpenInventory()
       }
+      if (name === 'request_chunk_radius') return routeRenderDistance(name, params)
     }
     return rejectUnsupported(name, params)
   }

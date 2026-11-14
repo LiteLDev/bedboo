@@ -49,11 +49,11 @@ const NO_REPLY = Symbol('no reply')
 const NEVER_ECHOED = new Set([1, 3, 4, 193])
 /** ids `send` always refuses */
 const ALWAYS_REFUSED = new Set([1, 30, 144, 147])
-const SPEC_OPS = ['tap', 'world', 'look', 'input', 'slot', 'button', 'action', 'send', 'stack', 'join', 'ui']
+const SPEC_OPS = ['tap', 'world', 'look', 'input', 'slot', 'button', 'action', 'send', 'stack', 'join', 'ui', 'settings']
 const BASE_OPS = ['ping', 'state', 'window', 'focus', 'key', 'text', 'mouse', 'raw', 'release', 'flush']
 /** BeDD v2 `ping.modes` */
 const MODES = Object.freeze({
-  bedboo: ['world', 'look', 'input', 'slot', 'action', 'button', 'send', 'stack', 'timescale', 'join', 'tap'],
+  bedboo: ['world', 'look', 'input', 'slot', 'action', 'button', 'settings', 'send', 'stack', 'timescale', 'join', 'tap'],
   input: ['key', 'text', 'mouse', 'raw', 'release', 'flush', 'focus', 'window', 'screenshot'],
   ui: ['ui']
 })
@@ -269,6 +269,8 @@ async function createFakeBedd (opts = {}) {
     stacks: [],
     /** `join`: where the client plays; join requests with a host are recorded in `joins` */
     server: { host: '127.0.0.1', port: 19132 },
+    renderDistance: 12,
+    leaves: 0,
     joins: [],
     /**
      * `ui`: the screens the read form returns, top last: `[{ name, nodes: [{ role, name, text?, state?, actions? }] }]`
@@ -330,8 +332,13 @@ async function createFakeBedd (opts = {}) {
         if (args.action === 'up') s.held = s.held.filter(b => b !== args.button)
         return { held: [...s.held] }
       case 'action':
-        if (!action) return { names: ['drop', 'dropAll', 'inventory', 'perspective', 'pause'] }
+        if (!action) return { names: ['drop', 'dropAll', 'inventory', 'perspective', 'pause', 'swing'] }
+        if (args.name === 'swing') return { tick: ++s.tick, name: 'swing', hand: args.hand ?? 'main' }
         return {}
+      case 'settings':
+        if (!action) return { renderDistance: s.renderDistance, inLevel: s.inLevel }
+        s.renderDistance = args.renderDistance
+        return { tick: ++s.tick, renderDistance: s.renderDistance, requested: args.renderDistance }
       case 'send': {
         if (!action) return { allow: [...s.sendAllow] }
         const id = packetIdOf(Buffer.from(args.buf, 'base64'))
@@ -344,6 +351,12 @@ async function createFakeBedd (opts = {}) {
         s.stacks.push(args.buf)
         return { requestIds: [], map: {} }
       case 'join':
+        if (args.host === null) {
+          s.leaves = (s.leaves ?? 0) + 1
+          const left = s.inLevel
+          s.inLevel = false
+          return { started: true, left, host: null }
+        }
         if (args.host === undefined) return { connection: s.inLevel ? 'remote' : 'none', host: s.server.host, port: s.server.port, inLevel: s.inLevel }
         s.joins.push({ ...args })
         s.server = { host: args.host, port: args.port ?? 19132 }

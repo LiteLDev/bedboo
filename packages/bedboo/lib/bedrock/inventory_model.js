@@ -512,6 +512,9 @@ function createInventoryModel (bot, { Item, Window }) {
    */
   function resync (reason = 'requested', { auto = false } = {}) {
     if (resyncState.pending) return resyncState.pending
+    // bedd: the real client owns its inventory (inventory_mismatch is a transaction BeDD never sends); the tap already
+    // carries every inventory packet it gets, so there is nothing to ask for
+    if (bot._bedrock?.mode === 'bedd') return Promise.resolve(false)
     if (auto) {
       const wait = resyncState.lastAuto + AUTO_RESYNC_INTERVAL_MS - performance.now()
       if (wait > 0) {

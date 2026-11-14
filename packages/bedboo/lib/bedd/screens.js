@@ -15,6 +15,7 @@ const { ensureDispatch } = require('./routes')
  * | bot.wake()                   | player_action stop_sleeping       | the bed screen's wake-up button                 | 36                       |
  * | bot.updateSign(block, text)  | block_entity_data                 | the sign editor's text box (opened with a use click when it is not showing), then Done / ESC | 56 |
  * | bot.writeBook / signBook     | book_edit                         | the book screen is closed with ESC on release   | 97 (needed)              |
+ * | (credits after the End exit) | show_credits end (client-owned)   | ESC while `credits_screen` shows (the client then sends its own) | — |
  *
  * A node is found by role and by its name or shown text (`RESPAWN`, `WAKE`, `SIGN_TEXT`, `DONE` below; Bedrock's
  * own screens: `respawn_button` on the death screen, `wake_up_button` "Leave Bed" on the bed screen, the text box of
@@ -32,6 +33,9 @@ const POLL_MS = 200
 const SIGN_SHOW_MS = 1500
 const SIGN_OPEN_TIMEOUT_MS = 5000
 const RETRY_CODES = new Set(['stale_snapshot', 'stale_ref', 'occluded', 'not_ready'])
+/** the credits: ESC every CREDITS_ESC_MS while credits_screen shows, for at most CREDITS_TIMEOUT_MS */
+const CREDITS_ESC_MS = 300
+const CREDITS_TIMEOUT_MS = 10000
 
 function label (node) {
   return `${node?.name ?? ''} ${node?.text ?? ''}`
@@ -246,6 +250,11 @@ function attach (bot, client) {
     return !!a && !!b && Number(a.x) === Number(b.x) && Number(a.y) === Number(b.y) && Number(a.z) === Number(b.z)
   }
 
+  // the server starts the credits (show_credits status 0 for the local player); its answer is client-owned
+  client.on?.('show_credits', (packet) => {
+    if (packet?.status === 0 && isBedd(bot)) enqueue(skipCredits).catch(warn)
+  })
+
   client.on?.('open_sign', (packet) => {
     openSign = { position: packet.position, isFront: packet.is_front !== false }
   })
@@ -270,6 +279,31 @@ function attach (bot, client) {
     if (!present('world')) return
     const world = await call('world').catch(() => null)
     if (world?.showingMenu && /book/i.test(String(world.topScreen ?? ''))) await key('ESC')
+  }
+
+  // --- credits ----------------------------------------------------------------------------------------------------
+
+  /**
+   * Headless bedboo answers show_credits at once: skip the client's credits screen (`credits_screen`) the same way.
+   * ESC shows its Skip button, ESC again exits; topScreen is read again before every press (one ESC too many would
+   * open the pause screen). The client then sends show_credits status 1 itself.
+   */
+  async function skipCredits () {
+    if (!present('world') || !present('key')) return
+    const deadline = Date.now() + CREDITS_TIMEOUT_MS
+    let pressed = 0
+    while (Date.now() < deadline && pressed < 10) {
+      const world = await call('world').catch(() => null)
+      if (world && String(world.topScreen ?? '') === 'credits_screen') {
+        await key('ESC')
+        pressed++
+        await sleep(CREDITS_ESC_MS)
+      } else if (pressed > 0) {
+        return
+      } else {
+        await sleep(CREDITS_ESC_MS) // the screen shows a little after show_credits
+      }
+    }
   }
 
   // --- routes -----------------------------------------------------------------------------------------------------

@@ -320,12 +320,14 @@ function inject (bot) {
       state.predicted = true
       state.predictIndex = 0
     }
-    bot.swingArm()
-
-    swingInterval = setInterval(() => {
+    // bedd: the real client swings while it holds attack
+    if (!isBedd()) {
       bot.swingArm()
-    }, SWING_INTERVAL_MS)
-    swingInterval.unref?.()
+      swingInterval = setInterval(() => {
+        bot.swingArm()
+      }, SWING_INTERVAL_MS)
+      swingInterval.unref?.()
+    }
 
     const eventName = `blockUpdate:${block.position}`
     bot.on(eventName, onBlockUpdate)

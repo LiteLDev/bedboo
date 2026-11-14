@@ -30,7 +30,9 @@ class BeddUnsupportedError extends Error {
 function describe (missing) {
   if (missing.includes('v2')) return 'the real client owns it and BeDD has no op for it yet (v2)'
   if (missing.length === 0) return 'the real client owns it'
-  const ops = missing.map(m => /^send:\d+$/.test(m) ? `'send' with packet id ${m.slice(5)} in sendAllow` : `'${m}'`).join(', ')
+  const ops = missing.map(m => /^send:\d+$/.test(m)
+    ? `'send' with packet id ${m.slice(5)} in sendAllow`
+    : /^action:\w+$/.test(m) ? `'action' with name '${m.slice(7)}'` : `'${m}'`).join(', ')
   return missing.length > 1
     ? `none of the BeDD ops ${ops} is available (enable them in BeDD's config.json)`
     : `the BeDD op ${ops} is not available (enable it in BeDD's config.json)`

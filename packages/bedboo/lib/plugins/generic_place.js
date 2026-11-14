@@ -208,7 +208,8 @@ function inject (bot) {
         // the click: nothing else is awaited after it)
         await waitForClearance(pos.plus(faceVector))
 
-        if (options.swingArm) {
+        // bedd: the real client swings with its own use click
+        if (options.swingArm && bot._bedrock?.mode !== 'bedd') {
           bot.swingArm(options.swingArm, options.showHand)
         }
 
