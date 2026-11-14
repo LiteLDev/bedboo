@@ -129,8 +129,9 @@ function attach (bot, client) {
     return step
   }
 
+  // the tree as JSON nodes: BeDD's `ui` may answer text lines by default (for agents); older BeDDs ignore `format`
   function read (args = {}) {
-    return call('ui', args)
+    return call('ui', { format: 'json', ...args })
   }
 
   /**

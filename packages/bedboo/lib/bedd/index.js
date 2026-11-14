@@ -37,7 +37,7 @@ const OPTIONAL_MODULES = Object.freeze(['authority', 'router', 'router_actions',
 /** ops negotiated with a no-argument call (wire protocol B "New ops" + BD9 `stack`; `join` and `ui` of BeDD v2) */
 const PROBE_OPS = Object.freeze(['tap', 'world', 'look', 'input', 'slot', 'button', 'action', 'send', 'stack', 'join', 'ui', 'settings'])
 /** probe arguments of ops whose read form would be expensive (`ui` reads the whole UI tree) */
-const PROBE_ARGS = Object.freeze({ ui: { depth: 1, maxNodes: 1 } })
+const PROBE_ARGS = Object.freeze({ ui: { format: 'json', depth: 1, maxNodes: 1 } })
 /** ops every BeDD build has (present once `ping` answers, unless `ping.modes` leaves one out) */
 const BASE_OPS = Object.freeze(['ping', 'state', 'window', 'focus', 'key', 'text', 'mouse', 'raw', 'release', 'flush'])
 /** per-probe timeout: an op that does not answer counts as absent */
