@@ -38,7 +38,7 @@ a local WebSocket; BeDD v1 (named pipes `\\.\pipe\BeDD`) is no longer supported.
    | `tapLoopback` | `true` | tapping singleplayer / LAN-host worlds (loopback link, re-serialized packets) | [singleplayer](#singleplayer) |
    | `tapJournalMiB` | `128` | size cap of the join journal replayed to a late attach | attaching mid-session (`complete:false` past the cap) |
    | `gameHooks` | `true` | the `world`, `look` and `input` ops (hooks in the game's own input pipeline) | precise movement and looking (without it: virtual keys and mouse) |
-   | `allowSend` | `true` | the `send` op for the allowlisted packet ids (`sendAllow`, default `[9, 77]` = text, command_request) | `bot.chat`, whispers, commands; any other packet whose id you add (see [sendAllow](#send-allow)) |
+   | `allowSend` | `true` | the `send` op for the allowlisted packet ids (`sendAllow`, default `[9, 77, 78, 97]` = text, command_request, command_block_update, book_edit) | `bot.chat`, whispers, commands; any other packet whose id you add (see [sendAllow](#send-allow)) |
    | `allowStack` | `true` | the `stack` op: item_stack_request submitted through the client's own ItemStackNetManager | inventory: clickWindow, transfer, craft, deposit/withdraw, equip from the main inventory, creative |
    | `ui` | `true` | the `ui` op: the game's screens as a tree of nodes, clicked and typed into by ref | `respawn`, `wake`, `updateSign`, closing the book screen ([screens](#screens)) |
    | `wsPort` | `0` | the WebSocket port (0: any free port, read it from the run file) | `bedd.url` |
@@ -106,10 +106,12 @@ bot.* state ← plugins ← decoder ← tap reader ←──(binary frames)─�
 
 | class | packets | handling |
 |---|---|---|
-| clientOwned | login, client_to_server_handshake, request_network_settings, resource_pack_client_response, client_cache_status, client_cache_blob_status, request_chunk_radius, subchunk_request, serverbound_loading_screen, set_local_player_as_initialized, network_stack_latency, tick_sync, player_skin, emote_list, respawn, player_action (dimension_change_ack / start_item_use_on / stop_item_use_on), animate, interact mouse_over_entity | dropped by the router (the client sends its own); counted |
-| translated | player_auth_input (move_vector and flags → `input`; yaw/pitch → `look`; block_actions start_break / abort_break / stop_break → `button attack`), mob_equipment (→ `slot`), inventory_transaction (item_use click_block / click_air, item_release, item_use_on_entity → `look` + `button`), interact open_inventory (→ `action inventory`), container_close (→ ESC), item_stack_request (→ `stack`), block_pick_request (→ `look` + `button pick`), player_action stop_sleeping (→ `ui` Leave Bed), block_entity_data of a sign (→ `ui` sign editor) | translated into control ops |
+| clientOwned | login, client_to_server_handshake, request_network_settings, resource_pack_client_response, client_cache_status, client_cache_blob_status, subchunk_request, serverbound_loading_screen, set_local_player_as_initialized, network_stack_latency, tick_sync, player_skin, emote_list, respawn, player_action (dimension_change_ack / start_item_use_on / stop_item_use_on / respawn), animate, show_credits, interact mouse_over_entity | dropped by the router (the client sends its own); counted. The APIs behind them: `bot.swingArm` → `action swing`, `bot.respawn` → `ui` (Respawn), the credits → ESC on `credits_screen`, `bot.quit` → `join host:null` |
+| translated | player_auth_input (move_vector and flags → `input`; yaw/pitch → `look`; block_actions start_break / abort_break / stop_break → `button attack`), mob_equipment (→ `slot`), inventory_transaction (item_use click_block / click_air, item_release, item_use_on_entity → `look` + `button`), interact open_inventory (→ `action inventory`), container_close (→ ESC), item_stack_request (→ `stack`), block_pick_request (→ `look` + `button pick`), interact leave_vehicle (→ a sneak tap), request_chunk_radius (→ `settings renderDistance`) | translated into control ops |
+| screens | player_action stop_sleeping, block_entity_data (a sign) | `ui` (Leave Bed, the sign editor), or `send` as is when the id is in `sendAllow` |
 | shared | text, command_request | sent as bytes through `send` (the command uuid is kept, so `command_output` correlates); fallback: T / SLASH key, `text`, ENTER |
-| unsupported | book_edit, crafting_event, set_default_game_type, everything else | sent as bytes through `send` when its id is in BeDD's `sendAllow` ([below](#send-allow)); otherwise `BeddUnsupportedError` (`code: 'ERR_BEDD_UNSUPPORTED'`), whose message names the id to add |
+| allowlisted | book_edit, command_block_update | sent as bytes through `send` (in BeDD's default `sendAllow`) |
+| unsupported | crafting_event, set_default_game_type, everything else | sent as bytes through `send` when its id is in BeDD's `sendAllow` ([below](#send-allow)); otherwise `BeddUnsupportedError` (`code: 'ERR_BEDD_UNSUPPORTED'`), whose message names the id to add |
 
 The bot's own `respawn` / `player_action respawn` stay client-owned: `bot.respawn()` clicks the death screen's
 Respawn button instead and the client sends them itself.
@@ -140,14 +142,20 @@ or rejects with `ERR_BEDD_UNSUPPORTED` (or uses the stated fallback).
 | `respawn` (and the `respawn` option) | yes: clicks the death screen's Respawn button | `ui` (none: a no-op with a warning) |
 | `sleep`, `wake` | yes: sleep is a use click on the bed, wake clicks the bed screen's Leave Bed | `look`, `button`; wake: `ui` or `send` with 36 in `sendAllow` |
 | `updateSign` | yes: types into the client's sign editor (opened with a use click when it is not showing) and presses Done | `ui` or `send` with 56 in `sendAllow` |
-| `writeBook`, `signBook` | yes, once book_edit is allowed: the book is opened with a use click, its pages are sent as book_edit, the book screen is closed with ESC | `button`, and `send` with 97 in `sendAllow` |
+| `writeBook`, `signBook` | yes: the book is opened with a use click, its pages are sent as book_edit, the book screen is closed with ESC | `button`, and `send` with 97 in `sendAllow` (BeDD's default) |
+| `setCommandBlock` | yes, as command_block_update | `send` with 78 in `sendAllow` (BeDD's default) |
+| `swingArm` | yes (`'left'` swings the off hand on this client; animate carries no hand on the wire) | `action` with `swing` (none: a no-op with a warning) |
+| `setSettings({ viewDistance })`, the `viewDistance` option | yes: the client's render distance (the server may grant more) | `settings` (none: ignored with a warning) |
+| credits after the End exit | skipped, as headless bedboo does: ESC while `credits_screen` shows | `world`, `key` |
+| inventory resync (`inventory_mismatch`) | a no-op: the client owns its inventory | — |
 | `block_pick_request` (a plugin's own `_client.write`) | yes: looks at the block and presses pick | `look`, `button` |
 | any other `_client.write` / `queue` of a plugin | yes when its packet id is in `sendAllow` | `send` |
 | `host`, `port` options | the client joins that server first | `join` |
-| `bot.end`, `quit` | detach only; the client stays in its world | — |
-| `auth`, `username`, `viewDistance` options | ignored with a warning (the client owns them) | — |
+| `bot.quit` | the client leaves its world (to the title screen), then the bot detaches | `join` (none: detach only, with a warning) |
+| `bot.end` | detach only; the client stays in its world | — |
+| `auth`, `username` options | ignored with a warning (the client is signed in with its own account) | — |
 
-Notes: `activateItem(true)` (off-hand) uses the main hand, the client has no off-hand use button; `activateItem` of an
+Notes: `activateItem(true)` (off-hand) uses the main hand: Bedrock has no use input for the off hand (it only acts passively: a shield raises while sneaking, totems, maps); `activateItem` of an
 item that is not used by holding (throwables, a fishing rod) is one click; without `ui`, `bot.respawn()` is a no-op
 with a warning (so `respawn: true` never throws from the health listener); the sign editor edits the side the client
 faces, so `updateSign(block, text, true)` (the back) warns when the editor shows the front; `bot.craft` keeps
@@ -177,14 +185,15 @@ Each action reads the tree again until the node shows up (10 s), and again after
 
 ## sendAllow {#send-allow}
 
-`send` only sends the packet ids in the game's `sendAllow` (config.json, default `[9, 77]`); 1, 30, 144 and 147
+`send` only sends the packet ids in the game's `sendAllow` (config.json, default `[9, 77, 78, 97]` since BeDD's parity ops; `[9, 77]` before); 1, 30, 144 and 147
 (login, inventory_transaction, player_auth_input, item_stack_request) are always refused. bedboo reads the list from
 the `send` probe (`bot.bedrock.bedd.sendAllow`), and every packet it would send that no op translates goes out as
-is when its id is listed. Add ids for a server you control:
+is when its id is listed. The ids that matter (add the others for a server you control):
 
 | id | packet | what then works |
 |---|---|---|
-| 97 | book_edit | `bot.writeBook`, `bot.signBook` |
+| 97 | book_edit | `bot.writeBook`, `bot.signBook` (default) |
+| 78 | command_block_update | `bot.setCommandBlock` (default) |
 | 56 | block_entity_data | `bot.updateSign` as the packet (any side, no editor) instead of through the sign editor |
 | 36 | player_action | `bot.wake` as the packet instead of the Leave Bed button (and any player_action a plugin sends) |
 | 105 | set_default_game_type | a plugin's own `_client.write('set_default_game_type', …)` |
@@ -249,7 +258,7 @@ options; a BeDD v1 that answers anyway is refused with `ERR_BEDD_PROTOCOL` ("BeD
 - `bot.bedrock.bedd.control`: `ping`'s `protocol` (2), `pid`, `defaultMode` and `modes`
   (`{ bedboo: [...], input: [...], ui: [...] }`).
 - `bot.bedrock.bedd.caps`: `{ [op]: 'present' | 'disabled' | 'absent' }` for `tap`, `world`, `look`, `input`, `slot`,
-  `button`, `action`, `send`, `stack`, `join`, `ui` (probed; `ui` with a one-node read), and the other ops `ping.modes`
+  `button`, `action`, `send`, `stack`, `join`, `ui`, `settings` (probed; `ui` with a one-node read), and the other ops `ping.modes`
   lists (`key`, `text`, `mouse`, `raw`, `screenshot`, …). Without a control connection every op is `absent` and the
   bot only observes.
 - `bot.bedrock.bedd.sendAllow`: the packet ids `send` accepts (the probe's `allow`), `null` without `send`.
@@ -270,6 +279,5 @@ options; a BeDD v1 that answers anyway is refused with `ERR_BEDD_PROTOCOL` ("BeD
 ## Roadmap {#roadmap}
 
 - A drive / puppet mode (suppress, inject and pin the pose), once pinning is shown to survive client reconciliation.
-- Typing a book through the book screen's text boxes, so `writeBook` needs no `sendAllow` change.
 - Following the client across a world change (`LINK_DOWN` → `LINK_UP`) instead of ending the bot.
 - A second split-screen subclient.

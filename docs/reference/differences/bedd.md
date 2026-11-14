@@ -38,8 +38,9 @@ authority table and the coverage matrix are in the [BeDD guide](../../guide/bedd
 - **Java:** packets bedboo can send itself.
 - **Bedrock (bedd):** they are screens of the real client: the death screen, the bed screen, the sign editor, the book.
 - **bedboo:** through BeDD's `ui` op it clicks Respawn and Leave Bed and types into the sign editor (opening it with a
-  use click; it edits the side the client faces) and presses Done. A book has no text-box path yet: `writeBook` /
-  `signBook` need book_edit (97) in BeDD's `sendAllow`, and the book screen is closed with ESC. With the packet's id
+  use click; it edits the side the client faces) and presses Done. A book's pages go out as book_edit (97, in BeDD's
+  default `sendAllow`) and the book screen is closed with ESC; `setCommandBlock` sends command_block_update (78, also
+  default). After the End exit the credits screen is skipped with ESC, as headless bedboo answers show_credits at once. With the packet's id
   in `sendAllow` (56 block_entity_data, 36 player_action) `updateSign` / `wake` send it as is instead. Without either
   they throw or reject with `BeddUnsupportedError` (`code: 'ERR_BEDD_UNSUPPORTED'`, `missing` e.g.
   `['send:56', 'ui']`); without `ui` `bot.respawn()` only warns (the user clicks Respawn). See
@@ -74,8 +75,10 @@ authority table and the coverage matrix are in the [BeDD guide](../../guide/bedd
 - **Java:** mineflayer connects, authenticates and disconnects.
 - **Bedrock (bedd):** the client is already logged in (its own account) and in a world.
 - **bedboo:** `host` / `port` make the client join that server first (BeDD's `join` op; `ERR_BEDD_JOIN` when it
-  cannot); `auth`, `username` and `viewDistance` are ignored with one warning each, `holdResourcePacks` is a no-op,
-  and `bot.end` / `quit` only detach (the client stays in its world). A world change on the client (`LINK_DOWN`) ends the bot. The bot
+  cannot); `viewDistance` (and `setSettings`) sets the client's render distance (`settings`); `bot.quit` makes the
+  client leave its world (`join host:null`) and detaches, `bot.end` only detaches (the client stays in its world);
+  `auth` and `username` are ignored with one warning each (the client is signed in with its own account), and
+  `holdResourcePacks` is a no-op. A world change on the client (`LINK_DOWN`) ends the bot. The bot
   connects to the game instead: `bedd: { url, token }`, `{ pid }`, `{ instance }` or `{}` (the only running game)
   names a BeDD v2 game by its WebSocket endpoint, announced in BeDD's run files
   (`%LOCALAPPDATA%\BeDD\run\<pid>.json`); see [options](../../guide/bedd.md#options).

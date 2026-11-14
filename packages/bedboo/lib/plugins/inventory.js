@@ -322,7 +322,8 @@ function inject (bot) {
     })
 
     // swing arm animation
-    if (typeof bot.swingArm === 'function' && !isStub(bot.swingArm)) bot.swingArm()
+    // (bedd: the real client swings with its own use click)
+    if (typeof bot.swingArm === 'function' && !isStub(bot.swingArm) && bot._bedrock?.mode !== 'bedd') bot.swingArm()
   }
 
   async function activateEntity (entity) {

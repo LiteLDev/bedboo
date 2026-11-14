@@ -7,6 +7,7 @@
  *     url, endpoint: { url, pid?, instance?, label? },             // the BeDD WebSocket (lib/bedd/discovery.js)
  *     caps: { [op]: 'present' | 'disabled' | 'absent' },           // filled by negotiate() before the tap opens
  *     sendAllow: number[] | null,                                  // the packet ids `send` accepts (its probe's `allow`)
+ *     actions: string[] | null,                                    // the `action` names (its probe's `names`: drop, …, swing)
  *     joined: object | null,                                       // the `join` reply when createBot's host made the client join
  *     supports(op),                                                // caps[op] === 'present'
  *     ready,                                                       // Promise<caps> (never rejects)
@@ -34,7 +35,7 @@ const { CONTROL_PROTOCOL, probeResult } = require('./rpc')
 /** optional modules, in attach order (bedd-bedboo spec OVERRIDES) */
 const OPTIONAL_MODULES = Object.freeze(['authority', 'router', 'router_actions', 'follower', 'surface', 'inventory', 'screens'])
 /** ops negotiated with a no-argument call (wire protocol B "New ops" + BD9 `stack`; `join` and `ui` of BeDD v2) */
-const PROBE_OPS = Object.freeze(['tap', 'world', 'look', 'input', 'slot', 'button', 'action', 'send', 'stack', 'join', 'ui'])
+const PROBE_OPS = Object.freeze(['tap', 'world', 'look', 'input', 'slot', 'button', 'action', 'send', 'stack', 'join', 'ui', 'settings'])
 /** probe arguments of ops whose read form would be expensive (`ui` reads the whole UI tree) */
 const PROBE_ARGS = Object.freeze({ ui: { depth: 1, maxNodes: 1 } })
 /** ops every BeDD build has (present once `ping` answers, unless `ping.modes` leaves one out) */
@@ -79,6 +80,7 @@ function createBeddApi (client, { rpc, bedd: opts }) {
     },
     caps,
     sendAllow: null,
+    actions: null,
     joined: null,
     supports: (op) => caps[op] === 'present',
     ready: null,
@@ -140,6 +142,7 @@ function createBeddApi (client, { rpc, bedd: opts }) {
         // the `tap` status read answers even with config tap:false (then a subscribe gets code 'disabled')
         caps[op] = op === 'tap' && reply.enabled === false ? 'disabled' : 'present'
         if (op === 'send' && Array.isArray(reply.allow)) bedd.sendAllow = reply.allow.filter(Number.isInteger)
+        if (op === 'action' && Array.isArray(reply.names)) bedd.actions = reply.names.map(String)
       } catch (err) {
         caps[op] = probeResult(err)
         if (err.code === 'ERR_BEDD_RPC_TIMEOUT' || err.code === 'ERR_BEDD_RPC_CLOSED') stuck = true

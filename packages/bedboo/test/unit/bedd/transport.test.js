@@ -270,7 +270,7 @@ describe("transport 'bedd'", () => {
       const caps = await bot._client.bedd.ready
       assert.deepStrictEqual(
         bedd.PROBE_OPS.map(op => `${op}:${caps[op]}`),
-        ['tap:present', 'world:present', 'look:disabled', 'input:present', 'slot:present', 'button:present', 'action:present', 'send:disabled', 'stack:absent', 'join:present', 'ui:present']
+        ['tap:present', 'world:present', 'look:disabled', 'input:present', 'slot:present', 'button:present', 'action:present', 'send:disabled', 'stack:absent', 'join:present', 'ui:present', 'settings:present']
       )
       assert.strictEqual(bot._client.bedd.supports('look'), false)
       assert.strictEqual(caps.key, 'present', 'base ops are present once ping answers')
@@ -283,7 +283,7 @@ describe("transport 'bedd'", () => {
       const fake = await fakeBedd({ handlers: { input: () => fake.NO_REPLY } })
       const client = bedd.createBeddClient({ version: TEST_VERSION, bedd: fake.botOptions() })
       const caps = await client.bedd.ready
-      assert.deepStrictEqual(bedd.PROBE_OPS.map(op => caps[op]), ['present', 'present', 'present', 'absent', 'absent', 'absent', 'absent', 'absent', 'absent', 'absent', 'absent'])
+      assert.deepStrictEqual(bedd.PROBE_OPS.map(op => caps[op]), ['present', 'present', 'present', 'absent', 'absent', 'absent', 'absent', 'absent', 'absent', 'absent', 'absent', 'absent'])
       assert.deepStrictEqual(fake.calls.map(c => c.op), ['ping', 'tap', 'world', 'look', 'input'], 'no probe after the stuck one')
       const warned = once(client, 'warning')
       for (const socket of fake.controlClients) socket.destroy()

@@ -38,8 +38,9 @@
 - **Java：** bedboo 可以自己发送对应的数据包。
 - **Bedrock（bedd）：** 这些都是真实客户端的界面：死亡界面、床界面、告示牌编辑器、书。
 - **bedboo：** 通过 BeDD 的 `ui` 操作点击“重生”和“离开床”，并在告示牌编辑器中输入文字（必要时先用一次使用点击打开；
-  编辑的是客户端正对的那一面）再点“完成”。书还没有走文本框的路径：`writeBook` / `signBook` 需要 BeDD 的 `sendAllow`
-  含 book_edit（97），书本界面用 ESC 关闭。数据包 ID 在 `sendAllow` 中时（56 block_entity_data、36 player_action），
+  编辑的是客户端正对的那一面）再点“完成”。书的页面以 book_edit（97，在 BeDD 默认的 `sendAllow` 中）发送，书本界面用 ESC 关闭；
+  `setCommandBlock` 发送 command_block_update（78，同样默认允许）。离开末地后的制作人员名单用 ESC 跳过，与无头 bedboo
+  立即应答 show_credits 一致。数据包 ID 在 `sendAllow` 中时（56 block_entity_data、36 player_action），
   `updateSign` / `wake` 改为直接发送数据包。两者都不可用时，调用会抛出或 reject `BeddUnsupportedError`
   （`code: 'ERR_BEDD_UNSUPPORTED'`，`missing` 例如 `['send:56', 'ui']`）；没有 `ui` 时 `bot.respawn()` 只给出警告
   （由用户点击重生）。见[界面](../../guide/bedd.md#screens)和 [sendAllow](../../guide/bedd.md#send-allow)。
@@ -68,8 +69,9 @@
   `bot.end`、`bot.quit`
 - **Java：** 由 mineflayer 负责连接、认证和断开。
 - **Bedrock（bedd）：** 客户端已经（用它自己的账号）登录并处于某个世界中。
-- **bedboo：** `host` / `port` 会让客户端先加入该服务器（BeDD 的 `join` 操作；无法加入时为 `ERR_BEDD_JOIN`）；`auth`、
-  `username` 和 `viewDistance` 会被忽略，每个各输出一次警告；`holdResourcePacks` 不起作用；`bot.end` / `quit` 只会断开挂接
-  （客户端仍留在它的世界中）。客户端切换世界（`LINK_DOWN`）会结束 bot。bot 改为连接游戏：`bedd: { url, token }`、
+- **bedboo：** `host` / `port` 会让客户端先加入该服务器（BeDD 的 `join` 操作；无法加入时为 `ERR_BEDD_JOIN`）；`viewDistance`
+  （以及 `setSettings`）设置客户端的渲染距离（`settings`）；`bot.quit` 让客户端离开当前世界（`join host:null`）后断开附加，
+  `bot.end` 只断开附加（客户端仍留在它的世界中）；`auth` 和 `username` 会被忽略，每个各输出一次警告（客户端用它自己的账号
+  登录）；`holdResourcePacks` 不起作用。客户端切换世界（`LINK_DOWN`）会结束 bot。bot 改为连接游戏：`bedd: { url, token }`、
   `{ pid }`、`{ instance }` 或 `{}`（唯一一个正在运行的游戏）通过 WebSocket 端点指定一个 BeDD v2 游戏，端点公布在 BeDD 的
   run 文件中（`%LOCALAPPDATA%\BeDD\run\<pid>.json`）；见[选项](../../guide/bedd.md#options)。

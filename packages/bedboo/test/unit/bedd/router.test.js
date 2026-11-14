@@ -101,16 +101,16 @@ function decode (buf) {
 describe('bedd authority table', () => {
   it('classifies the spec table (item_stack_request translated per the override)', () => {
     const c = authority.classify
-    for (const name of ['login', 'request_chunk_radius', 'subchunk_request', 'serverbound_loading_screen', 'set_local_player_as_initialized', 'tick_sync', 'respawn', 'animate', 'network_stack_latency']) {
+    for (const name of ['login', 'show_credits', 'subchunk_request', 'serverbound_loading_screen', 'set_local_player_as_initialized', 'tick_sync', 'respawn', 'animate', 'network_stack_latency']) {
       assert.strictEqual(c(name, {}), 'clientOwned', name)
     }
     assert.strictEqual(c('player_action', { action: 'dimension_change_ack' }), 'clientOwned')
     assert.strictEqual(c('player_action', { action: 'start_item_use_on' }), 'clientOwned')
     assert.strictEqual(c('player_action', { action: 'respawn' }), 'clientOwned')
-    assert.strictEqual(c('player_action', { action: 'stop_sleeping' }), 'unsupported')
+    assert.strictEqual(c('player_action', { action: 'stop_sleeping' }), 'screens')
     assert.strictEqual(c('interact', { action_id: 'mouse_over_entity' }), 'clientOwned')
     assert.strictEqual(c('interact', { action_id: 'open_inventory' }), 'translated')
-    assert.strictEqual(c('interact', { action_id: 'leave_vehicle' }), 'unsupported')
+    assert.strictEqual(c('interact', { action_id: 'leave_vehicle' }), 'translated')
     for (const name of ['player_auth_input', 'mob_equipment', 'container_close', 'item_stack_request']) assert.strictEqual(c(name, {}), 'translated', name)
     const tx = (type, action) => ({ transaction: { transaction_type: type, transaction_data: { action_type: action } } })
     assert.strictEqual(c('inventory_transaction', tx('item_use', 'click_block')), 'translated')
@@ -121,7 +121,10 @@ describe('bedd authority table', () => {
     assert.strictEqual(c('inventory_transaction', tx('normal')), 'unsupported')
     assert.strictEqual(c('text', {}), 'shared')
     assert.strictEqual(c('command_request', {}), 'shared')
-    for (const name of ['book_edit', 'block_pick_request', 'crafting_event', 'set_default_game_type', 'some_future_packet']) assert.strictEqual(c(name, {}), 'unsupported', name)
+    for (const name of ['crafting_event', 'set_default_game_type', 'some_future_packet']) assert.strictEqual(c(name, {}), 'unsupported', name)
+    for (const name of ['block_pick_request', 'request_chunk_radius']) assert.strictEqual(c(name, {}), 'translated', name)
+    for (const name of ['book_edit', 'command_block_update']) assert.strictEqual(c(name, {}), 'allowlisted', name)
+    assert.strictEqual(c('block_entity_data', {}), 'screens')
   })
 
   it('the sets are frozen', () => {

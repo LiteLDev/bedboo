@@ -22,8 +22,9 @@ const { BeddUnsupportedError } = require('./errors')
  *     otherwise they call the real member (the item stack APIs then go through BeDD's `stack` op,
  *     lib/bedd/inventory.js). The other APIs are not wrapped: the router falls back op by op (`supports` tells);
  *   - `bot.end()` / `bot.quit()` only detach: the real client stays in its world;
- *   - options the real client owns (auth, viewDistance) are ignored with one warning each (`host` / `port` make the
- *     client join that server first: lib/bedd/client.js).
+ *   - options the real client owns (auth) are ignored with one warning each (`host` / `port` make the client join that
+ *     server first: lib/bedd/client.js; `viewDistance` is applied with the `settings` op once the bot spawns);
+ *   - `bot.quit()` makes the client leave its world (`join host:null`), then detaches; `bot.end()` only detaches.
  *
  * Screen-level APIs (respawn, wake, updateSign, the book's close) go through BeDD's `ui` op (lib/bedd/screens.js);
  * book_edit, block_entity_data and player_action can also be sent as is when their ids are in `sendAllow`.
@@ -45,6 +46,8 @@ const API = {
   look: { needs: [LOOK] },
   lookAt: { needs: [LOOK] },
   dismount: { needs: [MOVE] },
+  // `action swing` (the client sends its own animate); wrapped below, upstream's animate is client-owned
+  swingArm: { needs: [['action:swing']], guard: true, async: false, noop: true },
   // hotbar (router: `slot`, falling back to keys 1-9)
   setQuickBarSlot: { needs: HOTBAR },
   // chat (router: `send`, falling back to the chat screen)
@@ -100,15 +103,21 @@ const API = {
 }
 
 /** createBot options the real client owns */
-const IGNORED_OPTIONS = ['auth', 'viewDistance']
+const IGNORED_OPTIONS = ['auth']
 
 const HOTBAR_START = 36
 
-/** whether `op` is met: a present op, or `send:<id>` with that id in `sendAllow` */
-function opMet (caps, op, sendAllow) {
-  const m = /^send:(\d+)$/.exec(op)
-  if (!m) return caps?.[op] === 'present'
-  return caps?.send === 'present' && Array.isArray(sendAllow) && sendAllow.includes(Number(m[1]))
+/**
+ * whether `op` is met: a present op, `send:<id>` with that id in `sendAllow`, or `action:<name>` with that name in the
+ * `action` probe's names (`extra = { sendAllow, actions }`; a bare array is sendAllow)
+ */
+function opMet (caps, op, extra) {
+  const { sendAllow, actions } = Array.isArray(extra) ? { sendAllow: extra } : (extra ?? {})
+  const send = /^send:(\d+)$/.exec(op)
+  if (send) return caps?.send === 'present' && Array.isArray(sendAllow) && sendAllow.includes(Number(send[1]))
+  const action = /^action:(\w+)$/.exec(op)
+  if (action) return caps?.action === 'present' && (!Array.isArray(actions) || actions.includes(action[1]))
+  return caps?.[op] === 'present'
 }
 
 /**
@@ -170,7 +179,7 @@ function applyCapabilities (bot, client, state = surfaceState(bot, client)) {
     const feature = `bot.${path}`
     const check = (args) => {
       const needs = path === 'equip' && equipsFromHotbar(bot, args[0], args[1]) ? HOTBAR : entry.needs
-      const missing = missingFor(caps(), needs, client.bedd?.sendAllow)
+      const missing = missingFor(caps(), needs, { sendAllow: client.bedd?.sendAllow, actions: client.bedd?.actions })
       return missing.length === 0 ? null : new BeddUnsupportedError(feature, { missing })
     }
     let wrapped
@@ -184,11 +193,13 @@ function applyCapabilities (bot, client, state = surfaceState(bot, client)) {
       wrapped = function (...args) {
         const err = check(args)
         if (err && entry.noop) {
-          // respawn: upstream's no-op while alive; while dead the user clicks Respawn on the client
+          // respawn: upstream's no-op while alive; while dead the user clicks Respawn on the client. swingArm: a
+          // BeDD without `action swing` cannot swing (upstream's swingArm never throws)
           if (path !== 'respawn' || !bot.isAlive) warnOnce(bot, state, path, `${feature}() does nothing with transport 'bedd': ${err.message}`)
           return
         }
         if (err) throw err
+        if (path === 'swingArm') return swingArm(bot, client, ...args)
         return original.apply(this, args)
       }
     }
@@ -200,9 +211,39 @@ function applyCapabilities (bot, client, state = surfaceState(bot, client)) {
     where.owner[where.key] = wrapped
   }
   wrapEnd(bot, client, state)
+  wrapQuit(bot, client, state)
 }
 
-/** bot.end() (and bot.quit(), which calls it) only detaches from the real client: no disconnect packet. */
+/** bot.swingArm(arm, showHand): `action swing` on the client (its animate is the client's own) */
+function swingArm (bot, client, arm = 'right') {
+  const args = arm === 'left' ? { name: 'swing', hand: 'off' } : { name: 'swing' }
+  Promise.resolve(client.bedd.rpc.call('action', args)).catch((err) => bot._warn?.(`bot.swingArm(): ${err.message}`))
+}
+
+/**
+ * bot.quit(): the client leaves its world (BeDD `join` with host null, as headless bedboo disconnects), then the bot
+ * detaches. Without the `join` op it only detaches (one warning).
+ */
+function wrapQuit (bot, client, state) {
+  if (typeof bot.quit !== 'function' || bot.quit.beddSurface === true) return
+  const quit = function quit (reason) {
+    reason = reason ?? 'disconnect.quitting'
+    if (state.detached) return
+    if (client.bedd?.caps?.join !== 'present') {
+      warnOnce(bot, state, 'quit', "bot.quit() only detaches with transport 'bedd': the BeDD op 'join' is not available, the client stays in its world")
+      return bot.end(reason)
+    }
+    // the leave must go out before the control connection closes
+    Promise.resolve(client.bedd.rpc.call('join', { host: null }))
+      .catch((err) => { if (typeof bot._warn === 'function') bot._warn(`bot.quit(): the client did not leave its world: ${err.message}`) })
+      .finally(() => bot.end(reason))
+  }
+  quit.beddSurface = true
+  quit.original = bot.quit
+  bot.quit = quit
+}
+
+/** bot.end() only detaches from the real client: no disconnect packet. */
 function wrapEnd (bot, client, state) {
   if (typeof bot.end !== 'function' || bot.end.beddSurface === true) return
   const end = function end (reason) {
@@ -237,7 +278,7 @@ function exposeNamespace (bot, client) {
   bot.bedrock = bot.bedrock ?? {}
   const ns = bot.bedrock.bedd ?? (bot.bedrock.bedd = {})
   Object.defineProperty(ns, 'caps', { get: () => client.bedd?.caps ?? {}, enumerable: true, configurable: true })
-  ns.supports = (name) => supports(client.bedd?.caps ?? {}, name, client.bedd?.sendAllow)
+  ns.supports = (name) => supports(client.bedd?.caps ?? {}, name, { sendAllow: client.bedd?.sendAllow, actions: client.bedd?.actions })
   Object.defineProperty(ns, 'sendAllow', { get: () => client.bedd?.sendAllow ?? null, enumerable: true, configurable: true })
   if (!('observed' in ns)) ns.observed = null // BeddExtras: lib/bedd/follower.js keeps it up to date
   return ns
@@ -284,6 +325,9 @@ function attach (bot, client = bot._client) {
   if (!state.attached) {
     state.attached = true
     warnIgnoredOptions(bot, client, state)
+    // createBot's viewDistance: the client's render distance (settings.js resends it as request_chunk_radius → `settings`)
+    const options = client.bedd?.options ?? client.options ?? {}
+    if (options.viewDistance !== undefined) bot.once('spawn', () => { try { bot.setSettings?.({}) } catch (err) { bot._warn?.(err.message) } })
     client.on?.('bedd_self', ({ username }) => renameSelf(bot, username))
     // plugins inject on 'inject_allowed' (mineflayer's plugin loader listens first): wrap what they define
     bot.once('inject_allowed', () => applyCapabilities(bot, client, state))
