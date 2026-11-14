@@ -59,6 +59,24 @@ describe('bedd screens: finding nodes in a ui snapshot', () => {
     assert.strictEqual(screens.findNode(snapshot, screens.WAKE), null)
   })
 
+  it('prefers JSON UI controls over Ore UI page elements (source.kind dom)', () => {
+    const withDom = {
+      snapshot: 's2',
+      active: 'death_screen',
+      roots: ['e1', 'e3'],
+      nodes: {
+        e1: { role: 'screen', name: 'death_screen', children: ['e2', 'e5'] },
+        e2: { role: 'button', name: 'respawn', text: 'Respawn', source: { kind: 'dom' } },
+        e5: { role: 'button', name: 'respawn_button', text: 'Respawn', source: { kind: 'jsonui' } },
+        e3: { role: 'screen', name: 'hud_screen', children: [] }
+      }
+    }
+    assert.strictEqual(screens.findNode(withDom, screens.RESPAWN).ref, 'e5')
+    delete withDom.nodes.e5
+    assert.strictEqual(screens.findNode(withDom, screens.RESPAWN).ref, 'e2', 'an Ore UI element when nothing else matches')
+    assert.ok(screens.SIGN_TEXT({ role: 'text_input', name: 'sign_text' }, { screen: 'sign_screen' }))
+  })
+
   it('matches the bed screen, the sign editor and its Done button by role and name or text', () => {
     assert.ok(screens.WAKE({ role: 'button', name: 'wake_up_button', text: 'Leave Bed' }))
     assert.ok(screens.WAKE({ role: 'button', name: 'x', text: 'Leave Bed' }))

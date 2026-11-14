@@ -32,6 +32,7 @@ const POLL_MS = 200
 /** how long a sign editor the server just opened may take to show before bedboo opens it itself */
 const SIGN_SHOW_MS = 1500
 const SIGN_OPEN_TIMEOUT_MS = 5000
+/** stale_snapshot: BeDD before stable refs (refs now live as long as their screen; stale_ref carries `candidates`) */
 const RETRY_CODES = new Set(['stale_snapshot', 'stale_ref', 'occluded', 'not_ready'])
 /** the credits: ESC every CREDITS_ESC_MS while credits_screen shows, for at most CREDITS_TIMEOUT_MS */
 const CREDITS_ESC_MS = 300
@@ -49,7 +50,7 @@ function usable (node) {
 /** matchers: (node, { screen }) → boolean */
 const RESPAWN = (node) => node.role === 'button' && /respawn/i.test(label(node))
 const WAKE = (node) => node.role === 'button' && /wake|leave[\s_-]*bed|stop[\s_-]*sleep/i.test(label(node))
-const SIGN_TEXT = (node, { screen }) => node.role === 'textbox' && /sign/i.test(`${screen} ${label(node)}`)
+const SIGN_TEXT = (node, { screen }) => (node.role === 'textbox' || node.role === 'text_input') && /sign/i.test(`${screen} ${label(node)}`)
 const DONE = (node, { screen }) => node.role === 'button' && /sign/i.test(screen) && /done|close|finish/i.test(label(node))
 
 /**
@@ -74,14 +75,22 @@ function screensOf (snapshot) {
   return out
 }
 
+/** an Ore UI page element (BeDD lists their DOM as nodes, `source.kind: 'dom'`) */
+function isDom (node) {
+  return node?.source?.kind === 'dom' || node?.source?.kind === 'oreui'
+}
+
 /**
- * The first usable node of `snapshot` `matcher` accepts (the top screen's first: it is the one in front).
+ * The first usable node of `snapshot` `matcher` accepts: JSON UI controls before Ore UI page elements (the vanilla
+ * death, bed and sign screens are JSON UI, an Ore UI page may have a look-alike button), then the top screen's first
+ * (it is the one in front).
  * @returns {{ ref: string, node: object, screen: string } | null}
  */
 function findNode (snapshot, matcher) {
   const nodes = snapshot?.nodes ?? {}
   const screens = screensOf(snapshot)
-  const order = [...screens.entries()].sort(([, a], [, b]) => (b === snapshot?.active) - (a === snapshot?.active))
+  const order = [...screens.entries()].sort(([ra, a], [rb, b]) =>
+    (isDom(nodes[ra]) - isDom(nodes[rb])) || ((b === snapshot?.active) - (a === snapshot?.active)))
   for (const [ref, screen] of order) {
     const node = nodes[ref]
     if (!node || !usable(node)) continue
