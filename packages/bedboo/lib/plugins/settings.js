@@ -83,14 +83,17 @@ function inject (bot, options) {
     particleStatus: 'all'
   }
 
-  // upstream sends its settings on login; here the join radius request is bedrock-protocol's (500 ms after the
-  // resource packs), so only client.viewDistance is set now
+  // upstream sends its settings on login; on Bedrock the client requests its chunk radius on start_game
   try {
     setSettings({})
   } catch (err) {
     bot.emit('error', err)
   }
-  bot._client.on('start_game', () => { loggedIn = true })
+  bot._client.on('start_game', () => {
+    loggedIn = true
+    const radius = bot._client.viewDistance || 10
+    bot._client.queue('request_chunk_radius', { chunk_radius: radius, max_radius: Math.min(radius, 255) })
+  })
 
   bot.setSettings = setSettings
 }

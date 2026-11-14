@@ -66,7 +66,7 @@ describe('game / settings / kick', () => {
     assert.strictEqual(client.sent('request_chunk_radius').length, 0, 'before login bedrock-protocol sends the join request')
     await replayJoin(bot, client)
     bot.setSettings({ viewDistance: 9 })
-    assert.deepStrictEqual(client.sent('request_chunk_radius'), [{ chunk_radius: 9, max_radius: 9 }])
+    assert.deepStrictEqual(client.sent('request_chunk_radius'), [{ chunk_radius: 6, max_radius: 6 }, { chunk_radius: 9, max_radius: 9 }])
     assert.throws(() => bot.setSettings({ chat: 'nope' }), /invalid chat setting: nope/)
     bot.settings.chat = 'enabled'
     assert.throws(() => bot.setSettings({ viewDistance: 'huge' }), /invalid view distance setting: huge/)
@@ -95,5 +95,15 @@ describe('game / settings / kick', () => {
     const ended3 = new Promise(resolve => bot3.once('end', resolve))
     bot3.quit('bye')
     assert.strictEqual(await ended3, 'bye')
+  })
+
+  it('transfer: emits transfer (host, port, packet) on server transfer', async () => {
+    const { bot, client } = await createFakeBot()
+    const transfers = []
+    bot.on('transfer', (host, port, packet) => transfers.push({ host, port, packet }))
+    client.receive('transfer', { server_address: 'geo.hivebedrock.network', port: 19133 })
+    assert.strictEqual(transfers.length, 1)
+    assert.strictEqual(transfers[0].host, 'geo.hivebedrock.network')
+    assert.strictEqual(transfers[0].port, 19133)
   })
 })

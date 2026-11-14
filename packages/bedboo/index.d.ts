@@ -58,6 +58,12 @@ export interface BotOptions extends Omit<ClientOptions, 'viewDistance' | 'transp
   client?: Client
   brand?: string
   defaultChatPatterns?: boolean
+  /**
+   * If true, acknowledge player initialization and loading screen immediately upon `start_game`
+   * instead of waiting for a `play_status` (player_spawn) packet. Useful for servers like The Hive,
+   * or proxies that do not send `player_spawn` before client initialization.
+   */
+  spawnOnStartGame?: boolean
   respawn?: boolean
 }
 
@@ -101,6 +107,7 @@ export interface BotEvents {
   rain: () => Promise<void> | void
   time: () => Promise<void> | void
   kicked: (reason: string, loggedIn: boolean) => Promise<void> | void
+  transfer: (host: string, port: number, packet: any) => Promise<void> | void
   end: (reason: string) => Promise<void> | void
   spawnReset: () => Promise<void> | void
   death: () => Promise<void> | void
