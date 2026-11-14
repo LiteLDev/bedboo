@@ -54,8 +54,9 @@ authority table and the coverage matrix are in the [BeDD guide](../../guide/bedd
 - **Bedrock (bedd):** the real client sends its own packets; BeDD's `send` sends others only when their id is in
   `sendAllow`.
 - **bedboo:** such a packet goes out through `send` when its id is listed (`bot.bedrock.bedd.sendAllow`), otherwise it
-  throws `BeddUnsupportedError` naming the id to add. block_pick_request is translated (look, then the pick button).
-  Client-owned packets are dropped whatever the list says.
+  throws `BeddUnsupportedError` naming the id to add. With BeDD's `sendAllow: "*"` every id the client does not send
+  itself is listed, so any such packet goes out, as in headless bedboo. block_pick_request is translated (look, then
+  the pick button). Client-owned packets are dropped whatever the list says.
 
 ## Inventory needs the `stack` op  {#inventory-stack}
 
@@ -75,7 +76,7 @@ authority table and the coverage matrix are in the [BeDD guide](../../guide/bedd
 - **Java:** mineflayer connects, authenticates and disconnects.
 - **Bedrock (bedd):** the client is already logged in (its own account) and in a world.
 - **bedboo:** `host` / `port` make the client join that server first (BeDD's `join` op; `ERR_BEDD_JOIN` when it
-  cannot); `viewDistance` (and `setSettings`) sets the client's render distance (`settings`); `bot.quit` makes the
+  cannot; a host off the PC must be in BeDD's `allowHosts`, or `allowHosts` is `["*"]` for any host); `viewDistance` (and `setSettings`) sets the client's render distance (`settings`); `bot.quit` makes the
   client leave its world (`join host:null`) and detaches, `bot.end` only detaches (the client stays in its world);
   `auth` and `username` are ignored with one warning each (the client is signed in with its own account), and
   `holdResourcePacks` is a no-op. A world change on the client (`LINK_DOWN`) ends the bot. The bot
