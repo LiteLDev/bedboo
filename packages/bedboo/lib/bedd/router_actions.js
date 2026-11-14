@@ -23,6 +23,9 @@ const { ensureDispatch } = require('./routes')
  *   - item_release           → `button use up`
  *   - item_use_on_entity     → `look` at the clicked point of the entity (its centre for attacks), then `button attack
  *                              click` / `button use click`
+ * - block_pick_request       → `look` at the block's centre, then `button pick click` (the client picks what its
+ *                              crosshair is on; with `add_user_data` it keeps the block's data only in creative,
+ *                              when the user holds CTRL, which bedboo cannot ask for)
  * Without the `button` op the existing `mouse` op presses the mouse buttons instead (attack = left, use = right,
  * pick = middle). Without `look` the click goes where the client already looks (bot.lookAt came first). The
  * transaction's hand is not translated: the client uses its main hand (it has no off-hand use button).
@@ -271,6 +274,16 @@ function attach (bot, client) {
   })
   // true: translated; false: declined (not ours), the router takes the unsupported path
   routes.register('inventory_transaction', (params) => isBedd(bot) && onTransaction(params))
+  routes.register('block_pick_request', (params) => {
+    if (!isBedd(bot)) return false
+    const p = params?.position ?? params
+    if (p?.x === undefined) return false
+    enqueue(async () => {
+      await look({ x: num(p.x) + 0.5, y: num(p.y) + 0.5, z: num(p.z) + 0.5 })
+      await button('pick', 'click')
+    })
+    return true
+  })
   // the client finished a use itself (eaten, drunk): its button is up again
   client.on?.('completed_using_item', () => {
     if (useHeld && isBedd(bot)) releaseUse()
@@ -284,6 +297,7 @@ function attach (bot, client) {
         return !!params?.block_action?.length
       }
       if (name === 'inventory_transaction') return onTransaction(params)
+      if (name === 'block_pick_request') return routes.get('block_pick_request').some(h => h(params, { name }) !== false)
       return false
     },
     /** settles once every op queued so far was answered */

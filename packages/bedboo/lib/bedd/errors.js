@@ -8,7 +8,8 @@
  * Contract:
  * - `err.code === 'ERR_BEDD_UNSUPPORTED'`, `err.bedd === true`
  * - `err.feature`: the API or packet, e.g. `'bot.craft'`, `'item_stack_request'`
- * - `err.missing`: the BeDD capabilities that would make it work (`['stack']`), or `['v2']` when no capability does yet
+ * - `err.missing`: the BeDD capabilities that would make it work (`['stack']`, `['send:97']` = `send` with packet id 97
+ *   in BeDD's sendAllow), or `['v2']` when no capability does yet
  */
 class BeddUnsupportedError extends Error {
   /**
@@ -29,7 +30,7 @@ class BeddUnsupportedError extends Error {
 function describe (missing) {
   if (missing.includes('v2')) return 'the real client owns it and BeDD has no op for it yet (v2)'
   if (missing.length === 0) return 'the real client owns it'
-  const ops = missing.map(m => `'${m}'`).join(', ')
+  const ops = missing.map(m => /^send:\d+$/.test(m) ? `'send' with packet id ${m.slice(5)} in sendAllow` : `'${m}'`).join(', ')
   return missing.length > 1
     ? `none of the BeDD ops ${ops} is available (enable them in BeDD's config.json)`
     : `the BeDD op ${ops} is not available (enable it in BeDD's config.json)`

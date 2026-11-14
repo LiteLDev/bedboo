@@ -139,7 +139,16 @@ describe('bedd: lifecycle, capability surface and BeddUnsupportedError', () => {
       client.bedd.caps.stack = 'present'
       assert.strictEqual(supports('craft'), true)
       assert.strictEqual(supports('clickWindow'), true)
-      for (const v2 of ['writeBook', 'updateSign', 'respawn']) assert.strictEqual(supports(v2), false, v2)
+      // screen-level APIs: `ui`, or `send` with the packet's id in sendAllow
+      for (const api of ['writeBook', 'updateSign', 'respawn', 'wake']) assert.strictEqual(supports(api), false, api)
+      client.bedd.caps.ui = 'present'
+      for (const api of ['updateSign', 'respawn', 'wake']) assert.strictEqual(supports(api), true, api)
+      assert.strictEqual(supports('writeBook'), false, 'a book needs book_edit in sendAllow')
+      client.bedd.caps.ui = 'absent'
+      client.bedd.sendAllow = [9, 77, 36, 56, 97]
+      for (const api of ['writeBook', 'signBook', 'updateSign', 'wake']) assert.strictEqual(supports(api), true, api)
+      assert.strictEqual(supports('respawn'), false, 'the respawn button needs ui')
+      client.bedd.sendAllow = [9, 77]
       assert.strictEqual(supports('blockAt'), true, 'state reads always work')
       assert.strictEqual(supports('look'), true)
       client.bedd.caps.send = 'disabled'
@@ -158,11 +167,13 @@ describe('bedd: lifecycle, capability surface and BeddUnsupportedError', () => {
       assertUnsupported(await bot.transfer({}).then(() => null, e => e), 'bot.transfer', ['stack'])
       assertUnsupported(await bot.creative.setInventorySlot(36, null).then(() => null, e => e), 'bot.creative.setInventorySlot', ['stack'])
       assert.strictEqual(bot.creative.setInventorySlot.length, 2)
-      // v2: async writeBook rejects, sync updateSign throws
+      // screen-level, no ui and nothing in sendAllow: async writeBook rejects, sync updateSign throws
       const book = bot.writeBook(36, ['a'])
       assert.ok(book instanceof Promise)
-      assertUnsupported(await book.then(() => null, e => e), 'bot.writeBook', ['v2'])
-      assert.throws(() => bot.updateSign(null, 'x'), (e) => { assertUnsupported(e, 'bot.updateSign', ['v2']); return true })
+      const bookErr = await book.then(() => null, e => e)
+      assertUnsupported(bookErr, 'bot.writeBook', ['send:97'])
+      assert.match(bookErr.message, /packet id 97 in sendAllow/)
+      assert.throws(() => bot.updateSign(null, 'x'), (e) => { assertUnsupported(e, 'bot.updateSign', ['send:56', 'ui']); return true })
       assert.strictEqual(bot.updateSign.length, 2)
       // nothing reached the client: no screen opened, no request sent
       assert.deepStrictEqual(bot._client.sent('interact'), [])
