@@ -46,7 +46,9 @@ bot.once('spawn', () => bot.chat('hello from bedboo'))
    设为 `false` 的键会关闭对应操作：bedboo 会把它视为 `disabled` 并使用兜底方案（见[支持范围表](#coverage)）。
    `pipeName` 和 `pipeInstances` 已随管道一起移除。
 
-   `loopbackOnly`（BeDD 自己的配置项）让客户端只连接本机（127.0.0.1）上的服务器。客户端通过 NetherNet 加入 BDS，
+   `loopbackOnly`（BeDD 自己的配置项）让客户端只连接本机（127.0.0.1）上的服务器。本机以外的服务器需要 BeDD 的 Remote 模式：
+   `BeDD.exe mod config <instance> --world-mode Remote --server-host <host>` 让客户端能访问该主机，`--server-host '*'`
+   （配置 `"allowHosts": ["*"]`）则允许任何由 `join`（见下文 `host`）指定的主机，无需重启；本机以外的其他主机仍不可达。客户端通过 NetherNet 加入 BDS，
    因此请以 `transport=nethernet` 启动服务器；NetherNet 加入要经过 Minecraft 的在线信令服务，所以在客户端加入和
    游戏期间，这台电脑上不能再启动其他 Minecraft 游戏（后续的登录会把当前会话挤掉："Multiplayer Connection Failed … NetherNet"）。
 3. 让玩家进入一个世界（服务器、局域网世界或单人游戏）：bedboo 附加到一个已经在游戏中的客户端上，它不负责登录。
@@ -139,8 +141,8 @@ bot.* state ← plugins ← decoder ← tap reader ←──(binary frames)─�
 | 离开末地后的制作人员名单 | 与无头 bedboo 一样跳过：`credits_screen` 显示时按 ESC | `world`、`key` |
 | 物品栏重新同步（`inventory_mismatch`） | 不做任何事：物品栏由客户端负责 | — |
 | `block_pick_request`（插件自己的 `_client.write`） | 可用：转向方块并按下选取键 | `look`、`button` |
-| 插件的其他 `_client.write` / `queue` | 其数据包 ID 在 `sendAllow` 中时可用 | `send` |
-| `host`、`port` 选项 | 客户端先加入该服务器 | `join` |
+| 插件的其他 `_client.write` / `queue` | 其数据包 ID 在 `sendAllow` 中时可用；`sendAllow: "*"` 时任何不归客户端所有的 ID 都可用 | `send` |
+| `host`、`port` 选项 | 客户端先加入该服务器（本机以外：BeDD 的 `allowHosts` 列出该主机，或为 `"*"`） | `join` |
 | `bot.quit` | 客户端离开当前世界（回到标题界面），然后机器人断开附加 | `join`（无：只断开附加并给出警告） |
 | `bot.end` | 仅断开附加；客户端留在原世界 | — |
 | `auth`、`username` 选项 | 忽略并给出警告（客户端用它自己的账号登录） | — |
@@ -185,6 +187,12 @@ inventory_transaction、player_auth_input、item_stack_request）始终被拒绝
 
 无论 `sendAllow` 如何设置，归客户端所有的数据包（见权限表）仍会被丢弃。
 
+`"sendAllow": "*"`（`BeDD.exe mod config <instance> --set sendAllow=*`）让 `send` 接受除客户端自己发送的数据包
+（login、握手、player_auth_input、inventory_transaction、item_stack_request、区块与缓存请求、加载界面、respawn、animate……）
+之外的所有 ID，与无头 bedboo 可以写任何数据包一致。此时探测结果的 `allow` 会逐个列出所有允许的 ID（因此
+`bot.bedrock.bedd.sendAllow` 是完整列表），并带有 `allowAll: true`。不是客户端自己发出的数据包可能让它和服务器的状态
+对不上：请只在你掌控的服务器上使用。
+
 ## 单人游戏与局域网世界 {#singleplayer}
 
 开启 `tapLoopback`（`tap` 开启后默认即开启）时，BeDD 还会监听客户端自己托管的世界：单人游戏或局域网世界。这些数据包从不经过
@@ -198,7 +206,7 @@ inventory_transaction、player_auth_input、item_stack_request）始终被拒绝
   驱动游戏。bedboo 以 `?token=` 发送它，并且从不发送 `Origin`。
 - **tap 会暴露整个会话。** 订阅者可以读取已登录玩家看到和做的一切：聊天、位置、物品栏、世界。
 - **`send`、`stack` 和 `ui` 以该账号的身份行事。** `send` 以已登录玩家的身份发送聊天和命令（以及你加入 `sendAllow` 的
-  任何数据包），`stack` 移动其物品，`ui` 点击它的界面。`send` 仅限 `sendAllow` 中的 ID（`[9, 77]`），login、
+  任何数据包），`stack` 移动其物品，`ui` 点击它的界面。`send` 仅限 `sendAllow` 中的 ID（默认 `[9, 77, 78, 97]`；`"*"`：客户端不自己发送的所有 ID），login、
   `player_auth_input`、物品堆叠等 ID（1、30、144、147）始终被拒绝。在不应允许它们的实例中，把 `allowSend` / `allowStack` /
   `ui` 设为 `false`。
 - 让用于自动化的 BeDD 游戏运行在各自的实例中（`BeDD.exe launch --slot <n>` 就是这样做的），不要使用你主账号的世界。
@@ -226,7 +234,7 @@ inventory_transaction、player_auth_input、item_stack_request）始终被拒绝
 
 `host` / `port`（createBot 选项，`port` 默认 19132）会让客户端在 bedboo 附加前先加入该服务器（带 `wait` 的 BeDD `join`
 操作）；已在该服务器上游玩的客户端保持不动。没有 `join` 操作，或客户端放弃加入（`join_failed`；`not_allowed`：主机不在本机且
-`loopbackOnly` 阻止了它）时，机器人发出 `'error'`（`code: 'ERR_BEDD_JOIN'`，`reason` 为 BeDD 的错误码）并结束。
+`loopbackOnly` 阻止了它：不在 BeDD 的 `allowHosts` 中，或 `allowHosts: ["*"]` 时主机无法解析）时，机器人发出 `'error'`（`code: 'ERR_BEDD_JOIN'`，`reason` 为 BeDD 的错误码）并结束。
 `bot._client.bedd.joined` 保存 `join` 的应答。
 
 进程已不存在（游戏崩溃）的 run 文件会被跳过。没有匹配的游戏时，机器人发出 `'error'`（`code: 'ERR_BEDD_DISCOVERY'`）并结束。

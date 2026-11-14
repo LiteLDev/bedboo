@@ -52,7 +52,8 @@
 - **Java：** mineflayer 可以写任何数据包。
 - **Bedrock（bedd）：** 真实客户端发送它自己的数据包；BeDD 的 `send` 只发送 ID 在 `sendAllow` 中的其他数据包。
 - **bedboo：** 这类数据包的 ID 在列表中（`bot.bedrock.bedd.sendAllow`）时通过 `send` 发出，否则抛出指出需要加入哪个 ID 的
-  `BeddUnsupportedError`。block_pick_request 会被翻译（先转向，再按选取键）。归客户端所有的数据包无论列表如何都会被丢弃。
+  `BeddUnsupportedError`。BeDD 的 `sendAllow` 为 `"*"` 时，客户端不自己发送的所有 ID 都在列表中，这类数据包都能发出，与无头
+  bedboo 一致。block_pick_request 会被翻译（先转向，再按选取键）。归客户端所有的数据包无论列表如何都会被丢弃。
 
 ## 物品栏操作需要 `stack` 操作  {#inventory-stack}
 
@@ -69,7 +70,8 @@
   `bot.end`、`bot.quit`
 - **Java：** 由 mineflayer 负责连接、认证和断开。
 - **Bedrock（bedd）：** 客户端已经（用它自己的账号）登录并处于某个世界中。
-- **bedboo：** `host` / `port` 会让客户端先加入该服务器（BeDD 的 `join` 操作；无法加入时为 `ERR_BEDD_JOIN`）；`viewDistance`
+- **bedboo：** `host` / `port` 会让客户端先加入该服务器（BeDD 的 `join` 操作；无法加入时为 `ERR_BEDD_JOIN`；本机以外的主机须在
+  BeDD 的 `allowHosts` 中，或 `allowHosts` 为 `["*"]` 以允许任意主机）；`viewDistance`
   （以及 `setSettings`）设置客户端的渲染距离（`settings`）；`bot.quit` 让客户端离开当前世界（`join host:null`）后断开附加，
   `bot.end` 只断开附加（客户端仍留在它的世界中）；`auth` 和 `username` 会被忽略，每个各输出一次警告（客户端用它自己的账号
   登录）；`holdResourcePacks` 不起作用。客户端切换世界（`LINK_DOWN`）会结束 bot。bot 改为连接游戏：`bedd: { url, token }`、

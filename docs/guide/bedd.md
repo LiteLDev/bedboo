@@ -47,7 +47,10 @@ a local WebSocket; BeDD v1 (named pipes `\\.\pipe\BeDD`) is no longer supported.
    A key set to `false` turns that op off: bedboo then sees it as `disabled` and falls back (see the
    [coverage table](#coverage)). `pipeName` and `pipeInstances` are gone with the pipes.
 
-   `loopbackOnly` (BeDD's own key) keeps the client on servers of the same PC (127.0.0.1). The client joins BDS over
+   `loopbackOnly` (BeDD's own key) keeps the client on servers of the same PC (127.0.0.1). A server off the PC needs
+   BeDD's Remote mode: `BeDD.exe mod config <instance> --world-mode Remote --server-host <host>` lets the client reach
+   that host, `--server-host '*'` (config `"allowHosts": ["*"]`) any host a `join` (`host` below) names, without a
+   restart; other hosts off the PC stay unreachable. The client joins BDS over
    NetherNet, so start the server with `transport=nethernet`; NetherNet joins go through Minecraft's online signalling
    service, so no other Minecraft game on the PC may start while the client joins and plays (a later sign-in knocks the
    session out: "Multiplayer Connection Failed … NetherNet").
@@ -149,8 +152,8 @@ or rejects with `ERR_BEDD_UNSUPPORTED` (or uses the stated fallback).
 | credits after the End exit | skipped, as headless bedboo does: ESC while `credits_screen` shows | `world`, `key` |
 | inventory resync (`inventory_mismatch`) | a no-op: the client owns its inventory | — |
 | `block_pick_request` (a plugin's own `_client.write`) | yes: looks at the block and presses pick | `look`, `button` |
-| any other `_client.write` / `queue` of a plugin | yes when its packet id is in `sendAllow` | `send` |
-| `host`, `port` options | the client joins that server first | `join` |
+| any other `_client.write` / `queue` of a plugin | yes when its packet id is in `sendAllow`, or any not client-owned id with `sendAllow: "*"` | `send` |
+| `host`, `port` options | the client joins that server first (off the PC: BeDD's `allowHosts` names it, or `"*"`) | `join` |
 | `bot.quit` | the client leaves its world (to the title screen), then the bot detaches | `join` (none: detach only, with a warning) |
 | `bot.end` | detach only; the client stays in its world | — |
 | `auth`, `username` options | ignored with a warning (the client is signed in with its own account) | — |
@@ -200,6 +203,12 @@ is when its id is listed. The ids that matter (add the others for a server you c
 
 Client-owned packets (the authority table) are still dropped whatever `sendAllow` says.
 
+`"sendAllow": "*"` (`BeDD.exe mod config <instance> --set sendAllow=*`) lets `send` take every id except the
+packets the client sends itself (login, handshakes, player_auth_input, inventory_transaction, item_stack_request,
+chunk and cache requests, loading screens, respawn, animate, …), as headless bedboo can write any packet. The probe
+then lists every allowed id in `allow` (so `bot.bedrock.bedd.sendAllow` is the full list) and has `allowAll: true`.
+Packets the client did not make itself can leave it out of step with the server: use it on servers you control.
+
 ## Singleplayer and LAN worlds {#singleplayer}
 
 With `tapLoopback` (on by default once `tap` is), BeDD also taps a world the client hosts itself: singleplayer or a
@@ -217,8 +226,8 @@ LAN world. Those packets never hit the network, so BeDD re-serializes them (`Pac
   inventory, the world.
 - **`send`, `stack` and `ui` act as the account.** `send` posts chat and commands as the logged-in player (and any
   packet you add to `sendAllow`), `stack` moves its items, `ui` clicks its screens. `send` is limited to the
-  `sendAllow` ids (`[9, 77]`), and login, `player_auth_input`, item stack and similar ids (1, 30, 144, 147) are always
-  refused. Set `allowSend` / `allowStack` / `ui` to `false` in instances that should not allow them.
+  `sendAllow` ids (default `[9, 77, 78, 97]`; `"*"`: every id the client does not send itself), and login,
+  `player_auth_input`, item stack and similar ids (1, 30, 144, 147) are always refused. Set `allowSend` / `allowStack` / `ui` to `false` in instances that should not allow them.
 - Run BeDD games for automation in their own instances (`BeDD.exe launch --slot <n>` does), not with your main
   account's world.
 
@@ -245,7 +254,8 @@ plus, in any form:
 
 `host` / `port` (createBot options, `port` default 19132) make the client join that server before bedboo attaches
 (BeDD's `join` op with `wait`); a client already playing there is left alone. Without the `join` op, or when the
-client gives up (`join_failed`, `not_allowed` for a host off this PC that `loopbackOnly` keeps it from), the bot emits
+client gives up (`join_failed`, `not_allowed` for a host off this PC that `loopbackOnly` keeps it from: not in BeDD's
+`allowHosts`, or with `allowHosts: ["*"]` a host that does not resolve), the bot emits
 `'error'` with `code: 'ERR_BEDD_JOIN'` (`reason`: BeDD's code) and ends. `bot._client.bedd.joined` holds the reply.
 
 Run files of processes that are gone (a crashed game) are skipped. When no game matches, the bot emits `'error'`
