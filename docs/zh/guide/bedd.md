@@ -2,7 +2,7 @@
 
 通常情况下 bedboo 本身*就是*客户端：它通过 RakNet 或 NetherNet 登录基岩版专用服务器，并亲自发送每一个数据包。使用
 `transport: 'bedd'` 时，它改为驱动一个**真实的 Minecraft 基岩版客户端**，该客户端由
-[Be.D.D.](https://docs.levimc.org/BeDD/)（Bedrock Deep Dive，一个 LeviLamina 客户端模组）托管。于是同一个脚本会作用于一个
+[Be.D.D.](https://levimc.org/BeDD/)（Bedrock Deep Dive，一个 LeviLamina 客户端模组）托管。于是同一个脚本会作用于一个
 真实的游戏：你能看到本地玩家按照脚本的指示行走、转头、挖掘、放置和聊天。
 
 ```js
@@ -19,7 +19,7 @@ bot.once('spawn', () => bot.chat('hello from bedboo'))
 仅支持 Windows（BeDD 是 Windows 客户端模组）；需要 Node 24 或更高版本。bedboo 需要 **BeDD v2**，它通过本机 WebSocket
 提供每个游戏；不再支持 BeDD v1（命名管道 `\\.\pipe\BeDD`）。
 
-1. 安装 BeDD v2（见 [BeDD 文档](https://docs.levimc.org/BeDD/)），并用它启动一个游戏：
+1. 安装 BeDD v2（见 [BeDD 文档](https://levimc.org/BeDD/)），并用它启动一个游戏：
 
    ```sh
    BeDD.exe launch --slot 2
