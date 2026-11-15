@@ -1,7 +1,7 @@
 # bedboo
 
 [![CI](https://github.com/LiteLDev/bedboo/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/LiteLDev/bedboo/actions/workflows/ci.yml)
-[![Docs](https://img.shields.io/badge/docs-docs.levimc.org%2Fbedboo-blue.svg?style=flat-square)](https://docs.levimc.org/bedboo/)
+[![Docs](https://img.shields.io/badge/docs-docs.levimc.org%2Fbedboo-blue.svg?style=flat-square)](https://levimc.org/bedboo/)
 [![license: LGPL-3.0-only](https://img.shields.io/badge/license-LGPL--3.0--only-blue.svg?style=flat-square)](COPYING.LESSER)
 
 bedboo (Bedrock + Bangboo) is named after the Bangboo of Zenless Zone Zero: a Bangboo goes into the Hollows on a
@@ -16,7 +16,7 @@ mineflayer plugins such as mineflayer-pathfinder, run against BDS. The only diff
 ones, and each of them is documented.
 
 - Supported servers: every stable BDS from 1.26.42.1 (August 7, 2026) to 1.26.63.1 (November 6, 2026), in four
-  protocol families ([supported versions](https://docs.levimc.org/bedboo/reference/versions/)):
+  protocol families ([supported versions](https://levimc.org/bedboo/reference/versions/)):
 
   | family (`bot.version`) | protocol | BDS builds |
   |---|---|---|
@@ -28,10 +28,10 @@ ones, and each of them is documented.
   `createBot({ version })` takes the family or the BDS build (`'1.26.62.1'`); without it the bot speaks 1.26.51.
   `bot.version` is the family.
 - Transport: **RakNet** by default; **NetherNet** with `transport: 'nethernet'`; a real client hosted by
-  [Be.D.D.](https://docs.levimc.org/BeDD/) with `transport: 'bedd'`.
+  [Be.D.D.](https://levimc.org/BeDD/) with `transport: 'bedd'`.
 - Auth: `auth: 'offline'` (default) or `auth: 'microsoft'` (Xbox Live).
 
-**Documentation: https://docs.levimc.org/bedboo/**
+**Documentation: https://levimc.org/bedboo/**
 
 ## Install
 
@@ -43,7 +43,7 @@ git clone https://github.com/LiteLDev/bedboo && cd bedboo
 corepack enable && pnpm install
 ```
 
-Then add your bot as a workspace package; see [Your first bot](https://docs.levimc.org/bedboo/guide/getting-started).
+Then add your bot as a workspace package; see [Your first bot](https://levimc.org/bedboo/guide/getting-started).
 
 ## Usage
 
@@ -85,7 +85,7 @@ bot.on('error', console.log)
 The runnable copy is [`packages/bedboo/examples/readme_quickstart.js`](packages/bedboo/examples/readme_quickstart.js):
 `node packages/bedboo/examples/readme_quickstart.js <host> <port>`. The server needs `transport=raknet`,
 `online-mode=false` and `allow-list=false` in `server.properties` for this bot; see
-[Your first bot](https://docs.levimc.org/bedboo/guide/getting-started#prepare-the-server).
+[Your first bot](https://levimc.org/bedboo/guide/getting-started#prepare-the-server).
 
 ## Packages
 

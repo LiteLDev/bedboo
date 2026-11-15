@@ -2,7 +2,7 @@
 
 bedboo normally *is* the client: it logs in to Bedrock Dedicated Server over RakNet or NetherNet and sends every
 packet itself. With `transport: 'bedd'` it drives a **real Minecraft Bedrock client** instead, hosted by
-[Be.D.D.](https://docs.levimc.org/BeDD/) (Bedrock Deep Dive, a LeviLamina client mod). The same script then runs
+[Be.D.D.](https://levimc.org/BeDD/) (Bedrock Deep Dive, a LeviLamina client mod). The same script then runs
 against a real game: you watch the local player walk, look, dig, place and chat as the script says.
 
 ```js
@@ -19,7 +19,7 @@ of this mode, entry by entry: [BeDD mode](../reference/differences/bedd.md).
 Windows only (BeDD is a Windows client mod); Node 24 or later. bedboo needs **BeDD v2**, which serves every game over
 a local WebSocket; BeDD v1 (named pipes `\\.\pipe\BeDD`) is no longer supported.
 
-1. Install BeDD v2 (see the [BeDD docs](https://docs.levimc.org/BeDD/)) and start a game with it:
+1. Install BeDD v2 (see the [BeDD docs](https://levimc.org/BeDD/)) and start a game with it:
 
    ```sh
    BeDD.exe launch --slot 2

@@ -5,7 +5,7 @@ The bedboo library: a Minecraft Bedrock Edition bot library with a mineflayer-co
 connects to a Bedrock Dedicated Server over RakNet or NetherNet. Supported: every stable BDS of the protocol families
 1.26.40 (2168), 1.26.45 (2169), 1.26.51 (2193, the default) and 1.26.60 (2225), i.e. BDS 1.26.42.1 to 1.26.63.1; pass
 `version` (a family or a BDS build) for a server other than 1.26.51
-([supported versions](https://docs.levimc.org/bedboo/reference/versions/)).
+([supported versions](https://levimc.org/bedboo/reference/versions/)).
 
 ```js
 const bedboo = require('bedboo')
@@ -17,8 +17,8 @@ bot.on('chat', (username, message) => {
 ```
 
 Part of the [bedboo](https://github.com/LiteLDev/bedboo) monorepo, which it relies on for small patches of its
-dependencies (`patches/`). Documentation: https://docs.levimc.org/bedboo/ ([getting started](https://docs.levimc.org/bedboo/guide/getting-started),
-[API](https://docs.levimc.org/bedboo/reference/api)); a runnable example is `examples/readme_quickstart.js`.
+dependencies (`patches/`). Documentation: https://levimc.org/bedboo/ ([getting started](https://levimc.org/bedboo/guide/getting-started),
+[API](https://levimc.org/bedboo/reference/api)); a runnable example is `examples/readme_quickstart.js`.
 
 Licensed under LGPL-3.0-only (see `COPYING` and `COPYING.LESSER`); includes code adapted from mineflayer (MIT,
 Copyright (c) 2013 Andrew Kelley) and PrismarineJS packages (MIT), with attribution in the adapted files.

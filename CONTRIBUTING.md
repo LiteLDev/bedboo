@@ -24,7 +24,7 @@ family in its `bedrock` matrix; a manual run of the CI workflow takes a `version
 
 The supported versions and the steps to add one (bedrock-data pins, probe and generation, the `FAMILIES` entry, the
 CI matrix, the docs) are in
-[Supported versions](https://docs.levimc.org/bedboo/reference/versions/#adding) (`docs/reference/versions/index.md`).
+[Supported versions](https://levimc.org/bedboo/reference/versions/#adding) (`docs/reference/versions/index.md`).
 
 ## Rules
 
@@ -53,7 +53,7 @@ rm -rf node_modules && pnpm install --frozen-lockfile
 
 ## Docs
 
-The documentation site (https://docs.levimc.org/bedboo/) is built from `docs/` with levimc-kit:
+The documentation site (https://levimc.org/bedboo/) is built from `docs/` with levimc-kit:
 
 ```sh
 cd docs && npm ci && npm run dev    # npm run build && npm run linkcheck before a PR
