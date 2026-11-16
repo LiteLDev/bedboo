@@ -17,7 +17,7 @@ bot.on('chat', (username, message) => {
 ```
 
 Part of the [bedboo](https://github.com/LiteLDev/bedboo) monorepo, which it relies on for small patches of its
-dependencies (`patches/`). Documentation: https://levimc.org/bedboo/ ([getting started](https://levimc.org/bedboo/guide/getting-started),
+dependencies (`patches/`). Documentation: https://levimc.org/bedboo/ ([first bot tutorial](https://levimc.org/tutorials/automate/first-bedboo-bot/),
 [API](https://levimc.org/bedboo/reference/api)); a runnable example is `examples/readme_quickstart.js`.
 
 Licensed under LGPL-3.0-only (see `COPYING` and `COPYING.LESSER`); includes code adapted from mineflayer (MIT,

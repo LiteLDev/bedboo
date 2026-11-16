@@ -78,29 +78,6 @@ its `bedrock` matrix. A manual run of the workflow takes a `version` input.
 
 ## Adding a version {#adding}
 
-**A new build of a known family** (same protocol): add the build to the family's `bds` list in
-`packages/bedboo/lib/bedrock/versions.js` and in the fallback table of `packages/bedboo/test/version.js`. Check that
-its join data matches the family's data, as the [1.26.51 page](1.26.51.md#builds) does for 1.26.50.5 and 1.26.52.3.
-Then list the build in the matrix above and on the family's page, and update the other places that name the newest
-build or the supported range: `git grep -n '<previous newest build>'` finds them (README files, `package.json`
-descriptions, the docs in English and `docs/zh/`).
-
-**A new family:**
-
-1. minecraft-data and bedrock-protocol have to know the version. Update them (`packages/*/package.json` and the
-   `overrides` of `pnpm-workspace.yaml`) and refresh the pnpm patches in `patches/` if needed.
-2. `@bedboo/bedrock-data`: add `PINS['<family>']` to `scripts/sources.js` and run
-   `scripts/fetch-sources.js --version <family> --update-lock`. Record the facts observed on a running BDS in
-   `scripts/probe/<family>.json`, put table differences in `scripts/tables.js` `VERSION_TABLES` and run
-   `scripts/generate.js --version <family>`. Feature differences go in `data/<family>/features.js`. List the sources
-   in `NOTICE.md`. Its "Adding a data version" section describes each step.
-3. bedboo: add a `FAMILIES` entry (family, protocol, BDS builds) to `lib/bedrock/versions.js` and to
-   `test/version.js`. The family is tested as soon as both this entry and its data exist. Compare the protocol with
-   the previous family. Handle wire differences behind a feature in `data/<family>/features.js` and
-   `bot.supportFeature`. Check the command parameter type ids (`VALUE_TYPE_KINDS_BY_VERSION` in
-   `lib/bedrock/commands.js`).
-4. CI: add the family to the `bedrock` matrix of `.github/workflows/ci.yml`. Run
-   `BEDBOO_VERSION=<family> pnpm test`, and join every build of the family with a live bot.
-5. Docs: add a `docs/reference/versions/<family>.md` page (English and `docs/zh/`), add it to the nav in
-   `docs/docs.config.ts`, and add a row to the matrix above. Update the other lists of families and builds, as for a new
-   build (`git grep -n '<previous newest family>'`).
+Adding a build or a protocol family is maintainer work: the steps (bedrock-data pins, probe and generation, the
+`FAMILIES` entry, the CI matrix, these pages) are in
+[CONTRIBUTING.md](https://github.com/LiteLDev/bedboo/blob/main/CONTRIBUTING.md#adding-a-version).
