@@ -1,53 +1,13 @@
-# Your first bot
+# Connecting to a server
 
-This page connects a bedboo bot to a Bedrock Dedicated Server (BDS) you run yourself. If you have written a mineflayer
-bot before, only the first three steps are new: the bot code is the same as for mineflayer.
+Server settings, versions, accounts and transports for a bot that joins a Bedrock Dedicated Server (BDS). A first bot
+from zero (get the code, write it, run it): the tutorial
+[Your first bedboo bot](https://levimc.org/tutorials/automate/first-bedboo-bot/).
 
-## Requirements {#requirements}
+## Server settings {#prepare-the-server}
 
-- Node.js **24** or newer. The RakNet backend (raknet-native) ships **x64** prebuilds only (Linux, Windows, macOS on
-  Intel); NetherNet is pure JavaScript and works anywhere Node does.
-- A stable BDS from **1.26.42.1** to **1.26.63.1** (the [supported versions](../reference/versions/index.md)). The bot
-  speaks 1.26.51 (BDS 1.26.50.5, 1.26.51.1, 1.26.52.3) unless you pass `version`; a server of another protocol
-  refuses the login.
-
-## Get the code {#get-the-code}
-
-bedboo is not published to npm yet. A few small fixes to its dependencies (bedrock-protocol, nethernet,
-raknet-native, prismarine-*) are pnpm patches that apply only inside its workspace, so use it from the monorepo:
-
-```sh
-git clone https://github.com/LiteLDev/bedboo
-cd bedboo
-corepack enable   # pnpm is pinned in package.json (packageManager)
-pnpm install
-```
-
-Put your bot in a workspace package so it gets its own dependencies, plugins included:
-
-```sh
-mkdir -p packages/my-bot
-cat > packages/my-bot/package.json <<'EOF'
-{
-  "name": "my-bot",
-  "private": true,
-  "dependencies": {
-    "bedboo": "workspace:*",
-    "mineflayer-pathfinder": "2.4.5"
-  }
-}
-EOF
-pnpm install
-```
-
-To vendor bedboo into another pnpm project, copy `patches/`, the `overrides`, `packageExtensions` and
-`patchedDependencies` of `pnpm-workspace.yaml`, and the `bedboo` and `bedrock-data` packages. Without the patched
-dependencies a bot cannot join a server.
-
-## Prepare the server {#prepare-the-server}
-
-Install a supported BDS from [minecraft.net](https://www.minecraft.net/download/server/bedrock) (this page uses
-1.26.51.1, the default version) and set in `server.properties`:
+A supported BDS from [minecraft.net](https://www.minecraft.net/download/server/bedrock) (1.26.51.1 is the default
+version) needs these settings in `server.properties`:
 
 ```properties
 # the bot joins over RakNet by default (BDS 1.26.51 and newer default to nethernet; see "Transports" below)
@@ -74,71 +34,6 @@ allow-cheats=true
 
 Start the server and wait for `Server started.` in its log. A `TRANSPORT TYPE ERROR … not set to NetherNet` block
 right after it is BDS warning that vanilla clients may soon need NetherNet; RakNet clients connect fine.
-
-## Write the bot {#write-the-bot}
-
-`packages/my-bot/index.js` is written exactly as for mineflayer:
-
-```js
-const bedboo = require('bedboo') // instead of require('mineflayer')
-const { pathfinder, Movements, goals } = require('mineflayer-pathfinder')
-
-const bot = bedboo.createBot({
-  host: process.argv[2] ?? '127.0.0.1',
-  port: parseInt(process.argv[3] ?? '19132'),
-  username: 'Bot',
-  // version: '1.26.62.1', // for a server other than 1.26.51: its BDS build or family (see "Other versions")
-  auth: 'offline'
-})
-bot.loadPlugin(pathfinder)
-
-bot.once('spawn', () => {
-  console.log(`spawned at ${bot.entity.position} in ${bot.game.dimension} (${bot.game.gameMode})`)
-  bot.chat('hello!')
-})
-
-bot.on('chat', async (username, message) => {
-  if (username === bot.username) return
-  if (message === 'come') {
-    const target = bot.players[username]?.entity
-    if (!target) return bot.chat("I can't see you")
-    bot.pathfinder.setMovements(new Movements(bot))
-    try {
-      await bot.pathfinder.goto(new goals.GoalNear(target.position.x, target.position.y, target.position.z, 1))
-      bot.chat('here!')
-    } catch (err) {
-      bot.chat(`I can't get there: ${err.message}`) // no path, or a new "come" changed the goal
-    }
-  } else if (message === 'inventory') {
-    bot.chat(bot.inventory.items().map((item) => `${item.count} ${item.name}`).join(', ') || 'empty')
-  } else {
-    bot.chat(message)
-  }
-})
-
-bot.on('kicked', (reason) => console.log('kicked:', reason))
-bot.on('error', (err) => console.log('error:', err))
-bot.on('end', (reason) => console.log('disconnected:', reason))
-```
-
-Names are Bedrock's: `bot.registry` is the registry of the bot's Bedrock version, here 1.26.51 (`grass_block`,
-`oak_log`, `stone_bricks`, …), so
-`bot.registry.blocksByName.oak_log` and `bot.inventory.items()[0].name` give Bedrock names. Everything else (events,
-`bot.dig`, `bot.placeBlock`, `bot.craft`, windows, `bot.attack`, physics) is mineflayer's API. What differs is listed
-in the [Bedrock differences](../reference/differences/index.md).
-
-## Run it {#run-it}
-
-```sh
-node packages/my-bot/index.js 127.0.0.1 19132
-```
-
-Join the server with a Bedrock client (or another bot), say `come` in chat and the bot walks to you. The same file
-works with `require('mineflayer')` against a Java server, minus the Bedrock block names.
-
-The library's `examples/` folder holds mineflayer's examples ported to Bedrock
-(`node examples/<name>.js <host> <port> [<name>]`), and a script you drop there resolves the library and
-mineflayer-pathfinder without any setup.
 
 ## Other versions {#versions}
 

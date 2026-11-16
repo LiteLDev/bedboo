@@ -69,24 +69,5 @@ BEDBOO_VERSION=1.26.44.3 pnpm test     # BDS 版本，映射到其协议族（1.
 
 ## 添加版本 {#adding}
 
-**已知协议族的新 BDS 版本**（协议相同）：把该版本加入 `packages/bedboo/lib/bedrock/versions.js` 中该协议族的 `bds` 列表，以及
-`packages/bedboo/test/version.js` 的后备表。检查它的加入数据与该协议族的数据一致，做法同 [1.26.51 页面](1.26.51.md#builds)
-对 1.26.50.5 和 1.26.52.3 的比较。然后把该版本写入上面的矩阵和该协议族的页面，并更新其他写有最新版本或支持范围的地方：
-`git grep -n '<之前最新的 BDS 版本>'` 可以找到它们（README、`package.json` 描述、英文和 `docs/zh/` 文档）。
-
-**新的协议族：**
-
-1. minecraft-data 和 bedrock-protocol 必须认识该版本。升级它们（`packages/*/package.json` 以及 `pnpm-workspace.yaml` 的
-   `overrides`），必要时更新 `patches/` 中的 pnpm 补丁。
-2. `@bedboo/bedrock-data`：在 `scripts/sources.js` 中添加 `PINS['<协议族>']`，并运行
-   `scripts/fetch-sources.js --version <协议族> --update-lock`。把在运行中的 BDS 上观察到的事实记录到
-   `scripts/probe/<协议族>.json`，把数据表差异写入 `scripts/tables.js` 的 `VERSION_TABLES`，然后运行
-   `scripts/generate.js --version <协议族>`。特性差异写入 `data/<协议族>/features.js`。在 `NOTICE.md` 中列出数据来源。
-   其中的“Adding a data version”一节说明了每一步。
-3. bedboo：在 `lib/bedrock/versions.js` 和 `test/version.js` 中添加一个 `FAMILIES` 条目（协议族、协议号、BDS 版本）。
-   该条目和数据都存在后，协议族即视为已测试。把协议与上一个协议族对比。线上格式的差异通过 `data/<协议族>/features.js` 中的特性
-   和 `bot.supportFeature` 处理。检查命令参数类型 ID（`lib/bedrock/commands.js` 中的 `VALUE_TYPE_KINDS_BY_VERSION`）。
-4. CI：把该协议族加入 `.github/workflows/ci.yml` 的 `bedrock` 矩阵。运行 `BEDBOO_VERSION=<协议族> pnpm test`，并用实机机器人
-   加入该协议族的每个 BDS 版本。
-5. 文档：添加 `docs/reference/versions/<协议族>.md` 页面（英文和 `docs/zh/`），在 `docs/docs.config.ts` 的导航中加入它，并在上面的
-   矩阵中添加一行。与新 BDS 版本一样，更新其他列出协议族和版本的地方（`git grep -n '<之前最新的协议族>'`）。
+添加 BDS 版本或协议族属于维护者工作：步骤（bedrock-data 固定版本、探测与生成、`FAMILIES` 条目、CI 矩阵、这些页面）见
+[CONTRIBUTING.md](https://github.com/LiteLDev/bedboo/blob/main/CONTRIBUTING.md#adding-a-version)（英文）。

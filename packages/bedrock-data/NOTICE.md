@@ -103,4 +103,4 @@ node packages/bedrock-data/scripts/generate.js --check --all                   #
    `data/<v>/` and `test/fixtures/<v>/`.
 4. Feature differences go in `data/<v>/features.js`.
 5. Add the sources of `data/<v>/` to this file. The bedboo side (the `FAMILIES` entry, the CI matrix, the docs) is
-   described in https://levimc.org/bedboo/reference/versions/#adding.
+   described in https://github.com/LiteLDev/bedboo/blob/main/CONTRIBUTING.md#adding-a-version.

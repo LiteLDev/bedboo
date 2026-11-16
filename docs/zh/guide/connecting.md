@@ -1,51 +1,12 @@
-# 你的第一个机器人
+# 连接服务器
 
-本页将一个 bedboo 机器人连接到你自己运行的基岩版专用服务器（BDS）。如果你以前写过 mineflayer 机器人，那么只有前三步是新内容：
-机器人代码与 mineflayer 的写法完全相同。
+机器人加入基岩版专用服务器（BDS）时的服务器设置、版本、账号和传输层。从零写第一个机器人（获取代码、编写、运行）：见教程
+[你的第一个 bedboo 机器人](https://levimc.org/tutorials/zh-Hans/automate/first-bedboo-bot/)。
 
-## 环境要求 {#requirements}
+## 服务器设置 {#prepare-the-server}
 
-- Node.js **24** 或更高版本。RakNet 后端（raknet-native）只提供 **x64** 预编译包（Linux、Windows、Intel 版 macOS）；
-  NetherNet 是纯 JavaScript 实现，能运行 Node 的地方都能用。
-- **1.26.42.1** 至 **1.26.63.1** 之间的稳定版 BDS（[支持的版本](../reference/versions/index.md)）。除非传入 `version`，
-  机器人使用 1.26.51（BDS 1.26.50.5、1.26.51.1、1.26.52.3）；其他协议的服务器会拒绝登录。
-
-## 获取代码 {#get-the-code}
-
-bedboo 尚未发布到 npm。它对依赖（bedrock-protocol、nethernet、raknet-native、prismarine-*）的几处小修复是 pnpm 补丁，
-只在它的工作区内生效，因此请在 monorepo 中使用它：
-
-```sh
-git clone https://github.com/LiteLDev/bedboo
-cd bedboo
-corepack enable   # pnpm 版本在 package.json 中固定（packageManager）
-pnpm install
-```
-
-把你的机器人放在一个工作区包中，让它拥有自己的依赖（包括插件）：
-
-```sh
-mkdir -p packages/my-bot
-cat > packages/my-bot/package.json <<'EOF'
-{
-  "name": "my-bot",
-  "private": true,
-  "dependencies": {
-    "bedboo": "workspace:*",
-    "mineflayer-pathfinder": "2.4.5"
-  }
-}
-EOF
-pnpm install
-```
-
-如果要把 bedboo 引入另一个 pnpm 项目，请复制 `patches/`、`pnpm-workspace.yaml` 中的 `overrides`、`packageExtensions` 和
-`patchedDependencies`，以及 `bedboo` 和 `bedrock-data` 两个包。没有打过补丁的依赖，机器人无法加入服务器。
-
-## 准备服务器 {#prepare-the-server}
-
-从 [minecraft.net](https://www.minecraft.net/download/server/bedrock) 安装一个受支持的 BDS（本页使用默认版本
-1.26.51.1），并在 `server.properties` 中设置：
+从 [minecraft.net](https://www.minecraft.net/download/server/bedrock) 获取的受支持 BDS（默认版本是 1.26.51.1）需要在
+`server.properties` 中设置：
 
 ```properties
 # 机器人默认通过 RakNet 加入（BDS 1.26.51 及更新版本默认使用 nethernet；见下文“传输层”）
@@ -72,70 +33,6 @@ allow-cheats=true
 
 启动服务器，等待日志中出现 `Server started.`。紧随其后的 `TRANSPORT TYPE ERROR … not set to NetherNet` 信息块是 BDS
 在提示原版客户端可能很快需要 NetherNet；RakNet 客户端可以正常连接。
-
-## 编写机器人 {#write-the-bot}
-
-`packages/my-bot/index.js` 的写法与 mineflayer 完全相同：
-
-```js
-const bedboo = require('bedboo') // 替代 require('mineflayer')
-const { pathfinder, Movements, goals } = require('mineflayer-pathfinder')
-
-const bot = bedboo.createBot({
-  host: process.argv[2] ?? '127.0.0.1',
-  port: parseInt(process.argv[3] ?? '19132'),
-  username: 'Bot',
-  // version: '1.26.62.1', // 服务器不是 1.26.51 时：填其 BDS 版本或协议族（见下文“其他版本”）
-  auth: 'offline'
-})
-bot.loadPlugin(pathfinder)
-
-bot.once('spawn', () => {
-  console.log(`spawned at ${bot.entity.position} in ${bot.game.dimension} (${bot.game.gameMode})`)
-  bot.chat('hello!')
-})
-
-bot.on('chat', async (username, message) => {
-  if (username === bot.username) return
-  if (message === 'come') {
-    const target = bot.players[username]?.entity
-    if (!target) return bot.chat("I can't see you")
-    bot.pathfinder.setMovements(new Movements(bot))
-    try {
-      await bot.pathfinder.goto(new goals.GoalNear(target.position.x, target.position.y, target.position.z, 1))
-      bot.chat('here!')
-    } catch (err) {
-      bot.chat(`I can't get there: ${err.message}`) // 没有路径，或者新的 "come" 改变了目标
-    }
-  } else if (message === 'inventory') {
-    bot.chat(bot.inventory.items().map((item) => `${item.count} ${item.name}`).join(', ') || 'empty')
-  } else {
-    bot.chat(message)
-  }
-})
-
-bot.on('kicked', (reason) => console.log('kicked:', reason))
-bot.on('error', (err) => console.log('error:', err))
-bot.on('end', (reason) => console.log('disconnected:', reason))
-```
-
-名称使用基岩版的：`bot.registry` 是机器人所用基岩版版本的注册表，此处为 1.26.51（`grass_block`、`oak_log`、
-`stone_bricks`……），因此
-`bot.registry.blocksByName.oak_log` 和 `bot.inventory.items()[0].name` 得到的都是基岩版名称。其余一切（事件、
-`bot.dig`、`bot.placeBlock`、`bot.craft`、窗口、`bot.attack`、物理）都是 mineflayer 的 API。不同之处列在
-[基岩版差异](../reference/differences/index.md)中。
-
-## 运行 {#run-it}
-
-```sh
-node packages/my-bot/index.js 127.0.0.1 19132
-```
-
-用基岩版客户端（或另一个机器人）加入服务器，在聊天中说 `come`，机器人就会走到你身边。同一个文件改用 `require('mineflayer')`
-后也能连接 Java 版服务器，只是基岩版方块名称不适用。
-
-库的 `examples/` 目录收录了移植到基岩版的 mineflayer 示例（`node examples/<name>.js <host> <port> [<name>]`），
-放在其中的脚本无需任何配置即可解析到本库和 mineflayer-pathfinder。
 
 ## 其他版本 {#versions}
 

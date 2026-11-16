@@ -1,5 +1,5 @@
 // bedboo documentation — levimc-kit site config, served at https://levimc.org/bedboo/.
-// English at the root, Simplified Chinese in zh/, Traditional Chinese converted from it.
+// English at the root, Simplified Chinese at zh-Hans/ (sources in zh/), Traditional at zh-Hant/ converted from it.
 import { defineDocsConfig, type NavEntry } from './kit/docs/node/config.ts';
 
 const repo = 'https://github.com/LiteLDev/bedboo';
@@ -7,10 +7,8 @@ const repo = 'https://github.com/LiteLDev/bedboo';
 const root = {
   guide: 'Guide',
   reference: 'Reference',
-  start: 'Getting started',
-  introduction: 'Introduction',
-  gettingStarted: 'Your first bot',
   using: 'Using bedboo',
+  connecting: 'Connecting to a server',
   plugins: 'Ecosystem plugins',
   bedd: 'Driving a real client (BeDD)',
   agent: 'Survival agent',
@@ -41,10 +39,8 @@ type Labels = typeof root;
 const zh: Labels = {
   guide: '指南',
   reference: '参考',
-  start: '入门',
-  introduction: '简介',
-  gettingStarted: '第一个机器人',
   using: '使用 bedboo',
+  connecting: '连接服务器',
   plugins: '生态插件',
   bedd: '驱动真实客户端（BeDD）',
   agent: '生存智能体',
@@ -72,7 +68,7 @@ const zh: Labels = {
 };
 
 // The LeviMC navigation model (kit/README.md "Navigation model"): every top-level entry is a section, i.e. a header
-// tab and the sidebar tree of its pages; the brand links the home page. `p` is the locale's URL prefix ('/' or '/zh/');
+// tab and the sidebar tree of its pages; the brand links the home page. `p` is the locale's URL prefix ('/' or '/zh-Hans/');
 // zh-Hant is converted from zh by the kit.
 const nav = (p: string, t: Labels): NavEntry[] => {
   const d = `${p}reference/differences/`;
@@ -82,15 +78,9 @@ const nav = (p: string, t: Labels): NavEntry[] => {
       text: t.guide,
       items: [
         {
-          text: t.start,
-          items: [
-            { text: t.introduction, link: `${p}guide/introduction` },
-            { text: t.gettingStarted, link: `${p}guide/getting-started` },
-          ],
-        },
-        {
           text: t.using,
           items: [
+            { text: t.connecting, link: `${p}guide/connecting` },
             { text: t.plugins, link: `${p}guide/plugins` },
             { text: t.bedd, link: `${p}guide/bedd` },
             { text: t.agent, link: `${p}guide/agent` },
@@ -136,6 +126,23 @@ const nav = (p: string, t: Labels): NavEntry[] => {
   ];
 };
 
+// Pages that left the site (kit README "Site config API", `redirects`): every URL they had, in every locale and under
+// the former zh/ prefix, answers with a redirect. The first bot is the levimc.org tutorial; the introduction is the
+// home page.
+const TUTORIAL = 'https://levimc.org/tutorials/automate/first-bedboo-bot/';
+const TUTORIAL_HANS = 'https://levimc.org/tutorials/zh-Hans/automate/first-bedboo-bot/';
+const TUTORIAL_HANT = 'https://levimc.org/tutorials/zh-Hant/automate/first-bedboo-bot/';
+const redirects: Record<string, string> = {};
+for (const [prefix, tutorial, home] of [
+  ['', TUTORIAL, ''],
+  ['zh-Hans/', TUTORIAL_HANS, 'zh-Hans/'],
+  ['zh/', TUTORIAL_HANS, 'zh-Hans/'],
+  ['zh-Hant/', TUTORIAL_HANT, 'zh-Hant/'],
+] as const) {
+  redirects[`${prefix}guide/getting-started`] = tutorial;
+  redirects[`${prefix}guide/introduction`] = home;
+}
+
 export default defineDocsConfig({
   base: '/bedboo/',
   title: 'bedboo',
@@ -153,7 +160,7 @@ export default defineDocsConfig({
     defaultLocale: 'root',
     locales: [
       { code: 'root', label: 'English', lang: 'en', prefix: '' },
-      { code: 'zh', label: '简体中文', lang: 'zh-CN', prefix: 'zh/' },
+      { code: 'zh', label: '简体中文', lang: 'zh-Hans', prefix: 'zh-Hans/', folder: 'zh', formerPrefixes: ['zh/'] },
       { code: 'zh-Hant', label: '繁體中文', lang: 'zh-Hant', prefix: 'zh-Hant/', convertFrom: 'zh' },
     ],
   },
@@ -164,5 +171,6 @@ export default defineDocsConfig({
   outline: [2, 3],
   exclude: ['scripts/**', 'README.md'],
   sidebar: 'tabs',
-  nav: { root: nav('/', root), zh: nav('/zh/', zh) },
+  redirects,
+  nav: { root: nav('/', root), zh: nav('/zh-Hans/', zh) },
 });

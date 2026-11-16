@@ -43,7 +43,7 @@ git clone https://github.com/LiteLDev/bedboo && cd bedboo
 corepack enable && pnpm install
 ```
 
-Then add your bot as a workspace package; see [Your first bot](https://levimc.org/bedboo/guide/getting-started).
+Then add your bot as a workspace package; see the tutorial [Your first bedboo bot](https://levimc.org/tutorials/automate/first-bedboo-bot/).
 
 ## Usage
 
@@ -85,7 +85,7 @@ bot.on('error', console.log)
 The runnable copy is [`packages/bedboo/examples/readme_quickstart.js`](packages/bedboo/examples/readme_quickstart.js):
 `node packages/bedboo/examples/readme_quickstart.js <host> <port>`. The server needs `transport=raknet`,
 `online-mode=false` and `allow-list=false` in `server.properties` for this bot; see
-[Your first bot](https://levimc.org/bedboo/guide/getting-started#prepare-the-server).
+[Server settings](https://levimc.org/bedboo/guide/connecting#prepare-the-server).
 
 ## Packages
 
