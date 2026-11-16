@@ -23,8 +23,7 @@
   },
   "standard": {
     "ignore": [
-      "**/*.d.ts",
-      "docs/**"
+      "**/*.d.ts"
     ]
   }
 }
