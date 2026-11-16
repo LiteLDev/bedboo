@@ -1,7 +1,7 @@
 # bedboo
 
 [![CI](https://github.com/LiteLDev/bedboo/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/LiteLDev/bedboo/actions/workflows/ci.yml)
-[![Docs](https://img.shields.io/badge/docs-docs.levimc.org%2Fbedboo-blue.svg?style=flat-square)](https://levimc.org/bedboo/)
+[![Docs](https://img.shields.io/badge/docs-levimc.org%2Fbedboo-blue.svg?style=flat-square)](https://levimc.org/bedboo/)
 [![license: LGPL-3.0-only](https://img.shields.io/badge/license-LGPL--3.0--only-blue.svg?style=flat-square)](COPYING.LESSER)
 
 bedboo (Bedrock + Bangboo) is named after the Bangboo of Zenless Zone Zero: a Bangboo goes into the Hollows on a
@@ -94,7 +94,6 @@ The runnable copy is [`packages/bedboo/examples/readme_quickstart.js`](packages/
 | [`packages/bedboo`](packages/bedboo) | the bedboo library |
 | [`packages/bedrock-data`](packages/bedrock-data) | `@bedboo/bedrock-data`: the Bedrock data overlays for minecraft-data, one per supported family |
 | [`packages/agent`](packages/agent) | `@bedboo/agent`: a scripted survival agent built on bedboo |
-| [`docs`](docs) | the documentation site |
 
 ## Contributing
 

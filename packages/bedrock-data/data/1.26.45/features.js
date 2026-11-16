@@ -1,7 +1,7 @@
 'use strict'
 /**
  * Feature values in which Bedrock 1.26.45 (protocol 2169, BDS 1.26.45.1) differs from the base table (features.js,
- * 1.26.51). Checked on BDS 1.26.45.1; see docs/reference/versions/1.26.45.md.
+ * 1.26.51). Checked on BDS 1.26.45.1; see https://levimc.org/bedboo/reference/versions/1.26.45.
  */
 module.exports = {
   // server.properties ships `transport=raknet` (NetherNet works when selected); minecraft-data agrees (1.26.51+)

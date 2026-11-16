@@ -22,8 +22,8 @@ the packet captures under `packages/bedboo/test/fixtures/<family>/` follow it (`
 Tests that need a capture the family does not have yet are skipped with the reason. CI runs the unit tests once per
 family in its `bedrock` matrix; a manual run of the CI workflow takes a `version` input.
 
-The supported versions are listed in [Supported versions](https://levimc.org/bedboo/reference/versions/)
-(`docs/reference/versions/index.md`); [Adding a version](#adding-a-version) below has the steps to add one.
+The supported versions are listed in [Supported versions](https://levimc.org/bedboo/reference/versions/); [Adding a
+version](#adding-a-version) below has the steps to add one.
 
 ## Adding a version
 
@@ -33,8 +33,8 @@ its join data matches the family's data, as the
 [1.26.51 page](https://levimc.org/bedboo/reference/versions/1.26.51#builds) does for 1.26.50.5 and 1.26.52.3. Then
 list the build in the [version matrix](https://levimc.org/bedboo/reference/versions/#matrix) and on the family's
 page, and update the other places that name the newest build or the supported range:
-`git grep -n '<previous newest build>'` finds them (README files, `package.json` descriptions, the docs in English
-and `docs/zh/`).
+`git grep -n '<previous newest build>'` finds them here (README files, `package.json` descriptions) and in the
+[docs](#docs) (English and Chinese).
 
 **A new family:**
 
@@ -52,9 +52,9 @@ and `docs/zh/`).
    `lib/bedrock/commands.js`).
 4. CI: add the family to the `bedrock` matrix of `.github/workflows/ci.yml`. Run
    `BEDBOO_VERSION=<family> pnpm test`, and join every build of the family with a live bot.
-5. Docs: add a `docs/reference/versions/<family>.md` page (English and `docs/zh/`), add it to the nav in
-   `docs/docs.config.ts`, and add a row to the version matrix. Update the other lists of families and builds, as for
-   a new build (`git grep -n '<previous newest family>'`).
+5. [Docs](#docs): add a `reference/versions/<family>.md` page (English and Chinese), add it to the nav, and add a
+   row to the version matrix. Update the other lists of families and builds, as for a new build
+   (`git grep -n '<previous newest family>'`).
 
 ## Rules
 
@@ -62,7 +62,7 @@ and `docs/zh/`).
   Bedrock-only additions go under `bot.bedrock.*` (typed in `types/bedrock.d.ts`), never as new top-level `bot`
   members. Java-only concepts keep their mineflayer property with an empty value.
 - **Document differences.** Every inherent Java/Bedrock difference you introduce gets an entry in the matching
-  `docs/reference/differences/<topic>.md` page (English and `docs/zh/`).
+  `reference/differences/<topic>.md` page of the [docs](#docs) (English and Chinese).
 - **Attribution.** Code adapted from mineflayer or another project keeps a header naming its source and license,
   e.g. `// Adapted from mineflayer 4.39.0 lib/plugins/x.js (MIT, Copyright (c) 2013 Andrew Kelley)`. Never
   `pnpm patch mineflayer`: vendor the plugin into `lib/plugins/` instead.
@@ -83,11 +83,9 @@ rm -rf node_modules && pnpm install --frozen-lockfile
 
 ## Docs
 
-The documentation site (https://levimc.org/bedboo/) is built from `docs/` with levimc-kit:
-
-```sh
-cd docs && npm ci && npm run dev    # npm run build && npm run linkcheck before a PR
-```
-
-English pages live at the root of `docs/`, Simplified Chinese in `docs/zh/` (served at `/bedboo/zh-Hans/`); Traditional
-Chinese is generated. Newcomer tutorials (a first bot) live on levimc.org/tutorials/, not here.
+The documentation site is part of levimc.org: English at https://levimc.org/bedboo/, Simplified Chinese at
+https://levimc.org/zh-Hans/bedboo/ (Traditional Chinese, at https://levimc.org/zh-Hant/bedboo/, is generated). Its
+pages are edited in the levimc.org repository, under
+[`docs/bedboo`](https://github.com/LiteLDev/liteldev.github.io/tree/main/docs/bedboo), not in this repository: a
+change here that the docs describe (a `bot.bedrock.*` extra, a difference, a version) comes with a pull request
+there. Newcomer tutorials (a first bot) live on levimc.org/tutorials/.
