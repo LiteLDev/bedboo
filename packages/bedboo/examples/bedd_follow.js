@@ -1,7 +1,7 @@
 /*
  * Drive the real Minecraft client hosted by Be.D.D. (https://levimc.org/bedboo/guide/bedd): the local client follows the nearest other player.
  *
- * Start a BeDD v2 game (`BeDD.exe launch --slot 2`), join a world (a server, or a LAN world), then:
+ * Start a game with BeDD 0.4.0 or newer (`BeDD.exe launch --slot 2`), join a world (a server, or a LAN world), then:
  *   node bedd_follow.js                       (the only running BeDD game)
  *   node bedd_follow.js --instance <instance> (or --pid <pid>, or --url <ws://…> --token <token>)
  * and walk another player near the client. Say "stop" / "follow" in chat to pause / resume.

@@ -33,7 +33,7 @@ const { findFamily } = require('./bedrock/versions')
  *   `webrtcBackend`, `signallingConnectTimeout`. Without `serverKey`/`onServerKey` an unpinned plain-HTTP key
  *   is accepted (the server is no more authenticated than over RakNet); pin it to reject anything else.
  * - `transport: 'bedd'` — no connection of its own: a real Minecraft client hosted by Be.D.D. is in the
- *   world, bedboo follows it through Be.D.D.'s tap and acts through its control ops, over the game's BeDD v2
+ *   world, bedboo follows it through Be.D.D.'s tap and acts through its control ops, over the game's BeDD (0.4.0+)
  *   WebSocket (lib/bedd/). Options under `bedd`: `url` + `token` (the endpoint), or `pid` / `instance` (looked
  *   up in `%LOCALAPPDATA%\BeDD\run\*.json`, $BEDD_HOME moves it; `{}` = the only running game), `timeoutMs`,
  *   `modules`.

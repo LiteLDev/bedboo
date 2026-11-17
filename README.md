@@ -25,10 +25,12 @@ ones, and each of them is documented.
   | `1.26.51` (default) | 2193 | 1.26.50.5, 1.26.51.1, 1.26.52.3 |
   | `1.26.60` | 2225 | 1.26.60.6, 1.26.61.1, 1.26.62.1, 1.26.63.1 |
 
-  `createBot({ version })` takes the family or the BDS build (`'1.26.62.1'`); without it the bot speaks 1.26.51.
+  `createBot({ version })` takes the family or the BDS build (`'1.26.62.1'`); without it the bot speaks 1.26.51
+  (1.26.60 with `transport: 'bedd'`).
   `bot.version` is the family.
 - Transport: **RakNet** by default; **NetherNet** with `transport: 'nethernet'`; a real client hosted by
-  [Be.D.D.](https://levimc.org/BeDD/) with `transport: 'bedd'`.
+  [Be.D.D.](https://levimc.org/BeDD/) 0.4.0 or newer with `transport: 'bedd'`
+  ([guide](https://levimc.org/bedboo/guide/bedd)).
 - Auth: `auth: 'offline'` (default) or `auth: 'microsoft'` (Xbox Live).
 
 **Documentation: https://levimc.org/bedboo/**
