@@ -92,7 +92,7 @@ export interface BeddUnsupportedError extends Error {
 // (lib/bedd/index.js).
 // The endpoint: `{ url, token }`, or `{ pid }` / `{ instance }` looked up in BeDD's run files
 // (`%LOCALAPPDATA%\BeDD\run\<pid>.json`, $BEDD_HOME moves the folder), or `{}` for the only running game.
-// BeDD v2 has no named pipes: `pipe`, `tapPipe` and `connect` throw.
+// BeDD 0.4.0+ has no named pipes (BeDD 0.3 and older are unsupported): `pipe`, `tapPipe` and `connect` throw.
 export interface BeddOptions {
   /** the game's WebSocket endpoint (`ws://127.0.0.1:<port>/v1`, the `url` of its run file); needs `token` */
   url?: string

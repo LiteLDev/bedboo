@@ -23,7 +23,10 @@ The agent joins as an ordinary offline player: no operator rights, no commands.
 
 `Agent.create(opts)` options: `host`, `port`, `username` (default `Agent`), `bot` (use an existing spawned bot),
 `botOptions`, `safety` (`true` / options of src/safety.js / `false`), `autoEat`, `keepFed` (hunt for food between
-tasks when hungry), `recoverItems` (go back for the drops after a death), `log` (line sink), `skills` (registry).
+tasks when hungry), `recoverItems` (go back for the drops after a death), `rest` (default `true`: sleep through
+the night in the carried bed), `shelter` (default `false`: with no bed or armor, sit the night out in the house or a
+sealed hole), `maxEvents` (events kept for the report, default `5000`), `watchdogInterval` (ms between stuck checks,
+default `5000`), `log` (line sink), `skills` (registry).
 
 `agent.run(skill, args, { timeout, retries })` runs one skill as a task; `agent.runScenario({ name, steps, timeout,
 verify })` runs steps in order (stops at the first failure) and returns the report; `agent.on('event', e)` streams
