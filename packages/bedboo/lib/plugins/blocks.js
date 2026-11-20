@@ -98,10 +98,14 @@ function inject (bot) {
     if (dimensionName(dimId) !== dimension) return // a column of the dimension we just left
     try {
       const column = newColumn(packet.x, packet.z)
-      const requestMode = packet.highest_subchunk_count !== undefined && packet.highest_subchunk_count !== null
-      if (requestMode || packet.sub_chunk_count < 0) {
+      const rawCount = packet.sub_chunk_count ?? 0
+      const subChunkCount = rawCount | 0
+      const requestMode = (packet.highest_subchunk_count !== undefined && packet.highest_subchunk_count !== null) ||
+        subChunkCount < 0 || subChunkCount > 64 ||
+        rawCount === 4294967295 || rawCount === 4294967294
+      if (requestMode) {
         // sub-chunk request mode: the payload holds the biomes (+ border blocks + block entities) only
-        column.networkDecodeNoCache(packet.payload, packet.sub_chunk_count < 0 ? packet.sub_chunk_count : 0)
+        column.networkDecodeNoCache(packet.payload, subChunkCount < 0 ? subChunkCount : 0)
         if (clientOwnsChunks()) {
           // keep sections the client's subchunk answers already filled (they may race this level_chunk)
           const known = bot.world.getColumn(packet.x, packet.z)
