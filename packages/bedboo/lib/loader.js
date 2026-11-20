@@ -115,7 +115,7 @@ function createBedrockState (bot, options) {
       setFlying: stubSync('bot._bedrock.physics.setFlying', 1)
     },
     /** spawn/respawn/dimension state machine; the only emitter of `spawn` (lib/bedrock/lifecycle.js) */
-    lifecycle: createLifecycle(bot),
+    lifecycle: createLifecycle(bot, options),
     /** item_stack_request manager (lib/bedrock/stack_request.js) */
     stackRequests: createStackRequestManager(bot),
     /** Bedrock container type → Java window spec registry (lib/bedrock/windows.js) */
@@ -230,6 +230,9 @@ function createBot (options = {}) {
   bot._client.on('loggingIn', emitConnect)
   bot._client.on('error', (err) => {
     bot.emit('error', err)
+  })
+  bot._client.on('transfer', (packet) => {
+    bot.emit('transfer', packet.server_address, packet.port, packet)
   })
   // minecraft-protocol style clients (and test fakes) emit 'end' (reason); bedrock-protocol emits
   // 'close' without a reason, so the reason given to bot.end()/bot.quit() is used. kick.js maps kicks.

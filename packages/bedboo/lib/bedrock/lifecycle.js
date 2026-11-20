@@ -79,7 +79,8 @@ const SUSPENDED_STATES = new Set(['connecting', 'loading', 'changing_dimension',
 const SPAWN_REASONS = ['join', 'respawn', 'dimension']
 
 /** @returns {Lifecycle} */
-function createLifecycle (bot) {
+function createLifecycle (bot, options = {}) {
+  const spawnOnStartGame = !!options.spawnOnStartGame
   const events = new EventEmitter()
   events.setMaxListeners(0)
   let joined = false
@@ -274,6 +275,18 @@ function createLifecycle (bot) {
   client.on('start_game', (packet) => {
     input()?.anchor(packet.current_tick ?? 0n)
     lifecycle.setState('loading')
+    if (spawnOnStartGame) {
+      if (!clientOwnsLoadingScreen()) {
+        const id = packet.runtime_entity_id ?? selfRuntimeId()
+        client.queue('set_local_player_as_initialized', { runtime_entity_id: id })
+        lifecycle.sendLoadingScreenAck()
+      }
+      process.nextTick(() => {
+        if (lifecycle.state !== 'loading') return
+        lifecycle.markSpawned('join')
+      })
+      return
+    }
     if (spawnBeforeStartGame) {
       // play_status player_spawn raced ahead of start_game (bedrock-protocol handles the same race): spawn once
       // every start_game listener (entity, game, world) has run

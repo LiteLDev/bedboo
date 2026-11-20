@@ -161,4 +161,20 @@ describe('lifecycle (join, dimension change, respawn hooks)', () => {
     client.receive('change_dimension', { dimension: 2, position: { x: 0.5, y: 64, z: 0.5 }, respawn: false, loading_screen_id: 7 })
     assert.deepStrictEqual(seen, [['game', 'the_end'], ['forcedMove', 'the_end', 0, 'minecraft:the_end']])
   })
+
+  it('spawnOnStartGame: acknowledges initialization and spawns on start_game without play_status (player_spawn)', async () => {
+    const { bot, client } = await createFakeBot({ spawnOnStartGame: true })
+    let spawned = false
+    bot.on('spawn', () => { spawned = true })
+    const records = (await import('./helpers/fake.js')).joinRecords()
+    for (const { name, params } of records) {
+      if (name === 'play_status' && params.status === 'player_spawn') continue // simulate server that never sends player_spawn
+      client.receive(name, params)
+      if (name === 'start_game') await new Promise(resolve => process.nextTick(resolve))
+    }
+    assert.strictEqual(spawned, true)
+    assert.strictEqual(bot._bedrock.lifecycle.state, 'spawned')
+    assert.deepStrictEqual(client.sent('set_local_player_as_initialized'), [{ runtime_entity_id: 91n }])
+    assert.deepStrictEqual(client.sent('serverbound_loading_screen').map(p => p.type), [1, 2])
+  })
 })

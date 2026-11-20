@@ -58,6 +58,31 @@ describe('world core (blocks.js) on the BDS 1.26.51.1 join capture', () => {
     assert.ok(createSerializer(TEST_VERSION).createPacketBuffer({ name: 'subchunk_request', params: requests[0] }).length > 0)
   })
 
+  it('handles level_chunk with unsigned -1 sub_chunk_count (UINT32_MAX, e.g. The Hive)', async () => {
+    const Stream = require('prismarine-chunk/src/bedrock/common/Stream')
+    const { client } = await joined()
+
+    const w = new Stream()
+    for (let i = 0; i < 24; i++) {
+      w.writeUInt8(1)
+      w.writeVarInt(1 << 1)
+    }
+    w.writeUInt8(0) // 0 border blocks
+
+    const beforeRequests = client.sent('subchunk_request').length
+    client.receive('level_chunk', {
+      x: 10,
+      z: 10,
+      dimension: 0,
+      sub_chunk_count: 4294967295, // UINT32_MAX (-1)
+      highest_subchunk_count: undefined,
+      payload: w.getBuffer()
+    })
+
+    const afterRequests = client.sent('subchunk_request').length
+    assert.strictEqual(afterRequests, beforeRequests + 1, 'subchunk_request was sent for UINT32_MAX chunk')
+  })
+
   it('update_block (layer 0) → blockUpdate and blockUpdate:(x, y, z); _updateBlockState', async () => {
     const { bot, client } = await joined()
     const seen = []
